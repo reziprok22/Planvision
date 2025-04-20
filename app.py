@@ -19,7 +19,7 @@ def get_model(num_classes=2):
 model = None
 
 # Name des Fast R-CNN Model
-model_path = 'fasterrcnn_model/fasterrcnn_model_2025-04-20-15-02-47.pth'
+model_path = 'fasterrcnn_model/fasterrcnn_model_2025-04-20-15-57-47.pth'
 
 def load_model():
     global model
