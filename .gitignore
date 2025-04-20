@@ -7,9 +7,7 @@ env
 Archiv
 fasterrcnn_model
 Annotationas_aus_PDF
-Trainingsdaten/csv
 Trainingsdaten/image
-Trainingsdaten/json
 Trainingsdaten/makesense_ai
 
 
