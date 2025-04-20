@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fenster-Erkennungstool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .upload-section, .results-section {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        #imageContainer {
+            position: relative;
+            max-width: 100%;
+            overflow: auto;
+            margin-top: 20px;
+        }
+        #uploadedImage {
+            max-width: 100%;
+            display: block;
+        }
+        .bounding-box {
+            position: absolute;
+            border: 2px solid red;
+            background-color: rgba(255, 0, 0, 0.1);
+            pointer-events: none;
+        }
+        .polygon-annotation {
+            position: absolute;
+            fill: rgba(255, 0, 0, 0.1);
+            stroke: red;
+            stroke-width: 2px;
+            pointer-events: none;
+        }
+        .box-label {
+            position: absolute;
+            background-color: rgba(255, 0, 0, 0.8);
+            color: white;
+            padding: 2px 5px;
+            font-size: 12px;
+            border-radius: 3px;
+            white-space: nowrap;
+            z-index: 10;
+        }
+        .label-wand {
+            background-color: rgba(0, 0, 255, 0.8);
+        }
+        .wand-annotation {
+            stroke: blue;
+            fill: rgba(0, 0, 255, 0.1);
+        }
+        .wand-box {
+            border-color: blue;
+            background-color: rgba(0, 0, 255, 0.1);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .summary {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 2s linear infinite;
+            margin: 20px auto;
+            display: none;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #errorMessage {
+            color: red;
+            margin-top: 10px;
+            display: none;
+        }
+        .annotation-controls {
+            margin-top: 15px;
+            margin-bottom: 15px;
+        }
+        .toggle-button {
+            background: #4a90e2;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            margin-right: 10px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .toggle-button.active {
+            background: #2a70c2;
+        }
+        .legend {
+            margin-top: 10px;
+            display: flex;
+            gap: 20px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+        }
+        .legend-color {
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+            border: 1px solid #333;
+        }
+        .fenster-color {
+            background-color: rgba(255, 0, 0, 0.5);
+        }
+        .wand-color {
+            background-color: rgba(0, 0, 255, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fenster-Erkennungstool</h1>
+        
+        <div class="upload-section">
+            <h2>Plan hochladen</h2>
+            <form id="uploadForm">
+                <div class="form-group">
+                    <label for="file">Plan-Datei (PDF oder Bild):</label>
+                    <input type="file" id="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Format:</label>
+                    <select id="formatSelect" name="format">
+                        <option value="A4" selected>A4 (210 × 297 mm)</option>
+                        <option value="A3">A3 (297 × 420 mm)</option>
+                        <option value="A2">A2 (420 × 594 mm)</option>
+                        <option value="A1">A1 (594 × 841 mm)</option>
+                        <option value="A0">A0 (841 × 1189 mm)</option>
+                        <option value="custom">Benutzerdefiniert</option>
+                    </select>
+                </div>
+                <div id="customFormatFields" style="display: none;">
+                    <div class="form-group">
+                        <label for="formatWidth">Breite (mm):</label>
+                        <input type="number" id="formatWidth" name="format_width" value="210" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label for="formatHeight">Höhe (mm):</label>
+                        <input type="number" id="formatHeight" name="format_height" value="297" min="1">
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="dpi">DPI (Auflösung):</label>
+                    <input type="number" id="dpi" name="dpi" value="300" min="72" max="600">
+                </div>
+                
+                <div class="form-group">
+                    <label for="planScale">Maßstab (1:X):</label>
+                    <input type="number" id="planScale" name="plan_scale" value="100" min="1">
+                </div>
+                
+                <div class="form-group">
+                    <label for="threshold">Erkennungsschwellenwert (0-1):</label>
+                    <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05">
+                </div>
+                
+                <button type="submit" id="analyzeBtn">Plan analysieren</button>
+            </form>
+            <div class="loader" id="loader"></div>
+            <div id="errorMessage"></div>
+        </div>
+        
+        <div class="results-section" id="resultsSection" style="display: none;">
+            <h2>Erkennungsergebnisse</h2>
+            
+            <div class="annotation-controls">
+                <button class="toggle-button active" id="toggleFenster">Fenster anzeigen</button>
+                <button class="toggle-button active" id="toggleWand">Wände anzeigen</button>
+            </div>
+            
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color fenster-color"></div>
+                    <span>Fenster (Kategorie 1)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color wand-color"></div>
+                    <span>Wand (Kategorie 0)</span>
+                </div>
+            </div>
+            
+            <div id="imageContainer">
+                <img id="uploadedImage" src="" alt="Hochgeladener Plan">
+                <!-- SVG Container für Polygone -->
+                <svg id="annotationOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></svg>
+                <!-- Bounding Boxes werden hier durch JavaScript hinzugefügt -->
+            </div>
+            
+            <div class="summary" id="summary">
+                <!-- Zusammenfassung wird hier angezeigt -->
+            </div>
+            
+            <table id="resultsTable">
+                <thead>
+                    <tr>
+                        <th>Nr.</th>
+                        <th>Klasse</th>
+                        <th>Typ</th>
+                        <th>Wahrscheinlichkeit</th>
+                        <th>Fläche (m²)</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody">
+                    <!-- Ergebniszeilen werden hier durch JavaScript hinzugefügt -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadForm = document.getElementById('uploadForm');
+            const formatSelect = document.getElementById('formatSelect');
+            const customFormatFields = document.getElementById('customFormatFields');
+            const formatWidth = document.getElementById('formatWidth');
+            const formatHeight = document.getElementById('formatHeight');
+            const resultsSection = document.getElementById('resultsSection');
+            const uploadedImage = document.getElementById('uploadedImage');
+            const imageContainer = document.getElementById('imageContainer');
+            const annotationOverlay = document.getElementById('annotationOverlay');
+            const resultsBody = document.getElementById('resultsBody');
+            const summary = document.getElementById('summary');
+            const loader = document.getElementById('loader');
+            const errorMessage = document.getElementById('errorMessage');
+            const toggleFenster = document.getElementById('toggleFenster');
+            const toggleWand = document.getElementById('toggleWand');
+            
+            // Formatauswahl-Handler
+            formatSelect.addEventListener('change', function() {
+                if (formatSelect.value === 'custom') {
+                    customFormatFields.style.display = 'block';
+                } else {
+                    customFormatFields.style.display = 'none';
+                    
+                    // Standard-Formatgrößen setzen
+                    const formatSizes = {
+                        'A4': [210, 297],
+                        'A3': [297, 420],
+                        'A2': [420, 594],
+                        'A1': [594, 841],
+                        'A0': [841, 1189]
+                    };
+                    
+                    const size = formatSizes[formatSelect.value];
+                    if (size) {
+                        formatWidth.value = size[0];
+                        formatHeight.value = size[1];
+                    }
+                }
+            });
+            
+            // Toggle-Button-Handler
+            toggleFenster.addEventListener('click', function() {
+                this.classList.toggle('active');
+                const fensterElements = document.querySelectorAll('.fenster-annotation, .fenster-box, .fenster-label');
+                fensterElements.forEach(el => {
+                    el.style.display = this.classList.contains('active') ? 'block' : 'none';
+                });
+            });
+            
+            toggleWand.addEventListener('click', function() {
+                this.classList.toggle('active');
+                const wandElements = document.querySelectorAll('.wand-annotation, .wand-box, .wand-label');
+                wandElements.forEach(el => {
+                    el.style.display = this.classList.contains('active') ? 'block' : 'none';
+                });
+            });
+            
+            // Formular-Submit-Handler
+            uploadForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // UI zurücksetzen
+                clearResults();
+                loader.style.display = 'block';
+                errorMessage.style.display = 'none';
+                
+                const formData = new FormData(uploadForm);
+                
+                // In einer echten Anwendung würde hier das Modell die Vorhersage machen
+                // Für dieses Beispiel simulieren wir eine Antwort mit Dummy-Daten
+                setTimeout(() => {
+                    // Dummy-Daten für die Demonstration
+                    const dummyData = {
+                        count: {
+                            "fenster": 5,
+                            "wand": 3
+                        },
+                        total_area: {
+                            "fenster": 12.5,
+                            "wand": 25.3
+                        },
+                        predictions: [
+                            // Rechteckige Fenster
+                            {
+                                label: 1,
+                                label_name: "Fenster",
+                                score: 0.95,
+                                area: 2.5,
+                                box: [100, 100, 200, 200],
+                                type: "rectangle"
+                            },
+                            {
+                                label: 1,
+                                label_name: "Fenster",
+                                score: 0.87,
+                                area: 3.2,
+                                box: [300, 150, 450, 250],
+                                type: "rectangle"
+                            },
+                            // Polygonales Fenster
+                            {
+                                label: 1,
+                                label_name: "Fenster",
+                                score: 0.92,
+                                area: 2.8,
+                                polygon: {
+                                    all_points_x: [500, 550, 600, 580, 520],
+                                    all_points_y: [100, 80, 110, 180, 170]
+                                },
+                                type: "polygon"
+                            },
+                            // Rechteckige Wand
+                            {
+                                label: 0,
+                                label_name: "Wand",
+                                score: 0.98,
+                                area: 8.7,
+                                box: [50, 300, 250, 500],
+                                type: "rectangle"
+                            },
+                            // Polygonale Wand
+                            {
+                                label: 0,
+                                label_name: "Wand",
+                                score: 0.94,
+                                area: 16.6,
+                                polygon: {
+                                    all_points_x: [300, 500, 480, 450, 320],
+                                    all_points_y: [300, 320, 450, 480, 440]
+                                },
+                                type: "polygon"
+                            }
+                        ]
+                    };
+                    
+                    displayResults(dummyData);
+                    loader.style.display = 'none';
+                }, 1000);
+                
+                // Echter API-Aufruf (auskommentiert)
+                /*
+                fetch('/predict', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || 'Fehler bei der Anfrage');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    displayResults(data);
+                })
+                .catch(error => {
+                    errorMessage.textContent = 'Fehler: ' + error.message;
+                    errorMessage.style.display = 'block';
+                })
+                .finally(() => {
+                    loader.style.display = 'none';
+                });
+                */
+            });
+            
+            // Funktion zur Anzeige der Ergebnisse
+            function displayResults(data) {
+                // Bild anzeigen
+                const file = document.getElementById('file').files[0];
+                const imageUrl = URL.createObjectURL(file);
+                uploadedImage.src = imageUrl;
+                
+                // Auf Bild-Ladung warten
+                uploadedImage.onload = function() {
+                    // SVG-Container anpassen
+                    adaptSvgOverlay();
+                    
+                    // Ergebnisse anzeigen
+                    resultsSection.style.display = 'block';
+                    
+                    // Zusammenfassung
+                    let summaryHtml = '';
+                    if (data.count.fenster) {
+                        summaryHtml += `<p>Gefundene Fenster: <strong>${data.count.fenster}</strong> (${data.total_area.fenster} m²)</p>`;
+                    }
+                    if (data.count.wand) {
+                        summaryHtml += `<p>Gefundene Wände: <strong>${data.count.wand}</strong> (${data.total_area.wand} m²)</p>`;
+                    }
+                    summary.innerHTML = summaryHtml;
+                    
+                    // Tabelle füllen
+                    resultsBody.innerHTML = '';
+                    data.predictions.forEach((pred, index) => {
+                        const row = document.createElement('tr');
+                        const className = pred.label === 0 ? "Wand" : "Fenster";
+                        const detailsText = pred.type === "rectangle" ? 
+                            `(${Math.round(pred.box[0])}, ${Math.round(pred.box[1])}) - (${Math.round(pred.box[2])}, ${Math.round(pred.box[3])})` : 
+                            `Polygon mit ${pred.polygon.all_points_x.length} Punkten`;
+                        
+                        row.innerHTML = `
+                            <td>${index + 1}</td>
+                            <td>${className}</td>
+                            <td>${pred.type === "rectangle" ? "Rechteck" : "Polygon"}</td>
+                            <td>${(pred.score * 100).toFixed(1)}%</td>
+                            <td>${pred.area} m²</td>
+                            <td>${detailsText}</td>
+                        `;
+                        resultsBody.appendChild(row);
+                        
+                        // Highlight beim Hovern über Tabelle
+                        const elementId = `annotation-${index}`;
+                        row.addEventListener('mouseover', () => {
+                            const element = document.getElementById(elementId);
+                            if (element) {
+                                if (pred.type === "rectangle") {
+                                    element.style.backgroundColor = pred.label === 0 ? 
+                                        'rgba(0, 0, 255, 0.3)' : 'rgba(255, 0, 0, 0.3)';
+                                } else {
+                                    element.style.fillOpacity = '0.5';
+                                }
+                                
+                                document.getElementById(`label-${elementId}`).style.backgroundColor = 
+                                    pred.label === 0 ? 'rgba(0, 0, 255, 1)' : 'rgba(255, 0, 0, 1)';
+                            }
+                        });
+                        row.addEventListener('mouseout', () => {
+                            const element = document.getElementById(elementId);
+                            if (element) {
+                                if (pred.type === "rectangle") {
+                                    element.style.backgroundColor = pred.label === 0 ? 
+                                        'rgba(0, 0, 255, 0.1)' : 'rgba(255, 0, 0, 0.1)';
+                                } else {
+                                    element.style.fillOpacity = '0.1';
+                                }
+                                
+                                document.getElementById(`label-${elementId}`).style.backgroundColor = 
+                                    pred.label === 0 ? 'rgba(0, 0, 255, 0.8)' : 'rgba(255, 0, 0, 0.8)';
+                            }
+                        });
+                        
+                        // Annotation hinzufügen
+                        addAnnotation(pred, index);
+                    });
+                    
+                    // Zu den Ergebnissen scrollen
+                    resultsSection.scrollIntoView({ behavior: 'smooth' });
+                };
+            }
+            
+            // Funktion zum Anpassen des SVG-Containers an die Bildgröße
+            function adaptSvgOverlay() {
+                annotationOverlay.setAttribute('width', uploadedImage.width);
+                annotationOverlay.setAttribute('height', uploadedImage.height);
+            }
+            
+            // Funktion zum Hinzufügen einer Annotation (Rechteck oder Polygon)
+            function addAnnotation(prediction, index) {
+                // Skalierungsfaktor berechnen
+                const originalWidth = uploadedImage.naturalWidth;
+                const displayedWidth = uploadedImage.width;
+                const scale = displayedWidth / originalWidth;
+                
+                const elementId = `annotation-${index}`;
+                const classPrefix = prediction.label === 0 ? 'wand' : 'fenster';
+                
+                // Label vorbereiten
+                const labelText = `#${index + 1}: ${prediction.area} m²`;
+                
+                // Je nach Typ (Rechteck oder Polygon) unterschiedlich behandeln
+                if (prediction.type === "rectangle") {
+                    const [x1, y1, x2, y2] = prediction.box;
+                    
+                    // Skalierte Koordinaten
+                    const scaledX1 = x1 * scale;
+                    const scaledY1 = y1 * scale;
+                    const scaledWidth = (x2 - x1) * scale;
+                    const scaledHeight = (y2 - y1) * scale;
+                    
+                    // Box hinzufügen
+                    const box = document.createElement('div');
+                    box.className = `bounding-box ${classPrefix}-box`;
+                    box.id = elementId;
+                    box.style.left = `${scaledX1}px`;
+                    box.style.top = `${scaledY1}px`;
+                    box.style.width = `${scaledWidth}px`;
+                    box.style.height = `${scaledHeight}px`;
+                    imageContainer.appendChild(box);
+                    
+                    // Label hinzufügen
+                    addLabel(scaledX1, scaledY1, labelText, elementId, classPrefix);
+                } else if (prediction.type === "polygon") {
+                    // Polygon-Punkte skalieren
+                    const scaledPoints = [];
+                    const { all_points_x, all_points_y } = prediction.polygon;
+                    
+                    // Mittelpunkt für Label berechnen
+                    let centerX = 0;
+                    let centerY = 0;
+                    
+                    for (let i = 0; i < all_points_x.length; i++) {
+                        const x = all_points_x[i] * scale;
+                        const y = all_points_y[i] * scale;
+                        scaledPoints.push(`${x},${y}`);
+                        
+                        centerX += x;
+                        centerY += y;
+                    }
+                    
+                    centerX /= all_points_x.length;
+                    centerY /= all_points_y.length;
+                    
+                    // Polygon zum SVG hinzufügen
+                    const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                    polygon.setAttribute("points", scaledPoints.join(" "));
+                    polygon.setAttribute("class", `polygon-annotation ${classPrefix}-annotation`);
+                    polygon.id = elementId;
+                    annotationOverlay.appendChild(polygon);
+                    
+                    // Label hinzufügen
+                    addLabel(centerX, centerY - 20 * scale, labelText, elementId, classPrefix);
+                }
+            }
+            
+            // Funktion zum Hinzufügen eines Labels
+            function addLabel(x, y, text, parentId, classPrefix) {
+                const label = document.createElement('div');
+                label.className = `box-label ${classPrefix}-label`;
+                label.id = `label-${parentId}`;
+                label.textContent = text;
+                label.style.left = `${x}px`;
+                label.style.top = `${y}px`;
+                imageContainer.appendChild(label);
+            }
+            
+            // Funktion zum Zurücksetzen der Ergebnisse
+            function clearResults() {
+                resultsSection.style.display = 'none';
+                uploadedImage.src = '';
+                resultsBody.innerHTML = '';
+                summary.innerHTML = '';
+                
+                // Alle Annotationen entfernen
+                const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
+                boxes.forEach(box => box.remove());
+                
+                // SVG leeren
+                while (annotationOverlay.firstChild) {
+                    annotationOverlay.removeChild(annotationOverlay.firstChild);
+                }
+            }
+            
+            // Event-Listener für Bildgrößenänderungen
+            window.addEventListener('resize', function() {
+                if (uploadedImage.src) {
+                    // Wenn das Bild geladen ist, SVG und Annotationen neu anpassen
+                    setTimeout(function() {
+                        adaptSvgOverlay();
+                        // Bei einer echten Anwendung würde man hier die Annotationen neu positionieren
+                    }, 100);
+                }
+            });
+        });
+    </script>
+</body>
+</html>
