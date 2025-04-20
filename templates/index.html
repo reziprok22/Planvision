@@ -168,23 +168,70 @@
             border: 1px solid #333;
         }
         .windows-color {
-            background-color: rgba(0, 0, 255, 0.5);
+            background-color: rgba(0, 0, 255, 0.8);
         }
         .door-color {
-            background-color: rgba(255, 0, 0, 0.5);
+            background-color: rgba(255, 0, 0, 0.8);
         }
         .wall-color {
-            background-color: rgba(212, 214, 56, 0.5);
+            background-color: rgba(212, 214, 56, 0.8);
         }
         .lukarne-color {
-            background-color: rgba(168, 136, 136, 0.5);
+            background-color: rgba(168, 136, 136, 0.8);
         }
         .roof-color {
-            background-color: rgba(119, 211, 165, 0.51);
+            background-color: rgba(119, 211, 165, 0.8);
         }
         .other-color {
-            background-color: rgba(111, 111, 119, 0.66);
+            background-color: rgba(111, 111, 119, 0.8);
         }
+
+        /* Fenster-Styling */
+        .fenster-box {
+            border-color: blue;
+            background-color: rgba(0, 0, 255, 0.1);
+        }
+        .fenster-label {
+            background-color: rgba(0, 0, 255, 0.8);
+        }
+
+        /* Tür-Styling */
+        .tuer-box {
+            border-color: red;
+            background-color: rgba(255, 0, 0, 0.1);
+        }
+        .tuer-label {
+            background-color: rgba(255, 0, 0, 0.8);
+        }
+
+        /* Wand-Styling */
+        .wand-box {
+            border-color: green;
+            background-color: rgba(212, 214, 56, 0.1);
+        }
+        .wand-label {
+            background-color: rgba(212, 214, 56, 0.8);
+        }
+
+        /* Lukarne-Styling */
+        .lukarne-box {
+            border-color: green;
+            background-color: rgba(168, 136, 136, 0.1);
+        }
+        .lukarne-label {
+            background-color: rgba(168, 136, 136, 0.8);
+        }
+
+        /* Dach-Styling */
+        .dach-box {
+            border-color: green;
+            background-color: rgba(119, 211, 165, 0.1);
+        }
+        .dach-label {
+            background-color: rgba(119, 211, 165, 0.8);
+        }
+
+
     </style>
 </head>
 <body>
@@ -246,11 +293,11 @@
             <h2>Erkennungsergebnisse</h2>
             
             <div class="annotation-controls">
-                <button class="toggle-button active" id="toggleFenster">Fenster anzeigen</button>
-                <button class="toggle-button active" id="toggleFenster">Türen anzeigen</button>
-                <button class="toggle-button active" id="toggleWand">Wände anzeigen</button>
-                <button class="toggle-button active" id="toggleFenster">Lukarnen anzeigen</button>
-                <button class="toggle-button active" id="toggleFenster">Dächer anzeigen</button>
+                <button class="toggle-button active" id="toggleWindow">Fenster anzeigen</button>
+                <button class="toggle-button active" id="toggleDoor">Türen anzeigen</button>
+                <button class="toggle-button active" id="toggleWall">Wände anzeigen</button>
+                <button class="toggle-button active" id="toggleLukarne">Lukarnen anzeigen</button>
+                <button class="toggle-button active" id="toggleRoof">Dächer anzeigen</button>
             </div>
             
             <div class="legend">
@@ -323,8 +370,12 @@
             const summary = document.getElementById('summary');
             const loader = document.getElementById('loader');
             const errorMessage = document.getElementById('errorMessage');
-            const toggleFenster = document.getElementById('toggleFenster');
-            const toggleWand = document.getElementById('toggleWand');
+            const togglewindow = document.getElementById('toggleWindow');
+            const toggledoor = document.getElementById('toggleDoor');
+            const togglewall = document.getElementById('toggleWall');
+            const togglelukarne = document.getElementById('toggleLukarne');
+            const toggleroof = document.getElementById('toggleRoof');
+
             
             // Formatauswahl-Handler
             formatSelect.addEventListener('change', function() {
@@ -351,35 +402,35 @@
             });
             
             // Toggle-Button-Handler
-            toggleFenster.addEventListener('click', function() {
+            toggleWindow.addEventListener('click', function() {
                 this.classList.toggle('active');
                 const fensterElements = document.querySelectorAll('.fenster-annotation, .fenster-box, .fenster-label');
                 fensterElements.forEach(el => {
                     el.style.display = this.classList.contains('active') ? 'block' : 'none';
                 });
             });
-            toggleTuer.addEventListener('click', function() {
+            toggleDoor.addEventListener('click', function() {
                 this.classList.toggle('active');
                 const tuerElements = document.querySelectorAll('.tuer-annotation, .tuer-box, .tuer-label');
                 tuerElements.forEach(el => {
                     el.style.display = this.classList.contains('active') ? 'block' : 'none';
                 });
             });
-            toggleWand.addEventListener('click', function() {
+            toggleWall.addEventListener('click', function() {
                 this.classList.toggle('active');
                 const wandElements = document.querySelectorAll('.wand-annotation, .wand-box, .wand-label');
                 wandElements.forEach(el => {
                     el.style.display = this.classList.contains('active') ? 'block' : 'none';
                 });
             });
-            toggleTuer.addEventListener('click', function() {
+            toggleLukarne.addEventListener('click', function() {
                 this.classList.toggle('active');
                 const tuerElements = document.querySelectorAll('.lukarne-annotation, .lukarne-box, .lukarne-label');
                 tuerElements.forEach(el => {
                     el.style.display = this.classList.contains('active') ? 'block' : 'none';
                 });
             });
-            toggleTuer.addEventListener('click', function() {
+            toggleRoof.addEventListener('click', function() {
                 this.classList.toggle('active');
                 const tuerElements = document.querySelectorAll('.dach-annotation, .dach-box, .dach-label');
                 tuerElements.forEach(el => {
@@ -618,32 +669,83 @@
                         row.addEventListener('mouseover', () => {
                             const element = document.getElementById(elementId);
                             if (element) {
+                                // Farben basierend auf der Kategorie anpassen
+                                let backgroundColor, borderColor;
+                                switch(pred.label) {
+                                    case 1:
+                                        backgroundColor = 'rgba(0, 0, 255, 0.3)';  // Fenster
+                                        borderColor = 'rgba(0, 0, 255, 1)';
+                                        break;
+                                    case 2:
+                                        backgroundColor = 'rgba(255, 0, 0, 0.3)';  // Tür
+                                        borderColor = 'rgba(255, 0, 0, 1)';
+                                        break;
+                                    case 3:
+                                        backgroundColor = 'rgba(212, 214, 56, 0.3)';  // Wand
+                                        borderColor = 'rgba(212, 214, 56, 0.1)';
+                                        break;
+                                    case 4:
+                                        backgroundColor = 'rgba(168, 136, 136, 0.3)';  // Lukarne
+                                        borderColor = 'rgba(168, 136, 136, 0.1)';
+                                        break;
+                                    case 5:
+                                        backgroundColor = 'rgba(119, 211, 165, 0.3)';  // Dach
+                                        borderColor = 'rgba(119, 211, 165, 0.1)';
+                                        break;
+                                    default:
+                                        backgroundColor = 'rgba(128, 128, 128, 0.3)';  // Andere
+                                        borderColor = 'rgba(128, 128, 128, 1)';
+                                }
+                                
                                 if (pred.type === "rectangle" || pred.box) {
-                                    element.style.backgroundColor = pred.label === 0 ? 
-                                        'rgba(0, 0, 255, 0.3)' : 'rgba(255, 0, 0, 0.3)';
+                                    element.style.backgroundColor = backgroundColor;
                                 } else {
                                     element.style.fillOpacity = '0.5';
                                 }
-                                
-                                document.getElementById(`label-${elementId}`).style.backgroundColor = 
-                                    pred.label === 0 ? 'rgba(0, 0, 255, 1)' : 'rgba(255, 0, 0, 1)';
+                                                        
+                                document.getElementById(`label-${elementId}`).style.backgroundColor = borderColor;
                             }
                         });
                         row.addEventListener('mouseout', () => {
                             const element = document.getElementById(elementId);
                             if (element) {
-                                if (pred.type === "rectangle" || pred.box) {
-                                    element.style.backgroundColor = pred.label === 0 ? 
-                                        'rgba(0, 0, 255, 0.1)' : 'rgba(255, 0, 0, 0.1)';
+                                  let backgroundColor, borderColor;
+                                  switch(pred.label) {
+                                      case 1:
+                                          backgroundColor = 'rgba(0, 0, 255, 0.1)';  // Fenster
+                                          borderColor = 'rgba(0, 0, 255, 0.8)';
+                                          break;
+                                      case 2:
+                                          backgroundColor = 'rgba(255, 0, 0, 0.1)';  // Tür
+                                          borderColor = 'rgba(255, 0, 0, 0.8)';
+                                          break;
+                                      case 3:
+                                          backgroundColor = 'rgba(212, 214, 56, 0.1)';  // Wand
+                                          borderColor = 'rgba(212, 214, 56, 0.8)';
+                                          break;
+                                      case 4:
+                                          backgroundColor = 'rgba(168, 136, 136, 0.1)';  // Lukarne
+                                          borderColor = 'rgba(168, 136, 136, 0.8)';
+                                          break;
+                                      case 5:
+                                          backgroundColor = 'rgba(119, 211, 165, 0.1)';  // Dach
+                                          borderColor = 'rgba(119, 211, 165, 0.8)';
+                                          break;
+                                      default:
+                                          backgroundColor = 'rgba(128, 128, 128, 0.1)';  // Andere
+                                          borderColor = 'rgba(128, 128, 128, 0.8)';
+                                  }
+
+                                  if (pred.type === "rectangle" || pred.box) {
+                                    element.style.backgroundColor = backgroundColor;
                                 } else {
                                     element.style.fillOpacity = '0.1';
                                 }
                                 
-                                document.getElementById(`label-${elementId}`).style.backgroundColor = 
-                                    pred.label === 0 ? 'rgba(0, 0, 255, 0.8)' : 'rgba(255, 0, 0, 0.8)';
+                                document.getElementById(`label-${elementId}`).style.backgroundColor = borderColor;
                             }
                         });
-                        
+                                                          
                         // Annotation hinzufügen
                         addAnnotation(pred, index);
                     });
@@ -757,7 +859,28 @@
                 const scale = displayedWidth / originalWidth;
                 
                 const elementId = `annotation-${index}`;
-                const classPrefix = prediction.label === 0 ? 'wand' : 'fenster';
+                
+                // Hier die Klassen-Präfixe basierend auf der Kategorie festlegen
+                let classPrefix;
+                switch(prediction.label) {
+                    case 1:
+                        classPrefix = 'fenster'; // Fenster = 1
+                        break;
+                    case 2:
+                        classPrefix = 'tuer';    // Tür = 2
+                        break;
+                    case 3:
+                        classPrefix = 'wand';    // Wand = 3
+                        break;
+                    case 4:
+                        classPrefix = 'lukarne';    // Lukarne = 4
+                        break;
+                    case 5:
+                        classPrefix = 'dach';    // Dach = 5
+                        break;
+                    default:
+                        classPrefix = 'other';   // Andere Kategorien
+                }
                 
                 // Label vorbereiten
                 const labelText = `#${index + 1}: ${prediction.area.toFixed(2)} m²`;
