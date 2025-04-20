@@ -41,8 +41,20 @@ def convert_multiple_csv_to_single_json(input_folder, output_json_folder):
                 y2 = y1 + height
                 
                 # Kategorie ID zuordnen (Fenster -> 1, z.B. "Fenster" könnte die Klasse 1 sein)
-                category_id = 1 if label_name.lower() == "fenster" else 0  # Hier kannst du weitere Klassen hinzufügen
-                
+                # Im train_model und app.py num_model nach Anzahl labels einstellen (num_model = 6)
+                if label_name.lower() == "fenster":
+                    category_id = 1
+                elif label_name.lower() == "tür":
+                    category_id = 2
+                elif label_name.lower() == "wand":
+                    category_id = 3
+                elif label_name.lower() == "lukarne":
+                    category_id = 4
+                elif label_name.lower() == "dach":
+                    category_id = 5
+                else:
+                    category_id = 0  # andere
+
                 # Wenn das Bild wechselt, speichere die aktuellen Annotationen
                 if image_name != current_image:
                     if current_image:

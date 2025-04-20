@@ -167,11 +167,23 @@
             margin-right: 5px;
             border: 1px solid #333;
         }
-        .fenster-color {
+        .windows-color {
+            background-color: rgba(0, 0, 255, 0.5);
+        }
+        .door-color {
             background-color: rgba(255, 0, 0, 0.5);
         }
-        .wand-color {
-            background-color: rgba(0, 0, 255, 0.5);
+        .wall-color {
+            background-color: rgba(212, 214, 56, 0.5);
+        }
+        .lukarne-color {
+            background-color: rgba(168, 136, 136, 0.5);
+        }
+        .roof-color {
+            background-color: rgba(119, 211, 165, 0.51);
+        }
+        .other-color {
+            background-color: rgba(111, 111, 119, 0.66);
         }
     </style>
 </head>
@@ -235,17 +247,36 @@
             
             <div class="annotation-controls">
                 <button class="toggle-button active" id="toggleFenster">Fenster anzeigen</button>
+                <button class="toggle-button active" id="toggleFenster">Türen anzeigen</button>
                 <button class="toggle-button active" id="toggleWand">Wände anzeigen</button>
+                <button class="toggle-button active" id="toggleFenster">Lukarnen anzeigen</button>
+                <button class="toggle-button active" id="toggleFenster">Dächer anzeigen</button>
             </div>
             
             <div class="legend">
                 <div class="legend-item">
-                    <div class="legend-color fenster-color"></div>
+                    <div class="legend-color window-color"></div>
                     <span>Fenster (Kategorie 1)</span>
                 </div>
                 <div class="legend-item">
-                    <div class="legend-color wand-color"></div>
-                    <span>Wand (Kategorie 0)</span>
+                    <div class="legend-color door-color"></div>
+                    <span>Tür (Kategorie 2)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color wall-color"></div>
+                    <span>Wand (Kategorie 3)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color lukarne-color"></div>
+                    <span>Lukarne (Kategorie 4)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color roof-color"></div>
+                    <span>Dach (Kategorie 5)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color other-color"></div>
+                    <span>Andere (Kategorie 0)</span>
                 </div>
             </div>
             
@@ -327,11 +358,31 @@
                     el.style.display = this.classList.contains('active') ? 'block' : 'none';
                 });
             });
-            
+            toggleTuer.addEventListener('click', function() {
+                this.classList.toggle('active');
+                const tuerElements = document.querySelectorAll('.tuer-annotation, .tuer-box, .tuer-label');
+                tuerElements.forEach(el => {
+                    el.style.display = this.classList.contains('active') ? 'block' : 'none';
+                });
+            });
             toggleWand.addEventListener('click', function() {
                 this.classList.toggle('active');
                 const wandElements = document.querySelectorAll('.wand-annotation, .wand-box, .wand-label');
                 wandElements.forEach(el => {
+                    el.style.display = this.classList.contains('active') ? 'block' : 'none';
+                });
+            });
+            toggleTuer.addEventListener('click', function() {
+                this.classList.toggle('active');
+                const tuerElements = document.querySelectorAll('.lukarne-annotation, .lukarne-box, .lukarne-label');
+                tuerElements.forEach(el => {
+                    el.style.display = this.classList.contains('active') ? 'block' : 'none';
+                });
+            });
+            toggleTuer.addEventListener('click', function() {
+                this.classList.toggle('active');
+                const tuerElements = document.querySelectorAll('.dach-annotation, .dach-box, .dach-label');
+                tuerElements.forEach(el => {
                     el.style.display = this.classList.contains('active') ? 'block' : 'none';
                 });
             });

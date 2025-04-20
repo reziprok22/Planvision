@@ -37,7 +37,7 @@ class WindowDataset(Dataset):
         return image, target
         
 # Modell definieren
-def get_model(num_classes=2):
+def get_model(num_classes=6):
     model = models.detection.fasterrcnn_resnet50_fpn(weights='DEFAULT')
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
@@ -85,5 +85,5 @@ if __name__ == "__main__":
     # Hier kannst du Kommandozeilenargumente verarbeiten oder feste Werte verwenden
     train_model(
         image_folder='Trainingsdaten/image',
-        annotation_file='/home/fabian/Documents Bauphysik Lengg/10000 Admin/055 Website/Planvision/Trainingsdaten/json/combined_labels_2025-04-20-12-21-42.json'
+        annotation_file='/home/fabian/Documents Bauphysik Lengg/10000 Admin/055 Website/Planvision/Trainingsdaten/json/combined_labels_2025-04-20-18-37-53.json'
     )
