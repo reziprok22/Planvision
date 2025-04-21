@@ -1,7 +1,6 @@
 # .gitignore kann nur Files ignorieren, die nicht getrackt werden.
 # Falls ein File getrackt wird, dann mit "git rm <file>" untracken
 
-# Folgende Ordner werden nicht verfolgt
 __pycache__
 env
 Archiv
@@ -9,13 +8,10 @@ fasterrcnn_model
 Annotationas_aus_PDF
 Trainingsdaten/image
 Trainingsdaten/makesense_ai
-
-
-
-# Folgende Files werden nicht verfolgt
 Notizen_FL.txt
 
-# Folgende Diango Files & Ordner werden nicht verfolgt
+
+
 
 
 

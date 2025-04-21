@@ -1,29 +1,7 @@
-- ComputerVision alleine ist zu unzuverlässig, da es nur Linien erkennt, und ich diese eingrenzen muss. 
-- Ich bräuchte ein Modell, um Architekturelemente zu erkennen (Yolov5 oder Mask R CNN).
-- Um Gebäudelemente zu klassifizieren, verwende https://www.makesense.ai/ und exportiere sie als csv
-- wandle das csv in ein json um (siehe skript in TRainingsdaten)
-- Recatange werden als CSV exportiert.
-- Polygons können als COCO Json exportiert werden (ist geeigneter als VGG Json).
+- Zu grosse Images können nicht trainiert werden, reduzieren, wenn möglich.
 
-Fast R-CNN 
-- Ziel: Inputimage, wird an ein Modell gegeben, welches 
-    a) den Inhalt des Bildes zu erkennen und klassifizieren versucht (z.B. Label: Katze), sowie 
-    b) eine rechteckige BoundingBox Bbox erstellt.
-- Die BoundigBox wird durch die x,y-Koordinaten an der oberen linken Ecke der Boundigbox, sowie die width und height der Boundigbox definiert (mit diesen Angaben kann die ganze Box definiert werden).
-- Das CNN ist das Modell, das eine Klasse vergibt und ein BBox erstellt. 
-- Das R (Region propsal) sucht vorgängig nach Regionen im Image mittels selective search algorithm, die eine Klasse enthalten könnte. Sonst müssten zahlreiche verschiedene Bbox x-Millionen Teile des Bildes absuchen (zu rechenintensiv). 
-- Ablauf: 1. Image input 2: Region propsales extrahieren 3. CNN features berechnen 4. Regionen Classifizieren
-
-https://www.youtube.com/watch?v=nJzQDpppFj0
-
-
-Fask-R-CNN kann nur Boundig Boxes erstellen (gut für rechteckige Fenster)
-
-Möchte ich Polygone richtig darstellen, benötige ich Mask-R-CNN (gut für Polygone)
-
-Dieser "divide and conquer"-Ansatz entspricht der Best Practice in der Computer Vision, wo spezialisierte Modelle für unterschiedliche Erkennungsaufgaben oft bessere Ergebnisse liefern als ein einziges generalisiertes Modell.
-Die Erfahrung zeigt, dass einfachere, fokussiertere Modelle in der Praxis häufig besser funktionieren als komplexere, die versuchen, alle Fälle abzudecken. In deinem Fall scheint genau dies zuzutreffen.
 
 
 Verbesserugen:
 - Fenster Überlappungen entfernen funktioniert noch nicht vollständig.
+- In der Tabelle Höhe und Breite von Fenster und Türen ausgeben.
