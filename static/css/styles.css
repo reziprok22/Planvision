@@ -97,31 +97,41 @@ button:hover {
     z-index: 10;
 }
 
-/* Spezifische Stile für verschiedene Kategorien */
-.label-wand {
-    background-color: rgba(0, 0, 255, 0.8);
-}
 
-.wand-annotation {
+/* Fenster-Stile */
+.fenster-box, .fenster-annotation {
+    border-color: blue;
     stroke: blue;
+    background-color: rgba(0, 0, 255, 0.1);
     fill: rgba(0, 0, 255, 0.1);
 }
 
-.wand-box {
-    border-color: blue;
-    background-color: rgba(0, 0, 255, 0.1);
+.fenster-label {
+    background-color: rgba(0, 0, 255, 0.8);
 }
 
 /* Tür-Stile */
 .tuer-box, .tuer-annotation {
-    border-color: green;
-    stroke: green;
-    background-color: rgba(0, 128, 0, 0.1);
-    fill: rgba(0, 128, 0, 0.1);
+    border-color: red;
+    stroke: red;
+    background-color: rgba(255, 0, 0, 0.1);
+    fill: rgba(255, 0, 0, 0.1);
 }
 
 .tuer-label {
-    background-color: rgba(0, 128, 0, 0.8);
+    background-color: rgba(255, 0, 0, 0.8);
+}
+
+/* Wand-Stile */
+.wand-box, .wand-annotation {
+    border-color: yellow;
+    stroke: yellow;
+    background-color: rgba(212, 214, 56, 0.1);
+    fill: rgba(212, 214, 56, 0.1);
+}
+
+.wand-label {
+    background-color: rgba(212, 214, 56, 0.8);
 }
 
 /* Dach-Stile */
@@ -239,27 +249,27 @@ tr:nth-child(even) {
 }
 
 .windows-color {
-    background-color: rgba(255, 0, 0, 0.5);
-}
-
-.door-color {
-    background-color: rgba(0, 128, 0, 0.5);
-}
-
-.wall-color {
     background-color: rgba(0, 0, 255, 0.5);
 }
 
+.door-color {
+    background-color: rgba(255, 0, 0, 0.5);
+}
+
+.wall-color {
+    background-color: rgbargba(212, 214, 56, 0.5);
+}
+
 .lukarne-color {
-    background-color: rgba(255, 165, 0, 0.5);
+    background-color: rgba(168, 136, 136, 0.5);
 }
 
 .roof-color {
-    background-color: rgba(128, 0, 128, 0.5);
+    background-color: rgba(119, 211, 165, 0.5);
 }
 
 .other-color {
-    background-color: rgba(111, 111, 119, 0.66);
+    background-color: rgba(128, 128, 128, 0.66);
 }
 
 /* Responsivität */

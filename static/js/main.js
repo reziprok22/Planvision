@@ -553,6 +553,43 @@ document.addEventListener('DOMContentLoaded', function() {
             box.style.height = `${scaledHeight}px`;
             imageContainer.appendChild(box);
     
+            // Label hinzufügen
+            addLabel(scaledX1, scaledY1 - 20, labelText, elementId, classPrefix);
+        } else if (prediction.type === "polygon" || "polygon" in prediction) {
+            // Polygon-Punkte skalieren
+            const scaledPoints = [];
+            const poly = prediction.polygon || prediction;
+            const all_points_x = poly.all_points_x;
+            const all_points_y = poly.all_points_y;
+            
+            // Mittelpunkt für Label berechnen
+            let centerX = 0;
+            let centerY = 0;
+            
+            for (let i = 0; i < all_points_x.length; i++) {
+                const x = all_points_x[i] * scale;
+                const y = all_points_y[i] * scale;
+                scaledPoints.push(`${x},${y}`);
+                
+                centerX += x;
+                centerY += y;
+            }
+            
+            centerX /= all_points_x.length;
+            centerY /= all_points_y.length;
+            
+            // Polygon zum SVG hinzufügen
+            const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+            polygon.setAttribute("points", scaledPoints.join(" "));
+            polygon.setAttribute("class", `polygon-annotation ${classPrefix}-annotation`);
+            polygon.id = elementId;
+            annotationOverlay.appendChild(polygon);
+            
+            // Label hinzufügen
+            addLabel(centerX, centerY - 20, labelText, elementId, classPrefix);
+        }
+    }
+    
     // Funktion zum Hinzufügen eines Labels
     function addLabel(x, y, text, parentId, classPrefix) {
         const label = document.createElement('div');
@@ -579,6 +616,9 @@ document.addEventListener('DOMContentLoaded', function() {
         while (annotationOverlay.firstChild) {
             annotationOverlay.removeChild(annotationOverlay.firstChild);
         }
+        
+        // Globale Daten zurücksetzen
+        data = null;
     }
     
     // Event-Listener für Bildgrößenänderungen
