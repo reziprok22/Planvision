@@ -16,11 +16,13 @@ document.addEventListener('DOMContentLoaded', function() {
     const summary = document.getElementById('summary');
     const loader = document.getElementById('loader');
     const errorMessage = document.getElementById('errorMessage');
-    const togglewindow = document.getElementById('toggleWindow');
-    const toggledoor = document.getElementById('toggleDoor');
-    const togglewall = document.getElementById('toggleWall');
-    const togglelukarne = document.getElementById('toggleLukarne');
-    const toggleroof = document.getElementById('toggleRoof');
+    
+    // ID-Korrekturen - Anpassung an die HTML-IDs
+    const toggleFenster = document.getElementById('toggleFenster');
+    const toggleTuer = document.getElementById('toggleTuer');
+    const toggleWand = document.getElementById('toggleWand');
+    const toggleLukarne = document.getElementById('toggleLukarne');
+    const toggleDach = document.getElementById('toggleDach');
 
     
     // Formatauswahl-Handler
@@ -47,22 +49,22 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Toggle-Button-Handler
-    toggleWindow.addEventListener('click', function() {
+    // Toggle-Button-Handler - Korrigiert mit den richtigen IDs
+    toggleFenster.addEventListener('click', function() {
         this.classList.toggle('active');
         const fensterElements = document.querySelectorAll('.fenster-annotation, .fenster-box, .fenster-label');
         fensterElements.forEach(el => {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
-    toggleDoor.addEventListener('click', function() {
+    toggleTuer.addEventListener('click', function() {
         this.classList.toggle('active');
         const tuerElements = document.querySelectorAll('.tuer-annotation, .tuer-box, .tuer-label');
         tuerElements.forEach(el => {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
-    toggleWall.addEventListener('click', function() {
+    toggleWand.addEventListener('click', function() {
         this.classList.toggle('active');
         const wandElements = document.querySelectorAll('.wand-annotation, .wand-box, .wand-label');
         wandElements.forEach(el => {
@@ -71,15 +73,15 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     toggleLukarne.addEventListener('click', function() {
         this.classList.toggle('active');
-        const tuerElements = document.querySelectorAll('.lukarne-annotation, .lukarne-box, .lukarne-label');
-        tuerElements.forEach(el => {
+        const lukarneElements = document.querySelectorAll('.lukarne-annotation, .lukarne-box, .lukarne-label');
+        lukarneElements.forEach(el => {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
-    toggleRoof.addEventListener('click', function() {
+    toggleDach.addEventListener('click', function() {
         this.classList.toggle('active');
-        const tuerElements = document.querySelectorAll('.dach-annotation, .dach-box, .dach-label');
-        tuerElements.forEach(el => {
+        const dachElements = document.querySelectorAll('.dach-annotation, .dach-box, .dach-label');
+        dachElements.forEach(el => {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
@@ -550,43 +552,6 @@ document.addEventListener('DOMContentLoaded', function() {
             box.style.width = `${scaledWidth}px`;
             box.style.height = `${scaledHeight}px`;
             imageContainer.appendChild(box);
-            
-            // Label hinzufügen
-            addLabel(scaledX1, scaledY1 - 20, labelText, elementId, classPrefix);
-        } else if (prediction.type === "polygon" || "polygon" in prediction) {
-            // Polygon-Punkte skalieren
-            const scaledPoints = [];
-            const poly = prediction.polygon || prediction;
-            const all_points_x = poly.all_points_x;
-            const all_points_y = poly.all_points_y;
-            
-            // Mittelpunkt für Label berechnen
-            let centerX = 0;
-            let centerY = 0;
-            
-            for (let i = 0; i < all_points_x.length; i++) {
-                const x = all_points_x[i] * scale;
-                const y = all_points_y[i] * scale;
-                scaledPoints.push(`${x},${y}`);
-                
-                centerX += x;
-                centerY += y;
-            }
-            
-            centerX /= all_points_x.length;
-            centerY /= all_points_y.length;
-            
-            // Polygon zum SVG hinzufügen
-            const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-            polygon.setAttribute("points", scaledPoints.join(" "));
-            polygon.setAttribute("class", `polygon-annotation ${classPrefix}-annotation`);
-            polygon.id = elementId;
-            annotationOverlay.appendChild(polygon);
-            
-            // Label hinzufügen
-            addLabel(centerX, centerY - 20, labelText, elementId, classPrefix);
-        }
-    }
     
     // Funktion zum Hinzufügen eines Labels
     function addLabel(x, y, text, parentId, classPrefix) {
