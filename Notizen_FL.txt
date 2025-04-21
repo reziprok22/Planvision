@@ -5,3 +5,5 @@
 Verbesserugen:
 - Fenster Überlappungen entfernen funktioniert noch nicht vollständig.
 - In der Tabelle Höhe und Breite von Fenster und Türen ausgeben.
+- Bei zu grossen Plänen erkennt es kaum Fenster in der App (hinweis geben, dass kleine Pläne besser funktionieren)
+- Evtl am preprocessing mit openCV rumschrauben, um Ergebnisse zu verbessern.

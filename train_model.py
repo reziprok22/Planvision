@@ -17,12 +17,13 @@ timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
 # Dataset-Klasse
 class WindowDataset(Dataset):
-    def __init__(self, image_folder, annotation_file, transform=None, max_size=1333):
+    def __init__(self, image_folder, annotation_file, transform=None, max_size=1333, use_preprocessing=False):
         with open(annotation_file, 'r') as f:
             self.annotations = json.load(f)
         self.image_folder = image_folder
         self.transform = transform
         self.max_size = max_size  # Max Größe für die längere Seite des Bildes
+        self.use_preprocessing = use_preprocessing  # Flag für Preprocessing
 
     def __len__(self):
         return len(self.annotations)
@@ -44,8 +45,18 @@ class WindowDataset(Dataset):
                 labels = torch.tensor([1], dtype=torch.int64)
                 return image, {"boxes": boxes, "labels": labels}
         
-        image = Image.open(img_path).convert("RGB")
-        
+        # Bild laden
+        if self.use_preprocessing:
+            # Lese Bilddaten als Bytes
+            with open(img_path, 'rb') as f:
+                image_bytes = f.read()
+            # Wende Preprocessing an
+            from image_preprocessing import preprocess_image # Importiere die Funktion
+            image = preprocess_image(image_bytes)
+        else:
+            # Original-Ladecode
+            image = Image.open(img_path).convert("RGB")
+                
         # Bild auf vernünftige Größe skalieren
         w, h = image.size
         scale = min(self.max_size / max(w, h), 1.0)  # Skalieren, wenn größer als max_size
@@ -124,7 +135,7 @@ def train_model(image_folder, annotation_file, num_epochs=10, batch_size=2,
     transform = transforms.Compose([transforms.ToTensor()])
     
     # Dataset und DataLoader einrichten
-    dataset = WindowDataset(image_folder, annotation_file, transform, max_size=max_image_size)
+    dataset = WindowDataset(image_folder, annotation_file, transform, max_size=max_image_size, use_preprocessing=True)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, 
                            collate_fn=lambda batch: tuple(zip(*batch)))
     

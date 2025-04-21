@@ -7,9 +7,10 @@ import io
 import os
 import numpy as np
 from utils import calculate_scale_factor, apply_nms
+from image_preprocessing import preprocess_image
 
 # Name des Fast R-CNN Model
-MODEL_PATH = 'fasterrcnn_model/fasterrcnn_model_2025-04-20-21-00-43.pth'
+MODEL_PATH = 'fasterrcnn_model/fasterrcnn_model_2025-04-21-20-04-38.pth'
 
 # Globale Variable für das Modell
 model = None
@@ -68,11 +69,14 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         # Modell laden
         model = load_model()
         model.to(device)
+
+        # Vorverarbeitung mit OpenCV
+        processed_image = preprocess_image(image_bytes)
         
         # Bild öffnen und transformieren
         transform = transforms.Compose([transforms.ToTensor()])
-        image = Image.open(io.BytesIO(image_bytes))
-        image_tensor = transform(image).unsqueeze(0).to(device)
+        # image = Image.open(io.BytesIO(image_bytes)) 
+        image_tensor = transform(processed_image).unsqueeze(0).to(device) # Image einsetzten, wenn ohne Vorverarbeitung mit OpenCV, gewünscht ist
         
         # Berechne den Umrechnungsfaktor
         pixels_per_meter = calculate_scale_factor(format_size, dpi, plan_scale)
