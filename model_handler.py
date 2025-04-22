@@ -10,7 +10,7 @@ from utils import calculate_scale_factor, apply_nms
 from image_preprocessing import preprocess_image
 
 # Name des Fast R-CNN Model
-MODEL_PATH = 'fasterrcnn_model/fasterrcnn_model_2025-04-21-20-04-38.pth'
+MODEL_PATH = 'fasterrcnn_model/fasterrcnn_model_2025-04-22-20-04-25.pth'
 
 # Globale Variable für das Modell
 model = None

@@ -1,9 +1,11 @@
+train model
 - Zu grosse Images können nicht trainiert werden, reduzieren, wenn möglich.
+- Im train_model windowdataset, use_preprocessing auf True stellen, um mit vorverarbeiteten Bilder zu trainieren (ist unklar, ob es besser wird, aus meiner Sicht)
 
 
-
-Verbesserugen:
-- Fenster Überlappungen entfernen funktioniert noch nicht vollständig.
+Webapp:
+- Fenster Überlappungen entfernen funktioniert noch nicht vollständig. Ist implementiert, funktioniert aber immer noch nicht. 
 - In der Tabelle Höhe und Breite von Fenster und Türen ausgeben.
 - Bei zu grossen Plänen erkennt es kaum Fenster in der App (hinweis geben, dass kleine Pläne besser funktionieren)
 - Evtl am preprocessing mit openCV rumschrauben, um Ergebnisse zu verbessern.
+

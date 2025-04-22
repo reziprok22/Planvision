@@ -232,8 +232,8 @@ def train_model(image_folder, annotation_file, num_epochs=10, batch_size=2,
 if __name__ == "__main__":
     # Hier kannst du Kommandozeilenargumente verarbeiten oder feste Werte verwenden
     success = train_model(
-        image_folder='Trainingsdaten/image',
-        annotation_file='Trainingsdaten/json/combined_labels_2025-04-20-18-37-53.json',
+        image_folder='trainings_data/image',
+        annotation_file='trainings_data/json_fenster/combined_labels_2025-04-22-20-03-21.json',
         batch_size=2,         # Reduziere Batch-Größe auf 2
         num_epochs=15,        # Mehr Epochen für besseres Training
         max_image_size=800,   # Begrenze die Bildgröße

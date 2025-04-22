@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fenster-Erkennungstool</title>
     <link rel="stylesheet" href="static/css/styles.css">
+    <link rel="stylesheet" href="static/css/editor.css">
 </head>
 <body>
     <div class="container">
@@ -126,7 +127,43 @@
                 </tbody>
             </table>
         </div>
+
+        <!-- Editor Button und Sektion -->
+        <button id="editorToggle" class="editor-button">Editor einschalten</button>
+                
+        <div class="editor-section" id="editorSection">
+            <h2>Fenster-Editor</h2>
+            <div class="editor-toolbar">
+                <div class="editor-group">
+                    <button id="addBoxBtn" class="editor-button">Objekt hinzufügen</button>
+                    <button id="editBoxBtn" class="editor-button">Objekt bearbeiten</button>
+                    <button id="deleteBoxBtn" class="editor-button">Objekt löschen</button>
+                </div>
+                
+                <div class="editor-group">
+                    <label for="objectTypeSelect">Objekttyp:</label>
+                    <select id="objectTypeSelect" class="editor-select">
+                        <option value="1">Fenster</option>
+                        <option value="2">Tür</option>
+                        <option value="3">Wand</option>
+                        <option value="4">Lukarne/Gaube</option>
+                        <option value="5">Dach</option>
+                        <option value="0">Andere</option>
+                    </select>
+                </div>
+                
+                <div class="editor-group editor-action-buttons">
+                    <button id="saveEditBtn" class="editor-button editor-action-button save-button">Speichern</button>
+                    <button id="cancelEditBtn" class="editor-button editor-action-button cancel-button">Abbrechen</button>
+                </div>
+            </div>
+            
+            <div class="editor-canvas-container">
+                <canvas id="editorCanvas"></canvas>
+            </div>
+        </div>
     </div>
     <script src="static/js/main.js"></script>
+    <script src="static/js/editor.js"></script>
 </body>
 </html>

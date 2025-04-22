@@ -1,0 +1,127 @@
+/* Styles für den Fenster-Editor */
+
+/* Editor-Container */
+.editor-section {
+    background: #f9f9f9;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-top: 20px;
+    display: none;
+}
+
+/* Editor-Werkzeugleiste */
+.editor-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+    align-items: center;
+}
+
+.editor-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: 20px;
+}
+
+.editor-group label {
+    margin-bottom: 0;
+    font-weight: bold;
+}
+
+/* Editor-Canvas */
+.editor-canvas-container {
+    position: relative;
+    max-width: 100%;
+    overflow: auto;
+    margin-top: 15px;
+    border: 1px solid #ddd;
+    background-color: #fff;
+}
+
+#editorCanvas {
+    display: none;
+    max-width: 100%;
+}
+
+/* Editor-Buttons */
+.editor-button {
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.editor-button:hover {
+    background-color: #3a80d2;
+}
+
+.editor-button.active {
+    background-color: #2a70c2;
+}
+
+/* Speichern/Abbrechen-Buttons */
+.editor-action-button {
+    padding: 8px 15px;
+    font-size: 15px;
+    margin-left: 10px;
+}
+
+.save-button {
+    background-color: #4CAF50;
+}
+
+.save-button:hover {
+    background-color: #45a049;
+}
+
+.cancel-button {
+    background-color: #f44336;
+}
+
+.cancel-button:hover {
+    background-color: #d32f2f;
+}
+
+/* Button für Editor Ein/Aus */
+#editorToggle {
+    margin-top: 15px;
+    background-color: #607d8b;
+}
+
+#editorToggle:hover {
+    background-color: #546e7a;
+}
+
+#editorToggle.active {
+    background-color: #455a64;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .editor-toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .editor-group {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    
+    .editor-action-buttons {
+        margin-top: 10px;
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .editor-action-button {
+        margin: 0;
+    }
+}

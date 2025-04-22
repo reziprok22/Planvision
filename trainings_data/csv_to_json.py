@@ -86,7 +86,7 @@ def convert_multiple_csv_to_single_json(input_folder, output_json_folder):
 
 # Pfade für den Eingabeordner mit CSV-Dateien und den Ausgabe-JSON-Ordner
 input_csv_folder = "csv"  # Ordner mit allen CSV-Dateien
-output_json_folder = "json"  # Ordner für die kombinierte JSON-Datei
+output_json_folder = "json_fenster"  # Ordner für die kombinierte JSON-Datei
 
 # Alle CSV-Dateien zu einer einzelnen JSON-Datei umwandeln
 convert_multiple_csv_to_single_json(input_csv_folder, output_json_folder)

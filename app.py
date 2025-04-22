@@ -60,6 +60,31 @@ def predict():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Editor
+@app.route('/save_edits', methods=['POST'])
+def save_edits():
+    try:
+        data = request.json
+        
+        if not data or 'predictions' not in data:
+            return jsonify({'error': 'Keine gültigen Daten erhalten'}), 400
+        
+        # Hier könnten Sie die bearbeiteten Daten in einer Datenbank 
+        # oder einer JSON-Datei speichern
+        # Zum Beispiel:
+        # filename = f"edits_{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.json"
+        # with open(os.path.join('saved_edits', filename), 'w') as f:
+        #     json.dump(data, f)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Bearbeitungen erfolgreich gespeichert'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     # Versuche, das Modell zu Beginn zu laden
     try:

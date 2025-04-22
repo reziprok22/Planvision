@@ -262,8 +262,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Funktion zur Anzeige der Ergebnisse
     function displayResults(responseData) {
-        // Globale Daten setzen
+        // Lokale Variable für main.js
         data = responseData;
+        
+        // Globale Variable für editor.js
+        window.data = JSON.parse(JSON.stringify(responseData));
         
         // Bild anzeigen
         const file = document.getElementById('file').files[0];
