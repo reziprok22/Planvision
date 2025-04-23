@@ -1,5 +1,5 @@
 /**
- * Verbesserter Editor zum Hinzufügen von Bounding Boxes
+ * Editor-Funktionen für Fenster-Erkennungstool
  */
 
 // Globale Variablen für den Editor
@@ -9,66 +9,97 @@ let selectedBoxIndex = -1;
 let newBox = null;
 let startX, startY;
 let editorOriginalState = null;
+let ctx = null;
+
+// Hauptelemente für Editor-Zugriff
+let uploadedImage, imageContainer, annotationOverlay, resultsSection;
 
 // Editor-Elemente
-const editorSection = document.getElementById('editorSection');
-const editorCanvas = document.getElementById('editorCanvas');
-const editorToggle = document.getElementById('editorToggle');
-const addBoxBtn = document.getElementById('addBoxBtn');
-const editBoxBtn = document.getElementById('editBoxBtn');
-const deleteBoxBtn = document.getElementById('deleteBoxBtn');
-const saveEditBtn = document.getElementById('saveEditBtn');
-const cancelEditBtn = document.getElementById('cancelEditBtn');
-const objectTypeSelect = document.getElementById('objectTypeSelect');
+let editorSection, editorCanvas, editorToggle, addBoxBtn, editBoxBtn, deleteBoxBtn;
+let saveEditBtn, cancelEditBtn, objectTypeSelect;
 
-// Editor-Toggle-Handler
-if (editorToggle) {
-    editorToggle.addEventListener('click', function() {
-        toggleEditor();
+// Funktionen aus der Hauptdatei, die der Editor benötigt
+let updateSummary, updateResultsTable, addAnnotation;
+
+// Initialisierungsfunktion, die beim Laden der Haupt-JS-Datei aufgerufen wird
+function initEditor(elements) {
+    // Haupt-UI-Elemente übernehmen
+    uploadedImage = elements.uploadedImage;
+    imageContainer = elements.imageContainer;
+    annotationOverlay = elements.annotationOverlay;
+    resultsSection = elements.resultsSection;
+    
+    // Funktionen aus der Hauptdatei übernehmen
+    updateSummary = elements.updateSummary;
+    updateResultsTable = elements.updateResultsTable;
+    addAnnotation = elements.addAnnotation;
+    
+    // Editor-Elemente übernehmen
+    editorSection = document.getElementById('editorSection');
+    editorCanvas = document.getElementById('editorCanvas');
+    editorToggle = document.getElementById('editorToggle');
+    addBoxBtn = document.getElementById('addBoxBtn');
+    editBoxBtn = document.getElementById('editBoxBtn');
+    deleteBoxBtn = document.getElementById('deleteBoxBtn');
+    saveEditBtn = document.getElementById('saveEditBtn');
+    cancelEditBtn = document.getElementById('cancelEditBtn');
+    objectTypeSelect = document.getElementById('objectTypeSelect');
+    
+    // Überprüfen, ob alle Editor-Elemente vorhanden sind
+    console.log("Editor-Elemente geladen:", {
+        editorSection: !!editorSection,
+        editorCanvas: !!editorCanvas,
+        editorToggle: !!editorToggle
     });
-}
-
-// Event-Listener für Modus-Buttons
-if (addBoxBtn) {
-    addBoxBtn.addEventListener('click', function() {
-        setEditorMode('add');
-    });
-}
-
-if (editBoxBtn) {
-    editBoxBtn.addEventListener('click', function() {
-        setEditorMode('edit');
-    });
-}
-
-if (deleteBoxBtn) {
-    deleteBoxBtn.addEventListener('click', function() {
-        setEditorMode('delete');
-    });
-}
-
-if (saveEditBtn) {
-    saveEditBtn.addEventListener('click', function() {
-        saveEditorChanges();
-    });
-}
-
-if (cancelEditBtn) {
-    cancelEditBtn.addEventListener('click', function() {
-        cancelEditorChanges();
-    });
-}
-
-// Canvas Event-Listener
-if (editorCanvas) {
-    editorCanvas.addEventListener('mousedown', handleMouseDown);
-    editorCanvas.addEventListener('mousemove', handleMouseMove);
-    editorCanvas.addEventListener('mouseup', handleMouseUp);
-    editorCanvas.addEventListener('click', handleClick);
+    
+    // Event-Listener hinzufügen
+    if (editorToggle) {
+        editorToggle.addEventListener('click', toggleEditor);
+        console.log("Editor-Toggle-Event-Listener hinzugefügt");
+    }
+    
+    // Weitere Event-Listener hinzufügen für den Editor
+    if (addBoxBtn) addBoxBtn.addEventListener('click', () => setEditorMode('add'));
+    if (editBoxBtn) editBoxBtn.addEventListener('click', () => setEditorMode('edit'));
+    if (deleteBoxBtn) deleteBoxBtn.addEventListener('click', () => setEditorMode('delete'));
+    if (saveEditBtn) saveEditBtn.addEventListener('click', saveEditorChanges);
+    if (cancelEditBtn) cancelEditBtn.addEventListener('click', cancelEditorChanges);
+    
+    // Canvas Event-Listener
+    if (editorCanvas) {
+        editorCanvas.addEventListener('mousedown', handleMouseDown);
+        editorCanvas.addEventListener('mousemove', handleMouseMove);
+        editorCanvas.addEventListener('mouseup', handleMouseUp);
+        editorCanvas.addEventListener('click', handleClick);
+        console.log("Canvas-Event-Listener hinzugefügt");
+    }
+    
+    // Event-Listener für Objekttyp-Änderung
+    if (objectTypeSelect) {
+        objectTypeSelect.addEventListener('change', function() {
+            if (selectedBoxIndex >= 0) {
+                const selectedType = parseInt(objectTypeSelect.value);
+                window.data.predictions[selectedBoxIndex].label = selectedType;
+                
+                // Label-Name aktualisieren
+                switch (selectedType) {
+                    case 1: window.data.predictions[selectedBoxIndex].label_name = "Fenster"; break;
+                    case 2: window.data.predictions[selectedBoxIndex].label_name = "Tür"; break;
+                    case 3: window.data.predictions[selectedBoxIndex].label_name = "Wand"; break;
+                    case 4: window.data.predictions[selectedBoxIndex].label_name = "Lukarne"; break;
+                    case 5: window.data.predictions[selectedBoxIndex].label_name = "Dach"; break;
+                    default: window.data.predictions[selectedBoxIndex].label_name = "Andere";
+                }
+                
+                redrawCanvas();
+            }
+        });
+    }
 }
 
 // Funktion zum Ein-/Ausschalten des Editors
 function toggleEditor() {
+    console.log("Toggle-Editor aufgerufen, aktueller Status:", isEditorActive);
     isEditorActive = !isEditorActive;
     
     if (isEditorActive) {
@@ -78,12 +109,15 @@ function toggleEditor() {
         editorSection.style.display = 'block';
         
         // Aktuelle Ergebnisse sichern
-        editorOriginalState = JSON.parse(JSON.stringify(data.predictions));
+        if (window.data && window.data.predictions) {
+            console.log("Originaldaten sichern, Vorhersagen:", window.data.predictions.length);
+            editorOriginalState = JSON.parse(JSON.stringify(window.data.predictions));
+        } else {
+            console.warn("Keine Daten gefunden!");
+            editorOriginalState = [];
+        }
         
         // Canvas initialisieren
-        const uploadedImage = document.getElementById('uploadedImage');
-        const ctx = editorCanvas.getContext('2d');
-        
         if (uploadedImage.src) {
             // Sicherstellen, dass das Bild geladen ist
             if (uploadedImage.complete) {
@@ -112,19 +146,21 @@ function toggleEditor() {
         newBox = null;
         
         // Ergebnisanzeige wieder einblenden
-        document.getElementById('resultsSection').style.display = 'block';
+        resultsSection.style.display = 'block';
         editorCanvas.style.display = 'none';
     }
 }
 
 // Editor initialisieren
 function initializeEditor(image) {
+    console.log("Editor initialisieren mit Bild:", image.width, "x", image.height);
+    
     // Bildgröße anpassen
     editorCanvas.width = image.width;
     editorCanvas.height = image.height;
     
     // Context abrufen
-    const ctx = editorCanvas.getContext('2d');
+    ctx = editorCanvas.getContext('2d');
     
     // Bild auf den Canvas zeichnen
     ctx.drawImage(image, 0, 0, editorCanvas.width, editorCanvas.height);
@@ -133,7 +169,7 @@ function initializeEditor(image) {
     setEditorMode('view');
     
     // Ergebnisanzeige ausblenden
-    document.getElementById('resultsSection').style.display = 'none';
+    resultsSection.style.display = 'none';
     
     // Canvas einblenden
     editorCanvas.style.display = 'block';
@@ -144,6 +180,7 @@ function initializeEditor(image) {
 
 // Editor-Modus setzen
 function setEditorMode(mode) {
+    console.log("Editor-Modus setzen auf:", mode);
     currentMode = mode;
     
     // UI-Buttons aktualisieren
@@ -176,13 +213,15 @@ function setEditorMode(mode) {
 
 // Canvas neu zeichnen
 function redrawCanvas() {
-    const ctx = editorCanvas.getContext('2d');
+    if (!ctx) {
+        console.warn("Kein Canvas-Kontext verfügbar!");
+        return;
+    }
     
     // Canvas löschen
     ctx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
     
     // Bild neu zeichnen
-    const uploadedImage = document.getElementById('uploadedImage');
     ctx.drawImage(uploadedImage, 0, 0, editorCanvas.width, editorCanvas.height);
     
     // Alle Boxen zeichnen
@@ -191,12 +230,17 @@ function redrawCanvas() {
 
 // Alle Boxen zeichnen
 function drawAllBoxes() {
-    if (!data || !data.predictions) return;
+    if (!ctx) return;
     
-    const ctx = editorCanvas.getContext('2d');
+    // Daten überprüfen
+    if (!window.data || !window.data.predictions || window.data.predictions.length === 0) {
+        console.warn("Keine Daten für das Zeichnen der Boxen verfügbar!");
+        return;
+    }
+    
     const scale = editorCanvas.width / uploadedImage.naturalWidth;
     
-    data.predictions.forEach((pred, index) => {
+    window.data.predictions.forEach((pred, index) => {
         const isSelected = index === selectedBoxIndex;
         
         if (pred.box || pred.bbox) {
@@ -253,6 +297,8 @@ function handleMouseDown(event) {
     startX = event.clientX - rect.left;
     startY = event.clientY - rect.top;
     
+    console.log("Mouse down bei:", startX, startY);
+    
     // Neue Box initialisieren
     newBox = {
         x: startX,
@@ -287,6 +333,8 @@ function handleMouseUp(event) {
     const endX = event.clientX - rect.left;
     const endY = event.clientY - rect.top;
     
+    console.log("Mouse up bei:", endX, endY);
+    
     // Negative Dimensionen korrigieren
     let x1 = Math.min(startX, endX);
     let y1 = Math.min(startY, endY);
@@ -295,6 +343,7 @@ function handleMouseUp(event) {
     
     // Minimale Box-Größe erzwingen
     if (x2 - x1 < 10 || y2 - y1 < 10) {
+        console.log("Box zu klein, ignoriere");
         newBox = null;
         redrawCanvas();
         return;
@@ -334,8 +383,10 @@ function handleMouseUp(event) {
         default: newPrediction.label_name = "Andere";
     }
     
+    console.log("Neue Vorhersage hinzufügen:", newPrediction);
+    
     // Zu den Daten hinzufügen
-    data.predictions.push(newPrediction);
+    window.data.predictions.push(newPrediction);
     
     // Zurücksetzen
     newBox = null;
@@ -349,19 +400,23 @@ function handleClick(event) {
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         
+        console.log("Klick bei:", x, y, "im Modus:", currentMode);
+        
         // Box an der Position finden
         const boxIndex = findBoxAtPosition(x, y);
         
         if (boxIndex >= 0) {
+            console.log("Box gefunden bei Index:", boxIndex);
+            
             if (currentMode === 'delete') {
                 // Box löschen
-                data.predictions.splice(boxIndex, 1);
+                window.data.predictions.splice(boxIndex, 1);
                 redrawCanvas();
             } else if (currentMode === 'edit') {
                 // Box auswählen
                 selectedBoxIndex = boxIndex;
                 // Objekttyp in der Auswahlliste setzen
-                objectTypeSelect.value = data.predictions[boxIndex].label;
+                objectTypeSelect.value = window.data.predictions[boxIndex].label;
                 redrawCanvas();
             }
         } else if (currentMode === 'edit') {
@@ -374,12 +429,12 @@ function handleClick(event) {
 
 // Box an einer Position finden
 function findBoxAtPosition(x, y) {
-    if (!data || !data.predictions) return -1;
+    if (!window.data || !window.data.predictions) return -1;
     
     const scale = editorCanvas.width / uploadedImage.naturalWidth;
     
-    for (let i = data.predictions.length - 1; i >= 0; i--) {
-        const pred = data.predictions[i];
+    for (let i = window.data.predictions.length - 1; i >= 0; i--) {
+        const pred = window.data.predictions[i];
         if (!pred.box && !pred.bbox) continue;
         
         const [x1, y1, x2, y2] = pred.box || pred.bbox;
@@ -417,32 +472,12 @@ function calculateArea(box) {
     return widthMeters * heightMeters;
 }
 
-// Änderung des Objekttyps für die ausgewählte Box
-if (objectTypeSelect) {
-    objectTypeSelect.addEventListener('change', function() {
-        if (selectedBoxIndex >= 0) {
-            const selectedType = parseInt(objectTypeSelect.value);
-            data.predictions[selectedBoxIndex].label = selectedType;
-            
-            // Label-Name aktualisieren
-            switch (selectedType) {
-                case 1: data.predictions[selectedBoxIndex].label_name = "Fenster"; break;
-                case 2: data.predictions[selectedBoxIndex].label_name = "Tür"; break;
-                case 3: data.predictions[selectedBoxIndex].label_name = "Wand"; break;
-                case 4: data.predictions[selectedBoxIndex].label_name = "Lukarne"; break;
-                case 5: data.predictions[selectedBoxIndex].label_name = "Dach"; break;
-                default: data.predictions[selectedBoxIndex].label_name = "Andere";
-            }
-            
-            redrawCanvas();
-        }
-    });
-}
-
 // Änderungen speichern
 function saveEditorChanges() {
+    console.log("Speichere Editor-Änderungen");
+    
     // Aktualisiere die Ergebnis-Tabelle und Zusammenfassung
-    updateResults();
+    updateEditorResults();
     
     // Editor ausschalten
     toggleEditor();
@@ -453,9 +488,11 @@ function saveEditorChanges() {
 
 // Änderungen verwerfen
 function cancelEditorChanges() {
+    console.log("Verwerfe Editor-Änderungen");
+    
     // Zurück zu den Originaldaten
     if (editorOriginalState) {
-        data.predictions = JSON.parse(JSON.stringify(editorOriginalState));
+        window.data.predictions = JSON.parse(JSON.stringify(editorOriginalState));
     }
     
     // Editor ausschalten
@@ -463,7 +500,9 @@ function cancelEditorChanges() {
 }
 
 // Ergebnisse aktualisieren
-function updateResults() {
+function updateEditorResults() {
+    console.log("Aktualisiere Ergebnisse");
+    
     // Neuberechnung der Anzahl und Flächen
     let counts = {
         fenster: 0,
@@ -484,7 +523,7 @@ function updateResults() {
     };
     
     // Zählen und Flächen summieren
-    data.predictions.forEach(pred => {
+    window.data.predictions.forEach(pred => {
         switch (pred.label) {
             case 1:
                 counts.fenster++;
@@ -513,132 +552,43 @@ function updateResults() {
     });
     
     // Globale Daten aktualisieren
-    data.count = counts;
-    data.total_area = areas;
+    window.data.count = counts;
+    window.data.total_area = areas;
     
-    // Tabelle und Visualisierungen aktualisieren
-    updateResultsDisplay();
-}
+    // Anzeige aktualisieren
+    // Prüfen, ob die Funktionen existieren und aufrufen
+    if (typeof updateSummary === 'function') {
+        updateSummary();
+    } else {
+        console.error("updateSummary ist keine Funktion oder nicht definiert");
+    }
 
-// Tabelle und Visualisierungen aktualisieren
-function updateResultsDisplay() {
-    // Zusammenfassung aktualisieren
-    const summary = document.getElementById('summary');
-    let summaryHtml = '';
-    
-    if (data.count.fenster > 0) {
-        summaryHtml += `<p>Gefundene Fenster: <strong>${data.count.fenster}</strong> (${data.total_area.fenster.toFixed(2)} m²)</p>`;
+    if (typeof updateResultsTable === 'function') {
+        updateResultsTable();
+    } else {
+        console.error("updateResultsTable ist keine Funktion oder nicht definiert");
     }
-    if (data.count.tuer > 0) {
-        summaryHtml += `<p>Gefundene Türen: <strong>${data.count.tuer}</strong> (${data.total_area.tuer.toFixed(2)} m²)</p>`;
-    }
-    if (data.count.wand > 0) {
-        summaryHtml += `<p>Gefundene Wände: <strong>${data.count.wand}</strong> (${data.total_area.wand.toFixed(2)} m²)</p>`;
-    }
-    if (data.count.lukarne > 0) {
-        summaryHtml += `<p>Gefundene Lukarnen: <strong>${data.count.lukarne}</strong> (${data.total_area.lukarne.toFixed(2)} m²)</p>`;
-    }
-    if (data.count.dach > 0) {
-        summaryHtml += `<p>Gefundene Dächer: <strong>${data.count.dach}</strong> (${data.total_area.dach.toFixed(2)} m²)</p>`;
-    }
-    if (data.count.other > 0) {
-        summaryHtml += `<p>Andere Objekte: <strong>${data.count.other}</strong> (${data.total_area.other.toFixed(2)} m²)</p>`;
-    }
-    
-    summary.innerHTML = summaryHtml;
-    
-    // Tabelle aktualisieren
-    const resultsBody = document.getElementById('resultsBody');
-    resultsBody.innerHTML = '';
-    
-    data.predictions.forEach((pred, index) => {
-        const row = document.createElement('tr');
-        // Label-Name aus dem Label oder einen Standardwert verwenden
-        const className = pred.label_name || 
-                        (pred.label === 1 ? "Fenster" : 
-                         pred.label === 2 ? "Tür" : 
-                         pred.label === 3 ? "Wand" : 
-                         pred.label === 4 ? "Lukarne" : 
-                         pred.label === 5 ? "Dach" : "Andere");
         
-        row.innerHTML = `
-            <td>${index + 1}</td>
-            <td>${className}</td>
-            <td>${pred.type || (pred.polygon ? "Polygon" : "Rechteck")}</td>
-            <td>${(pred.score * 100).toFixed(1)}%</td>
-            <td>${pred.area.toFixed(2)} m²</td>
-        `;
-        resultsBody.appendChild(row);
-        
-        // Highlight-Handler hinzufügen, falls die entsprechende Funktion vorhanden ist
-        if (typeof highlightBox === 'function') {
-            const elementId = `annotation-${index}`;
-            row.addEventListener('mouseover', () => highlightBox(elementId, true));
-            row.addEventListener('mouseout', () => highlightBox(elementId, false));
-        }
-    });
-    
-    // Alle Bounding Boxes auf dem Bild aktualisieren
-    updateBoxVisualization();
-}
-
-// Bounding Boxes auf dem Bild aktualisieren
-function updateBoxVisualization() {
-    // Alle bestehenden Annotationen entfernen
-    const imageContainer = document.getElementById('imageContainer');
+    // Annotationen aktualisieren
+    // Alle Annotationen entfernen
     const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
     boxes.forEach(box => box.remove());
     
-    const annotationOverlay = document.getElementById('annotationOverlay');
+    // SVG leeren
     while (annotationOverlay.firstChild) {
         annotationOverlay.removeChild(annotationOverlay.firstChild);
     }
     
-    // Skalierungsfaktor berechnen
-    const scale = uploadedImage.width / uploadedImage.naturalWidth;
-    
-    // Neue Boxen hinzufügen
-    data.predictions.forEach((pred, index) => {
-        if (pred.box || pred.bbox) {
-            const [x1, y1, x2, y2] = pred.box || pred.bbox;
-            
-            // Skalierte Koordinaten
-            const scaledX1 = x1 * scale;
-            const scaledY1 = y1 * scale;
-            const scaledWidth = (x2 - x1) * scale;
-            const scaledHeight = (y2 - y1) * scale;
-            
-            // Klassen-Präfix basierend auf der Kategorie
-            let classPrefix;
-            switch(pred.label) {
-                case 1: classPrefix = 'fenster'; break;
-                case 2: classPrefix = 'tuer'; break;
-                case 3: classPrefix = 'wand'; break;
-                case 4: classPrefix = 'lukarne'; break;
-                case 5: classPrefix = 'dach'; break;
-                default: classPrefix = 'other';
-            }
-            
-            // Box hinzufügen
-            const box = document.createElement('div');
-            box.className = `bounding-box ${classPrefix}-box`;
-            box.id = `annotation-${index}`;
-            box.style.left = `${scaledX1}px`;
-            box.style.top = `${scaledY1}px`;
-            box.style.width = `${scaledWidth}px`;
-            box.style.height = `${scaledHeight}px`;
-            imageContainer.appendChild(box);
-            
-            // Label hinzufügen
-            const label = document.createElement('div');
-            label.className = `box-label ${classPrefix}-label`;
-            label.id = `label-annotation-${index}`;
-            label.textContent = `#${index + 1}: ${pred.area.toFixed(2)} m²`;
-            label.style.left = `${scaledX1}px`;
-            label.style.top = `${scaledY1 - 20}px`;
-            imageContainer.appendChild(label);
-        } else if (pred.polygon) {
-            // Polygon-Unterstützung würde hier implementiert
-        }
+    // Neu hinzufügen
+    window.data.predictions.forEach((pred, index) => {
+        addAnnotation(pred, index);
     });
+    
+    // Simuliere ein Resize-Event nach kurzer Verzögerung, um Positionierungsprobleme zu beheben
+    setTimeout(function() {
+        window.dispatchEvent(new Event('resize'));
+    }, 200);
 }
+
+// Exportiere die Editor-Initialisierungsfunktion
+window.initEditor = initEditor;

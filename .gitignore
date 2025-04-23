@@ -1,21 +1,20 @@
 # .gitignore kann nur Files ignorieren, die nicht getrackt werden.
 # Falls ein File getrackt wird, dann mit "git rm <file>" untracken
 
+# Ordner ignorieren
 __pycache__
 env
 Archiv
+debug
 fasterrcnn_model
-Annotationas_aus_PDF
-trainings_data/image
-trainings_data/csv
-trainings_data/image
-trainings_data/json_fenster
-trainings_data/json_wand
-trainings_data/makesense_ai
+trainings_data
+
+# Einzelne Datei ignorieren
 Notizen_FL.txt
 requirements.txt
 
-
+# Alle temporären Dateien ignorieren
+*.tmp
 
 
 
