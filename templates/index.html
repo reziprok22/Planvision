@@ -5,165 +5,162 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fenster-Erkennungstool</title>
     <link rel="stylesheet" href="static/css/styles.css">
-    <link rel="stylesheet" href="static/css/editor.css">
 </head>
 <body>
-    <div class="container">
+    <header>
         <h1>Fenster-Erkennungstool</h1>
-        
-        <div class="upload-section">
-            <h2>Plan hochladen</h2>
-            <form id="uploadForm">
-                <div class="form-group">
-                    <label for="file">Plan-Datei (PDF oder Bild):</label>
-                    <input type="file" id="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>Format:</label>
-                    <select id="formatSelect" name="format">
-                        <option value="A4" selected>A4 (210 × 297 mm)</option>
-                        <option value="A3">A3 (297 × 420 mm)</option>
-                        <option value="A2">A2 (420 × 594 mm)</option>
-                        <option value="A1">A1 (594 × 841 mm)</option>
-                        <option value="A0">A0 (841 × 1189 mm)</option>
-                        <option value="custom">Benutzerdefiniert</option>
-                    </select>
-                </div>
-                <div id="customFormatFields" style="display: none;">
+    </header>
+    
+    <div class="main-container">
+        <!-- Linke Spalte -->
+        <div class="left-column">
+            <div class="upload-section">
+                <h2>Plan hochladen</h2>
+                <form id="uploadForm">
                     <div class="form-group">
-                        <label for="formatWidth">Breite (mm):</label>
-                        <input type="number" id="formatWidth" name="format_width" value="210" min="1">
+                        <label for="file">Plan-Datei (PDF oder Bild):</label>
+                        <input type="file" id="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
                     </div>
+                    
                     <div class="form-group">
-                        <label for="formatHeight">Höhe (mm):</label>
-                        <input type="number" id="formatHeight" name="format_height" value="297" min="1">
+                        <label>Format:</label>
+                        <select id="formatSelect" name="format">
+                            <option value="A4" selected>A4 (210 × 297 mm)</option>
+                            <option value="A3">A3 (297 × 420 mm)</option>
+                            <option value="A2">A2 (420 × 594 mm)</option>
+                            <option value="A1">A1 (594 × 841 mm)</option>
+                            <option value="A0">A0 (841 × 1189 mm)</option>
+                            <option value="custom">Benutzerdefiniert</option>
+                        </select>
                     </div>
+                    <div id="customFormatFields" style="display: none;">
+                        <div class="form-group">
+                            <label for="formatWidth">Breite (mm):</label>
+                            <input type="number" id="formatWidth" name="format_width" value="210" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="formatHeight">Höhe (mm):</label>
+                            <input type="number" id="formatHeight" name="format_height" value="297" min="1">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="dpi">DPI (Auflösung):</label>
+                        <input type="number" id="dpi" name="dpi" value="300" min="72" max="600">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="planScale">Massstab (1:X):</label>
+                        <input type="number" id="planScale" name="plan_scale" value="100" min="1">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="threshold">Erkennungsschwellenwert (0-1):</label>
+                        <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05">
+                    </div>
+                    
+                    <button type="submit" id="analyzeBtn">Plan analysieren</button>
+                </form>
+                <div class="loader" id="loader"></div>
+                <div id="errorMessage"></div>
+            </div>
+            
+            <div class="results-table-section" id="resultsTableSection" style="display: none;">
+                <div class="summary" id="summary">
+                    <!-- Zusammenfassung wird hier angezeigt -->
                 </div>
                 
-                <div class="form-group">
-                    <label for="dpi">DPI (Auflösung):</label>
-                    <input type="number" id="dpi" name="dpi" value="300" min="72" max="600">
-                </div>
-                
-                <div class="form-group">
-                    <label for="planScale">Massstab (1:X):</label>
-                    <input type="number" id="planScale" name="plan_scale" value="100" min="1">
-                </div>
-                
-                <div class="form-group">
-                    <label for="threshold">Erkennungsschwellenwert (0-1):</label>
-                    <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05">
-                </div>
-                
-                <button type="submit" id="analyzeBtn">Plan analysieren</button>
-            </form>
-            <div class="loader" id="loader"></div>
-            <div id="errorMessage"></div>
+                <table id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>Nr.</th>
+                            <th>Klasse</th>
+                            <th>Typ</th>
+                            <th>Wahrsch.</th>
+                            <th>Fläche (m²)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                        <!-- Ergebniszeilen werden hier durch JavaScript hinzugefügt -->
+                    </tbody>
+                </table>
+            </div>
         </div>
         
-        <div class="results-section" id="resultsSection" style="display: none;">
-            <h2>Erkennungsergebnisse</h2>
-            
-            <div class="annotation-controls">
-                <button class="toggle-button active" id="toggleFenster">Fenster anzeigen</button>
-                <button class="toggle-button active" id="toggleTuer">Türen anzeigen</button>
-                <button class="toggle-button active" id="toggleWand">Wände anzeigen</button>
-                <button class="toggle-button active" id="toggleLukarne">Lukarnen anzeigen</button>
-                <button class="toggle-button active" id="toggleDach">Dächer anzeigen</button>
-            </div>
-            
-            <div class="legend">
-                <div class="legend-item">
-                    <div class="legend-color window-color"></div>
-                    <span>Fenster (Kategorie 1)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color door-color"></div>
-                    <span>Tür (Kategorie 2)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color wall-color"></div>
-                    <span>Wand (Kategorie 3)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color lukarne-color"></div>
-                    <span>Lukarne (Kategorie 4)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color roof-color"></div>
-                    <span>Dach (Kategorie 5)</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color other-color"></div>
-                    <span>Andere (Kategorie 0)</span>
-                </div>
-            </div>
-            
-            <div id="imageContainer">
-                <img id="uploadedImage" src="" alt="Hochgeladener Plan">
-                <!-- SVG Container für Polygone -->
-                <svg id="annotationOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></svg>
-                <!-- Bounding Boxes werden hier durch JavaScript hinzugefügt -->
-            </div>
-            
-            <div class="summary" id="summary">
-                <!-- Zusammenfassung wird hier angezeigt -->
-            </div>
-            
-            <table id="resultsTable">
-                <thead>
-                    <tr>
-                        <th>Nr.</th>
-                        <th>Klasse</th>
-                        <th>Typ</th>
-                        <th>Wahrscheinlichkeit</th>
-                        <th>Fläche (m²)</th>
-                        <th>Details</th>
-                    </tr>
-                </thead>
-                <tbody id="resultsBody">
-                    <!-- Ergebniszeilen werden hier durch JavaScript hinzugefügt -->
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Editor Button und Sektion -->
-        <button id="editorToggle" class="editor-button">Editor einschalten</button>
-                
-        <div class="editor-section" id="editorSection">
-            <h2>Fenster-Editor</h2>
-            <div class="editor-toolbar">
-                <div class="editor-group">
-                    <button id="addBoxBtn" class="editor-button">Objekt hinzufügen</button>
-                    <button id="editBoxBtn" class="editor-button">Objekt bearbeiten</button>
-                    <button id="deleteBoxBtn" class="editor-button">Objekt löschen</button>
+        <!-- Rechte Spalte -->
+        <div class="right-column">
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <div class="results-header">
+                    <h2>Erkennungsergebnisse</h2>
+                    <button id="editorToggle" class="editor-toggle">Editor einschalten</button>
                 </div>
                 
-                <div class="editor-group">
-                    <label for="objectTypeSelect">Objekttyp:</label>
-                    <select id="objectTypeSelect" class="editor-select">
-                        <option value="1">Fenster</option>
+                <div class="annotation-controls">
+                    <button class="toggle-button active" id="toggleFenster">Fenster</button>
+                    <button class="toggle-button active" id="toggleTuer">Türen</button>
+                    <button class="toggle-button active" id="toggleWand">Wände</button>
+                    <button class="toggle-button active" id="toggleLukarne">Lukarnen</button>
+                    <button class="toggle-button active" id="toggleDach">Dächer</button>
+                </div>
+                
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-color window-color"></div>
+                        <span>Fenster (1)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color door-color"></div>
+                        <span>Tür (2)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color wall-color"></div>
+                        <span>Wand (3)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color lukarne-color"></div>
+                        <span>Lukarne (4)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color roof-color"></div>
+                        <span>Dach (5)</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-color other-color"></div>
+                        <span>Andere (0)</span>
+                    </div>
+                </div>
+                
+                <div id="imageContainer">
+                    <img id="uploadedImage" src="" alt="Hochgeladener Plan">
+                    <!-- SVG Container für Polygone -->
+                    <svg id="annotationOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></svg>
+                    <!-- Bounding Boxes werden hier durch JavaScript hinzugefügt -->
+                </div>
+            </div>
+            
+            <div class="editor-section" id="editorSection" style="display: none;">
+                <div class="editor-controls">
+                    <button id="addBoxBtn" class="editor-button">Hinzufügen</button>
+                    <button id="editBoxBtn" class="editor-button">Bearbeiten</button>
+                    <button id="deleteBoxBtn" class="editor-button">Löschen</button>
+                    <select id="objectTypeSelect" class="object-type-select">
+                        <option value="0">Andere</option>
+                        <option value="1" selected>Fenster</option>
                         <option value="2">Tür</option>
                         <option value="3">Wand</option>
-                        <option value="4">Lukarne/Gaube</option>
+                        <option value="4">Lukarne</option>
                         <option value="5">Dach</option>
-                        <option value="0">Andere</option>
                     </select>
+                    <div class="editor-actions">
+                        <button id="saveEditBtn" class="save-button">Speichern</button>
+                        <button id="cancelEditBtn" class="cancel-button">Abbrechen</button>
+                    </div>
                 </div>
-                
-                <div class="editor-group editor-action-buttons">
-                    <button id="saveEditBtn" class="editor-button editor-action-button save-button">Speichern</button>
-                    <button id="cancelEditBtn" class="editor-button editor-action-button cancel-button">Abbrechen</button>
-                </div>
-            </div>
-            
-            <div class="editor-canvas-container">
-                <canvas id="editorCanvas"></canvas>
+                <canvas id="editorCanvas" style="display: none;"></canvas>
             </div>
         </div>
     </div>
+    
     <script src="static/js/main.js"></script>
-    <script src="static/js/editor.js"></script>
 </body>
 </html>

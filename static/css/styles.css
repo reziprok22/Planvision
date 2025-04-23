@@ -1,28 +1,70 @@
 /* Grundlegende Stile */
 body {
     font-family: Arial, sans-serif;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
+    margin: 0;
+    padding: 0;
     line-height: 1.6;
+    background-color: #f5f5f5;
+}
+
+header {
+    background-color: #4a90e2;
+    color: white;
+    padding: 1rem;
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
 }
 
 h1, h2 {
-    color: #333;
+    margin: 0;
+    color: inherit;
 }
 
-.container {
+h2 {
+    margin-bottom: 1rem;
+    font-size: 1.3rem;
+}
+
+/* Hauptcontainer für zweispaltiges Layout */
+.main-container {
+    display: flex;
+    width: 100%;
+    max-width: 100%;
+    min-height: calc(100vh - 80px);
+    padding: 20px;
+    box-sizing: border-box;
+    gap: 20px;
+}
+
+/* Spalten */
+.left-column {
+    flex: 0 0 350px;
     display: flex;
     flex-direction: column;
     gap: 20px;
 }
 
+.right-column {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    min-width: 0; /* Verhindert Überlauf bei großen Bildern */
+}
+
 /* Abschnitte */
-.upload-section, .results-section {
-    background: #f9f9f9;
+.upload-section, .results-section, .results-table-section, .editor-section {
+    background: white;
     padding: 20px;
     border-radius: 5px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
 }
 
 /* Formular-Elemente */
@@ -34,6 +76,7 @@ label {
     display: block;
     margin-bottom: 5px;
     font-weight: bold;
+    font-size: 0.9rem;
 }
 
 input, select {
@@ -45,17 +88,42 @@ input, select {
 }
 
 button {
-    background: #4CAF50;
+    background: #4a90e2;
     color: white;
     border: none;
-    padding: 10px 15px;
+    padding: 8px 15px;
     cursor: pointer;
     border-radius: 4px;
-    font-size: 16px;
+    font-size: 14px;
 }
 
 button:hover {
+    background: #357abd;
+}
+
+/* Spezielle Buttons */
+#analyzeBtn {
+    background: #4CAF50;
+    width: 100%;
+    padding: 10px;
+    font-size: 16px;
+    margin-top: 10px;
+}
+
+#analyzeBtn:hover {
     background: #45a049;
+}
+
+.editor-toggle {
+    background: #f0ad4e;
+}
+
+.editor-toggle:hover {
+    background: #ec971f;
+}
+
+.editor-toggle.active {
+    background: #ec971f;
 }
 
 /* Bild-Container und Annotation-Stile */
@@ -63,11 +131,17 @@ button:hover {
     position: relative;
     max-width: 100%;
     overflow: auto;
-    margin-top: 20px;
+    margin-top: 10px;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
+    min-height: 300px;
+    display: flex;
+    justify-content: center;
 }
 
 #uploadedImage {
     max-width: 100%;
+    max-height: 75vh;
     display: block;
 }
 
@@ -97,7 +171,6 @@ button:hover {
     z-index: 10;
 }
 
-
 /* Fenster-Stile */
 .fenster-box, .fenster-annotation {
     border-color: blue;
@@ -124,14 +197,15 @@ button:hover {
 
 /* Wand-Stile */
 .wand-box, .wand-annotation {
-    border-color: yellow;
-    stroke: yellow;
+    border-color: #d4d638;
+    stroke: #d4d638;
     background-color: rgba(212, 214, 56, 0.1);
     fill: rgba(212, 214, 56, 0.1);
 }
 
 .wand-label {
     background-color: rgba(212, 214, 56, 0.8);
+    color: #333;
 }
 
 /* Dach-Stile */
@@ -162,7 +236,8 @@ button:hover {
 table {
     width: 100%;
     border-collapse: collapse;
-    margin-top: 20px;
+    margin-top: 10px;
+    font-size: 0.9rem;
 }
 
 th, td {
@@ -173,14 +248,21 @@ th, td {
 
 th {
     background-color: #f2f2f2;
+    position: sticky;
+    top: 0;
 }
 
 tr:nth-child(even) {
     background-color: #f9f9f9;
 }
 
+.results-table-section {
+    max-height: calc(100vh - 450px);
+    overflow-y: auto;
+}
+
 .summary {
-    margin-top: 20px;
+    margin-bottom: 15px;
     font-weight: bold;
 }
 
@@ -209,46 +291,52 @@ tr:nth-child(even) {
 
 /* Steuerelemente für Annotationen */
 .annotation-controls {
-    margin-top: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
     margin-bottom: 15px;
 }
 
 .toggle-button {
-    background: #4a90e2;
-    color: white;
+    background: #e9ecef;
+    color: #333;
     border: none;
     padding: 5px 10px;
-    margin-right: 10px;
     cursor: pointer;
     border-radius: 4px;
+    flex: 1;
+    min-width: 80px;
+    max-width: 120px;
 }
 
 .toggle-button.active {
-    background: #2a70c2;
+    background: #4a90e2;
+    color: white;
 }
 
 /* Legende */
 .legend {
-    margin-top: 10px;
     display: flex;
     flex-wrap: wrap;
-    gap: 20px;
+    gap: 10px;
+    margin-bottom: 15px;
 }
 
 .legend-item {
     display: flex;
     align-items: center;
-    margin-bottom: 5px;
+    margin-right: 15px;
+    font-size: 0.9rem;
 }
 
 .legend-color {
-    width: 15px;
-    height: 15px;
+    width: 12px;
+    height: 12px;
     margin-right: 5px;
     border: 1px solid #333;
 }
 
-.windows-color {
+.window-color {
     background-color: rgba(0, 0, 255, 0.5);
 }
 
@@ -257,29 +345,87 @@ tr:nth-child(even) {
 }
 
 .wall-color {
-    background-color: rgbargba(212, 214, 56, 0.5);
+    background-color: rgba(212, 214, 56, 0.5);
 }
 
 .lukarne-color {
-    background-color: rgba(168, 136, 136, 0.5);
+    background-color: rgba(255, 165, 0, 0.5);
 }
 
 .roof-color {
-    background-color: rgba(119, 211, 165, 0.5);
+    background-color: rgba(128, 0, 128, 0.5);
 }
 
 .other-color {
     background-color: rgba(128, 128, 128, 0.66);
 }
 
-/* Responsivität */
-@media (max-width: 768px) {
-    .legend {
+/* Editor-Bereich */
+.editor-section {
+    position: relative;
+}
+
+.editor-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 15px;
+    align-items: center;
+}
+
+.editor-button {
+    flex: 0 0 auto;
+}
+
+.editor-actions {
+    margin-left: auto;
+    display: flex;
+    gap: 10px;
+}
+
+.save-button {
+    background: #4CAF50;
+}
+
+.save-button:hover {
+    background: #45a049;
+}
+
+.cancel-button {
+    background: #f44336;
+}
+
+.cancel-button:hover {
+    background: #d32f2f;
+}
+
+.object-type-select {
+    flex: 0 0 120px;
+}
+
+#editorCanvas {
+    max-width: 100%;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
+}
+
+/* Responsives Design */
+@media (max-width: 992px) {
+    .main-container {
         flex-direction: column;
-        gap: 10px;
     }
     
-    .legend-item {
-        margin-bottom: 8px;
+    .left-column {
+        flex: 0 0 auto;
+        width: 100%;
+    }
+    
+    .right-column {
+        flex: 0 0 auto;
+        width: 100%;
+    }
+    
+    .results-table-section {
+        max-height: 400px;
     }
 }

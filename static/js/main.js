@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const formatWidth = document.getElementById('formatWidth');
     const formatHeight = document.getElementById('formatHeight');
     const resultsSection = document.getElementById('resultsSection');
+    const resultsTableSection = document.getElementById('resultsTableSection');
     const uploadedImage = document.getElementById('uploadedImage');
     const imageContainer = document.getElementById('imageContainer');
     const annotationOverlay = document.getElementById('annotationOverlay');
@@ -17,13 +18,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const loader = document.getElementById('loader');
     const errorMessage = document.getElementById('errorMessage');
     
-    // ID-Korrekturen - Anpassung an die HTML-IDs
+    // Toggle-Buttons
     const toggleFenster = document.getElementById('toggleFenster');
     const toggleTuer = document.getElementById('toggleTuer');
     const toggleWand = document.getElementById('toggleWand');
     const toggleLukarne = document.getElementById('toggleLukarne');
     const toggleDach = document.getElementById('toggleDach');
-
+    
+    // Globale Variable für die Ergebnisdaten
+    let data = null;
     
     // Formatauswahl-Handler
     formatSelect.addEventListener('change', function() {
@@ -49,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // Toggle-Button-Handler - Korrigiert mit den richtigen IDs
+    // Toggle-Button-Handler
     toggleFenster.addEventListener('click', function() {
         this.classList.toggle('active');
         const fensterElements = document.querySelectorAll('.fenster-annotation, .fenster-box, .fenster-label');
@@ -57,6 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
+    
     toggleTuer.addEventListener('click', function() {
         this.classList.toggle('active');
         const tuerElements = document.querySelectorAll('.tuer-annotation, .tuer-box, .tuer-label');
@@ -64,6 +68,7 @@ document.addEventListener('DOMContentLoaded', function() {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
+    
     toggleWand.addEventListener('click', function() {
         this.classList.toggle('active');
         const wandElements = document.querySelectorAll('.wand-annotation, .wand-box, .wand-label');
@@ -71,6 +76,7 @@ document.addEventListener('DOMContentLoaded', function() {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
+    
     toggleLukarne.addEventListener('click', function() {
         this.classList.toggle('active');
         const lukarneElements = document.querySelectorAll('.lukarne-annotation, .lukarne-box, .lukarne-label');
@@ -78,6 +84,7 @@ document.addEventListener('DOMContentLoaded', function() {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
+    
     toggleDach.addEventListener('click', function() {
         this.classList.toggle('active');
         const dachElements = document.querySelectorAll('.dach-annotation, .dach-box, .dach-label');
@@ -149,43 +156,83 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         
         let fensterCount = 0;
+        let tuerCount = 0;
         let wandCount = 0;
+        let lukarneCount = 0;
+        let dachCount = 0;
+        let otherCount = 0;
+        
         let fensterArea = 0;
+        let tuerArea = 0;
         let wandArea = 0;
+        let lukarneArea = 0;
+        let dachArea = 0;
+        let otherArea = 0;
         
         // Vorhersagen verarbeiten
         apiResponse.predictions.forEach(pred => {
-            const isWand = pred.label === 0;
-            
-            // Zähler erhöhen
-            if (isWand) {
-                wandCount++;
-                wandArea += pred.area;
-            } else {
-                fensterCount++;
-                fensterArea += pred.area;
-            }
-            
             // Typ bestimmen basierend auf vorhandenen Eigenschaften
             const type = "box" in pred || "bbox" in pred ? "rectangle" : "polygon";
+            
+            // Label-Name basierend auf der Kategorie bestimmen
+            let label_name;
+            switch(pred.label) {
+                case 1:
+                    label_name = "Fenster";
+                    fensterCount++;
+                    fensterArea += pred.area;
+                    break;
+                case 2:
+                    label_name = "Tür";
+                    tuerCount++;
+                    tuerArea += pred.area;
+                    break;
+                case 3:
+                    label_name = "Wand";
+                    wandCount++;
+                    wandArea += pred.area;
+                    break;
+                case 4:
+                    label_name = "Lukarne";
+                    lukarneCount++;
+                    lukarneArea += pred.area;
+                    break;
+                case 5:
+                    label_name = "Dach";
+                    dachCount++;
+                    dachArea += pred.area;
+                    break;
+                default:
+                    label_name = "Andere";
+                    otherCount++;
+                    otherArea += pred.area;
+            }
             
             // Verarbeitete Vorhersage hinzufügen
             result.predictions.push({
                 ...pred,
                 type: type,
-                label_name: isWand ? "Wand" : "Fenster"
+                label_name: label_name
             });
         });
         
         // Zusammenfassungsdaten setzen
         result.count = {
             fenster: fensterCount,
-            wand: wandCount
+            tuer: tuerCount,
+            wand: wandCount,
+            lukarne: lukarneCount,
+            dach: dachCount,
+            other: otherCount
         };
         
         result.total_area = {
             fenster: fensterArea,
-            wand: wandArea
+            tuer: tuerArea,
+            wand: wandArea,
+            lukarne: lukarneArea,
+            dach: dachArea,
+            other: otherArea
         };
         
         return result;
@@ -195,12 +242,20 @@ document.addEventListener('DOMContentLoaded', function() {
     function getDummyData() {
         return {
             count: {
-                "fenster": 5,
-                "wand": 3
+                fenster: 5,
+                tuer: 2,
+                wand: 3,
+                lukarne: 1,
+                dach: 1,
+                other: 0
             },
             total_area: {
-                "fenster": 12.5,
-                "wand": 25.3
+                fenster: 12.5,
+                tuer: 8.7,
+                wand: 25.3,
+                lukarne: 3.2,
+                dach: 5.6,
+                other: 0
             },
             predictions: [
                 // Rechteckige Fenster
@@ -220,53 +275,50 @@ document.addEventListener('DOMContentLoaded', function() {
                     box: [300, 150, 450, 250],
                     type: "rectangle"
                 },
-                // Polygonales Fenster
+                // Tür
                 {
-                    label: 1,
-                    label_name: "Fenster",
+                    label: 2,
+                    label_name: "Tür",
                     score: 0.92,
-                    area: 2.8,
-                    polygon: {
-                        all_points_x: [500, 550, 600, 580, 520],
-                        all_points_y: [100, 80, 110, 180, 170]
-                    },
-                    type: "polygon"
+                    area: 4.3,
+                    box: [500, 300, 580, 500],
+                    type: "rectangle"
                 },
                 // Rechteckige Wand
                 {
-                    label: 0,
+                    label: 3,
                     label_name: "Wand",
                     score: 0.98,
                     area: 8.7,
                     box: [50, 300, 250, 500],
                     type: "rectangle"
                 },
-                // Polygonale Wand
+                // Lukarne
                 {
-                    label: 0,
-                    label_name: "Wand",
-                    score: 0.94,
-                    area: 16.6,
-                    polygon: {
-                        all_points_x: [300, 500, 480, 450, 320],
-                        all_points_y: [300, 320, 450, 480, 440]
-                    },
-                    type: "polygon"
+                    label: 4,
+                    label_name: "Lukarne",
+                    score: 0.89,
+                    area: 3.2,
+                    box: [600, 100, 700, 200],
+                    type: "rectangle"
+                },
+                // Dach
+                {
+                    label: 5,
+                    label_name: "Dach",
+                    score: 0.91,
+                    area: 5.6,
+                    box: [400, 50, 600, 150],
+                    type: "rectangle"
                 }
             ]
         };
     }
-    
-    // Füge eine globale Datenvariable hinzu, um auf die Daten zuzugreifen
-    let data = null;
 
     // Funktion zur Anzeige der Ergebnisse
     function displayResults(responseData) {
-        // Lokale Variable für main.js
+        // Globale Daten setzen
         data = responseData;
-        
-        // Globale Variable für editor.js
-        window.data = JSON.parse(JSON.stringify(responseData));
         
         // Bild anzeigen
         const file = document.getElementById('file').files[0];
@@ -278,240 +330,119 @@ document.addEventListener('DOMContentLoaded', function() {
             // SVG-Container anpassen
             adaptSvgOverlay();
             
-            // Ergebnisse anzeigen
+            // Ergebnisbereiche anzeigen
             resultsSection.style.display = 'block';
+            resultsTableSection.style.display = 'block';
             
             // Zusammenfassung
-            let summaryHtml = '';
-            if (data.count && data.count.fenster) {
-                summaryHtml += `<p>Gefundene Fenster: <strong>${data.count.fenster}</strong> (${data.total_area.fenster.toFixed(2)} m²)</p>`;
-            } else if (data.count) {
-                summaryHtml += `<p>Gefundene Objekte: <strong>${data.count}</strong> (${data.total_area.toFixed(2)} m²)</p>`;
-            }
-            if (data.count && data.count.wand) {
-                summaryHtml += `<p>Gefundene Wände: <strong>${data.count.wand}</strong> (${data.total_area.wand.toFixed(2)} m²)</p>`;
-            }
-            summary.innerHTML = summaryHtml;
+            updateSummary();
             
             // Tabelle füllen
-            resultsBody.innerHTML = '';
+            updateResultsTable();
+            
+            // Annotationen hinzufügen
             data.predictions.forEach((pred, index) => {
-                const row = document.createElement('tr');
-                // Label-Name aus dem Label oder einen Standardwert verwenden
-                const className = pred.label_name || (pred.label === 0 ? "Wand" : "Fenster");
-                
-                const detailsText = pred.type === "rectangle" || pred.box ? 
-                    `(${Math.round(pred.box ? pred.box[0] : pred.bbox[0])}, ${Math.round(pred.box ? pred.box[1] : pred.bbox[1])}) - ` +
-                    `(${Math.round(pred.box ? pred.box[2] : pred.bbox[2])}, ${Math.round(pred.box ? pred.box[3] : pred.bbox[3])})` : 
-                    `Polygon mit ${pred.polygon.all_points_x.length} Punkten`;
-                
-                row.innerHTML = `
-                    <td>${index + 1}</td>
-                    <td>${className}</td>
-                    <td>${pred.type || (pred.polygon ? "Polygon" : "Rechteck")}</td>
-                    <td>${(pred.score * 100).toFixed(1)}%</td>
-                    <td>${pred.area.toFixed(2)} m²</td>
-                    <td>${detailsText}</td>
-                `;
-                resultsBody.appendChild(row);
-                
-                // Highlight beim Hovern über Tabelle
-                const elementId = `annotation-${index}`;
-                row.addEventListener('mouseover', () => {
-                    const element = document.getElementById(elementId);
-                    if (element) {
-                        // Farben basierend auf der Kategorie anpassen
-                        let backgroundColor, borderColor;
-                        switch(pred.label) {
-                            case 1:
-                                backgroundColor = 'rgba(0, 0, 255, 0.3)';  // Fenster
-                                borderColor = 'rgba(0, 0, 255, 1)';
-                                break;
-                            case 2:
-                                backgroundColor = 'rgba(255, 0, 0, 0.3)';  // Tür
-                                borderColor = 'rgba(255, 0, 0, 1)';
-                                break;
-                            case 3:
-                                backgroundColor = 'rgba(212, 214, 56, 0.3)';  // Wand
-                                borderColor = 'rgba(212, 214, 56, 0.1)';
-                                break;
-                            case 4:
-                                backgroundColor = 'rgba(168, 136, 136, 0.3)';  // Lukarne
-                                borderColor = 'rgba(168, 136, 136, 0.1)';
-                                break;
-                            case 5:
-                                backgroundColor = 'rgba(119, 211, 165, 0.3)';  // Dach
-                                borderColor = 'rgba(119, 211, 165, 0.1)';
-                                break;
-                            default:
-                                backgroundColor = 'rgba(128, 128, 128, 0.3)';  // Andere
-                                borderColor = 'rgba(128, 128, 128, 1)';
-                        }
-                        
-                        if (pred.type === "rectangle" || pred.box) {
-                            element.style.backgroundColor = backgroundColor;
-                        } else {
-                            element.style.fillOpacity = '0.5';
-                        }
-                                                
-                        document.getElementById(`label-${elementId}`).style.backgroundColor = borderColor;
-                    }
-                });
-                row.addEventListener('mouseout', () => {
-                    const element = document.getElementById(elementId);
-                    if (element) {
-                          let backgroundColor, borderColor;
-                          switch(pred.label) {
-                              case 1:
-                                  backgroundColor = 'rgba(0, 0, 255, 0.1)';  // Fenster
-                                  borderColor = 'rgba(0, 0, 255, 0.8)';
-                                  break;
-                              case 2:
-                                  backgroundColor = 'rgba(255, 0, 0, 0.1)';  // Tür
-                                  borderColor = 'rgba(255, 0, 0, 0.8)';
-                                  break;
-                              case 3:
-                                  backgroundColor = 'rgba(212, 214, 56, 0.1)';  // Wand
-                                  borderColor = 'rgba(212, 214, 56, 0.8)';
-                                  break;
-                              case 4:
-                                  backgroundColor = 'rgba(168, 136, 136, 0.1)';  // Lukarne
-                                  borderColor = 'rgba(168, 136, 136, 0.8)';
-                                  break;
-                              case 5:
-                                  backgroundColor = 'rgba(119, 211, 165, 0.1)';  // Dach
-                                  borderColor = 'rgba(119, 211, 165, 0.8)';
-                                  break;
-                              default:
-                                  backgroundColor = 'rgba(128, 128, 128, 0.1)';  // Andere
-                                  borderColor = 'rgba(128, 128, 128, 0.8)';
-                          }
-
-                          if (pred.type === "rectangle" || pred.box) {
-                            element.style.backgroundColor = backgroundColor;
-                        } else {
-                            element.style.fillOpacity = '0.1';
-                        }
-                        
-                        document.getElementById(`label-${elementId}`).style.backgroundColor = borderColor;
-                    }
-                });
-                                                  
-                // Annotation hinzufügen
                 addAnnotation(pred, index);
             });
-            
-            // Zu den Ergebnissen scrollen
-            resultsSection.scrollIntoView({ behavior: 'smooth' });
         };
     }
     
-    // Funktion zum Zurücksetzen der Ergebnisse
-    function clearResults() {
-        resultsSection.style.display = 'none';
-        uploadedImage.src = '';
-        resultsBody.innerHTML = '';
-        summary.innerHTML = '';
+    // Funktion zur Aktualisierung der Zusammenfassung
+    function updateSummary() {
+        let summaryHtml = '';
         
-        // Alle Annotationen entfernen
-        const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
-        boxes.forEach(box => box.remove());
-        
-        // SVG leeren
-        while (annotationOverlay.firstChild) {
-            annotationOverlay.removeChild(annotationOverlay.firstChild);
+        if (data.count.fenster > 0) {
+            summaryHtml += `<p>Gefundene Fenster: <strong>${data.count.fenster}</strong> (${data.total_area.fenster.toFixed(2)} m²)</p>`;
         }
         
-        // Globale Daten zurücksetzen
-        data = null;
+        if (data.count.tuer > 0) {
+            summaryHtml += `<p>Gefundene Türen: <strong>${data.count.tuer}</strong> (${data.total_area.tuer.toFixed(2)} m²)</p>`;
+        }
+        
+        if (data.count.wand > 0) {
+            summaryHtml += `<p>Gefundene Wände: <strong>${data.count.wand}</strong> (${data.total_area.wand.toFixed(2)} m²)</p>`;
+        }
+        
+        if (data.count.lukarne > 0) {
+            summaryHtml += `<p>Gefundene Lukarnen: <strong>${data.count.lukarne}</strong> (${data.total_area.lukarne.toFixed(2)} m²)</p>`;
+        }
+        
+        if (data.count.dach > 0) {
+            summaryHtml += `<p>Gefundene Dächer: <strong>${data.count.dach}</strong> (${data.total_area.dach.toFixed(2)} m²)</p>`;
+        }
+        
+        if (data.count.other > 0) {
+            summaryHtml += `<p>Andere Objekte: <strong>${data.count.other}</strong> (${data.total_area.other.toFixed(2)} m²)</p>`;
+        }
+        
+        summary.innerHTML = summaryHtml;
     }
     
-    function adaptSvgOverlay() {
-        // SVG-Größe an das angezeigte Bild anpassen
-        annotationOverlay.setAttribute('width', uploadedImage.width);
-        annotationOverlay.setAttribute('height', uploadedImage.height);
+    // Funktion zur Aktualisierung der Ergebnistabelle
+    function updateResultsTable() {
+        resultsBody.innerHTML = '';
         
-        // Bestehende Annotationen neu positionieren, falls vorhanden
-        repositionAllAnnotations();
+        data.predictions.forEach((pred, index) => {
+            const row = document.createElement('tr');
+            
+            row.innerHTML = `
+                <td>${index + 1}</td>
+                <td>${pred.label_name}</td>
+                <td>${pred.type || (pred.polygon ? "Polygon" : "Rechteck")}</td>
+                <td>${(pred.score * 100).toFixed(1)}%</td>
+                <td>${pred.area.toFixed(2)} m²</td>
+            `;
+            
+            resultsBody.appendChild(row);
+            
+            // Highlight beim Hovern über Tabelle
+            const elementId = `annotation-${index}`;
+            row.addEventListener('mouseover', () => {
+                highlightBox(elementId, true);
+            });
+            row.addEventListener('mouseout', () => {
+                highlightBox(elementId, false);
+            });
+        });
     }
     
-    // Neue Funktion zum Neupositionieren aller Annotationen
-    function repositionAllAnnotations() {
-        // Skalierungsfaktor berechnen
-        const scale = uploadedImage.width / uploadedImage.naturalWidth;
+    // Funktion zum Hervorheben einer Box beim Hovern
+    function highlightBox(elementId, isHighlighted) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
         
-        // Alle Rechtecke neu positionieren
-        document.querySelectorAll('.bounding-box').forEach(box => {
-            const id = box.id;
-            const index = parseInt(id.split('-')[1]);
-            if (data && data.predictions && data.predictions[index]) {
-                const pred = data.predictions[index];
-                if (pred.type === "rectangle") {
-                    const [x1, y1, x2, y2] = pred.box;
-                    box.style.left = `${x1 * scale}px`;
-                    box.style.top = `${y1 * scale}px`;
-                    box.style.width = `${(x2 - x1) * scale}px`;
-                    box.style.height = `${(y2 - y1) * scale}px`;
-                }
-            }
-        });
+        const labelElement = document.getElementById(`label-${elementId}`);
+        if (!labelElement) return;
         
-        // Alle Polygone neu positionieren
-        document.querySelectorAll('.polygon-annotation').forEach(polygon => {
-            const id = polygon.id;
-            const index = parseInt(id.split('-')[1]);
-            if (data && data.predictions && data.predictions[index]) {
-                const pred = data.predictions[index];
-                if (pred.type === "polygon") {
-                    const { all_points_x, all_points_y } = pred.polygon;
-                    const scaledPoints = [];
-                    for (let i = 0; i < all_points_x.length; i++) {
-                        const x = all_points_x[i] * scale;
-                        const y = all_points_y[i] * scale;
-                        scaledPoints.push(`${x},${y}`);
-                    }
-                    polygon.setAttribute("points", scaledPoints.join(" "));
-                }
+        if (isHighlighted) {
+            if (element.classList.contains('bounding-box')) {
+                element.style.borderWidth = '3px';
+                element.style.opacity = '0.8';
+            } else {
+                element.style.strokeWidth = '3px';
+                element.style.fillOpacity = '0.5';
             }
-        });
-        
-        // Alle Labels neu positionieren
-        document.querySelectorAll('.box-label').forEach(label => {
-            const id = label.id.replace('label-', '');
-            const index = parseInt(id.split('-')[1]);
-            if (data && data.predictions && data.predictions[index]) {
-                const pred = data.predictions[index];
-                if (pred.type === "rectangle") {
-                    const [x1, y1] = pred.box;
-                    label.style.left = `${x1 * scale}px`;
-                    label.style.top = `${y1 * scale}px`;
-                } else if (pred.type === "polygon") {
-                    const { all_points_x, all_points_y } = pred.polygon;
-                    let centerX = 0;
-                    let centerY = 0;
-                    for (let i = 0; i < all_points_x.length; i++) {
-                        centerX += all_points_x[i];
-                        centerY += all_points_y[i];
-                    }
-                    centerX = (centerX / all_points_x.length) * scale;
-                    centerY = (centerY / all_points_x.length) * scale - 20 * scale;
-                    label.style.left = `${centerX}px`;
-                    label.style.top = `${centerY}px`;
-                }
+            labelElement.style.opacity = '1';
+        } else {
+            if (element.classList.contains('bounding-box')) {
+                element.style.borderWidth = '2px';
+                element.style.opacity = '0.3';
+            } else {
+                element.style.strokeWidth = '2px';
+                element.style.fillOpacity = '0.1';
             }
-        });
+            labelElement.style.opacity = '0.8';
+        }
     }
     
     // Funktion zum Hinzufügen einer Annotation (Rechteck oder Polygon)
     function addAnnotation(prediction, index) {
         // Skalierungsfaktor berechnen
-        const originalWidth = uploadedImage.naturalWidth;
-        const displayedWidth = uploadedImage.width;
-        const scale = displayedWidth / originalWidth;
+        const scale = uploadedImage.width / uploadedImage.naturalWidth;
         
         const elementId = `annotation-${index}`;
         
-        // Hier die Klassen-Präfixe basierend auf der Kategorie festlegen
+        // Klassen-Präfix basierend auf der Kategorie
         let classPrefix;
         switch(prediction.label) {
             case 1:
@@ -524,7 +455,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 classPrefix = 'wand';    // Wand = 3
                 break;
             case 4:
-                classPrefix = 'lukarne';    // Lukarne = 4
+                classPrefix = 'lukarne'; // Lukarne = 4
                 break;
             case 5:
                 classPrefix = 'dach';    // Dach = 5
@@ -537,7 +468,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const labelText = `#${index + 1}: ${prediction.area.toFixed(2)} m²`;
         
         // Je nach Typ (Rechteck oder Polygon) unterschiedlich behandeln
-        if (prediction.type === "rectangle" || "box" in prediction) {
+        if (prediction.type === "rectangle" || prediction.box || prediction.bbox) {
             const [x1, y1, x2, y2] = prediction.box || prediction.bbox;
             
             // Skalierte Koordinaten
@@ -555,10 +486,10 @@ document.addEventListener('DOMContentLoaded', function() {
             box.style.width = `${scaledWidth}px`;
             box.style.height = `${scaledHeight}px`;
             imageContainer.appendChild(box);
-    
+            
             // Label hinzufügen
             addLabel(scaledX1, scaledY1 - 20, labelText, elementId, classPrefix);
-        } else if (prediction.type === "polygon" || "polygon" in prediction) {
+        } else if (prediction.type === "polygon" || prediction.polygon) {
             // Polygon-Punkte skalieren
             const scaledPoints = [];
             const poly = prediction.polygon || prediction;
@@ -607,6 +538,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Funktion zum Zurücksetzen der Ergebnisse
     function clearResults() {
         resultsSection.style.display = 'none';
+        resultsTableSection.style.display = 'none';
         uploadedImage.src = '';
         resultsBody.innerHTML = '';
         summary.innerHTML = '';
@@ -624,11 +556,92 @@ document.addEventListener('DOMContentLoaded', function() {
         data = null;
     }
     
+    // SVG-Container an das Bild anpassen
+    function adaptSvgOverlay() {
+        annotationOverlay.setAttribute('width', uploadedImage.width);
+        annotationOverlay.setAttribute('height', uploadedImage.height);
+        
+        // Bestehende Annotationen neu positionieren
+        repositionAllAnnotations();
+    }
+    
+    // Alle Annotationen neu positionieren
+    function repositionAllAnnotations() {
+        // Skalierungsfaktor berechnen
+        const scale = uploadedImage.width / uploadedImage.naturalWidth;
+        
+        // Alle Rechtecke neu positionieren
+        document.querySelectorAll('.bounding-box').forEach(box => {
+            const id = box.id;
+            const index = parseInt(id.split('-')[1]);
+            if (data && data.predictions && data.predictions[index]) {
+                const pred = data.predictions[index];
+                if (pred.box || pred.bbox) {
+                    const [x1, y1, x2, y2] = pred.box || pred.bbox;
+                    box.style.left = `${x1 * scale}px`;
+                    box.style.top = `${y1 * scale}px`;
+                    box.style.width = `${(x2 - x1) * scale}px`;
+                    box.style.height = `${(y2 - y1) * scale}px`;
+                }
+            }
+        });
+        
+        // Alle Polygone neu positionieren
+        document.querySelectorAll('.polygon-annotation').forEach(polygon => {
+            const id = polygon.id;
+            const index = parseInt(id.split('-')[1]);
+            if (data && data.predictions && data.predictions[index]) {
+                const pred = data.predictions[index];
+                if (pred.polygon) {
+                    const { all_points_x, all_points_y } = pred.polygon;
+                    const scaledPoints = [];
+                    for (let i = 0; i < all_points_x.length; i++) {
+                        const x = all_points_x[i] * scale;
+                        const y = all_points_y[i] * scale;
+                        scaledPoints.push(`${x},${y}`);
+                    }
+                    polygon.setAttribute("points", scaledPoints.join(" "));
+                }
+            }
+        });
+        
+        // Alle Labels neu positionieren
+        document.querySelectorAll('.box-label').forEach(label => {
+            const id = label.id.replace('label-', '');
+            const index = parseInt(id.split('-')[1]);
+            if (data && data.predictions && data.predictions[index]) {
+                const pred = data.predictions[index];
+                if (pred.box || pred.bbox) {
+                    const [x1, y1] = pred.box || pred.bbox;
+                    label.style.left = `${x1 * scale}px`;
+                    label.style.top = `${(y1 * scale) - 20}px`;
+                } else if (pred.polygon) {
+                    const { all_points_x, all_points_y } = pred.polygon;
+                    let centerX = 0;
+                    let centerY = 0;
+                    for (let i = 0; i < all_points_x.length; i++) {
+                        centerX += all_points_x[i];
+                        centerY += all_points_y[i];
+                    }
+                    centerX = (centerX / all_points_x.length) * scale;
+                    centerY = (centerY / all_points_y.length) * scale - 20;
+                    label.style.left = `${centerX}px`;
+                    label.style.top = `${centerY}px`;
+                }
+            }
+        });
+    }
+    
     // Event-Listener für Bildgrößenänderungen
     window.addEventListener('resize', function() {
         if (uploadedImage.src) {
             // Wenn das Bild geladen ist, SVG und Annotationen neu anpassen
-            adaptSvgOverlay();
+            setTimeout(adaptSvgOverlay, 100); // Kurze Verzögerung für stabilere Neuberechnung
         }
     });
+    
+    // Editor-Funktionalität importieren (aus editor-fix.js)
+    // Diese Funktionen werden in einer separaten Datei definiert und hier eingebunden
 });
+
+// Weitere Funktionen aus den Fix-Dateien würden hier mit aufgenommen
