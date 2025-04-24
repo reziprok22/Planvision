@@ -42,16 +42,19 @@ document.addEventListener('DOMContentLoaded', function() {
     const pdfNavigation = document.getElementById('pdfNavigation');
     const prevPageBtn = document.getElementById('prevPageBtn');
     const nextPageBtn = document.getElementById('nextPageBtn');
-    const currentPageSpan = document.getElementById('currentPage');
-    const totalPagesSpan = document.getElementById('totalPages');
+    const currentPageSpan = document.getElementById('currentPage'); // Richtige ID
+    const totalPagesSpan = document.getElementById('totalPages');   // Richtige ID
 
+    // In der vorhandenen prevPageBtn.addEventListener-Funktion
     prevPageBtn.addEventListener('click', function() {
+        console.log("Klick auf vorherige Seite", currentPdfPage);
         if (currentPdfPage > 1) {
             navigateToPdfPage(currentPdfPage - 1);
         }
     });
-
+    
     nextPageBtn.addEventListener('click', function() {
+        console.log("Klick auf nächste Seite", currentPdfPage, totalPdfPages);
         if (currentPdfPage < totalPdfPages) {
             navigateToPdfPage(currentPdfPage + 1);
         }
@@ -354,7 +357,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Funktion zum Navigieren zwischen PDF-Seiten
     function navigateToPdfPage(pageNumber) {
-        console.log(`Navigiere zu PDF-Seite ${pageNumber}`);
+        console.log(`Navigiere zu PDF-Seite ${pageNumber} von ${totalPdfPages}`);
         
         // UI-Status aktualisieren
         loader.style.display = 'block';
@@ -372,6 +375,8 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('plan_scale', document.getElementById('planScale').value);
         formData.append('threshold', document.getElementById('threshold').value);
         
+        console.log("Senden von Anfrage für Seite", pageNumber, "mit Session", pdfSessionId);
+        
         // API-Aufruf für die Seitenanalyse
         fetch('/analyze_page', {
             method: 'POST',
@@ -388,27 +393,22 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(data => {
             console.log("Seitenanalyse-Ergebnis:", data);
             
-            // PDF-Infos extrahieren bevor wir die Daten umwandeln
-            const isPdf = data.is_pdf || false;
-            const pdfImageUrl = data.pdf_image_url || null;
-            
-            // Andere PDF-Infos aktualisieren
-            if (isPdf) {
-                pdfSessionId = data.session_id;
-                currentPdfPage = data.current_page;
-                totalPdfPages = data.page_count;
-                allPdfPages = data.all_pages;
-                
-                // UI aktualisieren
-                updatePdfNavigation();
-            }
-            
             // Verarbeite die Rückgabedaten und konvertiere in das gewünschte Format
             const processedData = processApiResponse(data);
             
             // PDF-Infos wieder hinzufügen
-            processedData.is_pdf = isPdf;
-            processedData.pdf_image_url = pdfImageUrl;
+            processedData.is_pdf = data.is_pdf || false;
+            processedData.pdf_image_url = data.pdf_image_url || null;
+            processedData.session_id = data.session_id;
+            processedData.current_page = data.current_page;
+            processedData.page_count = data.page_count;
+            processedData.all_pages = data.all_pages;
+            
+            // Aktualisiere die globalen Variablen
+            pdfSessionId = data.session_id;
+            currentPdfPage = data.current_page;
+            totalPdfPages = data.page_count;
+            allPdfPages = data.all_pages;
             
             // Ergebnisse anzeigen
             displayResults(processedData);
@@ -425,15 +425,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Funktion zum Aktualisieren der PDF-Navigations-UI
     function updatePdfNavigation() {
+        console.log("updatePdfNavigation aufgerufen:", currentPdfPage, totalPdfPages);
         currentPageSpan.textContent = currentPdfPage;
-        totalPagesSpan.textContent = totalPdfPages;
+        totalPagesSpan.textContent = totalPdfPages || 1;  // Falls undefined, 1 verwenden
         
         // Buttons je nach aktueller Seite aktivieren/deaktivieren
         prevPageBtn.disabled = currentPdfPage <= 1;
         nextPageBtn.disabled = currentPdfPage >= totalPdfPages;
         
-        // Navigation anzeigen
-        pdfNavigation.style.display = totalPdfPages > 1 ? 'flex' : 'none';
+        // Navigation immer anzeigen, wenn es sich um eine PDF handelt
+        pdfNavigation.style.display = 'flex';
+        console.log("PDF-Navigation wird angezeigt:", pdfNavigation.style.display);
     }
 
     // Funktion zum Aktualisieren der Seitennavigation
@@ -562,22 +564,35 @@ document.addEventListener('DOMContentLoaded', function() {
     // Funktion zur Anzeige der Ergebnisse
     function displayResults(responseData) {
         console.log("Zeige Ergebnisse an:", responseData);
+        console.log("API-Antwort:", responseData);
+        console.log("PDF erkannt:", responseData.is_pdf);
+        console.log("PDF-Seiten:", responseData.page_count);
+        console.log("Vollständige API-Antwort:", JSON.stringify(responseData));
         
         // PDF-spezifische Informationen verarbeiten
         const isPdf = responseData.is_pdf || false;
         
+        // In der Funktion displayResults - stellen wir sicher, dass das richtig gesetzt wird
         if (isPdf) {
             pdfSessionId = responseData.session_id;
-            currentPdfPage = responseData.current_page || 1;
-            totalPdfPages = responseData.page_count || 1;
+            currentPdfPage = parseInt(responseData.current_page || 1);
+            totalPdfPages = parseInt(responseData.page_count || 1);
             allPdfPages = responseData.all_pages || [];
+            
+            console.log("PDF vollständige Info:", {
+                session: pdfSessionId,
+                current: currentPdfPage,
+                total: totalPdfPages,
+                pages: allPdfPages
+            });
             
             // PDF-Navigation aktualisieren
             updatePdfNavigation();
         } else {
+            console.log("Keine PDF erkannt, Navigation ausblenden");
             // Keine PDF, Navigation ausblenden
             pdfNavigation.style.display = 'none';
-        }
+}
         
         // Lokale und globale Daten setzen
         window.data = responseData;

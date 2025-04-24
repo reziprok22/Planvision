@@ -53,7 +53,8 @@ def convert_pdf_to_images(pdf_file_object):
         "image_paths": image_paths,
         "page_count": len(images)
     }
-    
+    print(f"PDF konvertiert: {len(images)} Seiten")  # Debug-Ausgabe
+
     return pdf_info
 
 app = Flask(__name__)
@@ -88,6 +89,9 @@ def predict():
                 try:
                     # PDF-Datei in Bilder konvertieren
                     pdf_info = convert_pdf_to_images(file)
+                    
+                    # Debug-Ausgabe für PDF-Informationen
+                    print(f"PDF Info: {pdf_info['session_id']}, Seiten: {pdf_info['page_count']}")
                     
                     # Sicherstellen, dass die gewählte Seite gültig ist
                     if page < 1 or page > pdf_info["page_count"]:
@@ -140,14 +144,20 @@ def predict():
             
             # PDF-spezifische Informationen hinzufügen
             if is_pdf:
+                # Stelle sicher, dass page_count einen Wert hat und konvertiere zu int
+                page_count = int(pdf_info.get("page_count", 1))
+                
                 response_data.update({
                     'is_pdf': True,
                     'pdf_image_url': pdf_info["image_paths"][page-1],
                     'current_page': page,
-                    'page_count': pdf_info["page_count"],
+                    'page_count': page_count,
                     'all_pages': pdf_info["image_paths"],
                     'session_id': pdf_info["session_id"]
                 })
+                
+                # Debug-Ausgabe für PDF-Antwortdaten
+                print(f"PDF-Antwort: Seite {page} von {page_count}, Bilder: {len(pdf_info['image_paths'])}")
             
             return jsonify(response_data)
         
@@ -155,6 +165,95 @@ def predict():
     
     except Exception as e:
         print(f"Allgemeiner Fehler: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/analyze_page', methods=['POST'])
+def analyze_page():
+    try:
+        # Parameter aus der Anfrage lesen
+        session_id = request.form.get('session_id')
+        page = int(request.form.get('page', 1))
+        
+        print(f"Analyze Page: Session {session_id}, Seite {page}")
+        
+        # Parameter für die Bildanalyse
+        format_size = (
+            float(request.form.get('format_width', 210)),
+            float(request.form.get('format_height', 297))
+        )
+        dpi = float(request.form.get('dpi', 300))
+        plan_scale = float(request.form.get('plan_scale', 100))
+        threshold = float(request.form.get('threshold', 0.5))
+        
+        # Überprüfe, ob die Session existiert
+        session_dir = os.path.join('static', 'uploads', session_id)
+        if not os.path.exists(session_dir):
+            print(f"Session-Verzeichnis nicht gefunden: {session_dir}")
+            return jsonify({'error': 'PDF-Session nicht gefunden'}), 404
+        
+        # Ermittle die Anzahl verfügbarer Seiten
+        image_files = [f for f in os.listdir(session_dir) if f.startswith('page_') and f.endswith('.jpg')]
+        page_count = len(image_files)
+        
+        print(f"Gefundene Bilddateien: {image_files}")
+        print(f"Seitenanzahl: {page_count}")
+        
+        if page < 1 or page > page_count:
+            return jsonify({'error': 'Ungültige Seitenzahl'}), 400
+        
+        # Pfad zum Bild der aktuellen Seite
+        image_path = os.path.join(session_dir, f"page_{page}.jpg")
+        rel_image_path = f"/static/uploads/{session_id}/page_{page}.jpg"
+        
+        print(f"Bildpfad: {image_path}")
+        
+        # Bild für die Vorhersage laden
+        with open(image_path, 'rb') as f:
+            image_bytes = f.read()
+        
+        # Bildvorhersage durchführen
+        boxes, labels, scores, areas = predict_image(
+            image_bytes, 
+            format_size=format_size, 
+            dpi=dpi, 
+            plan_scale=plan_scale, 
+            threshold=threshold
+        )
+        
+        # Ergebnisse formatieren
+        results = []
+        for box, label, score, area in zip(boxes, labels, scores, areas):
+            results.append({
+                'box': box.tolist(),
+                'label': int(label),
+                'score': round(float(score), 2),
+                'area': round(float(area), 2)
+            })
+        
+        # Alle Bildpfade für die Navigation
+        all_image_paths = [f"/static/uploads/{session_id}/page_{i+1}.jpg" for i in range(page_count)]
+        
+        # Gesamtfläche berechnen
+        total_area = sum(area for area in areas)
+        
+        response_data = {
+            'predictions': results,
+            'total_area': round(float(total_area), 2),
+            'count': len(results),
+            'is_pdf': True,
+            'pdf_image_url': rel_image_path,
+            'current_page': page,
+            'page_count': page_count,
+            'all_pages': all_image_paths,
+            'session_id': session_id
+        }
+        
+        print(f"Antwortdaten: Seite {page} von {page_count}")
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        print(f"Fehler beim Analysieren der PDF-Seite: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 
