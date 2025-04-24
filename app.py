@@ -1,6 +1,60 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, url_for
 import os
 from model_handler import load_model, predict_image
+import shutil
+import json
+from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError
+import time  # Für den Zeitstempel
+
+import tempfile
+from pdf2image import convert_from_path
+import logging
+
+# Logging einrichten
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+def convert_pdf_to_images(pdf_file_object):
+    """
+    Konvertiert eine PDF-Datei in mehrere JPG-Bilder (alle Seiten).
+    
+    Args:
+        pdf_file_object: Das File-Objekt der hochgeladenen PDF-Datei
+        
+    Returns:
+        dict: Ein Dictionary mit Informationen über die konvertierten Bilder
+    """
+    # Erstelle ein eindeutiges Verzeichnis für diese PDF
+    timestamp = int(time.time())
+    session_id = f"pdf_{timestamp}"
+    output_dir = os.path.join('static', 'uploads', session_id)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Speichere die PDF-Datei
+    pdf_path = os.path.join(output_dir, "document.pdf")
+    pdf_file_object.save(pdf_path)
+    
+    # Konvertiere alle Seiten der PDF zu Bildern
+    images = convert_from_path(pdf_path, dpi=300)
+    image_paths = []
+    
+    # Speichere jede Seite als JPG
+    for i, image in enumerate(images):
+        image_path = os.path.join(output_dir, f"page_{i+1}.jpg")
+        image.save(image_path, "JPEG")
+        # Relativen Pfad für das Frontend speichern
+        rel_path = f"/static/uploads/{session_id}/page_{i+1}.jpg"
+        image_paths.append(rel_path)
+    
+    # Informationen über die Konvertierung
+    pdf_info = {
+        "session_id": session_id,
+        "pdf_path": pdf_path,
+        "image_paths": image_paths,
+        "page_count": len(images)
+    }
+    
+    return pdf_info
 
 app = Flask(__name__)
 
@@ -26,9 +80,38 @@ def predict():
         dpi = float(request.form.get('dpi', 300))  # Standard: 300 DPI
         plan_scale = float(request.form.get('plan_scale', 100))  # Standard: 1:100
         threshold = float(request.form.get('threshold', 0.5))  # Standard: 0.5
+        page = int(request.form.get('page', 1))  # Standardmäßig erste Seite
         
         if file:
-            image_bytes = file.read()
+            # Überprüfen, ob es sich um eine PDF-Datei handelt
+            if file.filename.lower().endswith('.pdf'):
+                try:
+                    # PDF-Datei in Bilder konvertieren
+                    pdf_info = convert_pdf_to_images(file)
+                    
+                    # Sicherstellen, dass die gewählte Seite gültig ist
+                    if page < 1 or page > pdf_info["page_count"]:
+                        page = 1
+                    
+                    # Pfad zum Bild der aktuellen Seite
+                    current_image_path = pdf_info["image_paths"][page-1]
+                    
+                    # Bilddaten der aktuellen Seite für die Vorhersage lesen
+                    full_image_path = os.path.join(os.getcwd(), current_image_path.lstrip('/'))
+                    with open(full_image_path, 'rb') as f:
+                        image_bytes = f.read()
+                    
+                    is_pdf = True
+                except Exception as e:
+                    print(f"Fehler bei der PDF-Verarbeitung: {str(e)}")
+                    return jsonify({'error': f'Error converting PDF: {str(e)}'}), 500
+            else:
+                # Normale Bilddatei
+                image_bytes = file.read()
+                pdf_info = None
+                is_pdf = False
+            
+            # Bildvorhersage durchführen
             boxes, labels, scores, areas = predict_image(
                 image_bytes, 
                 format_size=format_size, 
@@ -49,15 +132,68 @@ def predict():
             # Gesamtfläche berechnen
             total_area = sum(area for area in areas)
             
-            return jsonify({
+            response_data = {
                 'predictions': results,
                 'total_area': round(float(total_area), 2),
                 'count': len(results)
-            })
+            }
+            
+            # PDF-spezifische Informationen hinzufügen
+            if is_pdf:
+                response_data.update({
+                    'is_pdf': True,
+                    'pdf_image_url': pdf_info["image_paths"][page-1],
+                    'current_page': page,
+                    'page_count': pdf_info["page_count"],
+                    'all_pages': pdf_info["image_paths"],
+                    'session_id': pdf_info["session_id"]
+                })
+            
+            return jsonify(response_data)
         
         return jsonify({'error': 'Error processing file'}), 500
     
     except Exception as e:
+        print(f"Allgemeiner Fehler: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+# Ist zum überprüfen, ob PDF to jpfg richtig funktoniert, kann gelöscht werden.
+@app.route('/debug_pdf', methods=['POST'])
+def debug_pdf():
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        if file.filename.lower().endswith('.pdf'):
+            try:
+                logger.info(f"PDF-Datei erkannt: {file.filename}")
+                image_bytes = convert_pdf_to_jpg(file)
+                logger.info("PDF erfolgreich in JPG konvertiert")
+                
+                # Speichere das Bild temporär und gib den Pfad zurück
+                debug_path = "static/temp_debug.jpg"
+                with open(debug_path, 'wb') as debug_file:
+                    debug_file.write(image_bytes)
+                
+                return jsonify({
+                    'success': True,
+                    'message': 'PDF erfolgreich konvertiert',
+                    'image_path': debug_path,
+                    'image_size': len(image_bytes)
+                })
+            except Exception as e:
+                logger.error(f"PDF-Konvertierung fehlgeschlagen: {str(e)}")
+                return jsonify({'error': f'PDF-Konvertierung fehlgeschlagen: {str(e)}'}), 500
+        else:
+            return jsonify({'error': 'Die hochgeladene Datei ist keine PDF-Datei'}), 400
+    
+    except Exception as e:
+        logger.error(f"Fehler bei der Debug-Verarbeitung: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 # Editor
@@ -83,6 +219,53 @@ def save_edits():
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/debug')
+def debug_page():
+    return render_template('debug.html')
+
+@app.route('/convert_pdf', methods=['POST'])
+def convert_pdf_debug():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+    file = request.files['file']
+    
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    if not file.filename.lower().endswith('.pdf'):
+        return jsonify({'error': 'Not a PDF file'}), 400
+    
+    try:
+        # Speichere die PDF in einem statischen Verzeichnis zur Überprüfung
+        os.makedirs('static/debug', exist_ok=True)
+        pdf_path = 'static/debug/test.pdf'
+        file.save(pdf_path)
+        
+        # Konvertiere die PDF zu JPG
+        images = convert_from_path(pdf_path, first_page=1, last_page=1, dpi=300)
+        
+        if not images:
+            return jsonify({'error': 'No images could be extracted from PDF'}), 500
+        
+        # Speichere das Bild
+        jpg_path = 'static/debug/test.jpg'
+        images[0].save(jpg_path, 'JPEG')
+        
+        # Überprüfe, ob die Datei existiert und die Größe
+        if os.path.exists(jpg_path):
+            file_size = os.path.getsize(jpg_path)
+            return jsonify({
+                'success': True,
+                'message': f'PDF converted successfully. JPG size: {file_size} bytes',
+                'jpg_url': '/static/debug/test.jpg',
+                'pdf_url': '/static/debug/test.pdf'
+            })
+        else:
+            return jsonify({'error': 'JPG file was not created'}), 500
+            
+    except Exception as e:
+        return jsonify({'error': f'Error: {str(e)}'}), 500
 
 
 if __name__ == '__main__':

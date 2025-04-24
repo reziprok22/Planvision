@@ -17,7 +17,7 @@ def calculate_scale_factor(format_size, dpi, plan_scale):
     pixels_per_inch = dpi
     pixels_per_mm = pixels_per_inch / 25.4
     
-    # Berücksichtige den Maßstab
+    # Berücksichtige den Massstab und Umrechnung mm in m
     # Bei M 1:100 entspricht 1mm auf dem Plan 100mm in der Realität
     pixels_per_real_meter = pixels_per_mm * (1000 / plan_scale)
     

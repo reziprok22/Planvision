@@ -136,6 +136,13 @@
                     <svg id="annotationOverlay" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"></svg>
                     <!-- Bounding Boxes werden hier durch JavaScript hinzugefügt -->
                 </div>
+                
+                <!-- PDF-Navigation (wird nur angezeigt, wenn eine PDF geladen ist) -->
+                <div id="pdfNavigation" class="pdf-navigation" style="display: none;">
+                    <button id="prevPageBtn" class="nav-button">&lt; Vorherige Seite</button>
+                    <span id="pageInfo">Seite <span id="currentPage">1</span> von <span id="totalPages">1</span></span>
+                    <button id="nextPageBtn" class="nav-button">Nächste Seite &gt;</button>
+                </div>
             </div>
             
             <div class="editor-section" id="editorSection" style="display: none;">

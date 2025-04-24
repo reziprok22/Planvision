@@ -5,9 +5,10 @@
 __pycache__
 env
 Archiv
-debug
 fasterrcnn_model
 trainings_data
+static/uploads
+static/temp
 
 # Einzelne Datei ignorieren
 Notizen_FL.txt

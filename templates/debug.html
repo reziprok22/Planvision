@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Converter Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .form-group { margin-bottom: 15px; }
+        button { padding: 10px 15px; background: #4a90e2; color: white; border: none; cursor: pointer; }
+        #results { margin-top: 20px; padding: 15px; border: 1px solid #ddd; display: none; }
+        img { max-width: 100%; border: 1px solid #ccc; margin-top: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PDF Converter Debug</h1>
+        
+        <div class="form-group">
+            <form id="pdfForm">
+                <input type="file" id="pdfFile" accept=".pdf" required>
+                <button type="submit">Convert PDF</button>
+            </form>
+        </div>
+        
+        <div id="results">
+            <h2>Results</h2>
+            <div id="message"></div>
+            
+            <h3>Converted Image:</h3>
+            <img id="convertedImage" src="" alt="Converted PDF">
+            
+            <h3>Original PDF:</h3>
+            <p><a id="pdfLink" href="" target="_blank">View Original PDF</a></p>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('pdfForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const file = document.getElementById('pdfFile').files[0];
+            if (!file) {
+                alert('Please select a PDF file');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            fetch('/convert_pdf', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('results').style.display = 'block';
+                
+                if (data.success) {
+                    document.getElementById('message').innerHTML = `<div style="color: green">${data.message}</div>`;
+                    document.getElementById('convertedImage').src = data.jpg_url + '?t=' + new Date().getTime(); // Prevent caching
+                    document.getElementById('pdfLink').href = data.pdf_url;
+                } else {
+                    document.getElementById('message').innerHTML = `<div style="color: red">Error: ${data.error}</div>`;
+                }
+            })
+            .catch(error => {
+                document.getElementById('results').style.display = 'block';
+                document.getElementById('message').innerHTML = `<div style="color: red">Error: ${error.message}</div>`;
+            });
+        });
+    </script>
+</body>
+</html>
