@@ -169,6 +169,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // PDF-Infos extrahieren bevor wir die Daten umwandeln
             const isPdf = data.is_pdf || false;
             const pdfImageUrl = data.pdf_image_url || null;
+            const sessionId = data.session_id || null;
+            const pageCount = data.page_count || 1;
+            const currentPage = data.current_page || 1;
+            const allPages = data.all_pages || [];
             
             // Verarbeite die Rückgabedaten und konvertiere in das gewünschte Format
             const processedData = processApiResponse(data);
@@ -176,6 +180,21 @@ document.addEventListener('DOMContentLoaded', function() {
             // PDF-Infos wieder hinzufügen
             processedData.is_pdf = isPdf;
             processedData.pdf_image_url = pdfImageUrl;
+            processedData.session_id = sessionId;
+            processedData.page_count = pageCount;
+            processedData.current_page = currentPage;
+            processedData.all_pages = allPages;
+            
+            // Debug-Ausgabe zu PDF-Informationen
+            if (isPdf) {
+                console.log("PDF-Informationen nach Verarbeitung:", {
+                    is_pdf: processedData.is_pdf,
+                    session_id: processedData.session_id,
+                    page_count: processedData.page_count,
+                    current_page: processedData.current_page,
+                    pages: processedData.all_pages ? processedData.all_pages.length : 0
+                });
+            }
             
             displayResults(processedData);
         })
@@ -425,17 +444,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Funktion zum Aktualisieren der PDF-Navigations-UI
     function updatePdfNavigation() {
-        console.log("updatePdfNavigation aufgerufen:", currentPdfPage, totalPdfPages);
-        currentPageSpan.textContent = currentPdfPage;
-        totalPagesSpan.textContent = totalPdfPages || 1;  // Falls undefined, 1 verwenden
+        console.log("updatePdfNavigation:", currentPdfPage, totalPdfPages);
         
-        // Buttons je nach aktueller Seite aktivieren/deaktivieren
-        prevPageBtn.disabled = currentPdfPage <= 1;
-        nextPageBtn.disabled = currentPdfPage >= totalPdfPages;
+        // Element-Referenzen sicherstellen
+        const currentPageSpan = document.getElementById('currentPage');
+        const totalPagesSpan = document.getElementById('totalPages');
         
-        // Navigation immer anzeigen, wenn es sich um eine PDF handelt
-        pdfNavigation.style.display = 'flex';
-        console.log("PDF-Navigation wird angezeigt:", pdfNavigation.style.display);
+        if (currentPageSpan && totalPagesSpan) {
+            currentPageSpan.textContent = currentPdfPage;
+            totalPagesSpan.textContent = totalPdfPages || 1;
+            
+            // Buttons je nach aktueller Seite aktivieren/deaktivieren
+            prevPageBtn.disabled = currentPdfPage <= 1;
+            nextPageBtn.disabled = currentPdfPage >= totalPdfPages;
+        } else {
+            console.error("PDF-Navigation-Elemente nicht gefunden!");
+        }
     }
 
     // Funktion zum Aktualisieren der Seitennavigation
@@ -564,36 +588,37 @@ document.addEventListener('DOMContentLoaded', function() {
     // Funktion zur Anzeige der Ergebnisse
     function displayResults(responseData) {
         console.log("Zeige Ergebnisse an:", responseData);
-        console.log("API-Antwort:", responseData);
-        console.log("PDF erkannt:", responseData.is_pdf);
-        console.log("PDF-Seiten:", responseData.page_count);
-        console.log("Vollständige API-Antwort:", JSON.stringify(responseData));
         
         // PDF-spezifische Informationen verarbeiten
         const isPdf = responseData.is_pdf || false;
         
-        // In der Funktion displayResults - stellen wir sicher, dass das richtig gesetzt wird
         if (isPdf) {
-            pdfSessionId = responseData.session_id;
+            console.log("PDF erkannt:", isPdf);
+            console.log("PDF-Seiten:", responseData.page_count);
+        
+            pdfSessionId = responseData.session_id || null;
             currentPdfPage = parseInt(responseData.current_page || 1);
             totalPdfPages = parseInt(responseData.page_count || 1);
             allPdfPages = responseData.all_pages || [];
-            
-            console.log("PDF vollständige Info:", {
+        
+            console.log("PDF Info:", {
                 session: pdfSessionId,
                 current: currentPdfPage,
                 total: totalPdfPages,
-                pages: allPdfPages
+                pages: allPdfPages.length
             });
-            
-            // PDF-Navigation aktualisieren
-            updatePdfNavigation();
-        } else {
-            console.log("Keine PDF erkannt, Navigation ausblenden");
-            // Keine PDF, Navigation ausblenden
-            pdfNavigation.style.display = 'none';
-}
         
+            if (totalPdfPages > 1 && pdfSessionId) {
+                updatePdfNavigation();
+                pdfNavigation.style.display = 'flex';
+            } else {
+                pdfNavigation.style.display = 'none';
+            }
+        } else {
+            pdfNavigation.style.display = 'none';
+        }
+        
+
         // Lokale und globale Daten setzen
         window.data = responseData;
         
@@ -612,6 +637,15 @@ document.addEventListener('DOMContentLoaded', function() {
         uploadedImage.onload = function() {
             console.log("Bild geladen:", uploadedImage.width, "x", uploadedImage.height);
             
+            // Alte Annotationen entfernen. Ist um bestehende Boxen beim Navigieren zu neuen Plan zu entfernen.
+            const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
+            boxes.forEach(box => box.remove());
+            
+            // SVG leeren
+            while (annotationOverlay.firstChild) {
+                annotationOverlay.removeChild(annotationOverlay.firstChild);
+            }
+
             // SVG-Container anpassen
             adaptSvgOverlay();
             

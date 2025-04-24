@@ -13,6 +13,8 @@ static/temp
 # Einzelne Datei ignorieren
 Notizen_FL.txt
 requirements.txt
+after_preprocessing.png
+before_preprocessing.png
 
 # Alle temporären Dateien ignorieren
 *.tmp

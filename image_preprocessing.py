@@ -41,7 +41,7 @@ def preprocess_image(image_bytes):
     pil_image = Image.fromarray(enhanced_rgb)
 
     # Speichert das Bild vor und nach der Verarbeitung. Zur Überprüfung des Ergebnisses
-    cv2.imwrite('before_preprocessing.jpg', img)
-    cv2.imwrite('after_preprocessing.jpg', enhanced_rgb)
+    ## cv2.imwrite('before_preprocessing.jpg', img)
+    ## cv2.imwrite('after_preprocessing.jpg', enhanced_rgb)
     
     return pil_image

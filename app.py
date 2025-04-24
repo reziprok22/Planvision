@@ -151,14 +151,11 @@ def predict():
                     'is_pdf': True,
                     'pdf_image_url': pdf_info["image_paths"][page-1],
                     'current_page': page,
-                    'page_count': page_count,
+                    'page_count': int(pdf_info.get("page_count", 1)),
                     'all_pages': pdf_info["image_paths"],
                     'session_id': pdf_info["session_id"]
                 })
                 
-                # Debug-Ausgabe für PDF-Antwortdaten
-                print(f"PDF-Antwort: Seite {page} von {page_count}, Bilder: {len(pdf_info['image_paths'])}")
-            
             return jsonify(response_data)
         
         return jsonify({'error': 'Error processing file'}), 500
