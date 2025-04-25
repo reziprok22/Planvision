@@ -9,3 +9,4 @@ Webapp:
 - Bei zu grossen Plänen erkennt es kaum Fenster in der App (hinweis geben, dass kleine Pläne besser funktionieren)
 - Evtl am preprocessing mit openCV rumschrauben, um Ergebnisse zu verbessern.
 - Evtl. Eingaben in Spalte links (darunter die Tabelle der Ergebniise) machen und Pläne in Spalte rechts (bessere Ansicht auf den Plan).
+- Link erstellen lassen für Ansichtsversion, um mit Kollegen oder für Präsi zu teilen.

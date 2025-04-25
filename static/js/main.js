@@ -6,6 +6,9 @@
 // Globale Variablen
 window.data = null;
 
+let pdfPageData = {}; // Speichert Daten aller verarbeiteten Seiten
+let pageSettings = {}; // Speichert die Einstellungen pro Seite
+
 // PDF-spezifische Variablen
 let pdfSessionId = null;
 let currentPdfPage = 1;
@@ -59,6 +62,15 @@ document.addEventListener('DOMContentLoaded', function() {
             navigateToPdfPage(currentPdfPage + 1);
         }
     });
+
+    // Event-Listener für den "Seite neu verarbeiten"-Button hinzufügen
+    const reprocessBtn = document.getElementById('reprocessBtn');
+    if (reprocessBtn) {
+        reprocessBtn.addEventListener('click', function() {
+            // Aktuelle Seite neu verarbeiten mit den momentanen Formularwerten
+            navigateToPdfPage(currentPdfPage, true);
+        });
+    }
     
     // Überprüfen, ob alle Elemente vorhanden sind
     console.log("Haupt-UI-Elemente geladen:", {
@@ -136,10 +148,24 @@ document.addEventListener('DOMContentLoaded', function() {
     uploadForm.addEventListener('submit', function(e) {
         e.preventDefault();
         
+        // Prüfe, ob bereits Daten gespeichert wurden
+        const hasExistingData = Object.keys(pdfPageData).length > 0;
+        
+        if (hasExistingData) {
+            // Frage nach Bestätigung, wenn bereits Daten existieren
+            if (!confirm("Alle bisherigen Änderungen gehen verloren. Möchten Sie den Plan wirklich neu analysieren?")) {
+                return; // Abbruch, wenn der Nutzer "Abbrechen" klickt
+            }
+        }
+        
         // UI zurücksetzen
         clearResults();
         loader.style.display = 'block';
         errorMessage.style.display = 'none';
+        
+        // Zurücksetzen der gespeicherten Daten und Einstellungen, wenn wir eine neue Analyse starten
+        pdfPageData = {};  // Seiten-Daten zurücksetzen
+        pageSettings = {}; // Einstellungen zurücksetzen
         
         const formData = new FormData(uploadForm);
         
@@ -316,67 +342,37 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Funktion zum Laden einer bestimmten PDF-Seite
-    function loadPdfPage(pageNumber) {
-        console.log(`Lade PDF-Seite ${pageNumber} von ${totalPages}`);
+    function navigateToPdfPage(pageNumber, forceReprocess = false) {
+        console.log(`Navigiere zu PDF-Seite ${pageNumber} von ${totalPdfPages}, Neu-Verarbeitung: ${forceReprocess}`);
         
-        if (pageNumber < 1 || pageNumber > totalPages || !isPdf) {
+        // Speichere aktuelle Bearbeitungen der momentanen Seite, falls vorhanden
+        if (window.data && currentPdfPage) {
+            pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
+        }
+        
+        // Wenn wir bereits Daten für diese Seite haben und keine Neu-Verarbeitung erzwingen
+        if (!forceReprocess && pdfPageData[pageNumber]) {
+            console.log(`Verwende gespeicherte Daten für Seite ${pageNumber}`);
+            
+            // Aktuelle Seite aktualisieren
+            currentPdfPage = pageNumber;
+            
+            // Verwende die gespeicherten Daten
+            displayPdfPage(pageNumber, pdfPageData[pageNumber]);
             return;
         }
         
-        // UI zurücksetzen
-        clearAnnotations();
-        loader.style.display = 'block';
-        
-        // Aktualisiere aktuelle Seite
-        currentPage = pageNumber;
-        
-        // Formulardaten vorbereiten (alle Formularfelder beibehalten)
-        const formData = new FormData(uploadForm);
-        formData.set('page', pageNumber);
-        
-        // API-Aufruf für neue Seitenvorhersage
-        fetch('/predict', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(data => {
-                    throw new Error(data.error || 'Fehler bei der Anfrage');
-                });
-            }
-            return response.json();
-        })
-        .then(data => {
-            console.log("Seitenantwort:", data);
-            
-            // Bild der aktuellen Seite anzeigen
-            if (data.image_paths && data.image_paths[currentPage-1]) {
-                uploadedImage.src = data.image_paths[currentPage-1];
-            }
-            
-            // Seitennavigation aktualisieren
-            updatePageNavigation();
-            
-            // Verarbeite die Rückgabedaten
-            const processedData = processApiResponse(data);
-            
-            // Nur die Anmerkungen aktualisieren, nicht das Bild erneut laden
-            updateResults(processedData);
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            errorMessage.textContent = 'Fehler: ' + error.message;
-            errorMessage.style.display = 'block';
-        })
-        .finally(() => {
-            loader.style.display = 'none';
-        });
-    }
-
-    // Funktion zum Navigieren zwischen PDF-Seiten
-    function navigateToPdfPage(pageNumber) {
-        console.log(`Navigiere zu PDF-Seite ${pageNumber} von ${totalPdfPages}`);
+        // Wenn eine Neuverarbeitung erzwungen wird, aktualisieren wir die Einstellungen für diese Seite
+        if (forceReprocess) {
+            pageSettings[pageNumber] = {
+                format_width: document.getElementById('formatWidth').value,
+                format_height: document.getElementById('formatHeight').value,
+                dpi: document.getElementById('dpi').value,
+                plan_scale: document.getElementById('planScale').value,
+                threshold: document.getElementById('threshold').value
+            };
+            console.log(`Einstellungen für Seite ${pageNumber} aktualisiert:`, pageSettings[pageNumber]);
+        }
         
         // UI-Status aktualisieren
         loader.style.display = 'block';
@@ -387,32 +383,29 @@ document.addEventListener('DOMContentLoaded', function() {
         formData.append('session_id', pdfSessionId);
         formData.append('page', pageNumber);
         
-        // Parameterwerte aus dem Formular übernehmen
-        formData.append('format_width', document.getElementById('formatWidth').value);
-        formData.append('format_height', document.getElementById('formatHeight').value);
-        formData.append('dpi', document.getElementById('dpi').value);
-        formData.append('plan_scale', document.getElementById('planScale').value);
-        formData.append('threshold', document.getElementById('threshold').value);
+        // Verwende die Einstellungen für diese Seite
+        formData.append('format_width', pageSettings[pageNumber].format_width);
+        formData.append('format_height', pageSettings[pageNumber].format_height);
+        formData.append('dpi', pageSettings[pageNumber].dpi);
+        formData.append('plan_scale', pageSettings[pageNumber].plan_scale);
+        formData.append('threshold', pageSettings[pageNumber].threshold);
         
-        console.log("Senden von Anfrage für Seite", pageNumber, "mit Session", pdfSessionId);
+        console.log(`API-Aufruf für Seite ${pageNumber} mit Einstellungen:`, {
+            width: pageSettings[pageNumber].format_width,
+            height: pageSettings[pageNumber].format_height,
+            dpi: pageSettings[pageNumber].dpi,
+            scale: pageSettings[pageNumber].plan_scale,
+            threshold: pageSettings[pageNumber].threshold
+        });
         
         // API-Aufruf für die Seitenanalyse
         fetch('/analyze_page', {
             method: 'POST',
             body: formData
         })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(data => {
-                    throw new Error(data.error || 'Fehler bei der Anfrage');
-                });
-            }
-            return response.json();
-        })
+        .then(response => response.json())
         .then(data => {
-            console.log("Seitenanalyse-Ergebnis:", data);
-            
-            // Verarbeite die Rückgabedaten und konvertiere in das gewünschte Format
+            // Rest des Codes bleibt weitgehend unverändert
             const processedData = processApiResponse(data);
             
             // PDF-Infos wieder hinzufügen
@@ -425,12 +418,15 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Aktualisiere die globalen Variablen
             pdfSessionId = data.session_id;
-            currentPdfPage = data.current_page;
-            totalPdfPages = data.page_count;
+            currentPdfPage = parseInt(data.current_page);
+            totalPdfPages = parseInt(data.page_count);
             allPdfPages = data.all_pages;
             
+            // Daten für diese Seite speichern
+            pdfPageData[pageNumber] = processedData;
+            
             // Ergebnisse anzeigen
-            displayResults(processedData);
+            displayPdfPage(pageNumber, processedData);
         })
         .catch(error => {
             console.error('Error:', error);
@@ -442,23 +438,68 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Funktion zum Anzeigen einer PDF-Seite mit vorhandenen Daten
+    function displayPdfPage(pageNumber, pageData) {
+        // Globale Daten setzen
+        window.data = JSON.parse(JSON.stringify(pageData)); // Tiefe Kopie, um Referenzprobleme zu vermeiden
+        
+        // Aktualisiere die Eingabefelder auf die Werte für diese Seite
+        document.getElementById('formatWidth').value = pageSettings[pageNumber].format_width;
+        document.getElementById('formatHeight').value = pageSettings[pageNumber].format_height;
+        document.getElementById('dpi').value = pageSettings[pageNumber].dpi;
+        document.getElementById('planScale').value = pageSettings[pageNumber].plan_scale;
+        document.getElementById('threshold').value = pageSettings[pageNumber].threshold;
+        
+        // Bild anzeigen
+        uploadedImage.src = pageData.pdf_image_url + '?t=' + new Date().getTime(); // Cache-Busting
+        
+        // Auf Bild-Ladung warten
+        uploadedImage.onload = function() {
+            console.log("Bild geladen:", uploadedImage.width, "x", uploadedImage.height);
+            
+            // Alte Annotationen entfernen
+            clearAnnotations();
+            
+            // SVG-Container anpassen
+            adaptSvgOverlay();
+            
+            // Zusammenfassung
+            updateSummary();
+            
+            // Tabelle füllen
+            updateResultsTable();
+            
+            // Annotationen hinzufügen
+            window.data.predictions.forEach((pred, index) => {
+                addAnnotation(pred, index);
+            });
+            
+            // Navigation aktualisieren
+            updatePdfNavigation();
+            
+            // Simuliere ein Resize-Event nach kurzer Verzögerung
+            setTimeout(function() {
+                window.dispatchEvent(new Event('resize'));
+            }, 200);
+        };
+    }
+
     // Funktion zum Aktualisieren der PDF-Navigations-UI
     function updatePdfNavigation() {
-        console.log("updatePdfNavigation:", currentPdfPage, totalPdfPages);
-        
-        // Element-Referenzen sicherstellen
+        // Aktualisieren der Navigations-UI
         const currentPageSpan = document.getElementById('currentPage');
         const totalPagesSpan = document.getElementById('totalPages');
         
         if (currentPageSpan && totalPagesSpan) {
             currentPageSpan.textContent = currentPdfPage;
-            totalPagesSpan.textContent = totalPdfPages || 1;
+            totalPagesSpan.textContent = totalPdfPages;
             
             // Buttons je nach aktueller Seite aktivieren/deaktivieren
-            prevPageBtn.disabled = currentPdfPage <= 1;
-            nextPageBtn.disabled = currentPdfPage >= totalPdfPages;
-        } else {
-            console.error("PDF-Navigation-Elemente nicht gefunden!");
+            const prevPageBtn = document.getElementById('prevPageBtn');
+            const nextPageBtn = document.getElementById('nextPageBtn');
+            
+            if (prevPageBtn) prevPageBtn.disabled = currentPdfPage <= 1;
+            if (nextPageBtn) nextPageBtn.disabled = currentPdfPage >= totalPdfPages;
         }
     }
 
@@ -589,25 +630,36 @@ document.addEventListener('DOMContentLoaded', function() {
     function displayResults(responseData) {
         console.log("Zeige Ergebnisse an:", responseData);
         
+        // Lokale und globale Daten setzen
+        window.data = responseData;
+        
         // PDF-spezifische Informationen verarbeiten
         const isPdf = responseData.is_pdf || false;
         
         if (isPdf) {
             console.log("PDF erkannt:", isPdf);
-            console.log("PDF-Seiten:", responseData.page_count);
-        
+            
             pdfSessionId = responseData.session_id || null;
             currentPdfPage = parseInt(responseData.current_page || 1);
             totalPdfPages = parseInt(responseData.page_count || 1);
             allPdfPages = responseData.all_pages || [];
-        
-            console.log("PDF Info:", {
-                session: pdfSessionId,
-                current: currentPdfPage,
-                total: totalPdfPages,
-                pages: allPdfPages.length
-            });
-        
+            
+            // Aktuelle Formularwerte für ALLE Seiten initialisieren, falls nicht bereits vorhanden
+            for (let i = 1; i <= totalPdfPages; i++) {
+                if (!pageSettings[i]) {
+                    pageSettings[i] = {
+                        format_width: document.getElementById('formatWidth').value,
+                        format_height: document.getElementById('formatHeight').value,
+                        dpi: document.getElementById('dpi').value,
+                        plan_scale: document.getElementById('planScale').value,
+                        threshold: document.getElementById('threshold').value
+                    };
+                }
+            }
+            
+            // Aktuelle Seite im pdfPageData speichern
+            pdfPageData[currentPdfPage] = responseData;
+            
             if (totalPdfPages > 1 && pdfSessionId) {
                 updatePdfNavigation();
                 pdfNavigation.style.display = 'flex';
@@ -617,8 +669,7 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             pdfNavigation.style.display = 'none';
         }
-        
-
+         
         // Lokale und globale Daten setzen
         window.data = responseData;
         

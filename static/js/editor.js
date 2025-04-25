@@ -473,11 +473,17 @@ function calculateArea(box) {
 }
 
 // Änderungen speichern
+// In der saveEditorChanges-Funktion (im Editor-Teil)
 function saveEditorChanges() {
     console.log("Speichere Editor-Änderungen");
     
     // Aktualisiere die Ergebnis-Tabelle und Zusammenfassung
     updateEditorResults();
+    
+    // Speichere die aktuellen Daten in pdfPageData für die aktuelle Seite
+    if (currentPdfPage) {
+        pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
+    }
     
     // Editor ausschalten
     toggleEditor();
