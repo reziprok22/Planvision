@@ -61,6 +61,18 @@
                     
                     <button type="submit" id="analyzeBtn">Plan analysieren</button>
                 </form>
+
+                <div class="project-section">
+                    <h2>Projekte</h2>
+                    <div class="project-buttons">
+                        <button id="saveProjectBtn" class="project-button">Aktuelles Projekt speichern</button>
+                        <button id="loadProjectBtn" class="project-button">Projekt öffnen</button>
+                    </div>
+                    <div id="projectList" class="project-list" style="display: none;">
+                        <!-- Projektliste wird hier durch JavaScript eingefügt -->
+                    </div>
+                </div>
+
                 <div class="loader" id="loader"></div>
                 <div id="errorMessage"></div>
             </div>
@@ -172,6 +184,35 @@
     <!-- Editor muss vor Main geladen werden, da mein eine func vom editor aufruft -->
     <script src="static/js/editor.js"></script>
     <script src="static/js/main.js"></script>
-
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const saveProjectBtn = document.getElementById('saveProjectBtn');
+            const loadProjectBtn = document.getElementById('loadProjectBtn');
+            const projectList = document.getElementById('projectList');
+            
+            if (saveProjectBtn) {
+                saveProjectBtn.addEventListener('click', function() {
+                    if (!pdfSessionId) {
+                        alert('Bitte laden Sie zuerst eine PDF-Datei hoch.');
+                        return;
+                    }
+                    saveProject();
+                });
+            }
+            
+            if (loadProjectBtn) {
+                loadProjectBtn.addEventListener('click', function() {
+                    if (projectList.style.display === 'none') {
+                        loadProjectList();
+                        projectList.style.display = 'block';
+                        loadProjectBtn.textContent = 'Projektliste schließen';
+                    } else {
+                        projectList.style.display = 'none';
+                        loadProjectBtn.textContent = 'Projekt öffnen';
+                    }
+                });
+            }
+        });
+    </script>
 </body>
 </html>

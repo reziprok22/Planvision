@@ -9,6 +9,7 @@ fasterrcnn_model
 trainings_data
 static/uploads
 static/temp
+projects
 
 # Einzelne Datei ignorieren
 Notizen_FL.txt

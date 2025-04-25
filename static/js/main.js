@@ -143,6 +143,177 @@ document.addEventListener('DOMContentLoaded', function() {
             el.style.display = this.classList.contains('active') ? 'block' : 'none';
         });
     });
+
+    // Projekt speichern
+    function saveProject() {
+        // Projektname vom Nutzer abfragen
+        const projectName = prompt("Geben Sie einen Namen für das Projekt ein:", 
+                                `Fensterprojekt ${new Date().toLocaleDateString()}`);
+        
+        if (!projectName) return; // Abbruch wenn kein Name eingegeben
+        
+        // Status anzeigen
+        const saveStatus = document.createElement('div');
+        saveStatus.className = 'save-status';
+        saveStatus.textContent = 'Speichere Projekt...';
+        document.body.appendChild(saveStatus);
+        
+        // Alle Analysedaten sammeln
+        const analysisData = {};
+        Object.keys(pdfPageData).forEach(pageNum => {
+            analysisData[pageNum] = pdfPageData[pageNum];
+        });
+        
+        // Daten für den Server vorbereiten
+        const projectData = {
+            project_name: projectName,
+            session_id: pdfSessionId,
+            analysis_data: analysisData,
+            settings: pageSettings
+        };
+        
+        // Projekt auf dem Server speichern
+        fetch('/save_project', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(projectData)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                saveStatus.textContent = `Projekt "${data.project_name}" erfolgreich gespeichert!`;
+                saveStatus.style.backgroundColor = '#4CAF50';
+                
+                // Projektliste aktualisieren, falls sichtbar
+                if (document.getElementById('projectList')) {
+                    loadProjectList();
+                }
+            } else {
+                saveStatus.textContent = `Fehler: ${data.error}`;
+                saveStatus.style.backgroundColor = '#f44336';
+            }
+            
+            // Status nach 3 Sekunden ausblenden
+            setTimeout(() => {
+                saveStatus.style.opacity = '0';
+                setTimeout(() => saveStatus.remove(), 500);
+            }, 3000);
+        })
+        .catch(error => {
+            saveStatus.textContent = `Fehler: ${error.message}`;
+            saveStatus.style.backgroundColor = '#f44336';
+        });
+    }
+
+    // Projektliste laden
+    function loadProjectList() {
+        const projectList = document.getElementById('projectList');
+        if (!projectList) return;
+        
+        projectList.innerHTML = '<p>Lade Projekte...</p>';
+        
+        fetch('/list_projects')
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    if (data.projects.length === 0) {
+                        projectList.innerHTML = '<p>Keine Projekte gefunden.</p>';
+                        return;
+                    }
+                    
+                    projectList.innerHTML = '';
+                    const table = document.createElement('table');
+                    table.className = 'project-table';
+                    
+                    // Tabellenkopf
+                    const thead = document.createElement('thead');
+                    thead.innerHTML = `
+                        <tr>
+                            <th>Projektname</th>
+                            <th>Erstellt am</th>
+                            <th>Seiten</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    `;
+                    table.appendChild(thead);
+                    
+                    // Tabellenkörper
+                    const tbody = document.createElement('tbody');
+                    data.projects.forEach(project => {
+                        const tr = document.createElement('tr');
+                        
+                        // Datum formatieren
+                        const date = new Date(project.created_at);
+                        const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+                        
+                        tr.innerHTML = `
+                            <td>${project.project_name}</td>
+                            <td>${formattedDate}</td>
+                            <td>${project.page_count}</td>
+                            <td>
+                                <button class="load-project-btn" data-id="${project.project_id}">Laden</button>
+                            </td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                    table.appendChild(tbody);
+                    projectList.appendChild(table);
+                    
+                    // Event-Listener für "Laden"-Buttons
+                    document.querySelectorAll('.load-project-btn').forEach(btn => {
+                        btn.addEventListener('click', () => {
+                            loadProject(btn.dataset.id);
+                        });
+                    });
+                } else {
+                    projectList.innerHTML = `<p>Fehler: ${data.error}</p>`;
+                }
+            })
+            .catch(error => {
+                projectList.innerHTML = `<p>Fehler: ${error.message}</p>`;
+            });
+    }
+
+    // Projekt laden
+    function loadProject(projectId) {
+        // UI zurücksetzen
+        clearResults();
+        loader.style.display = 'block';
+        errorMessage.style.display = 'none';
+        
+        fetch(`/load_project/${projectId}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Globale Variablen zurücksetzen und mit Projektdaten füllen
+                    pdfPageData = data.analysis_data;
+                    pageSettings = data.settings;
+                    pdfSessionId = projectId; // Wir verwenden die Projekt-ID als Session-ID
+                    currentPdfPage = 1;
+                    totalPdfPages = data.metadata.page_count;
+                    allPdfPages = data.image_urls;
+                    
+                    // Erste Seite anzeigen
+                    displayPdfPage(1, pdfPageData[1]);
+                    
+                    // Projekttitel anzeigen
+                    document.title = `Fenster-Erkennungstool - ${data.metadata.project_name}`;
+                } else {
+                    errorMessage.textContent = data.error;
+                    errorMessage.style.display = 'block';
+                }
+            })
+            .catch(error => {
+                errorMessage.textContent = error.message;
+                errorMessage.style.display = 'block';
+            })
+            .finally(() => {
+                loader.style.display = 'none';
+            });
+    }
+
     
     // Formular-Submit-Handler
     uploadForm.addEventListener('submit', function(e) {
@@ -1022,7 +1193,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
-    
+   
     // Event-Listener für Bildgrößenänderungen
     window.addEventListener('resize', function() {
         if (uploadedImage.src) {
@@ -1044,5 +1215,33 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     } else {
         console.warn("Editor-Initialisierungsfunktion nicht gefunden. Bitte stellen Sie sicher, dass editor.js vor der Hauptdatei geladen wird.");
+    }
+    
+    // Event-Listener für Projekt-Buttons
+    const saveProjectBtn = document.getElementById('saveProjectBtn');
+    const loadProjectBtn = document.getElementById('loadProjectBtn');
+    const projectList = document.getElementById('projectList');
+
+    if (saveProjectBtn) {
+        saveProjectBtn.addEventListener('click', function() {
+            if (!pdfSessionId) {
+                alert('Bitte laden Sie zuerst eine PDF-Datei hoch und analysieren Sie sie.');
+                return;
+            }
+            saveProject();
+        });
+    }
+
+    if (loadProjectBtn) {
+        loadProjectBtn.addEventListener('click', function() {
+            if (projectList.style.display === 'none') {
+                loadProjectList();
+                projectList.style.display = 'block';
+                loadProjectBtn.textContent = 'Projektliste schließen';
+            } else {
+                projectList.style.display = 'none';
+                loadProjectBtn.textContent = 'Projekt öffnen';
+            }
+        });
     }
 });

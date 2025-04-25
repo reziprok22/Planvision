@@ -10,6 +10,9 @@ import tempfile
 from pdf2image import convert_from_path
 import logging
 
+import uuid
+import datetime
+
 # Logging einrichten
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -364,7 +367,121 @@ def convert_pdf_debug():
         return jsonify({'error': f'Error: {str(e)}'}), 500
 
 
+# Projekte speichern
+# Projekte speichern
+@app.route('/save_project', methods=['POST'])
+def save_project():
+    try:
+        # Projektdaten aus dem Request-Body extrahieren
+        data = request.json
+        if not data:
+            return jsonify({'error': 'Keine Daten erhalten'}), 400
+            
+        # Projekt-ID generieren
+        project_id = str(uuid.uuid4())
+        
+        # Projektname und Session-ID extrahieren
+        project_name = data.get('project_name', f"Projekt_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}")
+        session_id = data.get('session_id')
+        
+        if not session_id:
+            return jsonify({'error': 'Keine Session-ID angegeben'}), 400
+        
+        # Projektverzeichnis erstellen
+        project_dir = os.path.join('projects', project_id)
+        os.makedirs(project_dir, exist_ok=True)
+        os.makedirs(os.path.join(project_dir, 'pages'), exist_ok=True)
+        os.makedirs(os.path.join(project_dir, 'analysis'), exist_ok=True)
+        
+        # Original PDF-Datei kopieren (falls vorhanden)
+        pdf_path = os.path.join('static', 'uploads', session_id, 'document.pdf')
+        if os.path.exists(pdf_path):
+            shutil.copy(pdf_path, os.path.join(project_dir, 'original.pdf'))
+        
+        # Bildseiten kopieren
+        session_dir = os.path.join('static', 'uploads', session_id)
+        if os.path.exists(session_dir):
+            for filename in os.listdir(session_dir):
+                if filename.startswith('page_') and filename.endswith('.jpg'):
+                    shutil.copy(
+                        os.path.join(session_dir, filename),
+                        os.path.join(project_dir, 'pages', filename)
+                    )
+        
+        # Analyse-Daten vom Client
+        analysis_data = data.get('analysis_data', {})
+        
+        # Speichere globale Einstellungen
+        settings = data.get('settings', {})
+        with open(os.path.join(project_dir, 'analysis', 'analysis_settings.json'), 'w') as f:
+            json.dump(settings, f, indent=2)
+        
+        # Speichere Analyse-Ergebnisse pro Seite
+        for page_num, page_data in analysis_data.items():
+            with open(os.path.join(project_dir, 'analysis', f'page_{page_num}_results.json'), 'w') as f:
+                json.dump(page_data, f, indent=2)
+        
+        # Speichere Metadaten
+        page_count = len([f for f in os.listdir(os.path.join(project_dir, 'pages')) 
+                         if f.endswith('.jpg') and f.startswith('page_')])
+        
+        metadata = {
+            'project_name': project_name,
+            'created_at': datetime.datetime.now().isoformat(),
+            'page_count': page_count,
+            'project_id': project_id
+        }
+        
+        with open(os.path.join(project_dir, 'metadata.json'), 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Projekt erfolgreich gespeichert',
+            'project_id': project_id,
+            'project_name': project_name
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+# Projekte auflisten
+@app.route('/list_projects', methods=['GET'])
+def list_projects():
+    try:
+        projects = []
+        projects_dir = 'projects'
+        
+        if not os.path.exists(projects_dir):
+            os.makedirs(projects_dir, exist_ok=True)
+            return jsonify({'success': True, 'projects': []})
+        
+        for project_id in os.listdir(projects_dir):
+            project_path = os.path.join(projects_dir, project_id)
+            if os.path.isdir(project_path):
+                metadata_path = os.path.join(project_path, 'metadata.json')
+                if os.path.exists(metadata_path):
+                    with open(metadata_path, 'r') as f:
+                        metadata = json.load(f)
+                        projects.append(metadata)
+        
+        return jsonify({
+            'success': True,
+            'projects': projects
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+# Nach dem Serverstart
 if __name__ == '__main__':
+    # Stelle sicher, dass der Projektordner existiert
+    os.makedirs('projects', exist_ok=True)
+    
     # Versuche, das Modell zu Beginn zu laden
     try:
         load_model()

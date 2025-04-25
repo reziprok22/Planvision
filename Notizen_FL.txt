@@ -10,3 +10,24 @@ Webapp:
 - Evtl am preprocessing mit openCV rumschrauben, um Ergebnisse zu verbessern.
 - Evtl. Eingaben in Spalte links (darunter die Tabelle der Ergebniise) machen und Pläne in Spalte rechts (bessere Ansicht auf den Plan).
 - Link erstellen lassen für Ansichtsversion, um mit Kollegen oder für Präsi zu teilen.
+
+Hinweise Datenumgang
+- Option 1:Aller Erkennungsergebnisse werden im Frontend (JS-mässig) gespeichert. Wenn eine Seite das erste Mal aufgerufen wird, wird sie von fastRccnn analysiert und danach die Ergebnisse um Browser gespeichert (Lazy-Leading). Beim erneuten Besuch der Seite werden die gespeicherten Daten verwendet. Dies erlaubt die Änderungen zu behalten und jede einzelne Seite zu analysieren. 
+- Option 2: Beim ersten Öffnen des gesamten PDF-Dateien wird die Analyse durchgeführt und ins Frontend gespeichert (bräuchte am Anfang lang, dafür nachher sehr schnell). Ist vielleicht sinnvoll, wenn oft mit sehr grossen PDF(viele Seiten) gearbeitet wird.
+- Option 3: Bearbeitungen im backend zu speichern, verknüpft mit der PDF-Session-ID (gemäss Claude die robusteste Lösung) -> Vermutlich weil Daten im backend gespeichert (Server) bleiben, auch wenn der Browser absützt oder die Sitzung verloren geht. Weitere Vorteile sind geräteübergreifender Zugriff durch die Session-ID. Änderungen bleiben sehr lange erhalten. Zentrale Versionierung (Es können einfacher rühere Bearbeitungszustände wiederhergestellt werden, wichtig bei Versionsänderungen.
+
+Claude schlägt mir folgende Dateistruktur auf dem server vor:
+
+projects/
+  └── [project_id]/
+      ├── original.pdf                 # Original PDF-Datei
+      ├── metadata.json                # Projekt-Metadaten (Name, Datum, Nutzer)
+      ├── pages/
+      │   ├── page_1.jpg               # Extrahierte Bildseiten
+      │   ├── page_2.jpg
+      │   └── ...
+      └── analysis/
+          ├── analysis_settings.json   # Globale Einstellungen
+          ├── page_1_results.json      # Analyseergebnisse pro Seite
+          ├── page_2_results.json
+          └── ...
