@@ -206,17 +206,28 @@ document.addEventListener('DOMContentLoaded', function() {
             saveStatus.style.backgroundColor = '#f44336';
         });
     }
+    window.saveProject = saveProject;
+
 
     // Projektliste laden
     function loadProjectList() {
+        console.log("loadProjectList aufgerufen");
         const projectList = document.getElementById('projectList');
-        if (!projectList) return;
+        if (!projectList) {
+            console.error("Projektliste-Element nicht gefunden!");
+            return;
+        }
         
         projectList.innerHTML = '<p>Lade Projekte...</p>';
+        console.log("Sende Anfrage an /list_projects");
         
         fetch('/list_projects')
-            .then(response => response.json())
+            .then(response => {
+                console.log("Antwort erhalten:", response);
+                return response.json();
+            })
             .then(data => {
+                console.log("Daten erhalten:", data);
                 if (data.success) {
                     if (data.projects.length === 0) {
                         projectList.innerHTML = '<p>Keine Projekte gefunden.</p>';
@@ -264,28 +275,43 @@ document.addEventListener('DOMContentLoaded', function() {
                     // Event-Listener für "Laden"-Buttons
                     document.querySelectorAll('.load-project-btn').forEach(btn => {
                         btn.addEventListener('click', () => {
-                            loadProject(btn.dataset.id);
+                            const projectId = btn.dataset.id;
+                            console.log(`Lade Projekt mit ID: ${projectId}`);
+                            loadProject(projectId);
                         });
                     });
                 } else {
+                    console.error("Fehler:", data.error);
                     projectList.innerHTML = `<p>Fehler: ${data.error}</p>`;
                 }
             })
             .catch(error => {
+                console.error("Fetch-Fehler:", error);
                 projectList.innerHTML = `<p>Fehler: ${error.message}</p>`;
             });
     }
+    // Funktion global verfügbar machen
+    window.loadProjectList = loadProjectList;
 
     // Projekt laden
     function loadProject(projectId) {
+        console.log(`loadProject aufgerufen mit ID: ${projectId}`);
+        
         // UI zurücksetzen
         clearResults();
         loader.style.display = 'block';
         errorMessage.style.display = 'none';
         
         fetch(`/load_project/${projectId}`)
-            .then(response => response.json())
+            .then(response => {
+                console.log("Antwort erhalten:", response);
+                if (!response.ok) {
+                    throw new Error(`Server-Fehler: ${response.status} ${response.statusText}`);
+                }
+                return response.json();
+            })
             .then(data => {
+                console.log("Projekt-Daten erhalten:", data);
                 if (data.success) {
                     // Globale Variablen zurücksetzen und mit Projektdaten füllen
                     pdfPageData = data.analysis_data;
@@ -295,17 +321,32 @@ document.addEventListener('DOMContentLoaded', function() {
                     totalPdfPages = data.metadata.page_count;
                     allPdfPages = data.image_urls;
                     
+                    // Debug-Ausgabe der Daten für die erste Seite
+                    console.log("Daten für Seite 1:", pdfPageData["1"]);
+                    console.log("Anzahl Vorhersagen:", pdfPageData["1"]?.predictions?.length);
+                    
                     // Erste Seite anzeigen
-                    displayPdfPage(1, pdfPageData[1]);
+                    displayPdfPage(1, pdfPageData["1"]);
                     
                     // Projekttitel anzeigen
                     document.title = `Fenster-Erkennungstool - ${data.metadata.project_name}`;
+                    
+                    // Projektliste ausblenden
+                    const projectList = document.getElementById('projectList');
+                    if (projectList) {
+                        projectList.style.display = 'none';
+                    }
+                    const loadProjectBtn = document.getElementById('loadProjectBtn');
+                    if (loadProjectBtn) {
+                        loadProjectBtn.textContent = 'Projekt öffnen';
+                    }
                 } else {
                     errorMessage.textContent = data.error;
                     errorMessage.style.display = 'block';
                 }
             })
             .catch(error => {
+                console.error("Fehler beim Laden des Projekts:", error);
                 errorMessage.textContent = error.message;
                 errorMessage.style.display = 'block';
             })
@@ -313,6 +354,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 loader.style.display = 'none';
             });
     }
+
 
     
     // Formular-Submit-Handler
@@ -611,18 +653,60 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Funktion zum Anzeigen einer PDF-Seite mit vorhandenen Daten
     function displayPdfPage(pageNumber, pageData) {
+        console.log("Seitenstruktur für Seite 1:", JSON.stringify(pdfPageData[1], null, 2));
+        console.log(`Zeige Seite ${pageNumber} an mit Daten:`, pageData);
+
+
+        // Überprüfe Format der Daten
+        if (!pageData) {
+            console.error(`Keine Daten für Seite ${pageNumber} gefunden!`);
+            return;
+        }
+        
+        // Überprüfe, ob die Seitendaten die erwartete Struktur haben
+        if (!pageData.predictions || !Array.isArray(pageData.predictions)) {
+            console.error(`Ungültiges Datenformat für Seite ${pageNumber}:`, pageData);
+            
+            // Versuch einer Korrektur, falls möglich
+            if (pageData.count !== undefined && pageData.total_area !== undefined) {
+                console.log("Datenformat scheint korrekt zu sein, führe fort...");
+            } else {
+                console.error("Keine Vorhersagen gefunden, kann Seite nicht anzeigen");
+                errorMessage.textContent = `Keine gültigen Daten für Seite ${pageNumber}`;
+                errorMessage.style.display = 'block';
+                return;
+            }
+        }
+        
         // Globale Daten setzen
         window.data = JSON.parse(JSON.stringify(pageData)); // Tiefe Kopie, um Referenzprobleme zu vermeiden
         
         // Aktualisiere die Eingabefelder auf die Werte für diese Seite
-        document.getElementById('formatWidth').value = pageSettings[pageNumber].format_width;
-        document.getElementById('formatHeight').value = pageSettings[pageNumber].format_height;
-        document.getElementById('dpi').value = pageSettings[pageNumber].dpi;
-        document.getElementById('planScale').value = pageSettings[pageNumber].plan_scale;
-        document.getElementById('threshold').value = pageSettings[pageNumber].threshold;
+        if (pageSettings[pageNumber]) {
+            document.getElementById('formatWidth').value = pageSettings[pageNumber].format_width || 210;
+            document.getElementById('formatHeight').value = pageSettings[pageNumber].format_height || 297;
+            document.getElementById('dpi').value = pageSettings[pageNumber].dpi || 300;
+            document.getElementById('planScale').value = pageSettings[pageNumber].plan_scale || 100;
+            document.getElementById('threshold').value = pageSettings[pageNumber].threshold || 0.5;
+        }
         
         // Bild anzeigen
-        uploadedImage.src = pageData.pdf_image_url + '?t=' + new Date().getTime(); // Cache-Busting
+        const imageUrl = pageData.pdf_image_url || allPdfPages[pageNumber-1];
+        
+        console.log(`Zeige Bild an: ${imageUrl}`);
+        uploadedImage.src = imageUrl + '?t=' + new Date().getTime(); // Cache-Busting
+        
+        // Ergebnisbereiche anzeigen
+        resultsSection.style.display = 'block';
+        resultsTableSection.style.display = 'block';
+        
+        // PDF-Navigation anzeigen, wenn mehrere Seiten vorhanden sind
+        if (totalPdfPages > 1) {
+            pdfNavigation.style.display = 'flex';
+            updatePdfNavigation();
+        } else {
+            pdfNavigation.style.display = 'none';
+        }
         
         // Auf Bild-Ladung warten
         uploadedImage.onload = function() {
@@ -641,12 +725,14 @@ document.addEventListener('DOMContentLoaded', function() {
             updateResultsTable();
             
             // Annotationen hinzufügen
-            window.data.predictions.forEach((pred, index) => {
-                addAnnotation(pred, index);
-            });
-            
-            // Navigation aktualisieren
-            updatePdfNavigation();
+            if (window.data && window.data.predictions && window.data.predictions.length > 0) {
+                console.log(`Füge ${window.data.predictions.length} Annotationen hinzu`);
+                window.data.predictions.forEach((pred, index) => {
+                    addAnnotation(pred, index);
+                });
+            } else {
+                console.warn("Keine Vorhersagen für Annotationen gefunden");
+            }
             
             // Simuliere ein Resize-Event nach kurzer Verzögerung
             setTimeout(function() {
@@ -654,7 +740,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 200);
         };
     }
-
     // Funktion zum Aktualisieren der PDF-Navigations-UI
     function updatePdfNavigation() {
         // Aktualisieren der Navigations-UI
@@ -1216,7 +1301,7 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         console.warn("Editor-Initialisierungsfunktion nicht gefunden. Bitte stellen Sie sicher, dass editor.js vor der Hauptdatei geladen wird.");
     }
-    
+
     // Event-Listener für Projekt-Buttons
     const saveProjectBtn = document.getElementById('saveProjectBtn');
     const loadProjectBtn = document.getElementById('loadProjectBtn');

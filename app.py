@@ -410,6 +410,9 @@ def save_project():
         
         # Analyse-Daten vom Client
         analysis_data = data.get('analysis_data', {})
+        print(f"Projektdaten zum Speichern: {len(analysis_data)} Seiten")
+        for page_num, page_data in analysis_data.items():
+            print(f"Seite {page_num}: {len(page_data.get('predictions', []))} Vorhersagen")
         
         # Speichere globale Einstellungen
         settings = data.get('settings', {})
@@ -451,22 +454,32 @@ def save_project():
 @app.route('/list_projects', methods=['GET'])
 def list_projects():
     try:
+        print("list_projects wurde aufgerufen")
         projects = []
         projects_dir = 'projects'
         
+        print(f"Suche nach Projekten in: {projects_dir}")
         if not os.path.exists(projects_dir):
+            print(f"Ordner {projects_dir} existiert nicht, erstelle ihn")
             os.makedirs(projects_dir, exist_ok=True)
             return jsonify({'success': True, 'projects': []})
         
+        project_count = 0
         for project_id in os.listdir(projects_dir):
             project_path = os.path.join(projects_dir, project_id)
+            print(f"Gefunden: {project_id}, ist Ordner: {os.path.isdir(project_path)}")
             if os.path.isdir(project_path):
                 metadata_path = os.path.join(project_path, 'metadata.json')
                 if os.path.exists(metadata_path):
+                    print(f"Lade Metadaten aus: {metadata_path}")
                     with open(metadata_path, 'r') as f:
                         metadata = json.load(f)
                         projects.append(metadata)
+                        project_count += 1
+                else:
+                    print(f"Metadaten-Datei nicht gefunden in: {metadata_path}")
         
+        print(f"Insgesamt {project_count} Projekte gefunden")
         return jsonify({
             'success': True,
             'projects': projects
@@ -474,6 +487,84 @@ def list_projects():
         
     except Exception as e:
         import traceback
+        print("Fehler beim Auflisten der Projekte:")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+# Projekt laden
+@app.route('/load_project/<project_id>', methods=['GET'])
+def load_project(project_id):
+    try:
+        print(f"load_project aufgerufen mit ID: {project_id}")
+        
+        # Projektverzeichnis überprüfen
+        project_dir = os.path.join('projects', project_id)
+        print(f"Suche Projekt in: {project_dir}")
+        if not os.path.exists(project_dir):
+            print(f"Projektordner nicht gefunden: {project_dir}")
+            return jsonify({'error': 'Projekt nicht gefunden'}), 404
+        
+        # Metadaten laden
+        metadata_path = os.path.join(project_dir, 'metadata.json')
+        if not os.path.exists(metadata_path):
+            print(f"Metadaten-Datei nicht gefunden: {metadata_path}")
+            return jsonify({'error': 'Projekt-Metadaten nicht gefunden'}), 404
+            
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        
+        # Analyse-Daten laden
+        analysis_dir = os.path.join(project_dir, 'analysis')
+        analysis_data = {}
+        
+        # Analysedaten für jede Seite laden
+        for filename in os.listdir(analysis_dir):
+            if filename.startswith('page_') and filename.endswith('_results.json'):
+                page_num = filename.split('_')[1]  # Extrahiere Seitennummer
+                with open(os.path.join(analysis_dir, filename), 'r') as f:
+                    page_data = json.load(f)
+                    analysis_data[page_num] = page_data
+        
+        # Einstellungen laden
+        settings_path = os.path.join(analysis_dir, 'analysis_settings.json')
+        if os.path.exists(settings_path):
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+        else:
+            settings = {}
+        
+        # URLs für die Bildseiten erstellen
+        image_urls = []
+        pages_dir = os.path.join(project_dir, 'pages')
+        for filename in sorted(os.listdir(pages_dir)):
+            if filename.startswith('page_') and filename.endswith('.jpg'):
+                # Kopiere das Bild in den static/uploads Ordner für den Zugriff
+                target_dir = os.path.join('static', 'uploads', project_id)
+                os.makedirs(target_dir, exist_ok=True)
+                
+                # Kopiere die Datei, wenn sie noch nicht existiert
+                if not os.path.exists(os.path.join(target_dir, filename)):
+                    shutil.copy(
+                        os.path.join(pages_dir, filename),
+                        os.path.join(target_dir, filename)
+                    )
+                
+                # URL zum Bild erstellen
+                image_url = f"/static/uploads/{project_id}/{filename}"
+                image_urls.append(image_url)
+        
+        print(f"Projekt geladen, Metadaten: {metadata}, {len(analysis_data)} Seiten-Analysen, {len(image_urls)} Bilder")
+        return jsonify({
+            'success': True,
+            'metadata': metadata,
+            'analysis_data': analysis_data,
+            'settings': settings,
+            'image_urls': image_urls
+        })
+        
+    except Exception as e:
+        import traceback
+        print("Fehler beim Laden des Projekts:")
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
