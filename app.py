@@ -423,9 +423,19 @@ def save_project():
             json.dump(settings, f, indent=2)
         
         # Speichere Analyse-Ergebnisse pro Seite
+        saved_pages = 0
         for page_num, page_data in analysis_data.items():
-            with open(os.path.join(project_dir, 'analysis', f'page_{page_num}_results.json'), 'w') as f:
-                json.dump(page_data, f, indent=2)
+            # Stelle sicher, dass page_num als String behandelt wird
+            page_filename = f"page_{str(page_num)}_results.json"
+            save_path = os.path.join(project_dir, 'analysis', page_filename)
+            
+            try:
+                with open(save_path, 'w') as f:
+                    json.dump(page_data, f, indent=2)
+                print(f"Gespeichert: {save_path}")
+                saved_pages += 1
+            except Exception as e:
+                print(f"Fehler beim Speichern von Seite {page_num}: {e}")
         
         # Speichere Metadaten
         page_count = len([f for f in os.listdir(os.path.join(project_dir, 'pages')) 
@@ -435,17 +445,21 @@ def save_project():
             'project_name': project_name,
             'created_at': datetime.datetime.now().isoformat(),
             'page_count': page_count,
-            'project_id': project_id
+            'project_id': project_id,
+            'saved_pages': saved_pages
         }
         
         with open(os.path.join(project_dir, 'metadata.json'), 'w') as f:
             json.dump(metadata, f, indent=2)
         
+        print(f"Projekt {project_name} erfolgreich gespeichert. {saved_pages} Seiten-Ergebnisse gespeichert.")
+        
         return jsonify({
             'success': True,
             'message': 'Projekt erfolgreich gespeichert',
             'project_id': project_id,
-            'project_name': project_name
+            'project_name': project_name,
+            'saved_pages': saved_pages
         })
         
     except Exception as e:
@@ -556,7 +570,6 @@ def load_project(project_id):
                 image_url = f"/static/uploads/{project_id}/{filename}"
                 image_urls.append(image_url)
         
-        print(f"Projekt geladen, Metadaten: {metadata}, {len(analysis_data)} Seiten-Analysen, {len(image_urls)} Bilder")
         return jsonify({
             'success': True,
             'metadata': metadata,
@@ -581,14 +594,16 @@ def export_pdf(project_id):
         
         if not os.path.exists(project_dir):
             print(f"Projektordner nicht gefunden: {project_dir}")
-            return jsonify({'error': 'Projekt nicht gefunden'}), 404
+            return jsonify({
+                'success': False, 
+                'error': 'Projekt wurde nicht gefunden. Bitte speichern Sie das Projekt zuerst.'
+            }), 404
         
         # PDF-Bericht generieren
         pdf_path = generate_report_pdf(project_id)
         print(f"PDF generiert: {pdf_path}")
         
         # Extrahiere den relativen Pfad für die URL
-        # Beispiel: static/reports/bericht.pdf -> /static/reports/bericht.pdf
         if 'static/' in pdf_path:
             rel_path = '/static/' + pdf_path.split('static/')[1]
         else:
@@ -606,7 +621,7 @@ def export_pdf(project_id):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 # Nach dem Serverstart
 if __name__ == '__main__':

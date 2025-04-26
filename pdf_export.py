@@ -210,7 +210,7 @@ def generate_report_pdf(project_id, output_path=None):
                 analysis_path = path
                 break
         
-        print(f"Seite {page_num}: Bild gefunden: {page_path is not None}, Analyse gefunden: {analysis_path is not None}")
+        # print(f"Seite {page_num}: Bild gefunden: {page_path is not None}, Analyse gefunden: {analysis_path is not None}")
         
         # Seitentitel
         elements.append(Paragraph(f"Seite {page_num}", subtitle_style))

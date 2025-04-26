@@ -146,65 +146,77 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Projekt speichern
     function saveProject() {
-        // Projektname vom Nutzer abfragen
-        const projectName = prompt("Geben Sie einen Namen für das Projekt ein:", 
-                                `Fensterprojekt ${new Date().toLocaleDateString()}`);
-        
-        if (!projectName) return; // Abbruch wenn kein Name eingegeben
-        
-        // Status anzeigen
-        const saveStatus = document.createElement('div');
-        saveStatus.className = 'save-status';
-        saveStatus.textContent = 'Speichere Projekt...';
-        document.body.appendChild(saveStatus);
-        
-        // Alle Analysedaten sammeln
-        const analysisData = {};
-        Object.keys(pdfPageData).forEach(pageNum => {
-            analysisData[pageNum] = pdfPageData[pageNum];
-        });
-        
-        // Daten für den Server vorbereiten
-        const projectData = {
-            project_name: projectName,
-            session_id: pdfSessionId,
-            analysis_data: analysisData,
-            settings: pageSettings
-        };
-        
-        // Projekt auf dem Server speichern
-        fetch('/save_project', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(projectData)
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                saveStatus.textContent = `Projekt "${data.project_name}" erfolgreich gespeichert!`;
-                saveStatus.style.backgroundColor = '#4CAF50';
-                
-                // Projektliste aktualisieren, falls sichtbar
-                if (document.getElementById('projectList')) {
-                    loadProjectList();
-                }
-            } else {
-                saveStatus.textContent = `Fehler: ${data.error}`;
-                saveStatus.style.backgroundColor = '#f44336';
-            }
-            
-            // Status nach 3 Sekunden ausblenden
-            setTimeout(() => {
-                saveStatus.style.opacity = '0';
-                setTimeout(() => saveStatus.remove(), 500);
-            }, 3000);
-        })
-        .catch(error => {
-            saveStatus.textContent = `Fehler: ${error.message}`;
-            saveStatus.style.backgroundColor = '#f44336';
-        });
+    // Projektname vom Nutzer abfragen
+    const projectName = prompt("Geben Sie einen Namen für das Projekt ein:", 
+        `Fensterprojekt ${new Date().toLocaleDateString()}`);
+
+    if (!projectName) return; // Abbruch wenn kein Name eingegeben
+
+    // Status anzeigen
+    const saveStatus = document.createElement('div');
+    saveStatus.className = 'save-status';
+    saveStatus.textContent = 'Speichere Projekt...';
+    document.body.appendChild(saveStatus);
+
+    // Alle Analysedaten sammeln
+    const analysisData = {};
+    Object.keys(pdfPageData).forEach(pageNum => {
+    analysisData[pageNum] = pdfPageData[pageNum];
+    });
+
+    // Daten für den Server vorbereiten
+    const projectData = {
+    project_name: projectName,
+    session_id: pdfSessionId,
+    analysis_data: analysisData,
+    settings: pageSettings
+    };
+
+    // Projekt auf dem Server speichern
+    fetch('/save_project', {
+    method: 'POST',
+    headers: {
+    'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(projectData)
+    })
+    .then(response => response.json())
+    .then(data => {
+    if (data.success) {
+    saveStatus.textContent = `Projekt "${data.project_name}" erfolgreich gespeichert!`;
+    saveStatus.style.backgroundColor = '#4CAF50';
+
+    // Projektliste aktualisieren, falls sichtbar
+    if (document.getElementById('projectList')) {
+    loadProjectList();
+    }
+
+    // Hier die neue Funktionalität: Projekt automatisch neu laden
+    const oldSessionId = pdfSessionId;
+    pdfSessionId = data.project_id;
+
+    // Nur wenn sich die ID geändert hat (Erstmalige Speicherung)
+    if (oldSessionId !== data.project_id) {
+    setTimeout(() => {
+    saveStatus.textContent = `Lade Projekt "${data.project_name}" neu...`;
+    loadProject(data.project_id);
+    }, 1000);
+    }
+    } else {
+    saveStatus.textContent = `Fehler: ${data.error}`;
+    saveStatus.style.backgroundColor = '#f44336';
+    }
+
+    // Status nach 3 Sekunden ausblenden
+    setTimeout(() => {
+    saveStatus.style.opacity = '0';
+    setTimeout(() => saveStatus.remove(), 500);
+    }, 3000);
+    })
+    .catch(error => {
+    saveStatus.textContent = `Fehler: ${error.message}`;
+    saveStatus.style.backgroundColor = '#f44336';
+    });
     }
     window.saveProject = saveProject;
 
@@ -560,6 +572,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Speichere aktuelle Bearbeitungen der momentanen Seite, falls vorhanden
         if (window.data && currentPdfPage) {
+            console.log(`Speichere Daten für Seite ${currentPdfPage} mit ${window.data.predictions?.length || 0} Vorhersagen`);
             pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
         }
         
@@ -919,15 +932,27 @@ document.addEventListener('DOMContentLoaded', function() {
             if (totalPdfPages > 1 && pdfSessionId) {
                 updatePdfNavigation();
                 pdfNavigation.style.display = 'flex';
+
+                // Zeige einen Ladeindikator für Hintergrundverarbeitung
+                const loadingIndicator = document.createElement('div');
+                loadingIndicator.id = 'backgroundProcessingIndicator';
+                loadingIndicator.className = 'background-processing';
+                loadingIndicator.innerHTML = `
+                    <div class="processing-spinner"></div>
+                    <span>Analysiere weitere Seiten im Hintergrund: <span id="processedPagesCount">1</span>/${totalPdfPages}</span>
+                `;
+                document.body.appendChild(loadingIndicator);
+                
+                // Starte die Hintergrundverarbeitung nach kurzer Verzögerung
+                setTimeout(() => {
+                    processRemainingPagesInBackground();
+                }, 1000);
             } else {
                 pdfNavigation.style.display = 'none';
             }
         } else {
             pdfNavigation.style.display = 'none';
         }
-         
-        // Lokale und globale Daten setzen
-        window.data = responseData;
         
         // Bild anzeigen - entweder aus PDF oder direkt
         if (isPdf && responseData.pdf_image_url) {
@@ -976,6 +1001,92 @@ document.addEventListener('DOMContentLoaded', function() {
                 window.dispatchEvent(new Event('resize'));
             }, 200);
         };
+    }
+
+    // Funktion zum Verarbeiten der verbleibenden Seiten im Hintergrund
+    function processRemainingPagesInBackground() {
+        const indicator = document.getElementById('backgroundProcessingIndicator');
+        const counter = document.getElementById('processedPagesCount');
+        
+        // Starte mit Seite 2, da Seite 1 bereits geladen ist
+        let currentProcessingPage = 2;
+        
+        function processNextPage() {
+            if (currentProcessingPage > totalPdfPages) {
+                // Alle Seiten verarbeitet
+                if (indicator) {
+                    indicator.innerHTML = `<span>Alle ${totalPdfPages} Seiten analysiert!</span>`;
+                    // Indikator nach kurzer Zeit ausblenden
+                    setTimeout(() => {
+                        indicator.style.opacity = '0';
+                        setTimeout(() => indicator.remove(), 500);
+                    }, 3000);
+                }
+                return;
+            }
+            
+            // Aktuellen Fortschritt anzeigen
+            if (counter) counter.textContent = currentProcessingPage;
+            
+            // Seitenanalyse im Hintergrund durchführen
+            const formData = new FormData();
+            formData.append('session_id', pdfSessionId);
+            formData.append('page', currentProcessingPage);
+            
+            // Aktuelle Formulareinstellungen verwenden
+            formData.append('format_width', document.getElementById('formatWidth').value);
+            formData.append('format_height', document.getElementById('formatHeight').value);
+            formData.append('dpi', document.getElementById('dpi').value);
+            formData.append('plan_scale', document.getElementById('planScale').value);
+            formData.append('threshold', document.getElementById('threshold').value);
+            
+            // Speichere diese Einstellungen auch für diese Seite
+            pageSettings[currentProcessingPage] = {
+                format_width: document.getElementById('formatWidth').value,
+                format_height: document.getElementById('formatHeight').value,
+                dpi: document.getElementById('dpi').value,
+                plan_scale: document.getElementById('planScale').value,
+                threshold: document.getElementById('threshold').value
+            };
+            
+            fetch('/analyze_page', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Daten verarbeiten und speichern
+                const processedData = processApiResponse(data);
+                
+                // PDF-Infos beibehalten
+                processedData.is_pdf = data.is_pdf || false;
+                processedData.pdf_image_url = data.pdf_image_url || null;
+                processedData.session_id = data.session_id;
+                processedData.current_page = data.current_page;
+                processedData.page_count = data.page_count;
+                processedData.all_pages = data.all_pages;
+                
+                // In pdfPageData speichern
+                pdfPageData[currentProcessingPage] = processedData;
+                
+                console.log(`Seite ${currentProcessingPage} im Hintergrund analysieren`);
+                
+                // Zur nächsten Seite gehen
+                currentProcessingPage++;
+                // Kurze Pause zwischen den Anfragen
+                setTimeout(processNextPage, 500);
+            })
+            .catch(error => {
+                console.error(`Fehler bei Analyse von Seite ${currentProcessingPage}:`, error);
+                
+                // Trotz Fehler weitermachen
+                currentProcessingPage++;
+                setTimeout(processNextPage, 500);
+            });
+        }
+        
+        // Start der Verarbeitung
+        processNextPage();
     }
     
     // Funktion zur Aktualisierung der Zusammenfassung
@@ -1338,6 +1449,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 alert('Bitte laden Sie zuerst eine PDF-Datei hoch und analysieren Sie sie.');
                 return;
             }
+            
+    // Prüfen, ob die Session-ID eine gültige Projekt-ID ist (beginnt mit einer UUID)
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidPattern.test(pdfSessionId)) {
+        alert('Bitte speichern Sie das Projekt zuerst, bevor Sie es als PDF exportieren.');
+        return;
+    }
             
             // Speicherstatus anzeigen
             const exportStatus = document.createElement('div');

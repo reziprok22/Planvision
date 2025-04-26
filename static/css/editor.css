@@ -129,3 +129,34 @@
 .project-list.visible {
     display: block;
 }
+
+/* Fügen Sie diesen Code zu static/css/styles.css hinzu */
+.background-processing {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 15px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    z-index: 1000;
+    transition: opacity 0.5s;
+}
+
+.processing-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    margin-right: 10px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

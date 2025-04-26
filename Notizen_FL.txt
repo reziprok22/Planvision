@@ -18,6 +18,8 @@ Hinweise Datenumgang
 - Option 2: Beim ersten Öffnen des gesamten PDF-Dateien wird die Analyse durchgeführt und ins Frontend gespeichert (bräuchte am Anfang lang, dafür nachher sehr schnell). Ist vielleicht sinnvoll, wenn oft mit sehr grossen PDF(viele Seiten) gearbeitet wird.
 - Option 3: Bearbeitungen im backend zu speichern, verknüpft mit der PDF-Session-ID (gemäss Claude die robusteste Lösung) -> Vermutlich weil Daten im backend gespeichert (Server) bleiben, auch wenn der Browser absützt oder die Sitzung verloren geht. Weitere Vorteile sind geräteübergreifender Zugriff durch die Session-ID. Änderungen bleiben sehr lange erhalten. Zentrale Versionierung (Es können einfacher rühere Bearbeitungszustände wiederhergestellt werden, wichtig bei Versionsänderungen.
 
+- Neu anstatt Lazy-Loading, wird die 1. Seite beim hochladen analysiert und angezeigt. Im Hintergrund werden die restlichen Seiten analyisert, inkl. Status-Nachricht unten links.
+
 Claude schlägt mir folgende Dateistruktur auf dem server vor:
 
 projects/

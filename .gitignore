@@ -9,6 +9,7 @@ fasterrcnn_model
 trainings_data
 static/uploads
 static/temp
+static/reports
 projects
 
 # Einzelne Datei ignorieren
