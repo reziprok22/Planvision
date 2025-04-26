@@ -4,7 +4,8 @@ from model_handler import load_model, predict_image
 import shutil
 import json
 from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError
-import time  # Für den Zeitstempel
+import time
+from pdf_export import generate_report_pdf
 
 import tempfile
 from pdf2image import convert_from_path
@@ -12,6 +13,9 @@ import logging
 
 import uuid
 import datetime
+
+os.makedirs('static/reports', exist_ok=True)
+
 
 # Logging einrichten
 logging.basicConfig(level=logging.INFO)
@@ -368,7 +372,6 @@ def convert_pdf_debug():
 
 
 # Projekte speichern
-# Projekte speichern
 @app.route('/save_project', methods=['POST'])
 def save_project():
     try:
@@ -565,6 +568,43 @@ def load_project(project_id):
     except Exception as e:
         import traceback
         print("Fehler beim Laden des Projekts:")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# Endpunkt zum Erstellen des PDF-Berichts
+@app.route('/export_pdf/<project_id>', methods=['GET'])
+def export_pdf(project_id):
+    try:
+        project_dir = os.path.join('projects', project_id)
+        print(f"Suche Projekt in: {project_dir}")
+        
+        if not os.path.exists(project_dir):
+            print(f"Projektordner nicht gefunden: {project_dir}")
+            return jsonify({'error': 'Projekt nicht gefunden'}), 404
+        
+        # PDF-Bericht generieren
+        pdf_path = generate_report_pdf(project_id)
+        print(f"PDF generiert: {pdf_path}")
+        
+        # Extrahiere den relativen Pfad für die URL
+        # Beispiel: static/reports/bericht.pdf -> /static/reports/bericht.pdf
+        if 'static/' in pdf_path:
+            rel_path = '/static/' + pdf_path.split('static/')[1]
+        else:
+            rel_path = pdf_path
+            print(f"Warnung: PDF-Pfad enthält nicht 'static/': {pdf_path}")
+        
+        print(f"Relativer Pfad für URL: {rel_path}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'PDF-Bericht wurde erfolgreich erstellt',
+            'pdf_url': rel_path
+        })
+        
+    except Exception as e:
+        import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 

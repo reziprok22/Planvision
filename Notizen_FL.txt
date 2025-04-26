@@ -10,6 +10,8 @@ Webapp:
 - Evtl am preprocessing mit openCV rumschrauben, um Ergebnisse zu verbessern.
 - Evtl. Eingaben in Spalte links (darunter die Tabelle der Ergebniise) machen und Pläne in Spalte rechts (bessere Ansicht auf den Plan).
 - Link erstellen lassen für Ansichtsversion, um mit Kollegen oder für Präsi zu teilen.
+- Grosses Drag- n Drop in der Mitte des Fenster einbauen
+- Oben im Banner eine Action-Button mit Dropdown-Menu einbauen. Darin enthalten, Projekt speichern, Projekt öffnen (Projektlsite wird wieder gross in Mitte dargestellt), hotkeys usw. Ähnlich wie makesense.ai
 
 Hinweise Datenumgang
 - Option 1:Aller Erkennungsergebnisse werden im Frontend (JS-mässig) gespeichert. Wenn eine Seite das erste Mal aufgerufen wird, wird sie von fastRccnn analysiert und danach die Ergebnisse um Browser gespeichert (Lazy-Leading). Beim erneuten Besuch der Seite werden die gespeicherten Daten verwendet. Dies erlaubt die Änderungen zu behalten und jede einzelne Seite zu analysieren. 
@@ -31,3 +33,6 @@ projects/
           ├── page_1_results.json      # Analyseergebnisse pro Seite
           ├── page_2_results.json
           └── ...
+
+
+Projektname: bison (buildingvision), sparrow (weil er immer gegen scheiben fliegt), onlyPlans

@@ -1329,4 +1329,47 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+    
+    // Event-Listener für den Export-Button am Ende des DOMContentLoaded-Handlers
+    const exportPdfBtn = document.getElementById('exportPdfBtn');
+    if (exportPdfBtn) {
+        exportPdfBtn.addEventListener('click', function() {
+            if (!pdfSessionId) {
+                alert('Bitte laden Sie zuerst eine PDF-Datei hoch und analysieren Sie sie.');
+                return;
+            }
+            
+            // Speicherstatus anzeigen
+            const exportStatus = document.createElement('div');
+            exportStatus.className = 'save-status';
+            exportStatus.textContent = 'Erstelle PDF-Bericht...';
+            document.body.appendChild(exportStatus);
+            
+            // PDF-Export-Anfrage senden
+            fetch(`/export_pdf/${pdfSessionId}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        exportStatus.textContent = 'PDF-Bericht wurde erfolgreich erstellt!';
+                        exportStatus.style.backgroundColor = '#4CAF50';
+                        
+                        // Öffne das PDF in einem neuen Tab
+                        window.open(data.pdf_url, '_blank');
+                    } else {
+                        exportStatus.textContent = `Fehler: ${data.error}`;
+                        exportStatus.style.backgroundColor = '#f44336';
+                    }
+                    
+                    // Status nach 3 Sekunden ausblenden
+                    setTimeout(() => {
+                        exportStatus.style.opacity = '0';
+                        setTimeout(() => exportStatus.remove(), 500);
+                    }, 3000);
+                })
+                .catch(error => {
+                    exportStatus.textContent = `Fehler: ${error.message}`;
+                    exportStatus.style.backgroundColor = '#f44336';
+                });
+        });
+    }
 });
