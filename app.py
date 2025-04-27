@@ -14,6 +14,8 @@ import logging
 import uuid
 import datetime
 
+from PyPDF2 import PdfReader
+
 os.makedirs('static/reports', exist_ok=True)
 
 
@@ -21,9 +23,10 @@ os.makedirs('static/reports', exist_ok=True)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# 2. Aktualisierte convert_pdf_to_images-Funktion
 def convert_pdf_to_images(pdf_file_object):
     """
-    Konvertiert eine PDF-Datei in mehrere JPG-Bilder (alle Seiten).
+    Konvertiert eine PDF-Datei in mehrere JPG-Bilder (alle Seiten) und liest die Seitengrößen aus.
     
     Args:
         pdf_file_object: Das File-Objekt der hochgeladenen PDF-Datei
@@ -40,6 +43,21 @@ def convert_pdf_to_images(pdf_file_object):
     # Speichere die PDF-Datei
     pdf_path = os.path.join(output_dir, "document.pdf")
     pdf_file_object.save(pdf_path)
+    
+    # PDF-Größen auslesen mit PyPDF2
+    pdf_reader = PdfReader(pdf_path)
+    page_sizes = []
+    
+    for page_num in range(len(pdf_reader.pages)):
+        page = pdf_reader.pages[page_num]
+        # Hole die Mediabox, die die Seitengröße in Punkten (1/72 Zoll) angibt
+        media_box = page.mediabox
+        # Umrechnung von Punkten in Millimeter (1 Punkt = 0,352778 mm)
+        width_mm = float(media_box.width) * 0.352778
+        height_mm = float(media_box.height) * 0.352778
+        page_sizes.append((width_mm, height_mm))
+    
+    print("Ausgelesene PDF-Seitengrößen:", page_sizes)
     
     # Konvertiere alle Seiten der PDF zu Bildern
     images = convert_from_path(pdf_path, dpi=300)
@@ -58,9 +76,12 @@ def convert_pdf_to_images(pdf_file_object):
         "session_id": session_id,
         "pdf_path": pdf_path,
         "image_paths": image_paths,
-        "page_count": len(images)
+        "page_count": len(images),
+        "page_sizes": page_sizes  # Seitengrößen hinzufügen
     }
-    print(f"PDF konvertiert: {len(images)} Seiten")  # Debug-Ausgabe
+    print(f"PDF konvertiert: {len(images)} Seiten")
+    for i, size in enumerate(page_sizes):
+        print(f"Seite {i+1}: {size[0]:.2f} x {size[1]:.2f} mm")
 
     return pdf_info
 
@@ -103,7 +124,12 @@ def predict():
                     # Sicherstellen, dass die gewählte Seite gültig ist
                     if page < 1 or page > pdf_info["page_count"]:
                         page = 1
-                    
+
+                    # Verwende die ausgelesene Seitengröße für die aktuelle Seite
+                    if "page_sizes" in pdf_info and len(pdf_info["page_sizes"]) >= page:
+                        format_size = pdf_info["page_sizes"][page-1]
+                        print(f"Verwende ausgelesene Seitengröße für Seite {page}: {format_size[0]:.2f} x {format_size[1]:.2f} mm")
+
                     # Pfad zum Bild der aktuellen Seite
                     current_image_path = pdf_info["image_paths"][page-1]
                     
@@ -151,17 +177,18 @@ def predict():
             
             # PDF-spezifische Informationen hinzufügen
             if is_pdf:
-                # Stelle sicher, dass page_count einen Wert hat und konvertiere zu int
-                page_count = int(pdf_info.get("page_count", 1))
-                
                 response_data.update({
                     'is_pdf': True,
                     'pdf_image_url': pdf_info["image_paths"][page-1],
                     'current_page': page,
                     'page_count': int(pdf_info.get("page_count", 1)),
                     'all_pages': pdf_info["image_paths"],
-                    'session_id': pdf_info["session_id"]
+                    'session_id': pdf_info["session_id"],
+                    'page_sizes': pdf_info.get("page_sizes", [])  # Diese Zeile hinzufügen
                 })
+                # Debugging Ausgabe
+                print(f"Sende Antwort mit page_sizes: {pdf_info.get('page_sizes', [])}")
+
                 
             return jsonify(response_data)
         
@@ -211,18 +238,31 @@ def analyze_page():
         
         print(f"Bildpfad: {image_path}")
         
+        # Überprüfe, ob das Bild existiert
+        if not os.path.exists(image_path):
+            print(f"Bilddatei nicht gefunden: {image_path}")
+            return jsonify({'error': f'Bild für Seite {page} nicht gefunden'}), 404
+        
         # Bild für die Vorhersage laden
-        with open(image_path, 'rb') as f:
-            image_bytes = f.read()
+        try:
+            with open(image_path, 'rb') as f:
+                image_bytes = f.read()
+        except Exception as e:
+            print(f"Fehler beim Lesen der Bilddatei: {e}")
+            return jsonify({'error': f'Fehler beim Lesen des Bildes: {str(e)}'}), 500
         
         # Bildvorhersage durchführen
-        boxes, labels, scores, areas = predict_image(
-            image_bytes, 
-            format_size=format_size, 
-            dpi=dpi, 
-            plan_scale=plan_scale, 
-            threshold=threshold
-        )
+        try:
+            boxes, labels, scores, areas = predict_image(
+                image_bytes, 
+                format_size=format_size, 
+                dpi=dpi, 
+                plan_scale=plan_scale, 
+                threshold=threshold
+            )
+        except Exception as e:
+            print(f"Fehler bei der Bildvorhersage: {e}")
+            return jsonify({'error': f'Fehler bei der Analyse: {str(e)}'}), 500
         
         # Ergebnisse formatieren
         results = []
@@ -252,12 +292,14 @@ def analyze_page():
             'session_id': session_id
         }
         
-        print(f"Antwortdaten: Seite {page} von {page_count}")
+        print(f"Antwortdaten: Seite {page} von {page_count}, {len(results)} Vorhersagen")
         
         return jsonify(response_data)
         
     except Exception as e:
+        import traceback
         print(f"Fehler beim Analysieren der PDF-Seite: {str(e)}")
+        print(traceback.format_exc())  # Vollständigen Stacktrace ausgeben
         return jsonify({'error': str(e)}), 500
 
 
@@ -411,11 +453,17 @@ def save_project():
                         os.path.join(project_dir, 'pages', filename)
                     )
         
-        # Analyse-Daten vom Client
+        # Speichere Analyse-Daten vom Client
         analysis_data = data.get('analysis_data', {})
         print(f"Projektdaten zum Speichern: {len(analysis_data)} Seiten")
-        for page_num, page_data in analysis_data.items():
-            print(f"Seite {page_num}: {len(page_data.get('predictions', []))} Vorhersagen")
+        
+        # Einstellungen vom Client holen
+        settings = data.get('settings', {})
+        print(f"Einstellungen, die gespeichert werden: {settings}")
+        
+        # Hier für jede Seite die aktuelle Seitengröße überprüfen
+        for page_num, page_settings in settings.items():
+            print(f"Seite {page_num} Einstellungen: {page_settings}")
         
         # Speichere globale Einstellungen
         settings = data.get('settings', {})
