@@ -112,28 +112,30 @@ def generate_annotated_pdf(project_id, output_path=None):
             predictions = page_data.get('predictions', [])
             print(f"  {len(predictions)} Vorhersagen gefunden")
 
-            # Papierformat aus den Metadaten oder Einstellungen holen
-            # Dies sollten die Werte sein, die beim Hochladen des Plans angegeben wurden
+            # Papierformat aus den Metadaten oder Einstellungen für die aktuelle Seite holen
             format_settings_path = os.path.join(project_dir, 'analysis', 'analysis_settings.json')
             if os.path.exists(format_settings_path):
                 try:
                     with open(format_settings_path, 'r') as f:
                         settings = json.load(f)
-                    # Nehme das Format der ersten Seite als Referenz
-                    format_width_mm = float(settings.get('1', {}).get('format_width', 210))
-                    format_height_mm = float(settings.get('1', {}).get('format_height', 297))
-                    dpi = float(settings.get('1', {}).get('dpi', 300))
-
-                    # Debug-Ausgabe
-                    print(f"Papierformat: {format_width_mm} x {format_height_mm} mm, DPI: {dpi}")
-
-                    # OPTIONAL: Prüfen des Format-Verhältnisses, falls die Werte nicht klar sind
-                    # Auskommentieren, wenn die Werte explizit als Hoch- oder Querformat gespeichert werden
-                    # if format_width_mm > format_height_mm:
-                    #     print(f"Format scheint Querformat zu sein, tausche Werte")
-                    #     format_width_mm, format_height_mm = format_height_mm, format_width_mm
-
-                except:
+                    
+                    # Verwende die spezifischen Einstellungen für diese Seite, falls vorhanden
+                    # Ansonsten verwende Standardwerte oder Einstellungen der ersten Seite
+                    page_key = str(page_num + 1)  # In settings ist die Seite als String-Key gespeichert
+                    
+                    if page_key in settings:
+                        format_width_mm = float(settings[page_key].get('format_width', 210))
+                        format_height_mm = float(settings[page_key].get('format_height', 297))
+                        dpi = float(settings[page_key].get('dpi', 300))
+                        print(f"Verwende spezifische Einstellungen für Seite {page_num + 1}: {format_width_mm} x {format_height_mm} mm, DPI: {dpi}")
+                    else:
+                        # Fallback auf Einstellungen der ersten Seite
+                        format_width_mm = float(settings.get('1', {}).get('format_width', 210))
+                        format_height_mm = float(settings.get('1', {}).get('format_height', 297))
+                        dpi = float(settings.get('1', {}).get('dpi', 300))
+                        print(f"Keine spezifischen Einstellungen für Seite {page_num + 1}, verwende Standardwerte: {format_width_mm} x {format_height_mm} mm, DPI: {dpi}")
+                except Exception as e:
+                    print(f"Fehler beim Lesen der Einstellungen für Seite {page_num + 1}: {e}")
                     # Fallback zu A4 bei 300 DPI
                     format_width_mm = 210
                     format_height_mm = 297
@@ -186,11 +188,8 @@ def generate_annotated_pdf(project_id, output_path=None):
                             color = (0.5, 0.5, 0.5)  # Andere - Grau
                         
                         # Rechteck zeichnen mit skalierten Koordinaten
-                        # Vier separate Linien statt eines Rechtecks
-                        page.draw_line((scaled_x1, scaled_y1), (scaled_x2, scaled_y1), color=color, width=2)  # Oben
-                        page.draw_line((scaled_x2, scaled_y1), (scaled_x2, scaled_y2), color=color, width=2)  # Rechts
-                        page.draw_line((scaled_x2, scaled_y2), (scaled_x1, scaled_y2), color=color, width=2)  # Unten
-                        page.draw_line((scaled_x1, scaled_y2), (scaled_x1, scaled_y1), color=color, width=2)  # Links
+                        rect = fitz.Rect(scaled_x1, scaled_y1, scaled_x2, scaled_y2)
+                        page.draw_rect(rect, color=color, width=2)
                         
                         # Label hinzufügen
                         label_text = f"#{idx+1}: {area:.2f} m²"

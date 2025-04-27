@@ -48,5 +48,7 @@ Projektname: bison (buildingvision), sparrow (weil er immer gegen scheiben flieg
     - benutzerdefiniertes Format eingeben und auf einzelner Seite analysieren
     - vordefiniteres Format (A4 und A3) für eine Seite berechnen und abspeichern
     - Veränderungen DPI wird gepseichert
+    - Veränderngen beim Massstab werden gepeichert.
     - Veränderungen Treshold werden gespeichert.
+- Das Formatauswahlform in der webapp ist nur für den Export der Annotationen auf das Original-PDF. Ansonsten hat es keine Funktion.
 
