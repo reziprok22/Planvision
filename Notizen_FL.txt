@@ -38,3 +38,15 @@ projects/
 
 
 Projektname: bison (buildingvision), sparrow (weil er immer gegen scheiben fliegt), onlyPlans
+
+
+# analysis_settings.py
+- Dieses File speichert für jede Seite die Breite, Höhe, DPI, Massstab und der Erkennungsschwellenwert.
+- Stand 27. April 2025 wird mit dem "Plan analysieren" alle Eigenschaften korrekt gespeichert. Auch wenn ich auf eine andere Seite navigiere und "Aktuelle Seite analysiere" betätige mit anderen Paramter, werden diese korrekt ins JSON eingetragen. 
+- Es funktioniert:
+    - PDF-Dokument mit unterschiedlichen Formaten hochladen.
+    - benutzerdefiniertes Format eingeben und auf einzelner Seite analysieren
+    - vordefiniteres Format (A4 und A3) für eine Seite berechnen und abspeichern
+    - Veränderungen DPI wird gepseichert
+    - Veränderungen Treshold werden gespeichert.
+

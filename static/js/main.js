@@ -625,7 +625,7 @@ document.addEventListener('DOMContentLoaded', function() {
             let formatWidth = document.getElementById('formatWidth').value;
             let formatHeight = document.getElementById('formatHeight').value;
             
-            // Falls Seitengrößen vorhanden, diese verwenden
+            // Falls Seitengrößen für diese spezifische Seite vorhanden, diese verwenden
             if (pageSizes.length >= pageNumber) {
                 // Verwende ausgelesene Seitengrößen (als String)
                 formatWidth = String(Math.round(pageSizes[pageNumber-1][0]));
@@ -958,17 +958,34 @@ function displayResults(responseData) {
         totalPdfPages = parseInt(responseData.page_count || 1);
         allPdfPages = responseData.all_pages || [];
         
-        // Aktuelle Formularwerte für ALLE Seiten initialisieren, falls nicht bereits vorhanden
         for (let i = 1; i <= totalPdfPages; i++) {
             if (!pageSettings[i]) {
+                // Werte aus dem Formular als Basis nehmen
+                let formWidth = document.getElementById('formatWidth').value;
+                let formHeight = document.getElementById('formatHeight').value;
+                
+                // Falls erkannte Seitengrößen vorhanden, diese verwenden
+                if (responseData.page_sizes && responseData.page_sizes.length >= i) {
+                    // Runde die Werte und wandle sie in Strings um
+                    formWidth = String(Math.round(responseData.page_sizes[i-1][0]));
+                    formHeight = String(Math.round(responseData.page_sizes[i-1][1]));
+                    console.log(`Verwende erkannte Seitengröße für Seite ${i}: ${formWidth} × ${formHeight} mm`);
+                }
+                
                 pageSettings[i] = {
-                    format_width: document.getElementById('formatWidth').value,
-                    format_height: document.getElementById('formatHeight').value,
+                    format_width: formWidth,
+                    format_height: formHeight,
                     dpi: document.getElementById('dpi').value,
                     plan_scale: document.getElementById('planScale').value,
                     threshold: document.getElementById('threshold').value
                 };
             }
+        }
+        
+        // Aktualisiere die Eingabefelder mit den Werten für die aktuelle Seite
+        if (pageSettings[currentPdfPage]) {
+            document.getElementById('formatWidth').value = pageSettings[currentPdfPage].format_width;
+            document.getElementById('formatHeight').value = pageSettings[currentPdfPage].format_height;
         }
         
         // Aktuelle Seite im pdfPageData speichern
@@ -1072,27 +1089,46 @@ function displayResults(responseData) {
         
         // Aktuellen Fortschritt anzeigen
         if (counter) counter.textContent = currentProcessingPage;
-        
+    
         // Seitenanalyse im Hintergrund durchführen
         const formData = new FormData();
         formData.append('session_id', pdfSessionId);
         formData.append('page', currentProcessingPage);
         
-        // Aktuelle Formulareinstellungen verwenden
-        formData.append('format_width', document.getElementById('formatWidth').value);
-        formData.append('format_height', document.getElementById('formatHeight').value);
-        formData.append('dpi', document.getElementById('dpi').value);
-        formData.append('plan_scale', document.getElementById('planScale').value);
-        formData.append('threshold', document.getElementById('threshold').value);
+        // Hier sicherstellen, dass wir die korrekten Einstellungen für DIESE Seite verwenden
+        let currentPageSettings = pageSettings[currentProcessingPage];
         
-        // Speichere diese Einstellungen auch für diese Seite
-        pageSettings[currentProcessingPage] = {
-            format_width: document.getElementById('formatWidth').value,
-            format_height: document.getElementById('formatHeight').value,
-            dpi: document.getElementById('dpi').value,
-            plan_scale: document.getElementById('planScale').value,
-            threshold: document.getElementById('threshold').value
-        };
+        // Falls keine Einstellungen für diese Seite vorhanden, erstelle sie
+        if (!currentPageSettings) {
+            // Werte aus dem Formular als Basis nehmen
+            let formWidth = document.getElementById('formatWidth').value;
+            let formHeight = document.getElementById('formatHeight').value;
+            
+            // Falls erkannte Seitengrößen vorhanden, diese für die jeweilige Seite verwenden
+            if (window.data && window.data.page_sizes && window.data.page_sizes.length >= currentProcessingPage) {
+                // Runde die Werte und wandle sie in Strings um
+                formWidth = String(Math.round(window.data.page_sizes[currentProcessingPage-1][0]));
+                formHeight = String(Math.round(window.data.page_sizes[currentProcessingPage-1][1]));
+                console.log(`Verwende erkannte Seitengröße für Seite ${currentProcessingPage}: ${formWidth} × ${formHeight} mm`);
+            }
+            
+            currentPageSettings = {
+                format_width: formWidth,
+                format_height: formHeight,
+                dpi: document.getElementById('dpi').value,
+                plan_scale: document.getElementById('planScale').value,
+                threshold: document.getElementById('threshold').value
+            };
+            
+            // Speichere die Einstellungen
+            pageSettings[currentProcessingPage] = currentPageSettings;
+        }
+        
+        formData.append('format_width', currentPageSettings.format_width);
+        formData.append('format_height', currentPageSettings.format_height);
+        formData.append('dpi', currentPageSettings.dpi);
+        formData.append('plan_scale', currentPageSettings.plan_scale);
+        formData.append('threshold', currentPageSettings.threshold);
         
         fetch('/analyze_page', {
             method: 'POST',
