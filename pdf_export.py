@@ -10,7 +10,326 @@ from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
 import json
 import datetime
+import fitz  # PyMuPDF
 
+def generate_annotated_pdf(project_id, output_path=None):
+    """
+    Generiert eine annotierte PDF-Datei, indem Bounding Boxes direkt auf die Original-PDF gezeichnet werden.
+    
+    Args:
+        project_id: Die ID des Projekts
+        output_path: Optionaler Pfad zum Speichern der PDF
+    
+    Returns:
+        PDF-Datei-Pfad
+    """
+    # Projektverzeichnisse
+    project_dir = os.path.join('projects', project_id)
+    metadata_path = os.path.join(project_dir, 'metadata.json')
+    original_pdf_path = os.path.join(project_dir, 'original.pdf')
+    
+    print(f"Generiere PDF mit Originalbezug für Projekt: {project_id}")
+    print(f"Projektpfad: {project_dir}")
+    print(f"Original-PDF: {original_pdf_path}")
+    
+    # Prüfen, ob Projektverzeichnis existiert
+    if not os.path.exists(project_dir):
+        raise FileNotFoundError(f"Projektverzeichnis nicht gefunden: {project_dir}")
+    
+    # Prüfen, ob Original-PDF existiert
+    if not os.path.exists(original_pdf_path):
+        raise FileNotFoundError(f"Original-PDF nicht gefunden: {original_pdf_path}")
+    
+    # Metadaten laden
+    try:
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+    except FileNotFoundError:
+        print(f"Metadatendatei nicht gefunden: {metadata_path}")
+        # Fallback-Metadaten
+        metadata = {
+            "project_name": f"Projekt_{project_id}",
+            "created_at": datetime.datetime.now().isoformat(),
+            "page_count": 0  # Wird später aus dem PDF bestimmt
+        }
+    
+    project_name = metadata.get('project_name', 'Unbenanntes Projekt')
+    
+    # PDF-Dateinamen erstellen
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    if output_path is None:
+        # Speichern im static/reports-Verzeichnis
+        reports_dir = os.path.join('static', 'reports')
+        os.makedirs(reports_dir, exist_ok=True)
+        
+        safe_name = project_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        output_path = os.path.join(reports_dir, f"{safe_name}_annotiert_{timestamp}.pdf")
+    
+    print(f"Annotierte PDF wird erstellt unter: {output_path}")
+    
+    try:
+        # Original-PDF öffnen
+        doc = fitz.open(original_pdf_path)
+        page_count = len(doc)
+        
+        print(f"PDF geöffnet, Seitenanzahl: {page_count}")
+        
+        # Für jede Seite die Annotationen hinzufügen
+        for page_num in range(page_count):
+            # Verschiedene mögliche Dateimuster überprüfen für die Analysedateien
+            possible_analysis_paths = [
+                os.path.join(project_dir, 'analysis', f"page_{page_num+1}_results.json"),
+                os.path.join(project_dir, 'analysis', f"page_{page_num+1:02d}_results.json"),
+                os.path.join(project_dir, 'analysis', f"{page_num+1}_results.json")
+            ]
+            
+            # Suche nach dem ersten existierenden Pfad
+            analysis_path = None
+            for path in possible_analysis_paths:
+                if os.path.exists(path):
+                    analysis_path = path
+                    break
+            
+            if not analysis_path:
+                print(f"Keine Analysedaten für Seite {page_num+1} gefunden, überspringe...")
+                continue
+                
+            print(f"Verarbeite Seite {page_num+1} mit Analysedaten aus: {analysis_path}")
+            
+            # Analysedaten laden
+            with open(analysis_path, 'r') as f:
+                page_data = json.load(f)
+            
+            # Seite abrufen
+            page = doc[page_num]
+            
+            # Wichtig: Seitengröße für Skalierung ermitteln
+            page_width = page.rect.width
+            page_height = page.rect.height
+            print(f"Seitengröße: {page_width} x {page_height}")
+            
+            # Alle Annotationen auf die Seite zeichnen
+            predictions = page_data.get('predictions', [])
+            print(f"  {len(predictions)} Vorhersagen gefunden")
+
+            # Papierformat aus den Metadaten oder Einstellungen holen
+            # Dies sollten die Werte sein, die beim Hochladen des Plans angegeben wurden
+            format_settings_path = os.path.join(project_dir, 'analysis', 'analysis_settings.json')
+            if os.path.exists(format_settings_path):
+                try:
+                    with open(format_settings_path, 'r') as f:
+                        settings = json.load(f)
+                    # Nehme das Format der ersten Seite als Referenz
+                    format_width_mm = float(settings.get('1', {}).get('format_width', 210))
+                    format_height_mm = float(settings.get('1', {}).get('format_height', 297))
+                    dpi = float(settings.get('1', {}).get('dpi', 300))
+
+                    # Debug-Ausgabe
+                    print(f"Papierformat: {format_width_mm} x {format_height_mm} mm, DPI: {dpi}")
+
+                    # OPTIONAL: Prüfen des Format-Verhältnisses, falls die Werte nicht klar sind
+                    # Auskommentieren, wenn die Werte explizit als Hoch- oder Querformat gespeichert werden
+                    # if format_width_mm > format_height_mm:
+                    #     print(f"Format scheint Querformat zu sein, tausche Werte")
+                    #     format_width_mm, format_height_mm = format_height_mm, format_width_mm
+
+                except:
+                    # Fallback zu A4 bei 300 DPI
+                    format_width_mm = 210
+                    format_height_mm = 297
+                    dpi = 300
+            else:
+                # Fallback zu A4 bei 300 DPI
+                format_width_mm = 210
+                format_height_mm = 297
+                dpi = 300
+
+
+            # Berechne maximale Pixelgröße basierend auf Papierformat und DPI
+            pixel_per_mm = dpi / 25.4
+            max_pixel_width = format_width_mm * pixel_per_mm
+            max_pixel_height = format_height_mm * pixel_per_mm
+
+            print(f"Maximale Pixelgröße: {max_pixel_width} x {max_pixel_height}")
+            
+            for idx, pred in enumerate(predictions):
+                if 'box' in pred:
+                    try:
+                        # Koordinaten extrahieren
+                        x1, y1, x2, y2 = pred['box']
+                        label = pred.get('label', 0)
+                        area = pred.get('area', 0)
+                        
+                        print(f"  Box #{idx}: Klasse {label}, Koordinaten: [{x1}, {y1}, {x2}, {y2}]")
+                        
+                        # Dynamische Berechnung basierend auf DPI und Papierformat
+                        scale = min(page_width / max_pixel_width, page_height / max_pixel_height)
+                        scaled_x1 = x1 * scale
+                        scaled_y1 = y1 * scale
+                        scaled_x2 = x2 * scale
+                        scaled_y2 = y2 * scale
+                        
+                        print(f"  Skalierte Koordinaten: [{scaled_x1}, {scaled_y1}, {scaled_x2}, {scaled_y2}]")
+                        
+                        # Farbe basierend auf dem Label
+                        if label == 1:
+                            color = (0, 0, 1)  # Fenster - Blau
+                        elif label == 2:
+                            color = (1, 0, 0)  # Tür - Rot
+                        elif label == 3:
+                            color = (0.8, 0.8, 0)  # Wand - Gelb
+                        elif label == 4:
+                            color = (1, 0.6, 0)  # Lukarne - Orange
+                        elif label == 5:
+                            color = (0.5, 0, 0.5)  # Dach - Lila
+                        else:
+                            color = (0.5, 0.5, 0.5)  # Andere - Grau
+                        
+                        # Rechteck zeichnen mit skalierten Koordinaten
+                        # Vier separate Linien statt eines Rechtecks
+                        page.draw_line((scaled_x1, scaled_y1), (scaled_x2, scaled_y1), color=color, width=2)  # Oben
+                        page.draw_line((scaled_x2, scaled_y1), (scaled_x2, scaled_y2), color=color, width=2)  # Rechts
+                        page.draw_line((scaled_x2, scaled_y2), (scaled_x1, scaled_y2), color=color, width=2)  # Unten
+                        page.draw_line((scaled_x1, scaled_y2), (scaled_x1, scaled_y1), color=color, width=2)  # Links
+                        
+                        # Label hinzufügen
+                        label_text = f"#{idx+1}: {area:.2f} m²"
+                        page.insert_text((scaled_x1, scaled_y1 - 5), label_text, color=color, fontsize=8)
+                        
+                    except Exception as e:
+                        print(f"Fehler beim Zeichnen von Annotation {idx} auf Seite {page_num+1}: {e}")
+        
+       # Detaillierte Zusammenfassung auf letzter Seite hinzufügen
+        print("Füge Zusammenfassungsseite hinzu...")
+        summary_page = doc.new_page(width=doc[0].rect.width, height=doc[0].rect.height)
+
+        # Titel für Zusammenfassung
+        summary_page.insert_text(
+            (50, 50),
+            f"Zusammenfassung - {project_name}",
+            fontsize=16,
+            color=(0, 0, 0)
+        )
+
+        # Zeitstempel
+        summary_page.insert_text(
+            (50, 70),
+            f"Erstellt am: {datetime.datetime.now().strftime('%d.%m.%Y %H:%M')}",
+            fontsize=10,
+            color=(0, 0, 0)
+        )
+
+        # Anzahl Seiten
+        summary_page.insert_text(
+            (50, 90),
+            f"Anzahl Seiten: {page_count}",
+            fontsize=10,
+            color=(0, 0, 0)
+        )
+
+        # Zusammenfassung aller Seiten berechnen
+        total_fenster = 0
+        total_tuer = 0
+        total_wand = 0
+        total_lukarne = 0
+        total_dach = 0
+        total_fenster_area = 0
+        total_tuer_area = 0
+        total_wand_area = 0
+        total_lukarne_area = 0
+        total_dach_area = 0
+
+        # Seiten-Daten laden und Zusammenfassung berechnen
+        for page_num in range(1, page_count + 1):
+            analysis_path = os.path.join(project_dir, 'analysis', f'page_{page_num}_results.json')
+            if os.path.exists(analysis_path):
+                with open(analysis_path, 'r') as f:
+                    page_data = json.load(f)
+                
+                # Zählen und Flächen summieren
+                if 'count' in page_data and 'total_area' in page_data:
+                    total_fenster += page_data['count'].get('fenster', 0)
+                    total_tuer += page_data['count'].get('tuer', 0)
+                    total_wand += page_data['count'].get('wand', 0)
+                    total_lukarne += page_data['count'].get('lukarne', 0)
+                    total_dach += page_data['count'].get('dach', 0)
+                    
+                    total_fenster_area += page_data['total_area'].get('fenster', 0)
+                    total_tuer_area += page_data['total_area'].get('tuer', 0)
+                    total_wand_area += page_data['total_area'].get('wand', 0)
+                    total_lukarne_area += page_data['total_area'].get('lukarne', 0)
+                    total_dach_area += page_data['total_area'].get('dach', 0)
+
+        # Überschrift für Tabelle
+        summary_page.insert_text(
+            (50, 120),
+            "Zusammenfassung der erkannten Elemente:",
+            fontsize=12,
+            color=(0, 0, 0)
+        )
+
+        # Tabelle zeichnen
+        table_y = 140
+        col_widths = [150, 80, 100]
+        row_height = 25
+
+        # Tabellenkopf
+        header_rect = fitz.Rect(50, table_y, 50 + sum(col_widths), table_y + row_height)
+        summary_page.draw_rect(header_rect, color=(0, 0, 0), fill=(0.8, 0.8, 0.8))
+
+        # Spaltenüberschriften
+        summary_page.insert_text((60, table_y + 15), "Typ", fontsize=10, color=(0, 0, 0))
+        summary_page.insert_text((60 + col_widths[0], table_y + 15), "Anzahl", fontsize=10, color=(0, 0, 0))
+        summary_page.insert_text((60 + col_widths[0] + col_widths[1], table_y + 15), "Gesamtfläche (m²)", fontsize=10, color=(0, 0, 0))
+
+        # Zeilen mit Daten
+        data_rows = [
+            ["Fenster", total_fenster, f"{total_fenster_area:.2f}"],
+            ["Türen", total_tuer, f"{total_tuer_area:.2f}"],
+            ["Wände", total_wand, f"{total_wand_area:.2f}"],
+            ["Lukarnen", total_lukarne, f"{total_lukarne_area:.2f}"],
+            ["Dächer", total_dach, f"{total_dach_area:.2f}"],
+            ["Gesamt", total_fenster + total_tuer + total_wand + total_lukarne + total_dach, 
+            f"{(total_fenster_area + total_tuer_area + total_wand_area + total_lukarne_area + total_dach_area):.2f}"]
+        ]
+
+        for i, row in enumerate(data_rows):
+            row_y = table_y + (i + 1) * row_height
+            row_rect = fitz.Rect(50, row_y, 50 + sum(col_widths), row_y + row_height)
+            
+            # Grau für die Gesamtzeile
+            if i == len(data_rows) - 1:
+                summary_page.draw_rect(row_rect, color=(0, 0, 0), fill=(0.9, 0.9, 0.9))
+            else:
+                summary_page.draw_rect(row_rect, color=(0, 0, 0))
+            
+            # Zelleninhalte
+            summary_page.insert_text((60, row_y + 15), str(row[0]), fontsize=10, color=(0, 0, 0))
+            
+            # Rechtsbündige Zahlen
+            number_text = str(row[1])
+            text_width = fitz.Font("helv").text_length(number_text, fontsize=10)
+            number_x = 60 + col_widths[0] + col_widths[1] - text_width - 10
+            summary_page.insert_text((number_x, row_y + 15), number_text, fontsize=10, color=(0, 0, 0))
+            
+            # Rechtsbündige Flächenwerte
+            area_text = str(row[2])
+            area_width = fitz.Font("helv").text_length(area_text, fontsize=10)
+            area_x = 60 + col_widths[0] + col_widths[1] + col_widths[2] - area_width - 10
+            summary_page.insert_text((area_x, row_y + 15), area_text, fontsize=10, color=(0, 0, 0))
+                
+            # Speichern der PDF
+            print(f"Speichere annotierte PDF unter: {output_path}")
+            doc.save(output_path)
+            print(f"PDF erfolgreich gespeichert: {output_path}")
+            
+            return output_path
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Fehler beim Erstellen der annotierten PDF: {e}")
+        raise
 
 
 def generate_report_pdf(project_id, output_path=None):

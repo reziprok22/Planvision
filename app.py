@@ -599,15 +599,29 @@ def export_pdf(project_id):
                 'error': 'Projekt wurde nicht gefunden. Bitte speichern Sie das Projekt zuerst.'
             }), 404
         
-        # PDF-Bericht generieren
-        pdf_path = generate_report_pdf(project_id)
-        print(f"PDF generiert: {pdf_path}")
+        # Mehr Debug-Ausgaben hinzufügen
+        print(f"Projekt gefunden, generiere Bericht für ID: {project_id}")
+        
+        # PDF-Bericht generieren mit besserer Fehlerbehandlung
+        try:
+            pdf_path = generate_report_pdf(project_id)
+            print(f"PDF erfolgreich generiert: {pdf_path}")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Fehler beim Generieren des PDF-Berichts: {e}")
+            return jsonify({'success': False, 'error': f'Fehler beim Generieren des Berichts: {str(e)}'}), 500
+        
+        # Prüfen, ob die Datei existiert
+        if not os.path.exists(pdf_path):
+            print(f"Generierte PDF-Datei nicht gefunden: {pdf_path}")
+            return jsonify({'success': False, 'error': 'Generierte PDF-Datei wurde nicht gefunden'}), 500
         
         # Extrahiere den relativen Pfad für die URL
         if 'static/' in pdf_path:
             rel_path = '/static/' + pdf_path.split('static/')[1]
         else:
-            rel_path = pdf_path
+            rel_path = '/' + pdf_path  # Führender Slash hinzufügen
             print(f"Warnung: PDF-Pfad enthält nicht 'static/': {pdf_path}")
         
         print(f"Relativer Pfad für URL: {rel_path}")
@@ -622,6 +636,67 @@ def export_pdf(project_id):
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/export_annotated_pdf/<project_id>', methods=['GET'])
+def export_annotated_pdf(project_id):
+    try:
+        project_dir = os.path.join('projects', project_id)
+        print(f"Suche Projekt in: {project_dir}")
+        
+        if not os.path.exists(project_dir):
+            print(f"Projektordner nicht gefunden: {project_dir}")
+            return jsonify({
+                'success': False, 
+                'error': 'Projekt wurde nicht gefunden. Bitte speichern Sie das Projekt zuerst.'
+            }), 404
+        
+        # Prüfen, ob Original-PDF existiert
+        original_pdf_path = os.path.join(project_dir, 'original.pdf')
+        print(f"Prüfe Original-PDF: {original_pdf_path} (existiert: {os.path.exists(original_pdf_path)})")
+        
+        if not os.path.exists(original_pdf_path):
+            print(f"Original-PDF nicht gefunden: {original_pdf_path}")
+            return jsonify({
+                'success': False, 
+                'error': 'Original-PDF wurde nicht gefunden. Diese Funktion ist nur für PDF-Projekte verfügbar.'
+            }), 400
+        
+        # PDF-Bericht mit Annotationen auf Original-PDF generieren mit besserer Fehlerbehandlung
+        try:
+            from pdf_export import generate_annotated_pdf
+            pdf_path = generate_annotated_pdf(project_id)
+            print(f"Annotierte PDF generiert: {pdf_path}")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"Fehler beim Generieren der annotierten PDF: {e}")
+            return jsonify({'success': False, 'error': f'Fehler beim Generieren der PDF: {str(e)}'}), 500
+        
+        # Prüfen, ob die Datei existiert
+        if not os.path.exists(pdf_path):
+            print(f"Generierte PDF-Datei nicht gefunden: {pdf_path}")
+            return jsonify({'success': False, 'error': 'Generierte PDF-Datei wurde nicht gefunden'}), 500
+        
+        # Extrahiere den relativen Pfad für die URL
+        if 'static/' in pdf_path:
+            rel_path = '/static/' + pdf_path.split('static/')[1]
+        else:
+            rel_path = '/' + pdf_path  # Führender Slash hinzufügen
+            print(f"Warnung: PDF-Pfad enthält nicht 'static/': {pdf_path}")
+        
+        print(f"Relativer Pfad für URL: {rel_path}")
+        
+        return jsonify({
+            'success': True,
+            'message': 'Annotierte PDF wurde erfolgreich erstellt',
+            'pdf_url': rel_path
+        })
+        
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 
 # Nach dem Serverstart
 if __name__ == '__main__':

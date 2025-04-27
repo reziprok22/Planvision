@@ -466,6 +466,8 @@ tr:nth-child(even) {
 }
 
 /* CSS für Projektbereich */
+/* Füge diese Stile zu static/css/styles.css hinzu */
+
 .project-section {
     background: white;
     padding: 20px;
@@ -474,24 +476,91 @@ tr:nth-child(even) {
     margin-top: 20px;
 }
 
+.project-title {
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
 .project-buttons {
     display: flex;
+    flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 15px;
 }
 
 .project-button {
-    flex: 1;
+    flex: 1 0 calc(50% - 10px);
     background-color: #607d8b;
     color: white;
     padding: 10px;
     border: none;
     border-radius: 4px;
     cursor: pointer;
+    min-width: 150px;
+    text-align: center;
+    font-size: 14px;
 }
 
 .project-button:hover {
     background-color: #455a64;
+}
+
+/* Spezielle Stile für PDF-Export-Buttons */
+#exportPdfBtn {
+    background-color: #4CAF50;
+}
+
+#exportPdfBtn:hover {
+    background-color: #3d8b40;
+}
+
+#exportAnnotatedPdfBtn {
+    background-color: #2196F3;
+}
+
+#exportAnnotatedPdfBtn:hover {
+    background-color: #0b7dda;
+}
+
+/* Verbesserte Tooltip-Stile */
+.tooltip {
+    position: relative;
+    display: inline-block;
+}
+
+.tooltip .tooltiptext {
+    visibility: hidden;
+    width: 300px;
+    background-color: #555;
+    color: #fff;
+    text-align: center;
+    border-radius: 6px;
+    padding: 10px;
+    position: absolute;
+    z-index: 1;
+    bottom: 125%;
+    left: 50%;
+    transform: translateX(-50%);
+    opacity: 0;
+    transition: opacity 0.3s;
+    font-size: 0.9rem;
+}
+
+.tooltip .tooltiptext::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: #555 transparent transparent transparent;
+}
+
+.tooltip:hover .tooltiptext {
+    visibility: visible;
+    opacity: 1;
 }
 
 /* Projektliste-Styling anpassen */

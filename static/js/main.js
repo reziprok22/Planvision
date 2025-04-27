@@ -88,11 +88,16 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Standard-Formatgrößen setzen
             const formatSizes = {
-                'A4': [210, 297],
-                'A3': [297, 420],
-                'A2': [420, 594],
-                'A1': [594, 841],
-                'A0': [841, 1189]
+                'A4 (Hochformat)': [210, 297],
+                'A4 (Querformat)': [297, 210],
+                'A3 (Hochformat)': [297, 420],
+                'A3 (Querformat)': [420, 297],
+                'A2 (Hochformat)': [420, 594],
+                'A2 (Querformat)': [594, 420],
+                'A1 (Hochformat)': [594, 841],
+                'A1 (Querformat)': [841, 594],
+                'A0 (Hochformat)': [841, 1189],
+                'A0 (Querformat)': [1189, 841]
             };
             
             const size = formatSizes[formatSelect.value];
@@ -1450,13 +1455,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-    // Prüfen, ob die Session-ID eine gültige Projekt-ID ist (beginnt mit einer UUID)
-    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (!uuidPattern.test(pdfSessionId)) {
-        alert('Bitte speichern Sie das Projekt zuerst, bevor Sie es als PDF exportieren.');
-        return;
-    }
-            
+            // Prüfen, ob die Session-ID eine gültige Projekt-ID ist (beginnt mit einer UUID)
+            const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidPattern.test(pdfSessionId)) {
+                alert('Bitte speichern Sie das Projekt zuerst, bevor Sie es als PDF exportieren.');
+                return;
+            }
+                
             // Speicherstatus anzeigen
             const exportStatus = document.createElement('div');
             exportStatus.className = 'save-status';
@@ -1465,7 +1470,18 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // PDF-Export-Anfrage senden
             fetch(`/export_pdf/${pdfSessionId}`)
-                .then(response => response.json())
+                .then(response => {
+                    // Prüfen, ob die Antwort ein JSON ist
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        return response.json();
+                    } else {
+                        // Wenn keine JSON-Antwort, Text extrahieren für Fehlermeldung
+                        return response.text().then(text => {
+                            throw new Error(`Server hat keine gültige JSON-Antwort gesendet. Antwort: ${text.substring(0, 100)}...`);
+                        });
+                    }
+                })
                 .then(data => {
                     if (data.success) {
                         exportStatus.textContent = 'PDF-Bericht wurde erfolgreich erstellt!';
@@ -1476,6 +1492,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     } else {
                         exportStatus.textContent = `Fehler: ${data.error}`;
                         exportStatus.style.backgroundColor = '#f44336';
+                        console.error("PDF-Export-Fehler:", data.error);
                     }
                     
                     // Status nach 3 Sekunden ausblenden
@@ -1485,8 +1502,84 @@ document.addEventListener('DOMContentLoaded', function() {
                     }, 3000);
                 })
                 .catch(error => {
+                    console.error("PDF-Export-Fehler:", error);
                     exportStatus.textContent = `Fehler: ${error.message}`;
                     exportStatus.style.backgroundColor = '#f44336';
+                    
+                    // Status nach 5 Sekunden ausblenden
+                    setTimeout(() => {
+                        exportStatus.style.opacity = '0';
+                        setTimeout(() => exportStatus.remove(), 500);
+                    }, 5000);
+                });
+        });
+    }
+
+    // Verbesserter Event-Listener für den exportAnnotatedPdfBtn
+    const exportAnnotatedPdfBtn = document.getElementById('exportAnnotatedPdfBtn');
+    if (exportAnnotatedPdfBtn) {
+        exportAnnotatedPdfBtn.addEventListener('click', function() {
+            if (!pdfSessionId) {
+                alert('Bitte laden Sie zuerst eine PDF-Datei hoch und analysieren Sie sie.');
+                return;
+            }
+            
+            // Prüfen, ob die Session-ID eine gültige Projekt-ID ist (beginnt mit einer UUID)
+            const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+            if (!uuidPattern.test(pdfSessionId)) {
+                alert('Bitte speichern Sie das Projekt zuerst, bevor Sie es als PDF exportieren.');
+                return;
+            }
+            
+            // Speicherstatus anzeigen
+            const exportStatus = document.createElement('div');
+            exportStatus.className = 'save-status';
+            exportStatus.textContent = 'Erstelle annotierte Original-PDF...';
+            document.body.appendChild(exportStatus);
+            
+            // PDF-Export-Anfrage senden
+            fetch(`/export_annotated_pdf/${pdfSessionId}`)
+                .then(response => {
+                    // Prüfen, ob die Antwort ein JSON ist
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        return response.json();
+                    } else {
+                        // Wenn keine JSON-Antwort, Text extrahieren für Fehlermeldung
+                        return response.text().then(text => {
+                            throw new Error(`Server hat keine gültige JSON-Antwort gesendet. Antwort: ${text.substring(0, 100)}...`);
+                        });
+                    }
+                })
+                .then(data => {
+                    if (data.success) {
+                        exportStatus.textContent = 'Annotierte Original-PDF wurde erfolgreich erstellt!';
+                        exportStatus.style.backgroundColor = '#4CAF50';
+                        
+                        // Öffne das PDF in einem neuen Tab
+                        window.open(data.pdf_url, '_blank');
+                    } else {
+                        exportStatus.textContent = `Fehler: ${data.error}`;
+                        exportStatus.style.backgroundColor = '#f44336';
+                        console.error("PDF-Export-Fehler:", data.error);
+                    }
+                    
+                    // Status nach 3 Sekunden ausblenden
+                    setTimeout(() => {
+                        exportStatus.style.opacity = '0';
+                        setTimeout(() => exportStatus.remove(), 500);
+                    }, 3000);
+                })
+                .catch(error => {
+                    console.error("PDF-Export-Fehler:", error);
+                    exportStatus.textContent = `Fehler: ${error.message}`;
+                    exportStatus.style.backgroundColor = '#f44336';
+                    
+                    // Status nach 5 Sekunden ausblenden
+                    setTimeout(() => {
+                        exportStatus.style.opacity = '0';
+                        setTimeout(() => exportStatus.remove(), 500);
+                    }, 5000);
                 });
         });
     }

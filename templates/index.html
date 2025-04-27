@@ -25,11 +25,16 @@
                     <div class="form-group">
                         <label>Format:</label>
                         <select id="formatSelect" name="format">
-                            <option value="A4" selected>A4 (210 × 297 mm)</option>
-                            <option value="A3">A3 (297 × 420 mm)</option>
-                            <option value="A2">A2 (420 × 594 mm)</option>
-                            <option value="A1">A1 (594 × 841 mm)</option>
-                            <option value="A0">A0 (841 × 1189 mm)</option>
+                            <option value="A4 (Hochformat)" selected>A4 Hochformat (210 × 297 mm)</option>
+                            <option value="A4 (Querformat)">A4 Querformat (297 × 210 mm)</option>
+                            <option value="A3 (Hochformat)">A3 Hochformat (297 × 420 mm)</option>
+                            <option value="A3 (Querformat)">A3 Querformat (420 × 297 mm)</option>
+                            <option value="A2 (Hochformat)">A2 Hochformat (420 × 594 mm)</option>
+                            <option value="A2 (Querformat)">A2 Querformat (594 × 420 mm)</option>
+                            <option value="A1 (Hochformat)">A1 Hochformat (594 × 841 mm)</option>
+                            <option value="A1 (Querformat)">A1 Querformat (841 × 594 mm)</option>
+                            <option value="A0 (Hochformat)">A0 Hochformat (841 × 1189 mm)</option>
+                            <option value="A0 (Querformat)">A0 Querformat (1189 × 841 mm)</option>
                             <option value="custom">Benutzerdefiniert</option>
                         </select>
                     </div>
@@ -63,11 +68,24 @@
                 </form>
 
                 <div class="project-section">
-                    <h2>Projekte</h2>
+                    <h2 class="project-title">Projekte und Export</h2>
                     <div class="project-buttons">
-                        <button id="saveProjectBtn" class="project-button">Aktuelles Projekt speichern</button>
-                        <button id="loadProjectBtn" class="project-button" data-state="closed">Projekt öffnen</button>
-                        <button id="exportPdfBtn" class="project-button">Als PDF exportieren</button>
+                        <div class="tooltip">
+                            <button id="saveProjectBtn" class="project-button">Projekt speichern</button>
+                            <span class="tooltiptext">Speichert alle Daten und Analyseergebnisse für spätere Verwendung</span>
+                        </div>
+                        <div class="tooltip">
+                            <button id="loadProjectBtn" class="project-button" data-state="closed">Projekt öffnen</button>
+                            <span class="tooltiptext">Lädt ein zuvor gespeichertes Projekt</span>
+                        </div>
+                        <div class="tooltip">
+                            <button id="exportPdfBtn" class="project-button">Als Bericht exportieren</button>
+                            <span class="tooltiptext">Erzeugt einen PDF-Bericht mit Bildern und Tabellen</span>
+                        </div>
+                        <div class="tooltip">
+                            <button id="exportAnnotatedPdfBtn" class="project-button">Als Original-PDF exportieren</button>
+                            <span class="tooltiptext">Zeichnet Bounding Boxes direkt auf das Original-PDF (erhält Maßstab)</span>
+                        </div>
                     </div>
                     <div id="projectList" class="project-list" style="display: none;" data-state="closed">
                         <!-- Projektliste wird hier durch JavaScript eingefügt -->
