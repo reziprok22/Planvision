@@ -148,6 +148,9 @@ def predict():
                 pdf_info = None
                 is_pdf = False
             
+            # debug
+            print(f"Starte Vorhersage mit Parametern: format={format_size}, dpi={dpi}, scale={plan_scale}, threshold={threshold}")
+            
             # Bildvorhersage durchführen
             boxes, labels, scores, areas = predict_image(
                 image_bytes, 
@@ -157,6 +160,9 @@ def predict():
                 threshold=threshold
             )
             
+            # debug
+            print(f"Vorhersage abgeschlossen: {len(boxes)} Objekte gefunden")
+
             results = []
             for box, label, score, area in zip(boxes, labels, scores, areas):
                 results.append({
@@ -459,16 +465,17 @@ def save_project():
         
         # Einstellungen vom Client holen
         settings = data.get('settings', {})
-        print(f"Einstellungen, die gespeichert werden: {settings}")
         
-        # Hier für jede Seite die aktuelle Seitengröße überprüfen
-        for page_num, page_settings in settings.items():
-            print(f"Seite {page_num} Einstellungen: {page_settings}")
+        # Labels vom Client holen
+        labels = data.get('labels', [])
         
         # Speichere globale Einstellungen
-        settings = data.get('settings', {})
         with open(os.path.join(project_dir, 'analysis', 'analysis_settings.json'), 'w') as f:
             json.dump(settings, f, indent=2)
+        
+        # Speichere Labels
+        with open(os.path.join(project_dir, 'analysis', 'labels.json'), 'w') as f:
+            json.dump(labels, f, indent=2)
         
         # Speichere Analyse-Ergebnisse pro Seite
         saved_pages = 0
@@ -598,6 +605,21 @@ def load_project(project_id):
         else:
             settings = {}
         
+        # Labels laden
+        labels_path = os.path.join(analysis_dir, 'labels.json')
+        if os.path.exists(labels_path):
+            with open(labels_path, 'r') as f:
+                labels = json.load(f)
+        else:
+            # Standard-Labels als Fallback
+            labels = [
+                {"id": 1, "name": "Fenster", "color": "#0000FF"},
+                {"id": 2, "name": "Tür", "color": "#FF0000"},
+                {"id": 3, "name": "Wand", "color": "#D4D638"},
+                {"id": 4, "name": "Lukarne", "color": "#FFA500"},
+                {"id": 5, "name": "Dach", "color": "#800080"}
+            ]
+        
         # URLs für die Bildseiten erstellen
         image_urls = []
         pages_dir = os.path.join(project_dir, 'pages')
@@ -623,6 +645,7 @@ def load_project(project_id):
             'metadata': metadata,
             'analysis_data': analysis_data,
             'settings': settings,
+            'labels': labels,
             'image_urls': image_urls
         })
         

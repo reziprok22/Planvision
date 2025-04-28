@@ -230,7 +230,10 @@ function redrawCanvas() {
 
 // Alle Boxen zeichnen
 function drawAllBoxes() {
-    if (!ctx) return;
+    if (!ctx) {
+        console.warn("Kein Canvas-Kontext verfügbar!");
+        return;
+    }
     
     // Daten überprüfen
     if (!window.data || !window.data.predictions || window.data.predictions.length === 0) {
@@ -252,13 +255,23 @@ function drawAllBoxes() {
             
             // Box-Farbe basierend auf Kategorie
             let color;
-            switch (pred.label) {
-                case 1: color = 'blue'; break;  // Fenster
-                case 2: color = 'red'; break;   // Tür
-                case 3: color = '#d4d638'; break; // Wand
-                case 4: color = 'orange'; break; // Lukarne
-                case 5: color = 'purple'; break; // Dach
-                default: color = 'gray';
+            
+            // Suche das entsprechende Label aus den benutzerdefinierten Labels
+            const label = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
+            
+            if (label && label.color) {
+                // Verwende die benutzerdefinierte Farbe
+                color = label.color;
+            } else {
+                // Fallback auf die Standard-Farben
+                switch (pred.label) {
+                    case 1: color = 'blue'; break;  // Fenster
+                    case 2: color = 'red'; break;   // Tür
+                    case 3: color = '#d4d638'; break; // Wand
+                    case 4: color = 'orange'; break; // Lukarne
+                    case 5: color = 'purple'; break; // Dach
+                    default: color = 'gray';
+                }
             }
             
             // Stil festlegen
@@ -272,12 +285,12 @@ function drawAllBoxes() {
             ctx.fillStyle = color;
             ctx.font = '12px Arial';
             
-            const label = `#${index + 1}: ${pred.area.toFixed(2)} m²`;
-            const labelWidth = ctx.measureText(label).width + 10;
+            const label_text = `#${index + 1}: ${pred.area.toFixed(2)} m²`;
+            const labelWidth = ctx.measureText(label_text).width + 10;
             
             ctx.fillRect(scaledX1, scaledY1 - 20, labelWidth, 20);
             ctx.fillStyle = 'white';
-            ctx.fillText(label, scaledX1 + 5, scaledY1 - 5);
+            ctx.fillText(label_text, scaledX1 + 5, scaledY1 - 5);
         }
     });
     

@@ -17,6 +17,19 @@ let allPdfPages = [];
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log("DOM vollständig geladen. Initialisiere Anwendung...");
+
+    // Standard-Labels definieren (werden nur verwendet, wenn keine Labels vom Server kommen)
+    const defaultLabels = [
+        { id: 1, name: "Fenster", color: "#0000FF" },  // Blau
+        { id: 2, name: "Tür", color: "#FF0000" },      // Rot
+        { id: 3, name: "Wand", color: "#D4D638" },     // Gelb
+        { id: 4, name: "Lukarne", color: "#FFA500" },  // Orange
+        { id: 5, name: "Dach", color: "#800080" }      // Lila
+    ];
+
+    // Verwende die Labels aus dem localStorage oder die Standard-Labels
+    let currentLabels = JSON.parse(localStorage.getItem('labels')) || [...defaultLabels];
+    window.currentLabels = currentLabels; // Global verfügbar machen
     
     // Hauptelemente abrufen
     const uploadForm = document.getElementById('uploadForm');
@@ -181,12 +194,14 @@ document.addEventListener('DOMContentLoaded', function() {
             console.log(`Einstellungen für Seite ${pageNum}:`, pageSettings[pageNum]);
         });
         
-        // Daten für den Server vorbereiten
+
+        // Daten für den Server vorbereiten (Labels)
         const projectData = {
             project_name: projectName,
             session_id: pdfSessionId,
             analysis_data: analysisData,
-            settings: pageSettings
+            settings: pageSettings,
+            labels: currentLabels
         };
 
         // In der saveProject-Funktion in main.js, direkt bevor die Daten an den Server gesendet werden:
@@ -216,9 +231,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     loadProjectList();
                 }
 
-                // Hier die neue Funktionalität: Projekt automatisch neu laden
+                // rojekt automatisch neu laden
                 const oldSessionId = pdfSessionId;
                 pdfSessionId = data.project_id;
+
+                // Labels laden, falls vorhanden
+                if (data.labels && Array.isArray(data.labels) && data.labels.length > 0) {
+                    currentLabels = data.labels;
+                    localStorage.setItem('labels', JSON.stringify(currentLabels));
+                    updateUIForLabels(); // UI mit den geladenen Labels aktualisieren
+                }
 
                 // Nur wenn sich die ID geändert hat (Erstmalige Speicherung)
                 if (oldSessionId !== data.project_id) {
@@ -495,41 +517,47 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 
-    // Funktion zum Konvertieren der API-Antwort in das gewünschte Format
-    function processApiResponse(apiResponse) {
-        // Ausgabeformat erstellen
-        const result = {
-            count: {},
-            total_area: {},
-            predictions: []
-        };
-        
-        let fensterCount = 0;
-        let tuerCount = 0;
-        let wandCount = 0;
-        let lukarneCount = 0;
-        let dachCount = 0;
-        let otherCount = 0;
-        
-        let fensterArea = 0;
-        let tuerArea = 0;
-        let wandArea = 0;
-        let lukarneArea = 0;
-        let dachArea = 0;
-        let otherArea = 0;
-        
-        // Sicherstellen, dass predictions ein Array ist
-        const predictions = apiResponse.predictions || [];
-        
-        // Überprüfen ob predictions vorhanden ist
-        if (Array.isArray(predictions)) {
-            // Vorhersagen verarbeiten
-            predictions.forEach(pred => {
-                // Typ bestimmen basierend auf vorhandenen Eigenschaften
-                const type = "box" in pred || "bbox" in pred ? "rectangle" : "polygon";
-                
-                // Label-Name basierend auf der Kategorie bestimmen
-                let label_name;
+// Funktion zum Konvertieren der API-Antwort in das gewünschte Format
+function processApiResponse(apiResponse) {
+    // Ausgabeformat erstellen
+    const result = {
+        count: {},
+        total_area: {},
+        predictions: []
+    };
+    
+    let fensterCount = 0;
+    let tuerCount = 0;
+    let wandCount = 0;
+    let lukarneCount = 0;
+    let dachCount = 0;
+    let otherCount = 0;
+    
+    let fensterArea = 0;
+    let tuerArea = 0;
+    let wandArea = 0;
+    let lukarneArea = 0;
+    let dachArea = 0;
+    let otherArea = 0;
+    
+    // Sicherstellen, dass predictions ein Array ist
+    const predictions = apiResponse.predictions || [];
+    
+    // Überprüfen ob predictions vorhanden ist
+    if (Array.isArray(predictions)) {
+        // Vorhersagen verarbeiten
+        predictions.forEach(pred => {
+            // Typ bestimmen basierend auf vorhandenen Eigenschaften
+            const predType = "box" in pred || "bbox" in pred ? "rectangle" : "polygon";
+            
+            // Prüfe, ob ein benutzerdefiniertes Label für diese ID existiert
+            const customLabel = window.currentLabels.find(l => l.id === pred.label);
+            let label_name;
+            
+            if (customLabel) {
+                label_name = customLabel.name;
+            } else {
+                // Fallback auf die Standard-Namen
                 switch(pred.label) {
                     case 1:
                         label_name = "Fenster";
@@ -561,39 +589,52 @@ document.addEventListener('DOMContentLoaded', function() {
                         otherCount++;
                         otherArea += pred.area;
                 }
-                
-                // Verarbeitete Vorhersage hinzufügen
-                result.predictions.push({
-                    ...pred,
-                    type: type,
-                    label_name: label_name
-                });
+            }
+            
+            // Aktualisiere Zähler und Flächen basierend auf dem Label
+            if (customLabel) {
+                switch(pred.label) {
+                    case 1: fensterCount++; fensterArea += pred.area; break;
+                    case 2: tuerCount++; tuerArea += pred.area; break;
+                    case 3: wandCount++; wandArea += pred.area; break;
+                    case 4: lukarneCount++; lukarneArea += pred.area; break;
+                    case 5: dachCount++; dachArea += pred.area; break;
+                    default: otherCount++; otherArea += pred.area;
+                }
+            }
+            
+            // Verarbeitete Vorhersage hinzufügen
+            result.predictions.push({
+                ...pred,
+                type: predType,
+                label_name: label_name
             });
-        } else {
-            console.warn("Keine predictions in der API-Antwort gefunden oder nicht als Array");
-        }
-        
-        // Zusammenfassungsdaten setzen
-        result.count = {
-            fenster: fensterCount,
-            tuer: tuerCount,
-            wand: wandCount,
-            lukarne: lukarneCount,
-            dach: dachCount,
-            other: otherCount
-        };
-        
-        result.total_area = {
-            fenster: fensterArea,
-            tuer: tuerArea,
-            wand: wandArea,
-            lukarne: lukarneArea,
-            dach: dachArea,
-            other: otherArea
-        };
-        
-        return result;
+        });
+    } else {
+        console.warn("Keine predictions in der API-Antwort gefunden oder nicht als Array");
     }
+    
+    // Zusammenfassungsdaten setzen
+    result.count = {
+        fenster: fensterCount,
+        tuer: tuerCount,
+        wand: wandCount,
+        lukarne: lukarneCount,
+        dach: dachCount,
+        other: otherCount
+    };
+    
+    result.total_area = {
+        fenster: fensterArea,
+        tuer: tuerArea,
+        wand: wandArea,
+        lukarne: lukarneArea,
+        dach: dachArea,
+        other: otherArea
+    };
+    
+    return result;
+}
 
     // Funktion zum Laden einer bestimmten PDF-Seite
     function navigateToPdfPage(pageNumber, forceReprocess = false) {
@@ -943,6 +984,18 @@ function getDummyData() {
 // Funktion zur Anzeige der Ergebnisse
 function displayResults(responseData) {
     console.log("Zeige Ergebnisse an:", responseData);
+    console.log("Aktuelle Labels:", window.currentLabels);
+    
+    // Prüfen, ob Vorhersagen vorhanden sind
+    if (!responseData.predictions || responseData.predictions.length === 0) {
+        console.warn("Keine Vorhersagen in responseData gefunden!");
+    }
+    
+    // Auf Label-Namen prüfen
+    if (responseData.predictions && responseData.predictions.length > 0) {
+        console.log("Erste Vorhersage:", responseData.predictions[0]);
+        console.log("Label-Name in erster Vorhersage:", responseData.predictions[0].label_name);
+    }
     
     // Lokale und globale Daten setzen
     window.data = responseData;
@@ -1201,16 +1254,25 @@ function updateSummary() {
     summary.innerHTML = summaryHtml;
 }
 
-// Funktion zur Aktualisierung der Ergebnistabelle
+// Funktion zur Aktualisierung der Ergebnistabelle in main.js
 function updateResultsTable() {
     resultsBody.innerHTML = '';
     
     window.data.predictions.forEach((pred, index) => {
         const row = document.createElement('tr');
         
+        // Suche das passende Label für diese Vorhersage
+        let labelName = pred.label_name || "Andere";
+        
+        // Suche in den benutzerdefinierten Labels nach einer passenden ID
+        const customLabel = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
+        if (customLabel) {
+            labelName = customLabel.name;
+        }
+        
         row.innerHTML = `
             <td>${index + 1}</td>
-            <td>${pred.label_name}</td>
+            <td>${labelName}</td>
             <td>${pred.type || (pred.polygon ? "Polygon" : "Rechteck")}</td>
             <td>${(pred.score * 100).toFixed(1)}%</td>
             <td>${pred.area.toFixed(2)} m²</td>
@@ -1267,24 +1329,29 @@ function addAnnotation(prediction, index) {
     
     // Klassen-Präfix basierend auf der Kategorie
     let classPrefix;
-    switch(prediction.label) {
-        case 1:
-            classPrefix = 'fenster'; // Fenster = 1
-            break;
-        case 2:
-            classPrefix = 'tuer';    // Tür = 2
-            break;
-        case 3:
-            classPrefix = 'wand';    // Wand = 3
-            break;
-        case 4:
-            classPrefix = 'lukarne'; // Lukarne = 4
-            break;
-        case 5:
-            classPrefix = 'dach';    // Dach = 5
-            break;
-        default:
-            classPrefix = 'other';   // Andere Kategorien
+    let color;
+    
+    // Suche das entsprechende Label
+    const label = window.currentLabels.find(l => l.id === prediction.label);
+    
+    if (label) {
+        // Verwende den Namen als Klassenpräfix und die definierte Farbe
+        classPrefix = label.name.toLowerCase()
+            .replace('ä', 'ae')
+            .replace('ö', 'oe')
+            .replace('ü', 'ue')
+            .replace(' ', '_');
+        color = label.color;
+    } else {
+        // Fallback für unbekannte Labels
+        switch(prediction.label) {
+            case 1: classPrefix = 'fenster'; break;
+            case 2: classPrefix = 'tuer'; break;
+            case 3: classPrefix = 'wand'; break;
+            case 4: classPrefix = 'lukarne'; break;
+            case 5: classPrefix = 'dach'; break;
+            default: classPrefix = 'other';
+        }
     }
     
     // Label vorbereiten
@@ -1308,53 +1375,52 @@ function addAnnotation(prediction, index) {
         box.style.top = `${scaledY1}px`;
         box.style.width = `${scaledWidth}px`;
         box.style.height = `${scaledHeight}px`;
-        imageContainer.appendChild(box);
         
-        // Label hinzufügen
-        addLabel(scaledX1, scaledY1 - 20, labelText, elementId, classPrefix);
-    } else if (prediction.type === "polygon" || prediction.polygon) {
-        // Polygon-Punkte skalieren
-        const scaledPoints = [];
-        const poly = prediction.polygon || prediction;
-        const all_points_x = poly.all_points_x;
-        const all_points_y = poly.all_points_y;
-        
-        // Mittelpunkt für Label berechnen
-        let centerX = 0;
-        let centerY = 0;
-        
-        for (let i = 0; i < all_points_x.length; i++) {
-            const x = all_points_x[i] * scale;
-            const y = all_points_y[i] * scale;
-            scaledPoints.push(`${x},${y}`);
-            
-            centerX += x;
-            centerY += y;
+        // Hier direkt die Farbe anwenden, anstatt auf CSS-Klassen zu vertrauen
+        if (label && label.color) {
+            box.style.borderColor = label.color;
+            box.style.backgroundColor = `${label.color}20`; // Mit 20% Opacity
         }
         
-        centerX /= all_points_x.length;
-        centerY /= all_points_y.length;
+        imageContainer.appendChild(box);
         
-        // Polygon zum SVG hinzufügen
+        // Label hinzufügen mit Farbe
+        addLabel(scaledX1, scaledY1 - 20, labelText, elementId, classPrefix, label ? label.color : null);
+    } else if (prediction.type === "polygon" || prediction.polygon) {
+        // ... Code für Polygone ...
+        // Auch hier die Farbe direkt setzen
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", scaledPoints.join(" "));
         polygon.setAttribute("class", `polygon-annotation ${classPrefix}-annotation`);
+        
+        // Hier direkt die Farbe anwenden
+        if (label && label.color) {
+            polygon.style.fill = `${label.color}20`; // Mit 20% Opacity
+            polygon.style.stroke = label.color;
+        }
+        
         polygon.id = elementId;
         annotationOverlay.appendChild(polygon);
         
-        // Label hinzufügen
-        addLabel(centerX, centerY - 20, labelText, elementId, classPrefix);
+        // Label hinzufügen mit Farbe
+        addLabel(centerX, centerY - 20, labelText, elementId, classPrefix, label ? label.color : null);
     }
 }
 
 // Funktion zum Hinzufügen eines Labels
-function addLabel(x, y, text, parentId, classPrefix) {
+function addLabel(x, y, text, parentId, classPrefix, color) {
     const label = document.createElement('div');
     label.className = `box-label ${classPrefix}-label`;
     label.id = `label-${parentId}`;
     label.textContent = text;
     label.style.left = `${x}px`;
     label.style.top = `${y}px`;
+    
+    // Direkt die Farbe anwenden, wenn angegeben
+    if (color) {
+        label.style.backgroundColor = color;
+    }
+    
     imageContainer.appendChild(label);
 }
 
@@ -1660,4 +1726,288 @@ if (exportAnnotatedPdfBtn) {
             });
     });
 }
+
+
+// Modal-Elements
+const labelManagerModal = document.getElementById('labelManagerModal');
+const manageLabelBtn = document.getElementById('manageLabelBtn');
+const closeModalBtn = labelManagerModal.querySelector('.close');
+const labelTableBody = document.getElementById('labelTableBody');
+const addLabelBtn = document.getElementById('addLabelBtn');
+const importLabelsBtn = document.getElementById('importLabelsBtn');
+const exportLabelsBtn = document.getElementById('exportLabelsBtn');
+const resetLabelsBtn = document.getElementById('resetLabelsBtn');
+
+// Formular-Elemente
+const labelForm = document.getElementById('labelForm');
+const labelFormTitle = document.getElementById('labelFormTitle');
+const labelIdInput = document.getElementById('labelId');
+const labelNameInput = document.getElementById('labelName');
+const labelColorInput = document.getElementById('labelColor');
+const saveLabelBtn = document.getElementById('saveLabelBtn');
+const cancelLabelBtn = document.getElementById('cancelLabelBtn');
+
+// Event-Listener für Modal öffnen/schließen
+manageLabelBtn.addEventListener('click', openLabelManager);
+closeModalBtn.addEventListener('click', closeLabelManager);
+window.addEventListener('click', function(event) {
+    if (event.target === labelManagerModal) {
+        closeLabelManager();
+    }
+});
+
+// Event-Listener für Buttons
+addLabelBtn.addEventListener('click', showAddLabelForm);
+importLabelsBtn.addEventListener('click', importLabels);
+exportLabelsBtn.addEventListener('click', exportLabels);
+resetLabelsBtn.addEventListener('click', resetLabels);
+saveLabelBtn.addEventListener('click', saveLabel);
+cancelLabelBtn.addEventListener('click', hideForm);
+
+// Label-Manager öffnen
+function openLabelManager() {
+    refreshLabelTable();
+    labelManagerModal.style.display = 'block';
+}
+
+// Label-Manager schließen
+function closeLabelManager() {
+    labelManagerModal.style.display = 'none';
+    hideForm();
+}
+
+// Label-Tabelle aktualisieren
+function refreshLabelTable() {
+    labelTableBody.innerHTML = '';
+    
+    currentLabels.forEach(label => {
+        const row = document.createElement('tr');
+        
+        row.innerHTML = `
+            <td>${label.id}</td>
+            <td>
+                <span class="color-preview" style="background-color:${label.color}"></span>
+                ${label.name}
+            </td>
+            <td>${label.color}</td>
+            <td>
+                <button class="edit-label-btn" data-id="${label.id}">Bearbeiten</button>
+                <button class="delete-label-btn" data-id="${label.id}">Löschen</button>
+            </td>
+        `;
+        
+        labelTableBody.appendChild(row);
+    });
+    
+    // Event-Listener für Edit- und Delete-Buttons
+    document.querySelectorAll('.edit-label-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const labelId = parseInt(this.dataset.id);
+            editLabel(labelId);
+        });
+    });
+    
+    document.querySelectorAll('.delete-label-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const labelId = parseInt(this.dataset.id);
+            deleteLabel(labelId);
+        });
+    });
+}
+
+// Formular zum Hinzufügen anzeigen
+function showAddLabelForm() {
+    labelFormTitle.textContent = 'Label hinzufügen';
+    labelIdInput.value = '';
+    labelNameInput.value = '';
+    labelColorInput.value = '#' + Math.floor(Math.random()*16777215).toString(16); // Zufällige Farbe
+    labelForm.style.display = 'block';
+}
+
+// Formular zum Bearbeiten anzeigen
+function editLabel(labelId) {
+    const label = currentLabels.find(l => l.id === labelId);
+    if (!label) return;
+    
+    labelFormTitle.textContent = 'Label bearbeiten';
+    labelIdInput.value = label.id;
+    labelNameInput.value = label.name;
+    labelColorInput.value = label.color;
+    labelForm.style.display = 'block';
+}
+
+// Label löschen
+function deleteLabel(labelId) {
+    if (currentLabels.length <= 1) {
+        alert('Es muss mindestens ein Label vorhanden sein.');
+        return;
+    }
+    
+    if (confirm('Möchten Sie dieses Label wirklich löschen?')) {
+        currentLabels = currentLabels.filter(label => label.id !== labelId);
+        saveLabels();
+        refreshLabelTable();
+    }
+}
+
+// Label speichern
+function saveLabel() {
+    const name = labelNameInput.value.trim();
+    const color = labelColorInput.value;
+    
+    if (!name) {
+        alert('Bitte geben Sie einen Namen ein.');
+        return;
+    }
+    
+    const labelId = labelIdInput.value ? parseInt(labelIdInput.value) : null;
+    
+    if (labelId) {
+        // Label bearbeiten
+        const index = currentLabels.findIndex(l => l.id === labelId);
+        if (index !== -1) {
+            currentLabels[index].name = name;
+            currentLabels[index].color = color;
+        }
+    } else {
+        // Neues Label
+        const maxId = currentLabels.reduce((max, label) => Math.max(max, label.id), 0);
+        currentLabels.push({
+            id: maxId + 1,
+            name: name,
+            color: color
+        });
+    }
+    
+    saveLabels();
+    refreshLabelTable();
+    hideForm();
+}
+
+// Formular ausblenden
+function hideForm() {
+    labelForm.style.display = 'none';
+}
+
+// Labels speichern
+function saveLabels() {
+    localStorage.setItem('labels', JSON.stringify(currentLabels));
+    window.currentLabels = currentLabels; // Aktualisiere die globale Variable
+    updateUIForLabels();
+    
+    // Falls ein Projekt geladen ist, speichere die Änderungen auch dort
+    if (pdfSessionId && pdfSessionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+        // Projekt speichern mit aktuellen Labels
+        saveProject();
+    }
+}
+
+// Labels importieren
+function importLabels() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    
+    input.addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const importedLabels = JSON.parse(e.target.result);
+                
+                // Validieren
+                if (!Array.isArray(importedLabels) || !importedLabels.every(l => l.id && l.name && l.color)) {
+                    throw new Error('Ungültiges Label-Format');
+                }
+                
+                currentLabels = importedLabels;
+                saveLabels();
+                refreshLabelTable();
+                
+                alert('Labels erfolgreich importiert!');
+            } catch (error) {
+                alert('Fehler beim Importieren der Labels: ' + error.message);
+            }
+        };
+        
+        reader.readAsText(file);
+    });
+    
+    input.click();
+}
+
+// Labels exportieren
+function exportLabels() {
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(currentLabels, null, 2));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "fenster_labels.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+}
+
+// Labels zurücksetzen
+function resetLabels() {
+    if (confirm('Möchten Sie wirklich alle Labels auf die Standardwerte zurücksetzen?')) {
+        currentLabels = [...defaultLabels];
+        saveLabels();
+        refreshLabelTable();
+    }
+}
+
+// UI aktualisieren basierend auf Labels
+function updateUIForLabels() {
+    // Aktualisiere Legende
+    const legend = document.querySelector('.legend');
+    if (legend) {
+        legend.innerHTML = '';
+        
+        currentLabels.forEach(label => {
+            const legendItem = document.createElement('div');
+            legendItem.className = 'legend-item';
+            legendItem.innerHTML = `
+                <div class="legend-color" style="background-color:${label.color}"></div>
+                <span>${label.name} (${label.id})</span>
+            `;
+            legend.appendChild(legendItem);
+        });
+    }
+    
+    // Aktualisiere Objekttyp-Auswahl im Editor
+    const objectTypeSelect = document.getElementById('objectTypeSelect');
+    if (objectTypeSelect) {
+        // Aktuelle Auswahl merken
+        const selectedValue = objectTypeSelect.value;
+        
+        // Optionen neu erstellen
+        objectTypeSelect.innerHTML = '';
+        
+        // Option für "Andere" (0)
+        const otherOption = document.createElement('option');
+        otherOption.value = '0';
+        otherOption.textContent = 'Andere';
+        objectTypeSelect.appendChild(otherOption);
+        
+        // Optionen für benutzerdefinierte Labels
+        currentLabels.forEach(label => {
+            const option = document.createElement('option');
+            option.value = label.id;
+            option.textContent = label.name;
+            objectTypeSelect.appendChild(option);
+        });
+        
+        // Vorherige Auswahl wiederherstellen, wenn möglich
+        if (selectedValue && objectTypeSelect.querySelector(`option[value="${selectedValue}"]`)) {
+            objectTypeSelect.value = selectedValue;
+        }
+    }
+}
+
+// Initial UI aktualisieren, wenn die Seite geladen ist
+updateUIForLabels();
+
+
 });

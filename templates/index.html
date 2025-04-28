@@ -87,9 +87,64 @@
                             <button id="exportAnnotatedPdfBtn" class="project-button">Als Original-PDF exportieren</button>
                             <span class="tooltiptext">Zeichnet Bounding Boxes direkt auf das Original-PDF (erhält Maßstab)</span>
                         </div>
+                        <div class="tooltip">
+                            <button id="manageLabelBtn" class="project-button">Labels verwalten</button>
+                            <span class="tooltiptext">Label-Kategorien hinzufügen, bearbeiten oder löschen</span>
+                        </div>
                     </div>
                     <div id="projectList" class="project-list" style="display: none;" data-state="closed">
                         <!-- Projektliste wird hier durch JavaScript eingefügt -->
+                    </div>
+                </div>
+
+                <!-- Modal für Label-Verwaltung -->
+                <div id="labelManagerModal" class="modal">
+                    <div class="modal-content">
+                        <span class="close">&times;</span>
+                        <h3>Labels verwalten</h3>
+                        
+                        <div class="label-manager-container">
+                            <div class="label-list">
+                                <table id="labelTable">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Name</th>
+                                            <th>Farbe</th>
+                                            <th>Aktionen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="labelTableBody">
+                                        <!-- Hier werden die Labels dynamisch eingefügt -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="label-actions">
+                                <button id="addLabelBtn" class="editor-button">Neues Label</button>
+                                <button id="importLabelsBtn" class="editor-button">Labels importieren</button>
+                                <button id="exportLabelsBtn" class="editor-button">Labels exportieren</button>
+                                <button id="resetLabelsBtn" class="editor-button">Auf Standard zurücksetzen</button>
+                            </div>
+                            
+                            <!-- Formular für neues/zu bearbeitendes Label -->
+                            <div id="labelForm" class="label-form" style="display:none;">
+                                <h4 id="labelFormTitle">Label hinzufügen</h4>
+                                <input type="hidden" id="labelId">
+                                <div class="form-group">
+                                    <label for="labelName">Name:</label>
+                                    <input type="text" id="labelName" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="labelColor">Farbe:</label>
+                                    <input type="color" id="labelColor" required>
+                                </div>
+                                <div class="form-actions">
+                                    <button id="saveLabelBtn" class="save-button">Speichern</button>
+                                    <button id="cancelLabelBtn" class="cancel-button">Abbrechen</button>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
