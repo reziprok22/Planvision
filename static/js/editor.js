@@ -13,6 +13,9 @@ let ctx = null;
 let currentPolygon = null;
 let polygonPoints = [];
 let isDrawingPolygon = false;
+let currentLine = null;
+let linePoints = [];
+let isDrawingLine = false;
 
 // Hauptelemente für Editor-Zugriff
 let uploadedImage, imageContainer, annotationOverlay, resultsSection;
@@ -48,6 +51,8 @@ function initEditor(elements) {
     saveEditBtn = document.getElementById('saveEditBtn');
     cancelEditBtn = document.getElementById('cancelEditBtn');
     objectTypeSelect = document.getElementById('objectTypeSelect');
+    addLineBtn = document.getElementById('addLineBtn');
+
     
     // Überprüfen, ob alle Editor-Elemente vorhanden sind
     console.log("Editor-Elemente geladen:", {
@@ -69,6 +74,8 @@ function initEditor(elements) {
     if (saveEditBtn) saveEditBtn.addEventListener('click', saveEditorChanges);
     if (cancelEditBtn) cancelEditBtn.addEventListener('click', cancelEditorChanges);
     if (addPolygonBtn) addPolygonBtn.addEventListener('click', () => setEditorMode('addPolygon'));
+    if (addLineBtn) addLineBtn.addEventListener('click', () => setEditorMode('addLine'));
+
 
     
     // Canvas Event-Listener
@@ -77,8 +84,19 @@ function initEditor(elements) {
         editorCanvas.addEventListener('mousemove', handleMouseMove);
         editorCanvas.addEventListener('mouseup', handleMouseUp);
         editorCanvas.addEventListener('click', handleClick);
+        editorCanvas.addEventListener('dblclick', handleDoubleClick);
         console.log("Canvas-Event-Listener hinzugefügt");
     }
+
+    // Tastatur-Event-Listener für die Escape-Taste
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            if (currentMode === 'addLine' && isDrawingLine && linePoints.length >= 1) {
+                // Linie abschließen
+                finishLine();
+            }
+        }
+    });
     
     // Event-Listener für Objekttyp-Änderung
     if (objectTypeSelect) {
@@ -210,12 +228,16 @@ function setEditorMode(mode) {
 
     // Falls vorhanden, auch Polygon-Button zurücksetzen
     if (addPolygonBtn) addPolygonBtn.classList.remove('active');
+    if (addLineBtn) addLineBtn.classList.remove('active');
+
 
     // Aktiven Button markieren
     if (mode === 'add') addBoxBtn.classList.add('active');
     if (mode === 'edit') editBoxBtn.classList.add('active');
     if (mode === 'delete') deleteBoxBtn.classList.add('active');
     if (mode === 'addPolygon' && addPolygonBtn) addPolygonBtn.classList.add('active');
+    if (mode === 'addLine' && addLineBtn) addLineBtn.classList.add('active');
+
     
     // Auswahl zurücksetzen
     selectedBoxIndex = -1;
@@ -230,28 +252,57 @@ function setEditorMode(mode) {
         polygonPoints = [];
         isDrawingPolygon = true;
     }      
+
+    // Linienmodus aktivieren/deaktivieren
+    if (mode !== 'addLine') {
+        linePoints = [];
+        isDrawingLine = false;
+    } else {
+        // Linien-Zeichnung starten
+        linePoints = [];
+        isDrawingLine = true;
+    }
+    
+    // Wenn der Linienmodus aktiviert wird, zeigen wir einen Hilfetext an
+    if (mode === 'addLine') {
+        // Zeige Tooltip/Hilfeleiste an
+        const helpText = document.createElement('div');
+        helpText.id = 'lineHelp';
+        helpText.className = 'editor-help-text';
+        helpText.innerHTML = 'Klicken Sie, um Punkte hinzuzufügen. <b>Doppelklick</b> oder <b>Escape</b>, um die Messung abzuschließen.';
+        
+        // Vorhandene Hilfe entfernen
+        const oldHelp = document.getElementById('lineHelp');
+        if (oldHelp) oldHelp.remove();
+        
+        // Neue Hilfe einfügen
+        editorSection.insertBefore(helpText, editorCanvas);
+    } else {
+        // Hilfetext entfernen, wenn wir nicht im Linienmodus sind
+        const helpText = document.getElementById('lineHelp');
+        if (helpText) helpText.remove();
+    }
     
     // Canvas neu zeichnen
     redrawCanvas();
 
-        // Cursor-Stil anpassen
-        switch(mode) {
-            case 'add':
-                editorCanvas.style.cursor = 'crosshair';
-                break;
-            case 'addPolygon':
-                editorCanvas.style.cursor = 'crosshair';
-                break;
-            case 'edit':
-                editorCanvas.style.cursor = 'pointer';
-                break;
-            case 'delete':
-                editorCanvas.style.cursor = 'not-allowed';
-                break;
-            default:
-                editorCanvas.style.cursor = 'default';
-        }
+    // Cursor-Stil anpassen
+    switch(mode) {
+        case 'add':
+        case 'addPolygon':
+        case 'addLine':
+            editorCanvas.style.cursor = 'crosshair';
+            break;
+        case 'edit':
+            editorCanvas.style.cursor = 'pointer';
+            break;
+        case 'delete':
+            editorCanvas.style.cursor = 'not-allowed';
+            break;
+        default:
+            editorCanvas.style.cursor = 'default';
     }
+}
     
 // Canvas neu zeichnen
 function redrawCanvas() {
@@ -426,6 +477,49 @@ function drawAllBoxes() {
             ctx.fillText(label_text, centerX, centerY - 5);
             ctx.textAlign = 'left'; // Text-Ausrichtung zurücksetzen
         }
+        // Speichere Linie
+        else if (pred.type === "line" && pred.line) {
+            const {all_points_x, all_points_y} = pred.line;
+            
+            if (!all_points_x || !all_points_y || all_points_x.length < 2) {
+                console.warn("Ungültige Linie gefunden, überspringe...");
+                return;
+            }
+            
+            // Stil für Linien setzen
+            ctx.strokeStyle = isSelected ? 'lime' : '#FF9500'; // Orange für Messlinien
+            ctx.lineWidth = isSelected ? 3 : 2;
+            
+            // Linie zeichnen
+            ctx.beginPath();
+            ctx.moveTo(all_points_x[0] * scale, all_points_y[0] * scale);
+            
+            for (let i = 1; i < all_points_x.length; i++) {
+                ctx.lineTo(all_points_x[i] * scale, all_points_y[i] * scale);
+            }
+            
+            ctx.stroke();
+            
+            // Punkte an den Ecken zeichnen
+            for (let i = 0; i < all_points_x.length; i++) {
+                ctx.fillStyle = '#FF9500';
+                ctx.beginPath();
+                ctx.arc(all_points_x[i] * scale, all_points_y[i] * scale, 4, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+            
+            // Längeninformation anzeigen
+            if (pred.length) {
+                // Position für den Text (am Ende der Linie)
+                const lastX = all_points_x[all_points_x.length - 1] * scale;
+                const lastY = all_points_y[all_points_y.length - 1] * scale;
+                
+                // Text zeichnen
+                ctx.font = '12px Arial';
+                ctx.fillStyle = '#FF9500';
+                ctx.fillText(`${pred.length.toFixed(2)} m`, lastX + 5, lastY - 5);
+            }
+        }
     });
     
     // Aktives Polygon zeichnen, falls vorhanden
@@ -456,6 +550,50 @@ function drawAllBoxes() {
             ctx.beginPath();
             ctx.arc(polygonPoints[i].x, polygonPoints[i].y, 4, 0, 2 * Math.PI);
             ctx.fill();
+        }
+    }
+
+    // Aktive Linie zeichnen, falls vorhanden
+    if (currentMode === 'addLine' && linePoints.length > 0) {
+        console.log("Zeichne aktive Linie mit", linePoints.length, "Punkten");
+        // Stil für die aktive Linie
+        ctx.strokeStyle = '#FF9500'; // Orange für Linienmessung
+        ctx.lineWidth = 2;
+        
+        // Zeichne die aktive Linie
+        ctx.beginPath();
+        ctx.moveTo(linePoints[0].x, linePoints[0].y);
+        
+        for (let i = 1; i < linePoints.length; i++) {
+            ctx.lineTo(linePoints[i].x, linePoints[i].y);
+        }
+        
+        // Verbinde mit dem aktuellen Mauszeiger, falls vorhanden
+        if (currentLine) {
+            ctx.lineTo(currentLine.x, currentLine.y);
+        }
+        
+        ctx.stroke();
+        
+        // Zeichne Punkte an den Ecken
+        for (let i = 0; i < linePoints.length; i++) {
+            ctx.fillStyle = '#FF9500';
+            ctx.beginPath();
+            ctx.arc(linePoints[i].x, linePoints[i].y, 4, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+        
+        // Zeige die aktuelle Messung an
+        if (linePoints.length >= 2) {
+            const totalLength = calculateLineLength(linePoints);
+            
+            // Position für den Text finden (letzter Punkt)
+            const lastPoint = linePoints[linePoints.length - 1];
+            
+            // Text zeichnen
+            ctx.font = '14px Arial';
+            ctx.fillStyle = '#FF9500';
+            ctx.fillText(`Länge: ${totalLength.toFixed(2)} m`, lastPoint.x + 10, lastPoint.y);
         }
     }
     
@@ -505,8 +643,16 @@ function handleMouseMove(event) {
         currentPolygon = {
             x: currentX,
             y: currentY
-        };
-        
+        }
+        // Canvas neu zeichnen
+        redrawCanvas();
+    }
+    else if (currentMode === 'addLine' && isDrawingLine && linePoints.length > 0) {
+        // Aktuelle Mausposition speichern
+        currentLine = {
+            x: currentX,
+            y: currentY
+        }
         // Canvas neu zeichnen
         redrawCanvas();
     }
@@ -582,7 +728,6 @@ function handleMouseUp(event) {
 }
 
 // Click-Handler
-// handleClick Funktion aktualisieren
 function handleClick(event) {
     const rect = editorCanvas.getBoundingClientRect();
     const x = event.clientX - rect.left;
@@ -609,7 +754,19 @@ function handleClick(event) {
                     polygonPoints.push({x, y});
                 }
             }
-            
+        }
+    } else if (currentMode === 'addLine') {
+        // Linienpunkt hinzufügen
+        if (isDrawingLine) {
+            // Prüfen, ob der Klick nahe am Startpunkt ist, wenn mehr als 2 Punkte da sind
+            if (linePoints.length >= 2 && event.ctrlKey) {
+                // Strg+Klick beendet die Linie
+                finishLine();
+            } else {
+                // Neuen Punkt hinzufügen
+                linePoints.push({x, y});
+            }
+        
             // Canvas neu zeichnen
             redrawCanvas();
         }
@@ -634,6 +791,28 @@ function handleClick(event) {
         } else if (currentMode === 'edit') {
             // Auswahl aufheben
             selectedBoxIndex = -1;
+            redrawCanvas();
+        }
+    }
+}
+
+// Funktion für Doppelklick
+function handleDoubleClick(event) {
+    const rect = editorCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    if (currentMode === 'addLine' && isDrawingLine && linePoints.length >= 2) {
+        // Linie abschließen
+        finishLine();
+    }
+    else if (currentMode === 'addLine') {
+        // Linienpunkt hinzufügen
+        if (isDrawingLine) {
+            // Neuen Punkt hinzufügen
+            linePoints.push({x, y});
+            
+            // Canvas neu zeichnen
             redrawCanvas();
         }
     }
@@ -724,6 +903,98 @@ function calculatePolygonArea(x, y) {
     return areaInSquareMeters;
 }
 
+// Funktion zum Berechnen der Linienlänge
+function calculateLineLength(points) {
+    if (points.length < 2) return 0;
+    
+    let totalLength = 0;
+    const scale = editorCanvas.width / uploadedImage.naturalWidth;
+    
+    for (let i = 0; i < points.length - 1; i++) {
+        // Punkte in Original-Bildkoordinaten umrechnen
+        const x1 = points[i].x / scale;
+        const y1 = points[i].y / scale;
+        const x2 = points[i+1].x / scale;
+        const y2 = points[i+1].y / scale;
+        
+        // Euklidischer Abstand
+        const segmentLength = Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        
+        // Aktuelle Pixel pro Meter abrufen
+        const planScale = parseFloat(document.getElementById('planScale').value);
+        const dpi = parseFloat(document.getElementById('dpi').value);
+        const pixelsPerMeter = (dpi / 25.4) * (1000 / planScale);
+        
+        // Umrechnung in Meter
+        const lengthInMeters = segmentLength / pixelsPerMeter;
+        
+        totalLength += lengthInMeters;
+    }
+    
+    return totalLength;
+}
+
+// Funktion zum Abschließen der Linienmessung
+function finishLine() {
+    if (linePoints.length < 2) {
+        console.log("Linie hat zu wenige Punkte, verwerfe...");
+        linePoints = [];
+        isDrawingLine = false;
+        return;
+    }
+    
+    // Skalierung berechnen
+    const scale = editorCanvas.width / uploadedImage.naturalWidth;
+    
+    // Punkte skalieren und für die Speicherung vorbereiten
+    const scaledPoints = linePoints.map(point => ({
+        x: point.x / scale,
+        y: point.y / scale
+    }));
+    
+    // Arrays für x und y Koordinaten erstellen
+    const all_points_x = scaledPoints.map(p => p.x);
+    const all_points_y = scaledPoints.map(p => p.y);
+    
+    // Länge berechnen
+    const length = calculateLineLength(linePoints);
+    
+    // Neue Linienmessung zu den Ergebnissen hinzufügen
+    const newMeasurement = {
+        label: 0, // Spezielle Kategorie für Messlinien
+        score: 1.0,
+        length: length,
+        type: "line",
+        line: {
+            all_points_x: all_points_x,
+            all_points_y: all_points_y
+        },
+        label_name: "Messlinie"
+    };
+    
+    console.log("Neue Linienmessung hinzufügen:", newMeasurement);
+    
+    // Zu den Daten hinzufügen (optional, je nachdem ob die Messung gespeichert werden soll)
+    window.data.predictions.push(newMeasurement);
+    
+    // Meldung anzeigen
+    const measurementNotice = document.createElement('div');
+    measurementNotice.className = 'measurement-notice';
+    measurementNotice.textContent = `Gemessene Länge: ${length.toFixed(2)} m`;
+    document.body.appendChild(measurementNotice);
+
+    // Nach 3 Sekunden ausblenden
+    setTimeout(() => {
+        measurementNotice.style.opacity = '0';
+        setTimeout(() => measurementNotice.remove(), 500);
+    }, 3000);
+    
+    // Zurücksetzen
+    linePoints = [];
+    isDrawingLine = false;
+    redrawCanvas();
+}
+
 // Box an einer Position finden
 function findBoxAtPosition(x, y) {
     if (!window.data || !window.data.predictions) return -1;
@@ -774,22 +1045,32 @@ function calculateArea(box) {
 function saveEditorChanges() {
     console.log("Speichere Editor-Änderungen");
     
-    // Aktualisiere die Ergebnis-Tabelle und Zusammenfassung
-    updateEditorResults();
-    
-    // Speichere die aktuellen Daten in pdfPageData für die aktuelle Seite
-    if (typeof currentPdfPage !== 'undefined' && currentPdfPage) {
-        pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
+    try {
+        // Aktualisiere die Ergebnis-Tabelle und Zusammenfassung
+        updateEditorResults();
+        
+        // Speichere die aktuellen Daten in pdfPageData für die aktuelle Seite
+        if (typeof currentPdfPage !== 'undefined' && currentPdfPage) {
+            pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
+        }
+        
+        // Editor ausschalten
+        toggleEditor();
+        
+        // Sorge dafür, dass alle Annotationen korrekt angezeigt werden
+        refreshAnnotations();
+        
+        // Bestätigung anzeigen
+        alert('Änderungen wurden gespeichert.');
+    } catch (error) {
+        console.error("Fehler beim Speichern der Änderungen:", error);
+        
+        // Trotz Fehler den Editor verlassen
+        toggleEditor();
+        
+        // Bestätigung anzeigen
+        alert('Änderungen wurden gespeichert, aber es gab ein Problem bei der Aktualisierung der Anzeige.');
     }
-    
-    // Editor ausschalten
-    toggleEditor();
-    
-    // Sorge dafür, dass alle Annotationen korrekt angezeigt werden
-    refreshAnnotations();
-    
-    // Bestätigung anzeigen
-    alert('Änderungen wurden gespeichert.');
 }
 
 // saveEditorChanges hinzufügen
@@ -840,7 +1121,8 @@ function updateEditorResults() {
         wand: 0,
         lukarne: 0,
         dach: 0,
-        other: 0
+        other: 0,
+        line: 0
     };
     
     let areas = {
@@ -911,7 +1193,11 @@ function updateEditorResults() {
     
     // Neu hinzufügen
     window.data.predictions.forEach((pred, index) => {
-        addAnnotation(pred, index);
+        try {
+            addAnnotation(pred, index);
+        } catch (error) {
+            console.error(`Fehler beim Hinzufügen der Annotation ${index}:`, error);
+        }
     });
     
     // Simuliere ein Resize-Event nach kurzer Verzögerung, um Positionierungsprobleme zu beheben
@@ -922,3 +1208,4 @@ function updateEditorResults() {
 
 // Exportiere die Editor-Initialisierungsfunktion
 window.initEditor = initEditor;
+window.toggleEditor = toggleEditor;

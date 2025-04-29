@@ -164,7 +164,7 @@
                             <th>Klasse</th>
                             <th>Typ</th>
                             <th>Wahrsch.</th>
-                            <th>Fläche (m²)</th>
+                            <th>Messwert</th>
                         </tr>
                     </thead>
                     <tbody id="resultsBody">
@@ -179,7 +179,7 @@
             <div class="results-section" id="resultsSection" style="display: none;">
                 <div class="results-header">
                     <h2>Erkennungsergebnisse</h2>
-                    <button id="editorToggle" class="editor-toggle">Editor einschalten</button>
+                    <button id="editorToggle" class="editor-toggle" onclick="window.initEditor.toggleEditor()">Editor einschalten</button>
                 </div>
                 
                 <div class="annotation-controls">
@@ -237,6 +237,7 @@
                 <div class="editor-controls">
                     <button id="addBoxBtn" class="editor-button">Hinzufügen</button>
                     <button id="addPolygonBtn" class="editor-button">Polygon</button>
+                    <button id="addLineBtn" class="editor-button">Linienmessung</button>
                     <button id="editBoxBtn" class="editor-button">Bearbeiten</button>
                     <button id="deleteBoxBtn" class="editor-button">Löschen</button>
                     <select id="objectTypeSelect" class="object-type-select">

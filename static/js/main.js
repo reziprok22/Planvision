@@ -879,29 +879,59 @@ function clearAnnotations() {
 }
 
 // Funktion zum Aktualisieren der Ergebnisse ohne das Bild neu zu laden
-function updateResults(responseData) {
-    // Lokale und globale Daten setzen
-    window.data = responseData;
+function updateResultsTable() {
+    if (window.data.predictions.some(p => p.type === 'line')) {
+        const lineObject = window.data.predictions.find(p => p.type === 'line');
+        console.log('Linien-Objekt Struktur:', JSON.stringify(lineObject, null, 2));
+    }
+
+    resultsBody.innerHTML = '';
     
-    // Ergebnisbereiche anzeigen
-    resultsSection.style.display = 'block';
-    resultsTableSection.style.display = 'block';
-    
-    // Zusammenfassung
-    updateSummary();
-    
-    // Tabelle füllen
-    updateResultsTable();
-    
-    // Annotationen hinzufügen
     window.data.predictions.forEach((pred, index) => {
-        addAnnotation(pred, index);
+        const row = document.createElement('tr');
+        
+        // Suche das passende Label für diese Vorhersage
+        let labelName = pred.label_name || "Andere";
+        
+        // Suche in den benutzerdefinierten Labels nach einer passenden ID
+        const customLabel = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
+        if (customLabel) {
+            labelName = customLabel.name;
+        }
+        
+        // Bestimme die Art der Messung (Fläche oder Länge)
+        let measurementValue = 'N/A';
+        
+        if (pred.type === "line") {
+            // Bei Linien zeigen wir die Länge an
+            measurementValue = pred.length ? `${pred.length.toFixed(2)} m` : 'N/A';
+        } else {
+            // Bei Flächen (Rechtecke, Polygone) zeigen wir die Fläche an
+            measurementValue = pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
+        }
+
+        // Sicherer Zugriff auf score-Wert
+        const scoreDisplay = pred.score !== undefined ? `${(pred.score * 100).toFixed(1)}%` : 'N/A';
+        
+        row.innerHTML = `
+            <td>${index + 1}</td>
+            <td>${labelName}</td>
+            <td>${pred.type || (pred.polygon ? "Polygon" : "Rechteck")}</td>
+            <td>${(pred.score * 100).toFixed(1)}%</td>
+            <td>${measurementValue}</td>
+        `;
+        
+        resultsBody.appendChild(row);
+        
+        // Highlight beim Hovern über Tabelle
+        const elementId = `annotation-${index}`;
+        row.addEventListener('mouseover', () => {
+            highlightBox(elementId, true);
+        });
+        row.addEventListener('mouseout', () => {
+            highlightBox(elementId, false);
+        });
     });
-    
-    // Simuliere ein Resize-Event nach kurzer Verzögerung, um Positionierungsprobleme zu beheben
-    setTimeout(function() {
-        window.dispatchEvent(new Event('resize'));
-    }, 200);
 }
 
 // Funktion zum Abrufen von Dummy-Daten für Entwicklungszwecke
@@ -1250,11 +1280,16 @@ function updateSummary() {
     if (window.data.count.other > 0) {
         summaryHtml += `<p>Andere Objekte: <strong>${window.data.count.other}</strong> (${window.data.total_area.other.toFixed(2)} m²)</p>`;
     }
+
+    // Für Linienmessungen separat anzeigen
+    if (window.data.count.line > 0) {
+        summaryHtml += `<p>Linienmessungen: <strong>${window.data.count.line}</strong></p>`;
+    }
     
     summary.innerHTML = summaryHtml;
 }
 
-// Funktion zur Aktualisierung der Ergebnistabelle in main.js
+// Funktion zur Aktualisierung der Ergebnistabelle
 function updateResultsTable() {
     resultsBody.innerHTML = '';
     
@@ -1270,12 +1305,23 @@ function updateResultsTable() {
             labelName = customLabel.name;
         }
         
+        // Bestimme die Art der Messung (Fläche oder Länge)
+        let measurementValue = '';
+        
+        if (pred.type === "line") {
+            // Bei Linien zeigen wir die Länge an
+            measurementValue = pred.length ? `${pred.length.toFixed(2)} m` : 'N/A';
+        } else {
+            // Bei Flächen (Rechtecke, Polygone) zeigen wir die Fläche an
+            measurementValue = pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
+        }
+        
         row.innerHTML = `
             <td>${index + 1}</td>
             <td>${labelName}</td>
             <td>${pred.type || (pred.polygon ? "Polygon" : "Rechteck")}</td>
             <td>${(pred.score * 100).toFixed(1)}%</td>
-            <td>${pred.area.toFixed(2)} m²</td>
+            <td>${measurementValue}</td>
         `;
         
         resultsBody.appendChild(row);
@@ -1355,8 +1401,14 @@ function addAnnotation(prediction, index) {
         }
     }
     
-    // Label vorbereiten
-    const labelText = `#${index + 1}: ${prediction.area.toFixed(2)} m²`;
+    // Label-Text vorbereiten, je nach Typ
+    let labelText;
+    
+    if (prediction.type === "line") {
+        labelText = `#${index + 1}: ${prediction.length.toFixed(2)} m`;
+    } else {
+        labelText = `#${index + 1}: ${prediction.area.toFixed(2)} m²`;
+    }
     
     // Je nach Typ (Rechteck oder Polygon) unterschiedlich behandeln
     if (prediction.type === "rectangle" || prediction.box || prediction.bbox) {
@@ -1427,6 +1479,51 @@ function addAnnotation(prediction, index) {
         
         // Label am Schwerpunkt hinzufügen
         addLabel(centerX, centerY - 20, labelText, elementId, classPrefix, label ? label.color : null);
+    } else if (prediction.type === "line" && prediction.line) {
+        // Spezieller Fall für Linien
+        const { all_points_x, all_points_y } = prediction.line;
+        
+        if (!all_points_x || !all_points_y || all_points_x.length < 2) {
+            console.warn("Ungültige Linie gefunden:", prediction);
+            return;
+        }
+        
+        // SVG-Linie erstellen als Pfad (path)
+        const linePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        
+        // Pfad erstellen (move to first point, then line to all other points)
+        let pathData = `M ${all_points_x[0] * scale},${all_points_y[0] * scale}`;
+        for (let i = 1; i < all_points_x.length; i++) {
+            pathData += ` L ${all_points_x[i] * scale},${all_points_y[i] * scale}`;
+        }
+        
+        linePath.setAttribute("d", pathData);
+        linePath.setAttribute("class", "line-annotation");
+        linePath.id = elementId;
+        
+        // Farbe direkt anwenden
+        linePath.style.stroke = "#FF9500"; // Orange für Messlinien
+        linePath.style.strokeWidth = "2px";
+        linePath.style.fill = "none";
+        
+        annotationOverlay.appendChild(linePath);
+        
+        // Füge Punkte an den Eckpunkten hinzu
+        for (let i = 0; i < all_points_x.length; i++) {
+            const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            point.setAttribute("cx", all_points_x[i] * scale);
+            point.setAttribute("cy", all_points_y[i] * scale);
+            point.setAttribute("r", "4");
+            point.setAttribute("fill", "#FF9500");
+            point.setAttribute("class", "line-point");
+            annotationOverlay.appendChild(point);
+        }
+        
+        // Label am Ende der Linie hinzufügen
+        const lastX = all_points_x[all_points_x.length - 1] * scale;
+        const lastY = all_points_y[all_points_y.length - 1] * scale;
+        
+        addLabel(lastX + 5, lastY - 5, labelText, elementId, "line", "#FF9500");
     }
 }
 
