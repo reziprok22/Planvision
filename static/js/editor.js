@@ -10,12 +10,16 @@ let newBox = null;
 let startX, startY;
 let editorOriginalState = null;
 let ctx = null;
+let currentPolygon = null;
+let polygonPoints = [];
+let isDrawingPolygon = false;
 
 // Hauptelemente für Editor-Zugriff
 let uploadedImage, imageContainer, annotationOverlay, resultsSection;
 
 // Editor-Elemente
 let editorSection, editorCanvas, editorToggle, addBoxBtn, editBoxBtn, deleteBoxBtn;
+let addPolygonBtn = document.getElementById('addPolygonBtn');
 let saveEditBtn, cancelEditBtn, objectTypeSelect;
 
 // Funktionen aus der Hauptdatei, die der Editor benötigt
@@ -64,6 +68,8 @@ function initEditor(elements) {
     if (deleteBoxBtn) deleteBoxBtn.addEventListener('click', () => setEditorMode('delete'));
     if (saveEditBtn) saveEditBtn.addEventListener('click', saveEditorChanges);
     if (cancelEditBtn) cancelEditBtn.addEventListener('click', cancelEditorChanges);
+    if (addPolygonBtn) addPolygonBtn.addEventListener('click', () => setEditorMode('addPolygon'));
+
     
     // Canvas Event-Listener
     if (editorCanvas) {
@@ -148,6 +154,12 @@ function toggleEditor() {
         // Ergebnisanzeige wieder einblenden
         resultsSection.style.display = 'block';
         editorCanvas.style.display = 'none';
+        
+        // Annotationen aktualisieren, wenn Änderungen vorgenommen wurden
+        if (editorOriginalState && JSON.stringify(editorOriginalState) !== JSON.stringify(window.data.predictions)) {
+            console.log("Änderungen erkannt, aktualisiere Annotationen");
+            refreshAnnotations();
+        }
     }
 }
 
@@ -165,6 +177,13 @@ function initializeEditor(image) {
     // Bild auf den Canvas zeichnen
     ctx.drawImage(image, 0, 0, editorCanvas.width, editorCanvas.height);
     
+    // Überprüfen ob window.data existiert und gültig ist
+    if (!window.data || !window.data.predictions) {
+        console.warn("Keine Daten oder Vorhersagen gefunden! Initialisiere leeres Array.");
+        window.data = window.data || {};
+        window.data.predictions = window.data.predictions || [];
+    }
+    
     // Standardmodus setzen
     setEditorMode('view');
     
@@ -175,6 +194,7 @@ function initializeEditor(image) {
     editorCanvas.style.display = 'block';
     
     // Boxen zeichnen
+    console.log("Rufe drawAllBoxes nach Initialisierung auf");
     drawAllBoxes();
 }
 
@@ -187,39 +207,75 @@ function setEditorMode(mode) {
     addBoxBtn.classList.toggle('active', mode === 'add');
     editBoxBtn.classList.toggle('active', mode === 'edit');
     deleteBoxBtn.classList.toggle('active', mode === 'delete');
+
+    // Falls vorhanden, auch Polygon-Button zurücksetzen
+    if (addPolygonBtn) addPolygonBtn.classList.remove('active');
+
+    // Aktiven Button markieren
+    if (mode === 'add') addBoxBtn.classList.add('active');
+    if (mode === 'edit') editBoxBtn.classList.add('active');
+    if (mode === 'delete') deleteBoxBtn.classList.add('active');
+    if (mode === 'addPolygon' && addPolygonBtn) addPolygonBtn.classList.add('active');
     
     // Auswahl zurücksetzen
     selectedBoxIndex = -1;
     newBox = null;
+
+    // Polygon zurücksetzen, wenn wir vom Polygon-Modus wegwechseln
+    if (mode !== 'addPolygon') {
+        polygonPoints = [];
+        isDrawingPolygon = false;
+    } else {
+        // Polygon-Zeichnung starten
+        polygonPoints = [];
+        isDrawingPolygon = true;
+    }      
     
     // Canvas neu zeichnen
     redrawCanvas();
-    
-    // Cursor-Stil anpassen
-    switch(mode) {
-        case 'add':
-            editorCanvas.style.cursor = 'crosshair';
-            break;
-        case 'edit':
-            editorCanvas.style.cursor = 'pointer';
-            break;
-        case 'delete':
-            editorCanvas.style.cursor = 'not-allowed';
-            break;
-        default:
-            editorCanvas.style.cursor = 'default';
-    }
-}
 
+        // Cursor-Stil anpassen
+        switch(mode) {
+            case 'add':
+                editorCanvas.style.cursor = 'crosshair';
+                break;
+            case 'addPolygon':
+                editorCanvas.style.cursor = 'crosshair';
+                break;
+            case 'edit':
+                editorCanvas.style.cursor = 'pointer';
+                break;
+            case 'delete':
+                editorCanvas.style.cursor = 'not-allowed';
+                break;
+            default:
+                editorCanvas.style.cursor = 'default';
+        }
+    }
+    
 // Canvas neu zeichnen
 function redrawCanvas() {
+    console.log("redrawCanvas aufgerufen");
+    
     if (!ctx) {
         console.warn("Kein Canvas-Kontext verfügbar!");
         return;
     }
     
+    // Überprüfen, ob Canvas-Dimensionen korrekt gesetzt sind
+    if (editorCanvas.width === 0 || editorCanvas.height === 0) {
+        console.warn("Canvas hat ungültige Dimensionen:", editorCanvas.width, "x", editorCanvas.height);
+        return;
+    }
+    
     // Canvas löschen
     ctx.clearRect(0, 0, editorCanvas.width, editorCanvas.height);
+    
+    // Überprüfen, ob das Bild geladen ist
+    if (!uploadedImage.complete || uploadedImage.naturalWidth === 0) {
+        console.warn("Bild nicht vollständig geladen");
+        return;
+    }
     
     // Bild neu zeichnen
     ctx.drawImage(uploadedImage, 0, 0, editorCanvas.width, editorCanvas.height);
@@ -230,21 +286,31 @@ function redrawCanvas() {
 
 // Alle Boxen zeichnen
 function drawAllBoxes() {
+    console.log("drawAllBoxes Details:", {
+        ctx: !!ctx,
+        predictions: window.data?.predictions?.length || 0,
+        currentMode,
+        polygonPoints: polygonPoints.length
+    });
+    
     if (!ctx) {
         console.warn("Kein Canvas-Kontext verfügbar!");
         return;
     }
     
     // Daten überprüfen
-    if (!window.data || !window.data.predictions || window.data.predictions.length === 0) {
+    if (!window.data || !window.data.predictions) {
         console.warn("Keine Daten für das Zeichnen der Boxen verfügbar!");
         return;
     }
     
     const scale = editorCanvas.width / uploadedImage.naturalWidth;
+    console.log("Skalierungsfaktor:", scale);
     
+    // Zeichne alle Boxen aus den Vorhersagen
     window.data.predictions.forEach((pred, index) => {
         const isSelected = index === selectedBoxIndex;
+        console.log(`Zeichne Vorhersage #${index}:`, pred.type || "rectangle", isSelected ? "(ausgewählt)" : "");
         
         if (pred.box || pred.bbox) {
             const [x1, y1, x2, y2] = pred.box || pred.bbox;
@@ -281,6 +347,10 @@ function drawAllBoxes() {
             // Box zeichnen
             ctx.strokeRect(scaledX1, scaledY1, scaledW, scaledH);
             
+            // Hintergrund mit leichter Transparenz
+            ctx.fillStyle = `${ctx.strokeStyle}20`;  // 20% Opazität
+            ctx.fillRect(scaledX1, scaledY1, scaledW, scaledH);
+            
             // Label zeichnen
             ctx.fillStyle = color;
             ctx.font = '12px Arial';
@@ -291,8 +361,103 @@ function drawAllBoxes() {
             ctx.fillRect(scaledX1, scaledY1 - 20, labelWidth, 20);
             ctx.fillStyle = 'white';
             ctx.fillText(label_text, scaledX1 + 5, scaledY1 - 5);
+        } else if (pred.type === "polygon" && pred.polygon) {
+            const {all_points_x, all_points_y} = pred.polygon;
+            
+            if (!all_points_x || !all_points_y || all_points_x.length < 3) {
+                console.warn("Ungültiges Polygon gefunden, überspringe...");
+                return;
+            }
+            
+            // Suche das entsprechende Label
+            const label = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
+            
+            // Farbauswahl wie bei den Boxen
+            let color;
+            if (label && label.color) {
+                color = label.color;
+            } else {
+                switch (pred.label) {
+                    case 1: color = 'blue'; break;
+                    case 2: color = 'red'; break;
+                    case 3: color = '#d4d638'; break;
+                    case 4: color = 'orange'; break;
+                    case 5: color = 'purple'; break;
+                    default: color = 'gray';
+                }
+            }
+            
+            // Stil festlegen
+            ctx.strokeStyle = isSelected ? 'lime' : color;
+            ctx.fillStyle = isSelected ? 'rgba(0, 255, 0, 0.1)' : `${color}20`;
+            ctx.lineWidth = isSelected ? 3 : 2;
+            
+            // Polygon zeichnen
+            ctx.beginPath();
+            ctx.moveTo(all_points_x[0] * scale, all_points_y[0] * scale);
+            
+            for (let i = 1; i < all_points_x.length; i++) {
+                ctx.lineTo(all_points_x[i] * scale, all_points_y[i] * scale);
+            }
+            
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+            
+            // Berechne Schwerpunkt für das Label
+            let centerX = 0, centerY = 0;
+            for (let i = 0; i < all_points_x.length; i++) {
+                centerX += all_points_x[i] * scale;
+                centerY += all_points_y[i] * scale;
+            }
+            centerX /= all_points_x.length;
+            centerY /= all_points_y.length;
+            
+            // Label zeichnen
+            ctx.fillStyle = color;
+            ctx.font = '12px Arial';
+            
+            const label_text = `#${index + 1}: ${pred.area.toFixed(2)} m²`;
+            const labelWidth = ctx.measureText(label_text).width + 10;
+            
+            ctx.fillRect(centerX - labelWidth/2, centerY - 20, labelWidth, 20);
+            ctx.fillStyle = 'white';
+            ctx.textAlign = 'center';
+            ctx.fillText(label_text, centerX, centerY - 5);
+            ctx.textAlign = 'left'; // Text-Ausrichtung zurücksetzen
         }
     });
+    
+    // Aktives Polygon zeichnen, falls vorhanden
+    if (currentMode === 'addPolygon' && polygonPoints.length > 0) {
+        console.log("Zeichne aktives Polygon mit", polygonPoints.length, "Punkten");
+        // Stil für das aktive Polygon
+        ctx.strokeStyle = 'lime';
+        ctx.lineWidth = 2;
+        
+        // Zeichne das aktive Polygon
+        ctx.beginPath();
+        ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
+        
+        for (let i = 1; i < polygonPoints.length; i++) {
+            ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
+        }
+        
+        // Verbinde mit dem aktuellen Mauszeiger, falls vorhanden
+        if (currentPolygon) {
+            ctx.lineTo(currentPolygon.x, currentPolygon.y);
+        }
+        
+        ctx.stroke();
+        
+        // Zeichne Punkte an den Ecken
+        for (let i = 0; i < polygonPoints.length; i++) {
+            ctx.fillStyle = 'lime';
+            ctx.beginPath();
+            ctx.arc(polygonPoints[i].x, polygonPoints[i].y, 4, 0, 2 * Math.PI);
+            ctx.fill();
+        }
+    }
     
     // Neue Box im Hinzufügen-Modus zeichnen
     if (currentMode === 'add' && newBox) {
@@ -323,18 +488,28 @@ function handleMouseDown(event) {
 
 // Mouse-Move-Handler
 function handleMouseMove(event) {
-    if (currentMode !== 'add' || !newBox) return;
-    
     const rect = editorCanvas.getBoundingClientRect();
     const currentX = event.clientX - rect.left;
     const currentY = event.clientY - rect.top;
     
-    // Box-Dimensionen aktualisieren
-    newBox.width = currentX - startX;
-    newBox.height = currentY - startY;
-    
-    // Canvas neu zeichnen
-    redrawCanvas();
+    if (currentMode === 'add' && newBox) {
+        // Box-Dimensionen aktualisieren
+        newBox.width = currentX - startX;
+        newBox.height = currentY - startY;
+        
+        // Canvas neu zeichnen
+        redrawCanvas();
+    } 
+    else if (currentMode === 'addPolygon' && isDrawingPolygon && polygonPoints.length > 0) {
+        // Aktuelle Mausposition speichern
+        currentPolygon = {
+            x: currentX,
+            y: currentY
+        };
+        
+        // Canvas neu zeichnen
+        redrawCanvas();
+    }
 }
 
 // Mouse-Up-Handler
@@ -407,15 +582,39 @@ function handleMouseUp(event) {
 }
 
 // Click-Handler
+// handleClick Funktion aktualisieren
 function handleClick(event) {
-    if (currentMode === 'delete' || currentMode === 'edit') {
-        const rect = editorCanvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-        
-        console.log("Klick bei:", x, y, "im Modus:", currentMode);
-        
-        // Box an der Position finden
+    const rect = editorCanvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
+    
+    console.log("Klick bei:", x, y, "im Modus:", currentMode);
+    
+    if (currentMode === 'addPolygon') {
+        // Polygon-Punkt hinzufügen
+        if (isDrawingPolygon) {
+            // Prüfen, ob dies der erste Punkt ist
+            if (polygonPoints.length === 0) {
+                polygonPoints.push({x, y});
+            } else {
+                // Prüfen, ob der Klick nahe am Startpunkt ist, um das Polygon zu schließen
+                const startPoint = polygonPoints[0];
+                const distance = Math.sqrt(Math.pow(x - startPoint.x, 2) + Math.pow(y - startPoint.y, 2));
+                
+                if (distance <= 10 && polygonPoints.length >= 3) {
+                    // Polygon schließen und hinzufügen
+                    finishPolygon();
+                } else {
+                    // Neuen Punkt hinzufügen
+                    polygonPoints.push({x, y});
+                }
+            }
+            
+            // Canvas neu zeichnen
+            redrawCanvas();
+        }
+    } else if (currentMode === 'delete' || currentMode === 'edit') {
+        // Bestehender Code für das Löschen oder Bearbeiten...
         const boxIndex = findBoxAtPosition(x, y);
         
         if (boxIndex >= 0) {
@@ -438,6 +637,91 @@ function handleClick(event) {
             redrawCanvas();
         }
     }
+}
+
+// Funktion zum Abschließen des Polygons hinzufügen
+function finishPolygon() {
+    if (polygonPoints.length < 3) {
+        console.log("Polygon hat zu wenige Punkte, verwerfe...");
+        polygonPoints = [];
+        isDrawingPolygon = false;
+        return;
+    }
+    
+    // Skalierung berechnen
+    const scale = editorCanvas.width / uploadedImage.naturalWidth;
+    
+    // Punkte skalieren und für die Speicherung vorbereiten
+    const scaledPoints = polygonPoints.map(point => ({
+        x: point.x / scale,
+        y: point.y / scale
+    }));
+    
+    // Arrays für x und y Koordinaten erstellen
+    const all_points_x = scaledPoints.map(p => p.x);
+    const all_points_y = scaledPoints.map(p => p.y);
+    
+    // Fläche berechnen
+    const area = calculatePolygonArea(all_points_x, all_points_y);
+    
+    // Ausgewählten Objekttyp abrufen
+    const selectedType = parseInt(objectTypeSelect.value);
+    
+    // Neues Polygon zu den Ergebnissen hinzufügen
+    const newPrediction = {
+        label: selectedType,
+        score: 1.0, // Manuell hinzugefügt, daher maximaler Score
+        area: area,
+        type: "polygon",
+        polygon: {
+            all_points_x: all_points_x,
+            all_points_y: all_points_y
+        }
+    };
+    
+    // Label-Name basierend auf dem Label
+    switch (selectedType) {
+        case 1: newPrediction.label_name = "Fenster"; break;
+        case 2: newPrediction.label_name = "Tür"; break;
+        case 3: newPrediction.label_name = "Wand"; break;
+        case 4: newPrediction.label_name = "Lukarne"; break;
+        case 5: newPrediction.label_name = "Dach"; break;
+        default: newPrediction.label_name = "Andere";
+    }
+    
+    console.log("Neues Polygon hinzufügen:", newPrediction);
+    
+    // Zu den Daten hinzufügen
+    window.data.predictions.push(newPrediction);
+    
+    // Zurücksetzen
+    polygonPoints = [];
+    isDrawingPolygon = false;
+    redrawCanvas();
+}
+
+// Polygonfläche berechnen (Gaußsche Trapezformel)
+function calculatePolygonArea(x, y) {
+    let area = 0;
+    const n = x.length;
+    
+    // Berechnung der Fläche in Pixeleinheiten
+    for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        area += x[i] * y[j];
+        area -= y[i] * x[j];
+    }
+    area = Math.abs(area) / 2;
+    
+    // Aktuelle Pixel pro Meter abrufen
+    const planScale = parseFloat(document.getElementById('planScale').value);
+    const dpi = parseFloat(document.getElementById('dpi').value);
+    const pixelsPerMeter = (dpi / 25.4) * (1000 / planScale);
+    
+    // Umrechnung in Quadratmeter
+    const areaInSquareMeters = area / (pixelsPerMeter * pixelsPerMeter);
+    
+    return areaInSquareMeters;
 }
 
 // Box an einer Position finden
@@ -486,7 +770,7 @@ function calculateArea(box) {
 }
 
 // Änderungen speichern
-// In der saveEditorChanges-Funktion (im Editor-Teil)
+// In editor.js: Änderungen speichern
 function saveEditorChanges() {
     console.log("Speichere Editor-Änderungen");
     
@@ -494,18 +778,21 @@ function saveEditorChanges() {
     updateEditorResults();
     
     // Speichere die aktuellen Daten in pdfPageData für die aktuelle Seite
-    if (currentPdfPage) {
+    if (typeof currentPdfPage !== 'undefined' && currentPdfPage) {
         pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
     }
     
     // Editor ausschalten
     toggleEditor();
     
+    // Sorge dafür, dass alle Annotationen korrekt angezeigt werden
+    refreshAnnotations();
+    
     // Bestätigung anzeigen
     alert('Änderungen wurden gespeichert.');
 }
 
-// Änderungen verwerfen
+// saveEditorChanges hinzufügen
 function cancelEditorChanges() {
     console.log("Verwerfe Editor-Änderungen");
     
@@ -516,6 +803,30 @@ function cancelEditorChanges() {
     
     // Editor ausschalten
     toggleEditor();
+}
+
+// Neue Hilfsfunktion zum Aktualisieren aller Annotationen
+function refreshAnnotations() {
+    // Alle Annotationen entfernen
+    const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
+    boxes.forEach(box => box.remove());
+    
+    // SVG leeren
+    while (annotationOverlay.firstChild) {
+        annotationOverlay.removeChild(annotationOverlay.firstChild);
+    }
+    
+    // Alle Annotationen neu hinzufügen
+    if (window.data && window.data.predictions) {
+        window.data.predictions.forEach((pred, index) => {
+            addAnnotation(pred, index);
+        });
+    }
+    
+    // Simuliere ein Resize-Event nach kurzer Verzögerung
+    setTimeout(function() {
+        window.dispatchEvent(new Event('resize'));
+    }, 200);
 }
 
 // Ergebnisse aktualisieren

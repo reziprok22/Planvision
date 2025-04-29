@@ -708,3 +708,19 @@ tr:nth-child(even) {
     vertical-align: middle;
     margin-right: 5px;
 }
+
+.polygon-selected {
+    stroke: lime !important;
+    stroke-width: 3px !important;
+    fill-opacity: 0.3 !important;
+}
+
+.polygon-point {
+    fill: lime;
+    stroke: black;
+    stroke-width: 1px;
+    cursor: pointer;
+}
+
+
+

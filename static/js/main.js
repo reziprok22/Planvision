@@ -1321,6 +1321,7 @@ function highlightBox(elementId, isHighlighted) {
 }
 
 // Funktion zum Hinzufügen einer Annotation (Rechteck oder Polygon)
+// Aktualisiere die addAnnotation Funktion in main.js
 function addAnnotation(prediction, index) {
     // Skalierungsfaktor berechnen
     const scale = uploadedImage.width / uploadedImage.naturalWidth;
@@ -1386,23 +1387,45 @@ function addAnnotation(prediction, index) {
         
         // Label hinzufügen mit Farbe
         addLabel(scaledX1, scaledY1 - 20, labelText, elementId, classPrefix, label ? label.color : null);
-    } else if (prediction.type === "polygon" || prediction.polygon) {
-        // ... Code für Polygone ...
-        // Auch hier die Farbe direkt setzen
+    } else if (prediction.type === "polygon" && prediction.polygon) {
+        // Polygon-Daten extrahieren
+        const { all_points_x, all_points_y } = prediction.polygon;
+        
+        if (!all_points_x || !all_points_y || all_points_x.length < 3) {
+            console.warn("Ungültiges Polygon gefunden:", prediction);
+            return;
+        }
+        
+        // Skalierte Punkte für das SVG-Polygon
+        const scaledPoints = [];
+        for (let i = 0; i < all_points_x.length; i++) {
+            scaledPoints.push(`${all_points_x[i] * scale},${all_points_y[i] * scale}`);
+        }
+        
+        // SVG-Polygon erstellen
         const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
         polygon.setAttribute("points", scaledPoints.join(" "));
         polygon.setAttribute("class", `polygon-annotation ${classPrefix}-annotation`);
+        polygon.id = elementId;
         
-        // Hier direkt die Farbe anwenden
+        // Farbe direkt anwenden
         if (label && label.color) {
             polygon.style.fill = `${label.color}20`; // Mit 20% Opacity
             polygon.style.stroke = label.color;
         }
         
-        polygon.id = elementId;
         annotationOverlay.appendChild(polygon);
         
-        // Label hinzufügen mit Farbe
+        // Berechne den Schwerpunkt für das Label
+        let centerX = 0, centerY = 0;
+        for (let i = 0; i < all_points_x.length; i++) {
+            centerX += all_points_x[i] * scale;
+            centerY += all_points_y[i] * scale;
+        }
+        centerX /= all_points_x.length;
+        centerY /= all_points_y.length;
+        
+        // Label am Schwerpunkt hinzufügen
         addLabel(centerX, centerY - 20, labelText, elementId, classPrefix, label ? label.color : null);
     }
 }
