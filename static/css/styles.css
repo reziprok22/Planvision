@@ -763,3 +763,29 @@ tr:nth-child(even) {
     font-size: 14px;
 }
 
+/* Label tabs styling */
+.label-tabs {
+    display: flex;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+.label-tab {
+    padding: 8px 15px;
+    background: #f2f2f2;
+    border: none;
+    border-radius: 4px 4px 0 0;
+    cursor: pointer;
+    margin-right: 5px;
+}
+
+.label-tab.active {
+    background: #4a90e2;
+    color: white;
+}
+
+/* Line type dropdown */
+#lineTypeSelect {
+    flex: 0 0 120px;
+    background-color: #fff8f0; /* Light orange background to distinguish from area type */
+}

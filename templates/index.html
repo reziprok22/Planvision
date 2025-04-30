@@ -102,6 +102,11 @@
                     <div class="modal-content">
                         <span class="close">&times;</span>
                         <h3>Labels verwalten</h3>
+
+                        <div class="label-tabs">
+                            <button id="areaLabelsTab" class="label-tab active">Flächen-Labels</button>
+                            <button id="lineLabelsTab" class="label-tab">Linien-Labels</button>
+                        </div>
                         
                         <div class="label-manager-container">
                             <div class="label-list">
@@ -247,6 +252,12 @@
                         <option value="3">Wand</option>
                         <option value="4">Lukarne</option>
                         <option value="5">Dach</option>
+                    </select>
+                    <select id="lineTypeSelect" class="object-type-select" style="display: none;">
+                        <option value="1" selected>Strecke</option>
+                        <option value="2">Höhe</option>
+                        <option value="3">Breite</option>
+                        <option value="4">Abstand</option>
                     </select>
                     <div class="editor-actions">
                         <button id="saveEditBtn" class="save-button">Speichern</button>

@@ -237,6 +237,18 @@ function setEditorMode(mode) {
     if (mode === 'addPolygon' && addPolygonBtn) addPolygonBtn.classList.add('active');
     if (mode === 'addLine' && addLineBtn) addLineBtn.classList.add('active');
 
+    // Update label dropdown visibility based on mode
+    const objectTypeSelect = document.getElementById('objectTypeSelect');
+    const lineTypeSelect = document.getElementById('lineTypeSelect');
+
+    if (mode === 'addLine') {
+        if (objectTypeSelect) objectTypeSelect.style.display = 'none';
+        if (lineTypeSelect) lineTypeSelect.style.display = 'inline-block';
+    } else {
+        if (objectTypeSelect) objectTypeSelect.style.display = 'inline-block';
+        if (lineTypeSelect) lineTypeSelect.style.display = 'none';
+    }
+
     
     // Auswahl zurücksetzen
     selectedBoxIndex = -1;
@@ -485,8 +497,11 @@ function drawAllBoxes() {
                 return;
             }
             
+            // Get the color from the prediction object or use fallback color
+            const lineColor = pred.color || "#FF9500";
+            
             // Stil für Linien setzen
-            ctx.strokeStyle = isSelected ? 'lime' : '#FF9500'; // Orange für Messlinien
+            ctx.strokeStyle = isSelected ? 'lime' : lineColor;
             ctx.lineWidth = isSelected ? 3 : 2;
             
             // Linie zeichnen
@@ -501,7 +516,7 @@ function drawAllBoxes() {
             
             // Punkte an den Ecken zeichnen
             for (let i = 0; i < all_points_x.length; i++) {
-                ctx.fillStyle = '#FF9500';
+                ctx.fillStyle = lineColor; // Use the same color for points
                 ctx.beginPath();
                 ctx.arc(all_points_x[i] * scale, all_points_y[i] * scale, 4, 0, 2 * Math.PI);
                 ctx.fill();
@@ -515,7 +530,7 @@ function drawAllBoxes() {
                 
                 // Text zeichnen
                 ctx.font = '12px Arial';
-                ctx.fillStyle = '#FF9500';
+                ctx.fillStyle = lineColor; // Use the same color for text
                 ctx.fillText(`${pred.length.toFixed(2)} m`, lastX + 5, lastY - 5);
             }
         }
@@ -555,43 +570,51 @@ function drawAllBoxes() {
     // Aktive Linie zeichnen, falls vorhanden
     if (currentMode === 'addLine' && linePoints.length > 0) {
         console.log("Zeichne aktive Linie mit", linePoints.length, "Punkten");
-        // Stil für die aktive Linie
-        ctx.strokeStyle = '#FF9500'; // Orange für Linienmessung
+    
+        const lineTypeSelect = document.getElementById('lineTypeSelect');
+        const selectedLineType = lineTypeSelect ? parseInt(lineTypeSelect.value) : 1;
+        const lineLabel = window.currentLineLabels ? 
+            window.currentLineLabels.find(l => l.id === selectedLineType) : null;
+        const lineColor = lineLabel && lineLabel.color ? lineLabel.color : "#FF9500";
+        
+        // Use the selected color for drawing
+        ctx.strokeStyle = lineColor;
         ctx.lineWidth = 2;
         
-        // Zeichne die aktive Linie
+        // Begin path and move to first point
         ctx.beginPath();
         ctx.moveTo(linePoints[0].x, linePoints[0].y);
         
+        // Add line to each subsequent point
         for (let i = 1; i < linePoints.length; i++) {
             ctx.lineTo(linePoints[i].x, linePoints[i].y);
         }
         
-        // Verbinde mit dem aktuellen Mauszeiger, falls vorhanden
+        // Connect to the current mouse position if available
         if (currentLine) {
             ctx.lineTo(currentLine.x, currentLine.y);
         }
         
         ctx.stroke();
         
-        // Zeichne Punkte an den Ecken
+        // Draw points at each vertex
         for (let i = 0; i < linePoints.length; i++) {
-            ctx.fillStyle = '#FF9500';
+            ctx.fillStyle = lineColor;
             ctx.beginPath();
             ctx.arc(linePoints[i].x, linePoints[i].y, 4, 0, 2 * Math.PI);
             ctx.fill();
         }
         
-        // Zeige die aktuelle Messung an
+        // Show the current measurement
         if (linePoints.length >= 2) {
             const totalLength = calculateLineLength(linePoints);
             
-            // Position für den Text finden (letzter Punkt)
+            // Position for the text (last point)
             const lastPoint = linePoints[linePoints.length - 1];
             
-            // Text zeichnen
+            // Draw text
             ctx.font = '14px Arial';
-            ctx.fillStyle = '#FF9500';
+            ctx.fillStyle = lineColor;
             ctx.fillText(`Länge: ${totalLength.toFixed(2)} m`, lastPoint.x + 10, lastPoint.y);
         }
     }
@@ -958,18 +981,35 @@ function finishLine() {
     // Länge berechnen
     const length = calculateLineLength(linePoints);
     
-    // Neue Linienmessung zu den Ergebnissen hinzufügen
+    // Get selected line type
+    const lineTypeSelect = document.getElementById('lineTypeSelect');
+    const selectedLineType = lineTypeSelect ? parseInt(lineTypeSelect.value) : 1;
+
+    // Find the corresponding line label
+    const lineLabel = window.currentLineLabels ? 
+        window.currentLineLabels.find(l => l.id === selectedLineType) : null;
+
+    // Use color from the selected line label
+    const lineColor = lineLabel && lineLabel.color ? lineLabel.color : "#FF9500"; // Default to orange if no color found
+
+    // Use the line label for the new measurement
     const newMeasurement = {
-        label: 0, // Spezielle Kategorie für Messlinien
+        label: selectedLineType, // Use the line type as label
         score: 1.0,
         length: length,
-        type: "line", // Important to set the correct type
+        type: "line",
         line: {
             all_points_x: all_points_x,
             all_points_y: all_points_y
         },
-        label_name: "Messlinie"
+        label_name: lineLabel ? lineLabel.name : "Messlinie",
+        color: lineColor  // Store the selected color
     };
+    
+    // Set the color based on the line label
+    if (lineLabel && lineLabel.color) {
+        newMeasurement.color = lineLabel.color;
+    }
     
     console.log("Neue Linienmessung hinzufügen:", newMeasurement);
     

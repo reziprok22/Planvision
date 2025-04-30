@@ -27,9 +27,21 @@ document.addEventListener('DOMContentLoaded', function() {
         { id: 5, name: "Dach", color: "#800080" }      // Lila
     ];
 
+    // Default line labels
+    const defaultLineLabels = [
+        { id: 1, name: "Strecke", color: "#FF9500" },  // Orange, standard measurement
+        { id: 2, name: "Höhe", color: "#00AAFF" },     // Blue, for height measurements
+        { id: 3, name: "Breite", color: "#4CAF50" },   // Green, for width measurements
+        { id: 4, name: "Abstand", color: "#9C27B0" }   // Purple, for distance measurements
+    ];
+
     // Verwende die Labels aus dem localStorage oder die Standard-Labels
     let currentLabels = JSON.parse(localStorage.getItem('labels')) || [...defaultLabels];
     window.currentLabels = currentLabels; // Global verfügbar machen
+
+    // Verwende die Line-Labels aus dem localStorage oder die Standard-Labels
+    let currentLineLabels = JSON.parse(localStorage.getItem('lineLabels')) || [...defaultLineLabels];
+    window.currentLineLabels = currentLineLabels; // Global verfügbar machen
     
     // Hauptelemente abrufen
     const uploadForm = document.getElementById('uploadForm');
@@ -201,7 +213,8 @@ document.addEventListener('DOMContentLoaded', function() {
             session_id: pdfSessionId,
             analysis_data: analysisData,
             settings: pageSettings,
-            labels: currentLabels
+            labels: currentLabels,
+            lineLabels: currentLineLabels
         };
 
         // In der saveProject-Funktion in main.js, direkt bevor die Daten an den Server gesendet werden:
@@ -1428,8 +1441,8 @@ function addAnnotation(prediction, index) {
     
     if (prediction.type === "line" && prediction.length !== undefined) {
         labelText = `#${index + 1}: ${prediction.length.toFixed(2)} m`;
-        // For lines, override color and classPrefix
-        color = '#FF9500'; // Orange for measurement lines
+        // For lines, use the stored color if available
+        color = prediction.color || '#FF9500'; // Fallback to orange if no color set
         classPrefix = 'line';
     } else {
         if (prediction.area !== undefined) {
@@ -1517,6 +1530,9 @@ function addAnnotation(prediction, index) {
             return;
         }
         
+        // Get the line color (from prediction or use default orange)
+        const lineColor = prediction.color || "#FF9500";
+        
         // SVG-Linie erstellen als Pfad (path)
         const linePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
         
@@ -1531,7 +1547,7 @@ function addAnnotation(prediction, index) {
         linePath.id = elementId;
         
         // Farbe direkt anwenden
-        linePath.style.stroke = "#FF9500"; // Orange für Messlinien
+        linePath.style.stroke = lineColor; // Use the color from the line object
         linePath.style.strokeWidth = "2px";
         linePath.style.fill = "none";
         
@@ -1543,7 +1559,7 @@ function addAnnotation(prediction, index) {
             point.setAttribute("cx", all_points_x[i] * scale);
             point.setAttribute("cy", all_points_y[i] * scale);
             point.setAttribute("r", "4");
-            point.setAttribute("fill", "#FF9500");
+            point.setAttribute("fill", lineColor); // Use same color for points
             point.setAttribute("class", "line-point");
             annotationOverlay.appendChild(point);
         }
@@ -1552,7 +1568,7 @@ function addAnnotation(prediction, index) {
         const lastX = all_points_x[all_points_x.length - 1] * scale;
         const lastY = all_points_y[all_points_y.length - 1] * scale;
         
-        addLabel(lastX + 5, lastY - 5, labelText, elementId, "line", "#FF9500");
+        addLabel(lastX + 5, lastY - 5, labelText, elementId, "line", lineColor);
     }
 }
 
@@ -1999,7 +2015,7 @@ cancelLabelBtn.addEventListener('click', hideForm);
 
 // Label-Manager öffnen
 function openLabelManager() {
-    refreshLabelTable();
+    refreshLabelTable('area');  // Start with area labels by default
     labelManagerModal.style.display = 'block';
 }
 
@@ -2009,11 +2025,34 @@ function closeLabelManager() {
     hideForm();
 }
 
-// Label-Tabelle aktualisieren
-function refreshLabelTable() {
+// Tab-switching for label manager
+const areaLabelsTab = document.getElementById('areaLabelsTab');
+const lineLabelsTab = document.getElementById('lineLabelsTab');
+
+if (areaLabelsTab) {
+    areaLabelsTab.addEventListener('click', function() {
+        this.classList.add('active');
+        lineLabelsTab.classList.remove('active');
+        refreshLabelTable('area');
+    });
+}
+
+if (lineLabelsTab) {
+    lineLabelsTab.addEventListener('click', function() {
+        this.classList.add('active');
+        areaLabelsTab.classList.remove('active');
+        refreshLabelTable('line');
+    });
+}
+
+// Updated refreshLabelTable function to handle both label types
+function refreshLabelTable(type = 'area') {
     labelTableBody.innerHTML = '';
     
-    currentLabels.forEach(label => {
+    // Determine which labels to display
+    const labels = type === 'area' ? currentLabels : currentLineLabels;
+    
+    labels.forEach(label => {
         const row = document.createElement('tr');
         
         row.innerHTML = `
@@ -2024,8 +2063,8 @@ function refreshLabelTable() {
             </td>
             <td>${label.color}</td>
             <td>
-                <button class="edit-label-btn" data-id="${label.id}">Bearbeiten</button>
-                <button class="delete-label-btn" data-id="${label.id}">Löschen</button>
+                <button class="edit-label-btn" data-id="${label.id}" data-type="${type}">Bearbeiten</button>
+                <button class="delete-label-btn" data-id="${label.id}" data-type="${type}">Löschen</button>
             </td>
         `;
         
@@ -2036,50 +2075,67 @@ function refreshLabelTable() {
     document.querySelectorAll('.edit-label-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const labelId = parseInt(this.dataset.id);
-            editLabel(labelId);
+            const labelType = this.dataset.type;
+            editLabel(labelId, labelType);
         });
     });
     
     document.querySelectorAll('.delete-label-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const labelId = parseInt(this.dataset.id);
-            deleteLabel(labelId);
+            const labelType = this.dataset.type;
+            deleteLabel(labelId, labelType);
         });
     });
 }
 
 // Formular zum Hinzufügen anzeigen
 function showAddLabelForm() {
+    // Get the active tab to determine label type
+    const activeTab = document.querySelector('.label-tab.active');
+    const labelType = activeTab.id === 'lineLabelsTab' ? 'line' : 'area';
+    
     labelFormTitle.textContent = 'Label hinzufügen';
     labelIdInput.value = '';
     labelNameInput.value = '';
     labelColorInput.value = '#' + Math.floor(Math.random()*16777215).toString(16); // Zufällige Farbe
+    // Store the label type in the form's dataset
+    labelForm.dataset.type = labelType;
     labelForm.style.display = 'block';
 }
 
 // Formular zum Bearbeiten anzeigen
-function editLabel(labelId) {
-    const label = currentLabels.find(l => l.id === labelId);
+function editLabel(labelId, labelType = 'area') {
+    const labels = labelType === 'area' ? currentLabels : currentLineLabels;
+    const label = labels.find(l => l.id === labelId);
     if (!label) return;
     
     labelFormTitle.textContent = 'Label bearbeiten';
     labelIdInput.value = label.id;
     labelNameInput.value = label.name;
     labelColorInput.value = label.color;
+    // Store the label type
+    labelForm.dataset.type = labelType;
     labelForm.style.display = 'block';
 }
 
 // Label löschen
-function deleteLabel(labelId) {
-    if (currentLabels.length <= 1) {
+function deleteLabel(labelId, labelType = 'area') {
+    const labels = labelType === 'area' ? currentLabels : currentLineLabels;
+    
+    if (labels.length <= 1) {
         alert('Es muss mindestens ein Label vorhanden sein.');
         return;
     }
     
     if (confirm('Möchten Sie dieses Label wirklich löschen?')) {
-        currentLabels = currentLabels.filter(label => label.id !== labelId);
-        saveLabels();
-        refreshLabelTable();
+        if (labelType === 'area') {
+            currentLabels = currentLabels.filter(label => label.id !== labelId);
+        } else {
+            currentLineLabels = currentLineLabels.filter(label => label.id !== labelId);
+        }
+        saveLabels(labelType);
+        refreshLabelTable(labelType);
     }
 }
 
@@ -2087,6 +2143,8 @@ function deleteLabel(labelId) {
 function saveLabel() {
     const name = labelNameInput.value.trim();
     const color = labelColorInput.value;
+    // Get the label type from the form's dataset
+    const labelType = labelForm.dataset.type || 'area';
     
     if (!name) {
         alert('Bitte geben Sie einen Namen ein.');
@@ -2095,27 +2153,50 @@ function saveLabel() {
     
     const labelId = labelIdInput.value ? parseInt(labelIdInput.value) : null;
     
-    if (labelId) {
-        // Label bearbeiten
-        const index = currentLabels.findIndex(l => l.id === labelId);
-        if (index !== -1) {
-            currentLabels[index].name = name;
-            currentLabels[index].color = color;
+    // Determine which label array to modify based on type
+    if (labelType === 'area') {
+        if (labelId) {
+            // Edit existing area label
+            const index = currentLabels.findIndex(l => l.id === labelId);
+            if (index !== -1) {
+                currentLabels[index].name = name;
+                currentLabels[index].color = color;
+            }
+        } else {
+            // Add new area label
+            const maxId = currentLabels.reduce((max, label) => Math.max(max, label.id), 0);
+            currentLabels.push({
+                id: maxId + 1,
+                name: name,
+                color: color
+            });
         }
     } else {
-        // Neues Label
-        const maxId = currentLabels.reduce((max, label) => Math.max(max, label.id), 0);
-        currentLabels.push({
-            id: maxId + 1,
-            name: name,
-            color: color
-        });
+        // Line labels
+        if (labelId) {
+            // Edit existing line label
+            const index = currentLineLabels.findIndex(l => l.id === labelId);
+            if (index !== -1) {
+                currentLineLabels[index].name = name;
+                currentLineLabels[index].color = color;
+            }
+        } else {
+            // Add new line label
+            const maxId = currentLineLabels.reduce((max, label) => Math.max(max, label.id), 0);
+            currentLineLabels.push({
+                id: maxId + 1,
+                name: name,
+                color: color
+            });
+        }
     }
     
-    saveLabels();
-    refreshLabelTable();
+    // Save only the type of labels that was modified
+    saveLabels(labelType);
+    refreshLabelTable(labelType);
     hideForm();
 }
+
 
 // Formular ausblenden
 function hideForm() {
@@ -2123,10 +2204,18 @@ function hideForm() {
 }
 
 // Labels speichern
-function saveLabels() {
-    localStorage.setItem('labels', JSON.stringify(currentLabels));
-    window.currentLabels = currentLabels; // Aktualisiere die globale Variable
-    updateUIForLabels();
+function saveLabels(type = 'area') {
+    if (type === 'area' || type === 'both') {
+        localStorage.setItem('labels', JSON.stringify(currentLabels));
+        window.currentLabels = currentLabels;
+    }
+    
+    if (type === 'line' || type === 'both') {
+        localStorage.setItem('lineLabels', JSON.stringify(currentLineLabels));
+        window.currentLineLabels = currentLineLabels;
+    }
+    
+    updateUIForLabels(type);
     
     // Falls ein Projekt geladen ist, speichere die Änderungen auch dort
     if (pdfSessionId && pdfSessionId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
@@ -2192,49 +2281,76 @@ function resetLabels() {
 }
 
 // UI aktualisieren basierend auf Labels
-function updateUIForLabels() {
-    // Aktualisiere Legende
-    const legend = document.querySelector('.legend');
-    if (legend) {
-        legend.innerHTML = '';
+function updateUIForLabels(type = 'both') {
+    // Update legend for area labels
+    if (type === 'area' || type === 'both') {
+        const legend = document.querySelector('.legend');
+        if (legend) {
+            legend.innerHTML = '';
+            
+            currentLabels.forEach(label => {
+                const legendItem = document.createElement('div');
+                legendItem.className = 'legend-item';
+                legendItem.innerHTML = `
+                    <div class="legend-color" style="background-color:${label.color}"></div>
+                    <span>${label.name} (${label.id})</span>
+                `;
+                legend.appendChild(legendItem);
+            });
+        }
         
-        currentLabels.forEach(label => {
-            const legendItem = document.createElement('div');
-            legendItem.className = 'legend-item';
-            legendItem.innerHTML = `
-                <div class="legend-color" style="background-color:${label.color}"></div>
-                <span>${label.name} (${label.id})</span>
-            `;
-            legend.appendChild(legendItem);
-        });
+        // Aktualisiere Objekttyp-Auswahl im Editor
+        const objectTypeSelect = document.getElementById('objectTypeSelect');
+        if (objectTypeSelect) {
+            // Aktuelle Auswahl merken
+            const selectedValue = objectTypeSelect.value;
+            
+            // Optionen neu erstellen
+            objectTypeSelect.innerHTML = '';
+            
+            // Option für "Andere" (0)
+            const otherOption = document.createElement('option');
+            otherOption.value = '0';
+            otherOption.textContent = 'Andere';
+            objectTypeSelect.appendChild(otherOption);
+            
+            // Optionen für benutzerdefinierte Labels
+            currentLabels.forEach(label => {
+                const option = document.createElement('option');
+                option.value = label.id;
+                option.textContent = label.name;
+                objectTypeSelect.appendChild(option);
+            });
+            
+            // Vorherige Auswahl wiederherstellen, wenn möglich
+            if (selectedValue && objectTypeSelect.querySelector(`option[value="${selectedValue}"]`)) {
+                objectTypeSelect.value = selectedValue;
+            }
+        }
     }
     
-    // Aktualisiere Objekttyp-Auswahl im Editor
-    const objectTypeSelect = document.getElementById('objectTypeSelect');
-    if (objectTypeSelect) {
-        // Aktuelle Auswahl merken
-        const selectedValue = objectTypeSelect.value;
-        
-        // Optionen neu erstellen
-        objectTypeSelect.innerHTML = '';
-        
-        // Option für "Andere" (0)
-        const otherOption = document.createElement('option');
-        otherOption.value = '0';
-        otherOption.textContent = 'Andere';
-        objectTypeSelect.appendChild(otherOption);
-        
-        // Optionen für benutzerdefinierte Labels
-        currentLabels.forEach(label => {
-            const option = document.createElement('option');
-            option.value = label.id;
-            option.textContent = label.name;
-            objectTypeSelect.appendChild(option);
-        });
-        
-        // Vorherige Auswahl wiederherstellen, wenn möglich
-        if (selectedValue && objectTypeSelect.querySelector(`option[value="${selectedValue}"]`)) {
-            objectTypeSelect.value = selectedValue;
+    // Update line type dropdown for line labels
+    if (type === 'line' || type === 'both') {
+        const lineTypeSelect = document.getElementById('lineTypeSelect');
+        if (lineTypeSelect) {
+            // Aktuelle Auswahl merken
+            const selectedLineValue = lineTypeSelect.value;
+            
+            // Optionen neu erstellen
+            lineTypeSelect.innerHTML = '';
+            
+            // Optionen für Line-Labels
+            currentLineLabels.forEach(label => {
+                const option = document.createElement('option');
+                option.value = label.id;
+                option.textContent = label.name;
+                lineTypeSelect.appendChild(option);
+            });
+            
+            // Vorherige Auswahl wiederherstellen, wenn möglich
+            if (selectedLineValue && lineTypeSelect.querySelector(`option[value="${selectedLineValue}"]`)) {
+                lineTypeSelect.value = selectedLineValue;
+            }
         }
     }
 }
