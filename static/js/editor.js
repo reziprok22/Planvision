@@ -122,6 +122,7 @@ function initEditor(elements) {
 }
 
 // Funktion zum Ein-/Ausschalten des Editors
+// Funktion zum Ein-/Ausschalten des Editors
 function toggleEditor() {
     console.log("Toggle-Editor aufgerufen, aktueller Status:", isEditorActive);
     isEditorActive = !isEditorActive;
@@ -173,11 +174,9 @@ function toggleEditor() {
         resultsSection.style.display = 'block';
         editorCanvas.style.display = 'none';
         
-        // Annotationen aktualisieren, wenn Änderungen vorgenommen wurden
-        if (editorOriginalState && JSON.stringify(editorOriginalState) !== JSON.stringify(window.data.predictions)) {
-            console.log("Änderungen erkannt, aktualisiere Annotationen");
-            refreshAnnotations();
-        }
+        // Immer Annotationen aktualisieren, unabhängig von Änderungen
+        console.log("Editor wird deaktiviert, aktualisiere Annotationen");
+        refreshAnnotations();
     }
 }
 
@@ -269,7 +268,7 @@ function setEditorMode(mode) {
         const helpText = document.createElement('div');
         helpText.id = 'lineHelp';
         helpText.className = 'editor-help-text';
-        helpText.innerHTML = 'Klicken Sie, um Punkte hinzuzufügen. <b>Doppelklick</b> oder <b>Escape</b>, um die Messung abzuschließen.';
+        helpText.innerHTML = 'Klicken Sie, um Punkte hinzuzufügen. <b>Doppelklick</b> oder <b>Escape</b> zum Abschließen der Messung. <b>Strg+Klick</b> beendet auch die Linie.';
         
         // Vorhandene Hilfe entfernen
         const oldHelp = document.getElementById('lineHelp');
@@ -964,7 +963,7 @@ function finishLine() {
         label: 0, // Spezielle Kategorie für Messlinien
         score: 1.0,
         length: length,
-        type: "line",
+        type: "line", // Important to set the correct type
         line: {
             all_points_x: all_points_x,
             all_points_y: all_points_y
@@ -974,7 +973,7 @@ function finishLine() {
     
     console.log("Neue Linienmessung hinzufügen:", newMeasurement);
     
-    // Zu den Daten hinzufügen (optional, je nachdem ob die Messung gespeichert werden soll)
+    // Zu den Daten hinzufügen
     window.data.predictions.push(newMeasurement);
     
     // Meldung anzeigen
@@ -1041,7 +1040,6 @@ function calculateArea(box) {
 }
 
 // Änderungen speichern
-// In editor.js: Änderungen speichern
 function saveEditorChanges() {
     console.log("Speichere Editor-Änderungen");
     
@@ -1056,9 +1054,6 @@ function saveEditorChanges() {
         
         // Editor ausschalten
         toggleEditor();
-        
-        // Sorge dafür, dass alle Annotationen korrekt angezeigt werden
-        refreshAnnotations();
         
         // Bestätigung anzeigen
         alert('Änderungen wurden gespeichert.');
@@ -1087,7 +1082,10 @@ function cancelEditorChanges() {
 }
 
 // Neue Hilfsfunktion zum Aktualisieren aller Annotationen
+// Neue Hilfsfunktion zum Aktualisieren aller Annotationen
 function refreshAnnotations() {
+    console.log("Aktualisiere alle Annotationen, Anzahl:", window.data?.predictions?.length || 0);
+    
     // Alle Annotationen entfernen
     const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
     boxes.forEach(box => box.remove());
@@ -1100,8 +1098,14 @@ function refreshAnnotations() {
     // Alle Annotationen neu hinzufügen
     if (window.data && window.data.predictions) {
         window.data.predictions.forEach((pred, index) => {
-            addAnnotation(pred, index);
+            try {
+                addAnnotation(pred, index);
+            } catch (error) {
+                console.error(`Fehler beim Hinzufügen der Annotation ${index}:`, error);
+            }
         });
+    } else {
+        console.warn("Keine Vorhersagen gefunden für Annotationen");
     }
     
     // Simuliere ein Resize-Event nach kurzer Verzögerung
@@ -1136,30 +1140,36 @@ function updateEditorResults() {
     
     // Zählen und Flächen summieren
     window.data.predictions.forEach(pred => {
-        switch (pred.label) {
-            case 1:
-                counts.fenster++;
-                areas.fenster += pred.area;
-                break;
-            case 2:
-                counts.tuer++;
-                areas.tuer += pred.area;
-                break;
-            case 3:
-                counts.wand++;
-                areas.wand += pred.area;
-                break;
-            case 4:
-                counts.lukarne++;
-                areas.lukarne += pred.area;
-                break;
-            case 5:
-                counts.dach++;
-                areas.dach += pred.area;
-                break;
-            default:
-                counts.other++;
-                areas.other += pred.area;
+        if (pred.type === "line") {
+            // Special handling for line measurements
+            counts.line++;
+        } else {
+            // Normal handling for other objects
+            switch (pred.label) {
+                case 1:
+                    counts.fenster++;
+                    areas.fenster += pred.area || 0;
+                    break;
+                case 2:
+                    counts.tuer++;
+                    areas.tuer += pred.area || 0;
+                    break;
+                case 3:
+                    counts.wand++;
+                    areas.wand += pred.area || 0;
+                    break;
+                case 4:
+                    counts.lukarne++;
+                    areas.lukarne += pred.area || 0;
+                    break;
+                case 5:
+                    counts.dach++;
+                    areas.dach += pred.area || 0;
+                    break;
+                default:
+                    counts.other++;
+                    areas.other += pred.area || 0;
+            }
         }
     });
     

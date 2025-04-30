@@ -532,6 +532,7 @@ function processApiResponse(apiResponse) {
     let lukarneCount = 0;
     let dachCount = 0;
     let otherCount = 0;
+    let lineCount = 0; // Add this for line measurements
     
     let fensterArea = 0;
     let tuerArea = 0;
@@ -548,10 +549,18 @@ function processApiResponse(apiResponse) {
         // Vorhersagen verarbeiten
         predictions.forEach(pred => {
             // Typ bestimmen basierend auf vorhandenen Eigenschaften
-            const predType = "box" in pred || "bbox" in pred ? "rectangle" : "polygon";
+            let predType = "rectangle";
+            if (pred.type === "line" || (pred.line && pred.length !== undefined)) {
+                predType = "line";
+                lineCount++;
+            } else if (pred.type === "polygon" || pred.polygon) {
+                predType = "polygon";
+            } else if (pred.box || pred.bbox) {
+                predType = "rectangle";
+            }
             
             // Prüfe, ob ein benutzerdefiniertes Label für diese ID existiert
-            const customLabel = window.currentLabels.find(l => l.id === pred.label);
+            const customLabel = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
             let label_name;
             
             if (customLabel) {
@@ -559,47 +568,59 @@ function processApiResponse(apiResponse) {
             } else {
                 // Fallback auf die Standard-Namen
                 switch(pred.label) {
-                    case 1:
+                    case 1: 
                         label_name = "Fenster";
-                        fensterCount++;
-                        fensterArea += pred.area;
+                        if (predType !== "line") { // Only count areas for non-line objects
+                            fensterCount++;
+                            fensterArea += pred.area || 0;
+                        }
                         break;
-                    case 2:
+                    case 2: 
                         label_name = "Tür";
-                        tuerCount++;
-                        tuerArea += pred.area;
+                        if (predType !== "line") {
+                            tuerCount++;
+                            tuerArea += pred.area || 0;
+                        }
                         break;
-                    case 3:
+                    case 3: 
                         label_name = "Wand";
-                        wandCount++;
-                        wandArea += pred.area;
+                        if (predType !== "line") {
+                            wandCount++;
+                            wandArea += pred.area || 0;
+                        }
                         break;
-                    case 4:
+                    case 4: 
                         label_name = "Lukarne";
-                        lukarneCount++;
-                        lukarneArea += pred.area;
+                        if (predType !== "line") {
+                            lukarneCount++;
+                            lukarneArea += pred.area || 0;
+                        }
                         break;
-                    case 5:
+                    case 5: 
                         label_name = "Dach";
-                        dachCount++;
-                        dachArea += pred.area;
+                        if (predType !== "line") {
+                            dachCount++;
+                            dachArea += pred.area || 0;
+                        }
                         break;
-                    default:
-                        label_name = "Andere";
-                        otherCount++;
-                        otherArea += pred.area;
+                    default: 
+                        label_name = predType === "line" ? "Messlinie" : "Andere";
+                        if (predType !== "line") {
+                            otherCount++;
+                            otherArea += pred.area || 0;
+                        }
                 }
             }
             
             // Aktualisiere Zähler und Flächen basierend auf dem Label
-            if (customLabel) {
+            if (customLabel && predType !== "line") {
                 switch(pred.label) {
-                    case 1: fensterCount++; fensterArea += pred.area; break;
-                    case 2: tuerCount++; tuerArea += pred.area; break;
-                    case 3: wandCount++; wandArea += pred.area; break;
-                    case 4: lukarneCount++; lukarneArea += pred.area; break;
-                    case 5: dachCount++; dachArea += pred.area; break;
-                    default: otherCount++; otherArea += pred.area;
+                    case 1: fensterCount++; fensterArea += pred.area || 0; break;
+                    case 2: tuerCount++; tuerArea += pred.area || 0; break;
+                    case 3: wandCount++; wandArea += pred.area || 0; break;
+                    case 4: lukarneCount++; lukarneArea += pred.area || 0; break;
+                    case 5: dachCount++; dachArea += pred.area || 0; break;
+                    default: otherCount++; otherArea += pred.area || 0;
                 }
             }
             
@@ -621,7 +642,8 @@ function processApiResponse(apiResponse) {
         wand: wandCount,
         lukarne: lukarneCount,
         dach: dachCount,
-        other: otherCount
+        other: otherCount,
+        line: lineCount // Add this line count
     };
     
     result.total_area = {
@@ -1282,7 +1304,7 @@ function updateSummary() {
     }
 
     // Für Linienmessungen separat anzeigen
-    if (window.data.count.line > 0) {
+    if (window.data.count && window.data.count.line && window.data.count.line > 0) {
         summaryHtml += `<p>Linienmessungen: <strong>${window.data.count.line}</strong></p>`;
     }
     
@@ -1367,7 +1389,7 @@ function highlightBox(elementId, isHighlighted) {
 }
 
 // Funktion zum Hinzufügen einer Annotation (Rechteck oder Polygon)
-// Aktualisiere die addAnnotation Funktion in main.js
+// Funktion zum Hinzufügen einer Annotation (Rechteck oder Polygon)
 function addAnnotation(prediction, index) {
     // Skalierungsfaktor berechnen
     const scale = uploadedImage.width / uploadedImage.naturalWidth;
@@ -1392,25 +1414,32 @@ function addAnnotation(prediction, index) {
     } else {
         // Fallback für unbekannte Labels
         switch(prediction.label) {
-            case 1: classPrefix = 'fenster'; break;
-            case 2: classPrefix = 'tuer'; break;
-            case 3: classPrefix = 'wand'; break;
-            case 4: classPrefix = 'lukarne'; break;
-            case 5: classPrefix = 'dach'; break;
-            default: classPrefix = 'other';
+            case 1: classPrefix = 'fenster'; color = 'blue'; break;
+            case 2: classPrefix = 'tuer'; color = 'red'; break;
+            case 3: classPrefix = 'wand'; color = '#d4d638'; break;
+            case 4: classPrefix = 'lukarne'; color = 'orange'; break;
+            case 5: classPrefix = 'dach'; color = 'purple'; break;
+            default: classPrefix = 'other'; color = 'gray';
         }
     }
     
     // Label-Text vorbereiten, je nach Typ
     let labelText;
     
-    if (prediction.type === "line") {
+    if (prediction.type === "line" && prediction.length !== undefined) {
         labelText = `#${index + 1}: ${prediction.length.toFixed(2)} m`;
+        // For lines, override color and classPrefix
+        color = '#FF9500'; // Orange for measurement lines
+        classPrefix = 'line';
     } else {
-        labelText = `#${index + 1}: ${prediction.area.toFixed(2)} m²`;
+        if (prediction.area !== undefined) {
+            labelText = `#${index + 1}: ${prediction.area.toFixed(2)} m²`;
+        } else {
+            labelText = `#${index + 1}`;
+        }
     }
     
-    // Je nach Typ (Rechteck oder Polygon) unterschiedlich behandeln
+    // Je nach Typ (Rechteck, Polygon, oder Linie) unterschiedlich behandeln
     if (prediction.type === "rectangle" || prediction.box || prediction.bbox) {
         const [x1, y1, x2, y2] = prediction.box || prediction.bbox;
         
@@ -1479,9 +1508,9 @@ function addAnnotation(prediction, index) {
         
         // Label am Schwerpunkt hinzufügen
         addLabel(centerX, centerY - 20, labelText, elementId, classPrefix, label ? label.color : null);
-    } else if (prediction.type === "line" && prediction.line) {
+    } else if ((prediction.type === "line" && prediction.line) || (prediction.type === "line" && prediction.length !== undefined)) {
         // Spezieller Fall für Linien
-        const { all_points_x, all_points_y } = prediction.line;
+        const { all_points_x, all_points_y } = prediction.line || { all_points_x: [], all_points_y: [] };
         
         if (!all_points_x || !all_points_y || all_points_x.length < 2) {
             console.warn("Ungültige Linie gefunden:", prediction);
@@ -1579,20 +1608,28 @@ function adaptSvgOverlay() {
     const imageRect = uploadedImage.getBoundingClientRect();
     const containerRect = imageContainer.getBoundingClientRect();
     
+    // SVG auf gleiche Größe wie das Bild setzen
     annotationOverlay.setAttribute('width', uploadedImage.width);
     annotationOverlay.setAttribute('height', uploadedImage.height);
     
-    // Position anpassen
+    // Position exakt an Bild ausrichten
+    annotationOverlay.style.position = 'absolute';
     annotationOverlay.style.left = `${imageRect.left - containerRect.left}px`;
     annotationOverlay.style.top = `${imageRect.top - containerRect.top}px`;
+    
+    // Wichtig: ViewBox setzen für bessere Skalierung
+    annotationOverlay.setAttribute('viewBox', `0 0 ${uploadedImage.width} ${uploadedImage.height}`);
+    annotationOverlay.style.width = `${uploadedImage.width}px`;
+    annotationOverlay.style.height = `${uploadedImage.height}px`;
     
     // Bestehende Annotationen neu positionieren
     repositionAllAnnotations();
 }
 
 // Alle Annotationen neu positionieren
+// Alle Annotationen neu positionieren
 function repositionAllAnnotations() {
-    // Berechne sowohl den horizontalen als auch den vertikalen Skalierungsfaktor
+    // Berechne Skalierungsfaktoren
     const scaleX = uploadedImage.width / uploadedImage.naturalWidth;
     const scaleY = uploadedImage.height / uploadedImage.naturalHeight;
     
@@ -1600,13 +1637,13 @@ function repositionAllAnnotations() {
     const imageRect = uploadedImage.getBoundingClientRect();
     const containerRect = imageContainer.getBoundingClientRect();
     
-    // Berechne Offset (falls das Bild nicht exakt am Rand des Containers beginnt)
+    // Berechne Offset
     const offsetX = imageRect.left - containerRect.left;
     const offsetY = imageRect.top - containerRect.top;
     
     console.log("Skalierung:", scaleX, scaleY, "Offset:", offsetX, offsetY);
     
-    // Alle Rechtecke neu positionieren
+    // 1. Alle Rechtecke neu positionieren
     document.querySelectorAll('.bounding-box').forEach(box => {
         const id = box.id;
         const index = parseInt(id.split('-')[1]);
@@ -1622,24 +1659,13 @@ function repositionAllAnnotations() {
         }
     });
 
-    // Alle Labels neu positionieren
-    document.querySelectorAll('.box-label').forEach(label => {
-        const id = label.id.replace('label-', '');
-        const index = parseInt(id.split('-')[1]);
-        if (window.data && window.data.predictions && window.data.predictions[index]) {
-            const pred = window.data.predictions[index];
-            if (pred.box || pred.bbox) {
-                const [x1, y1] = pred.box || pred.bbox;
-                label.style.left = `${x1 * scaleX + offsetX}px`;
-                label.style.top = `${(y1 * scaleY + offsetY) - 20}px`;
-            } else if (pred.polygon) {
-                // Polygon-Labels würden hier behandelt werden
-            }
-        }
-    });
+    // 2. SVG-Elemente neu positionieren
+    // Anstatt die einzelnen Elemente zu verschieben, passen wir das SVG-Overlay an
+    annotationOverlay.style.left = `${offsetX}px`;
+    annotationOverlay.style.top = `${offsetY}px`;
     
-    // Alle Polygone neu positionieren
-    document.querySelectorAll('.polygon-annotation').forEach(polygon => {
+    // 2a. Polygone neu skalieren
+    document.querySelectorAll('polygon.polygon-annotation').forEach(polygon => {
         const id = polygon.id;
         const index = parseInt(id.split('-')[1]);
         if (window.data && window.data.predictions && window.data.predictions[index]) {
@@ -1653,6 +1679,93 @@ function repositionAllAnnotations() {
                     scaledPoints.push(`${x},${y}`);
                 }
                 polygon.setAttribute("points", scaledPoints.join(" "));
+            }
+        }
+    });
+    
+    // 2b. Linien neu skalieren
+    document.querySelectorAll('path.line-annotation').forEach(path => {
+        const id = path.id;
+        const index = parseInt(id.split('-')[1]);
+        if (window.data && window.data.predictions && window.data.predictions[index]) {
+            const pred = window.data.predictions[index];
+            if (pred.line) {
+                const { all_points_x, all_points_y } = pred.line;
+                
+                // Pfad neu erstellen
+                let pathData = `M ${all_points_x[0] * scaleX},${all_points_y[0] * scaleY}`;
+                for (let i = 1; i < all_points_x.length; i++) {
+                    pathData += ` L ${all_points_x[i] * scaleX},${all_points_y[i] * scaleY}`;
+                }
+                
+                path.setAttribute("d", pathData);
+            }
+        }
+    });
+    
+    // 2c. Linienpunkte neu skalieren
+    document.querySelectorAll('circle.line-point').forEach(circle => {
+        // Wir müssen die Zugehörigkeit zu einer Linie ermitteln
+        const parentNodes = Array.from(annotationOverlay.children);
+        const lineIndex = parentNodes.findIndex(node => 
+            node.tagName.toLowerCase() === 'path' && 
+            node.classList.contains('line-annotation'));
+        
+        if (lineIndex >= 0) {
+            const lineId = parentNodes[lineIndex].id;
+            const dataIndex = parseInt(lineId.split('-')[1]);
+            const pred = window.data.predictions[dataIndex];
+            
+            if (pred && pred.line) {
+                const { all_points_x, all_points_y } = pred.line;
+                const circleIndex = Array.from(annotationOverlay.querySelectorAll('circle.line-point')).indexOf(circle);
+                
+                if (circleIndex < all_points_x.length) {
+                    circle.setAttribute("cx", all_points_x[circleIndex] * scaleX);
+                    circle.setAttribute("cy", all_points_y[circleIndex] * scaleY);
+                    circle.setAttribute("r", "4");
+                }
+            }
+        }
+    });
+
+    // 3. Alle Labels neu positionieren
+    document.querySelectorAll('.box-label').forEach(label => {
+        const id = label.id.replace('label-', '');
+        const index = parseInt(id.split('-')[1]);
+        if (window.data && window.data.predictions && window.data.predictions[index]) {
+            const pred = window.data.predictions[index];
+            
+            if (pred.box || pred.bbox) {
+                // Für Rechteck-Labels
+                const [x1, y1] = pred.box || pred.bbox;
+                label.style.left = `${x1 * scaleX + offsetX}px`;
+                label.style.top = `${(y1 * scaleY + offsetY) - 20}px`;
+            } 
+            else if (pred.polygon && pred.polygon.all_points_x && pred.polygon.all_points_y) {
+                // Für Polygon-Labels - Berechne Schwerpunkt
+                const { all_points_x, all_points_y } = pred.polygon;
+                let centerX = 0, centerY = 0;
+                for (let i = 0; i < all_points_x.length; i++) {
+                    centerX += all_points_x[i];
+                    centerY += all_points_y[i];
+                }
+                centerX = (centerX / all_points_x.length) * scaleX + offsetX;
+                centerY = (centerY / all_points_y.length) * scaleY + offsetY;
+                
+                label.style.left = `${centerX - label.offsetWidth/2}px`;
+                label.style.top = `${centerY - 20}px`;
+            } 
+            else if (pred.type === "line" && pred.line) {
+                // Für Linien-Labels - nehme den letzten Punkt
+                const { all_points_x, all_points_y } = pred.line;
+                if (all_points_x && all_points_y && all_points_x.length > 0) {
+                    const lastX = all_points_x[all_points_x.length - 1];
+                    const lastY = all_points_y[all_points_y.length - 1];
+                    
+                    label.style.left = `${(lastX * scaleX + offsetX) + 5}px`;
+                    label.style.top = `${(lastY * scaleY + offsetY) - 5}px`;
+                }
             }
         }
     });

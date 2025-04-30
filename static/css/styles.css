@@ -152,23 +152,39 @@ button:hover {
     pointer-events: none;
 }
 
-.polygon-annotation {
+#annotationOverlay {
     position: absolute;
-    fill: rgba(255, 0, 0, 0.1);
-    stroke: red;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.polygon-annotation {
+    fill-opacity: 0.1;
     stroke-width: 2px;
+    pointer-events: none;
+}
+
+.line-annotation {
+    fill: none;
+    stroke-width: 2px;
+    pointer-events: none;
+}
+
+.line-point {
     pointer-events: none;
 }
 
 .box-label {
     position: absolute;
-    background-color: rgba(255, 0, 0, 0.8);
-    color: white;
     padding: 2px 5px;
     font-size: 12px;
+    color: white;
     border-radius: 3px;
     white-space: nowrap;
     z-index: 10;
+    pointer-events: none;
 }
 
 /* Fenster-Stile */
@@ -747,12 +763,3 @@ tr:nth-child(even) {
     font-size: 14px;
 }
 
-.line-annotation {
-    stroke: #FF9500;
-    stroke-width: 2px;
-    fill: none;
-}
-
-.line-point {
-    fill: #FF9500;
-}
