@@ -185,6 +185,7 @@ button:hover {
     white-space: nowrap;
     z-index: 10;
     pointer-events: none;
+    transform-origin: top left;
 }
 
 /* Fenster-Stile */
@@ -788,4 +789,121 @@ tr:nth-child(even) {
 #lineTypeSelect {
     flex: 0 0 120px;
     background-color: #fff8f0; /* Light orange background to distinguish from area type */
+}
+
+
+/* Improve image container for zooming */
+#imageContainer {
+    overflow: auto !important; /* Changed from 'auto' to ensure scrollbars appear when needed */
+    position: relative;
+    max-width: 100%;
+    margin-top: 10px;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
+    min-height: 300px;
+    display: flex;
+    justify-content: center;
+}
+
+#uploadedImage {
+    transform-origin: top left;
+    max-width: none; /* Allow image to grow beyond container when zoomed */
+}
+
+#annotationOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
+    transform-origin: top left;
+}
+
+/* Zoom control styles */
+.zoom-control {
+    position: relative;
+    display: inline-block;
+}
+
+.zoom-dropdown {
+    display: none;
+    position: absolute;
+    background-color: #f9f9f9;
+    min-width: 80px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+    z-index: 100;
+    border-radius: 4px;
+    right: 0;
+    top: 100%;
+    margin-top: 2px;
+}
+
+/* Ensure the dropdown is visible on hover */
+.zoom-control:hover .zoom-dropdown {
+    display: block !important;
+}
+
+.zoom-option {
+    width: 100%;
+    color: black;
+    padding: 8px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: block;
+    background-color: #f9f9f9;
+    border: none;
+    cursor: pointer;
+}
+
+.zoom-option:hover {
+    background-color: #e0e0e0;
+}
+
+/* Make sure dropdown stays open when hovering over it */
+.zoom-dropdown:hover {
+    display: block !important;
+}
+
+#resetZoomBtn {
+    min-width: 60px;
+}
+
+/* Image container styles for zooming */
+#imageContainer {
+    overflow: auto !important;
+    position: relative;
+    max-width: 100%;
+    margin-top: 10px;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
+    min-height: 300px;
+    display: flex;
+    justify-content: center;
+}
+
+#uploadedImage {
+    transform-origin: top left;
+    max-width: none;
+}
+
+#annotationOverlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: none;
+    z-index: 5;
+    transform-origin: top left;
+}
+
+#zoomIndicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 8px 12px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    border-radius: 4px;
+    font-size: 14px;
+    z-index: 1000;
+    transition: opacity 1s;
 }

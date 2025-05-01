@@ -9,6 +9,7 @@ window.data = null;
 let pdfPageData = {}; // Speichert Daten aller verarbeiteten Seiten
 let pageSettings = {}; // Speichert die Einstellungen pro Seite
 
+
 // PDF-spezifische Variablen
 let pdfSessionId = null;
 let currentPdfPage = 1;
@@ -1611,6 +1612,23 @@ function addLabel(x, y, text, parentId, classPrefix, color) {
     }
     
     imageContainer.appendChild(label);
+    
+    // In the addLabel function, add this at the end:
+    if (currentZoom !== 1.0) {
+        // Store original position if this is a new label
+        label.setAttribute('data-original-left', `${x}px`);
+        label.setAttribute('data-original-top', `${y}px`);
+        
+        // Apply current zoom to position
+        label.style.left = `${x * currentZoom}px`;
+        label.style.top = `${y * currentZoom}px`;
+        label.style.fontSize = `${12 / currentZoom}px`;
+        label.style.padding = `${2 / currentZoom}px ${5 / currentZoom}px`;
+    } else {
+        // Apply position normally
+        label.style.left = `${x}px`;
+        label.style.top = `${y}px`;
+    }
 }
 
 // Funktion zum Zurücksetzen der Ergebnisse
@@ -1666,9 +1684,336 @@ function adaptSvgOverlay() {
     repositionAllAnnotations();
 }
 
-// Alle Annotationen neu positionieren
+// Global zoom variables
+let currentZoom = 1.0;
+const minZoom = 0.1;
+const maxZoom = 10.0;
+const zoomStep = 0.1;
+
+// Function to handle zoom - improved to center on mouse position
+function handleZoom(event) {
+    console.log("Wheel event detected:", event.ctrlKey, event.deltaY);
+
+    // Only handle zoom events when Ctrl key is pressed
+    if (!event.ctrlKey) return;
+
+    console.log("Ctrl+wheel detected, zooming");
+
+    
+    // Prevent default browser zoom behavior
+    event.preventDefault();
+    
+    // Get the mouse position relative to the image container
+    const rect = imageContainer.getBoundingClientRect();
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+    
+    // Get the current scroll position
+    const scrollLeft = imageContainer.scrollLeft;
+    const scrollTop = imageContainer.scrollTop;
+    
+    // Calculate position within the scrolled content
+    const mouseXInContent = mouseX + scrollLeft;
+    const mouseYInContent = mouseY + scrollTop;
+    
+    // Determine zoom direction
+    const delta = event.deltaY || event.detail || event.wheelDelta;
+    const zoomIn = delta < 0;
+    
+    // Calculate new zoom level
+    let newZoom = currentZoom;
+    if (zoomIn) {
+        newZoom = Math.min(currentZoom + zoomStep, maxZoom);
+    } else {
+        newZoom = Math.max(currentZoom - zoomStep, minZoom);
+    }
+    
+    // Only proceed if zoom level changed
+    if (newZoom === currentZoom) return;
+    
+    // Calculate the scale ratio
+    const ratio = newZoom / currentZoom;
+    currentZoom = newZoom;
+    
+    // Apply zoom to the image and SVG overlay
+    uploadedImage.style.transform = `scale(${currentZoom})`;
+    uploadedImage.style.transformOrigin = 'top left';
+    
+    // Also apply the same transform to the SVG overlay
+    annotationOverlay.style.transform = `scale(${currentZoom})`;
+    annotationOverlay.style.transformOrigin = 'top left';
+    
+    // Calculate new scroll position to keep the mouse point fixed
+    const newScrollLeft = mouseXInContent * ratio - mouseX;
+    const newScrollTop = mouseYInContent * ratio - mouseY;
+    
+    // Set the new scroll position
+    imageContainer.scrollLeft = newScrollLeft;
+    imageContainer.scrollTop = newScrollTop;
+    
+    // Update all bounding boxes and labels
+    updateAnnotationsForZoom();
+    
+    // Display current zoom level
+    showZoomLevel();
+}
+
+// Function to set zoom to a specific level
+function setZoomLevel(level) {
+    // Store old zoom for ratio calculation
+    const oldZoom = currentZoom;
+    currentZoom = level;
+    
+    // Get the center of the viewport
+    const containerRect = imageContainer.getBoundingClientRect();
+    const centerX = containerRect.width / 2;
+    const centerY = containerRect.height / 2;
+    
+    // Get the current scroll position
+    const scrollLeft = imageContainer.scrollLeft;
+    const scrollTop = imageContainer.scrollTop;
+    
+    // Calculate position within the scrolled content
+    const centerXInContent = centerX + scrollLeft;
+    const centerYInContent = centerY + scrollTop;
+    
+    // Apply zoom to the image and SVG overlay
+    uploadedImage.style.transform = `scale(${currentZoom})`;
+    uploadedImage.style.transformOrigin = 'top left';
+    
+    annotationOverlay.style.transform = `scale(${currentZoom})`;
+    annotationOverlay.style.transformOrigin = 'top left';
+    
+    // Calculate the scale ratio
+    const ratio = currentZoom / oldZoom;
+    
+    // Calculate new scroll position to keep the center point fixed
+    const newScrollLeft = centerXInContent * ratio - centerX;
+    const newScrollTop = centerYInContent * ratio - centerY;
+    
+    // Set the new scroll position
+    imageContainer.scrollLeft = newScrollLeft;
+    imageContainer.scrollTop = newScrollTop;
+    
+    // Update all bounding boxes and labels
+    updateAnnotationsForZoom();
+    
+    // Update the zoom button text
+    resetZoomBtn.textContent = `${Math.round(currentZoom * 100)}%`;
+    
+    // Display current zoom level
+    showZoomLevel();
+}
+
+// Add event listeners for zoom options in DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Existing zoom event listeners...
+    
+    // Add event listeners for zoom preset options
+    document.querySelectorAll('.zoom-option').forEach(option => {
+        option.addEventListener('click', function() {
+            const zoomLevel = parseFloat(this.dataset.zoom);
+            setZoomLevel(zoomLevel);
+        });
+    });
+    
+    // Update the resetZoomBtn click handler to use the new function
+    const resetZoomBtn = document.getElementById('resetZoomBtn');
+    if (resetZoomBtn) {
+        resetZoomBtn.addEventListener('click', function() {
+            setZoomLevel(1.0); // Reset to 100%
+        });
+        
+        // Update the zoom button text when zoom changes
+        const originalShowZoomLevel = showZoomLevel;
+        showZoomLevel = function() {
+            originalShowZoomLevel();
+            resetZoomBtn.textContent = `${Math.round(currentZoom * 100)}%`;
+        };
+    }
+});
+
+// Function to update annotation positions after zooming
+// Function to update annotation positions after zooming
+function updateAnnotationsForZoom() {
+    console.log("Updating annotations for zoom level:", currentZoom);
+    
+    // Update positions of all bounding boxes
+    document.querySelectorAll('.bounding-box').forEach(box => {
+        // Store original values if not already stored
+        if (!box.hasAttribute('data-original-left')) {
+            box.setAttribute('data-original-left', box.style.left);
+            box.setAttribute('data-original-top', box.style.top);
+            box.setAttribute('data-original-width', box.style.width);
+            box.setAttribute('data-original-height', box.style.height);
+        }
+        
+        // The boxes don't need position updates since they're inside the transformed container
+        // But we might need to adjust other properties like border width based on zoom
+        box.style.borderWidth = 2 / currentZoom + 'px';
+    });
+    
+    // Update labels similarly
+    document.querySelectorAll('.box-label').forEach(label => {
+        // Store original values if not already stored
+        if (!label.hasAttribute('data-original-left')) {
+            label.setAttribute('data-original-left', label.style.left);
+            label.setAttribute('data-original-top', label.style.top);
+        }
+        
+        // Get original positions
+        const originalLeft = label.getAttribute('data-original-left').replace('px', '');
+        const originalTop = label.getAttribute('data-original-top').replace('px', '');
+        
+        // Scale positions with current zoom level
+        const newLeft = parseFloat(originalLeft) * currentZoom;
+        const newTop = parseFloat(originalTop) * currentZoom;
+        
+        // Apply the new positions
+        label.style.left = `${newLeft}px`;
+        label.style.top = `${newTop}px`;
+        
+        // Scale font size inversely with zoom to maintain readable text
+        label.style.fontSize = `${12 / currentZoom}px`;
+        label.style.padding = `${2 / currentZoom}px ${5 / currentZoom}px`;
+    });
+}
+    
+    // Update labels similarly
+    document.querySelectorAll('.box-label').forEach(label => {
+        const originalLeft = parseFloat(label.getAttribute('data-original-left') || label.style.left);
+        const originalTop = parseFloat(label.getAttribute('data-original-top') || label.style.top);
+        
+        // Store original values if not already stored
+        if (!label.hasAttribute('data-original-left')) {
+            label.setAttribute('data-original-left', originalLeft);
+            label.setAttribute('data-original-top', originalTop);
+        }
+    });
+}
+
+// Function to display current zoom level
+function showZoomLevel() {
+    // Create or update zoom indicator
+    let zoomIndicator = document.getElementById('zoomIndicator');
+    
+    if (!zoomIndicator) {
+        zoomIndicator = document.createElement('div');
+        zoomIndicator.id = 'zoomIndicator';
+        zoomIndicator.style.position = 'fixed';
+        zoomIndicator.style.bottom = '20px';
+        zoomIndicator.style.right = '20px';
+        zoomIndicator.style.padding = '8px 12px';
+        zoomIndicator.style.background = 'rgba(0, 0, 0, 0.7)';
+        zoomIndicator.style.color = 'white';
+        zoomIndicator.style.borderRadius = '4px';
+        zoomIndicator.style.fontSize = '14px';
+        zoomIndicator.style.zIndex = '1000';
+        zoomIndicator.style.transition = 'opacity 1s';
+        document.body.appendChild(zoomIndicator);
+    }
+    
+    // Update the text
+    zoomIndicator.textContent = `Zoom: ${Math.round(currentZoom * 100)}%`;
+    zoomIndicator.style.opacity = '1';
+    
+    // Hide the indicator after a delay
+    clearTimeout(zoomIndicator.timeout);
+    zoomIndicator.timeout = setTimeout(() => {
+        zoomIndicator.style.opacity = '0';
+    }, 2000);
+}
+
+// Reset zoom function
+function resetZoom() {
+    console.log("Resetting zoom from:", currentZoom, "to 1.0");
+
+    currentZoom = 1.0;
+    uploadedImage.style.transform = '';
+    annotationOverlay.style.transform = '';
+    
+    // Reset all stored original positions
+    document.querySelectorAll('[data-original-left]').forEach(el => {
+        el.removeAttribute('data-original-left');
+        el.removeAttribute('data-original-top');
+        if (el.hasAttribute('data-original-width')) {
+            el.removeAttribute('data-original-width');
+            el.removeAttribute('data-original-height');
+        }
+    });
+    
+    showZoomLevel();
+}
+
+// Make sure to set up zoom event handlers after DOM is loaded
+function setupZoomEventListeners() {
+    console.log("Setting up zoom event listeners");
+    
+    // Remove existing listeners first to avoid duplicates
+    imageContainer.removeEventListener('wheel', handleZoom);
+    
+    // Add the wheel event listener with the correct options
+    imageContainer.addEventListener('wheel', handleZoom, { passive: false });
+    console.log("Wheel event listener added to imageContainer");
+}
+
+// Function to receive editor state updates
+window.updateEditorState = function(isActive) {
+    console.log("Editor state updated:", isActive);
+    isEditorActive = isActive;
+};
+
+// Call this function after DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait a bit to ensure imageContainer is fully loaded
+    setTimeout(setupZoomEventListeners, 500);
+    
+    // Debug output to check if isEditorActive is accessible
+    console.log("DOM loaded, isEditorActive accessible:", typeof window.isEditorActive !== 'undefined');
+    
+    // Add double-click event listener to reset zoom
+    imageContainer.addEventListener('dblclick', function(event) {
+        console.log("Double-click detected");
+        // Check if editor is active using the existing variable
+        const editorActive = typeof window.isEditorActive !== 'undefined' ? window.isEditorActive : false;
+        console.log("Editor active state:", editorActive);
+        
+        // Only reset zoom on double click if editor is not active
+        if (!editorActive) {
+            resetZoom();
+        }
+    });
+});
+
+// Also set it up when image is loaded
+if (uploadedImage) {
+    uploadedImage.addEventListener('load', function() {
+        console.log("Image loaded, setting up zoom listeners");
+        setupZoomEventListeners();
+    });
+}
+
+
+// Modify the adaptSvgOverlay function to work with zoom
+const originalAdaptSvgOverlay = adaptSvgOverlay;
+adaptSvgOverlay = function() {
+    // Call the original function first
+    originalAdaptSvgOverlay();
+    
+    // Then apply current zoom if not at 1.0
+    if (currentZoom !== 1.0) {
+        uploadedImage.style.transform = `scale(${currentZoom})`;
+        uploadedImage.style.transformOrigin = 'top left';
+        
+        annotationOverlay.style.transform = `scale(${currentZoom})`;
+        annotationOverlay.style.transformOrigin = 'top left';
+    }
+};
+
 // Alle Annotationen neu positionieren
 function repositionAllAnnotations() {
+    console.log("Repositioning annotations, zoom level:", currentZoom);
+
     // Berechne Skalierungsfaktoren
     const scaleX = uploadedImage.width / uploadedImage.naturalWidth;
     const scaleY = uploadedImage.height / uploadedImage.naturalHeight;
@@ -1860,6 +2205,19 @@ if (loadProjectBtn) {
             loadProjectBtn.textContent = 'Projekt öffnen';
         }
     });
+}
+
+// Add this to your DOMContentLoaded event handler in main.js
+const resetZoomBtn = document.getElementById('resetZoomBtn');
+if (resetZoomBtn) {
+    resetZoomBtn.addEventListener('click', resetZoom);
+    
+    // Update the zoom button text when zoom changes
+    const originalShowZoomLevel = showZoomLevel;
+    showZoomLevel = function() {
+        originalShowZoomLevel();
+        resetZoomBtn.textContent = `${Math.round(currentZoom * 100)}%`;
+    };
 }
 
 // Event-Listener für den Export-Button am Ende des DOMContentLoaded-Handlers
