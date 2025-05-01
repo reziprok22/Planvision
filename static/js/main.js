@@ -915,27 +915,43 @@ function clearAnnotations() {
 
 // Funktion zum Aktualisieren der Ergebnisse ohne das Bild neu zu laden
 function updateResultsTable() {
-    if (window.data.predictions.some(p => p.type === 'line')) {
-        const lineObject = window.data.predictions.find(p => p.type === 'line');
-        console.log('Linien-Objekt Struktur:', JSON.stringify(lineObject, null, 2));
-    }
-
+    console.log("Updating results table with line labels:", JSON.stringify(window.currentLineLabels));
+    
     resultsBody.innerHTML = '';
     
     window.data.predictions.forEach((pred, index) => {
         const row = document.createElement('tr');
         
+        // Debug this specific prediction
+        if (pred.type === "line") {
+            console.log(`Line measurement #${index}:`, JSON.stringify(pred));
+            console.log(`Searching for line label with ID ${pred.label} in:`, JSON.stringify(window.currentLineLabels));
+            const foundLineLabel = window.currentLineLabels ? 
+                window.currentLineLabels.find(l => l.id === pred.label) : null;
+            console.log("Found line label:", foundLineLabel);
+        }
+        
         // Suche das passende Label für diese Vorhersage
         let labelName = pred.label_name || "Andere";
         
-        // Suche in den benutzerdefinierten Labels nach einer passenden ID
-        const customLabel = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
-        if (customLabel) {
-            labelName = customLabel.name;
+        // Choose label collection based on type
+        if (pred.type === "line") {
+            // Important: For lines, use the stored label_name directly
+            // This is already set correctly in finishLine
+            labelName = pred.label_name || "Messlinie";
+            console.log(`Using label name directly from pred.label_name: ${labelName}`);
+        } else {
+            // For area objects, look up in currentLabels
+            const customLabel = window.currentLabels ? 
+                window.currentLabels.find(l => l.id === pred.label) : null;
+            if (customLabel) {
+                labelName = customLabel.name;
+                console.log(`Found area label: ${labelName}`);
+            }
         }
         
         // Bestimme die Art der Messung (Fläche oder Länge)
-        let measurementValue = 'N/A';
+        let measurementValue = '';
         
         if (pred.type === "line") {
             // Bei Linien zeigen wir die Länge an
@@ -944,9 +960,6 @@ function updateResultsTable() {
             // Bei Flächen (Rechtecke, Polygone) zeigen wir die Fläche an
             measurementValue = pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
         }
-
-        // Sicherer Zugriff auf score-Wert
-        const scoreDisplay = pred.score !== undefined ? `${(pred.score * 100).toFixed(1)}%` : 'N/A';
         
         row.innerHTML = `
             <td>${index + 1}</td>
@@ -1335,9 +1348,20 @@ function updateResultsTable() {
         let labelName = pred.label_name || "Andere";
         
         // Suche in den benutzerdefinierten Labels nach einer passenden ID
-        const customLabel = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
-        if (customLabel) {
-            labelName = customLabel.name;
+        if (pred.type === "line") {
+            // Für Linien: Suche in den Linien-Labels
+            const lineLabel = window.currentLineLabels ? 
+                window.currentLineLabels.find(l => l.id === pred.label) : null;
+            if (lineLabel) {
+                labelName = lineLabel.name;
+            }
+        } else {
+            // Für Flächen: Suche in den Flächen-Labels
+            const customLabel = window.currentLabels ? 
+                window.currentLabels.find(l => l.id === pred.label) : null;
+            if (customLabel) {
+                labelName = customLabel.name;
+            }
         }
         
         // Bestimme die Art der Messung (Fläche oder Länge)

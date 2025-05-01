@@ -990,11 +990,14 @@ function finishLine() {
         window.currentLineLabels.find(l => l.id === selectedLineType) : null;
 
     // Use color from the selected line label
-    const lineColor = lineLabel && lineLabel.color ? lineLabel.color : "#FF9500"; // Default to orange if no color found
+    const lineColor = lineLabel && lineLabel.color ? lineLabel.color : "#FF9500";
 
-    // Use the line label for the new measurement
+    // Use the line label name instead of a generic name
+    const labelName = lineLabel ? lineLabel.name : "Messlinie";
+
+    // Create the new measurement with correct label name
     const newMeasurement = {
-        label: selectedLineType, // Use the line type as label
+        label: selectedLineType,
         score: 1.0,
         length: length,
         type: "line",
@@ -1002,8 +1005,8 @@ function finishLine() {
             all_points_x: all_points_x,
             all_points_y: all_points_y
         },
-        label_name: lineLabel ? lineLabel.name : "Messlinie",
-        color: lineColor  // Store the selected color
+        label_name: labelName,  // Use the correct line label name
+        color: lineColor
     };
     
     // Set the color based on the line label
