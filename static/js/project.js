@@ -296,6 +296,26 @@ export function loadProject(projectId) {
         const totalPdfPages = data.metadata.page_count;
         const allPdfPages = data.image_urls;
         
+        // Show PDF navigation if there are multiple pages
+        if (totalPdfPages > 1) {
+          const pdfNavigation = document.getElementById('pdfNavigation');
+          if (pdfNavigation) {
+            pdfNavigation.style.display = 'flex';
+            
+            // Update page display
+            const currentPageSpan = document.getElementById('currentPage');
+            const totalPagesSpan = document.getElementById('totalPages');
+            if (currentPageSpan) currentPageSpan.textContent = '1';
+            if (totalPagesSpan) totalPagesSpan.textContent = totalPdfPages;
+            
+            // Enable/disable navigation buttons
+            const prevPageBtn = document.getElementById('prevPageBtn');
+            const nextPageBtn = document.getElementById('nextPageBtn');
+            if (prevPageBtn) prevPageBtn.disabled = true; // First page
+            if (nextPageBtn) nextPageBtn.disabled = totalPdfPages <= 1;
+          }
+        }
+        
         // Debug output for first page data
         console.log("Data for page 1:", pdfPageData["1"]);
         console.log("Number of predictions:", pdfPageData["1"]?.predictions?.length);

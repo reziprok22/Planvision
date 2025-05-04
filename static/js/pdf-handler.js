@@ -118,6 +118,12 @@ export function processPdfData(responseData) {
     
     // Store current page data
     pdfPageData[currentPdfPage] = responseData;
+
+    console.log("PDF Navigation Debug:", {
+      totalPdfPages,
+      pdfSessionId,
+      anyPages: allPdfPages.length > 0
+    });
     
     // Show navigation if multiple pages
     if (totalPdfPages > 1 && pdfSessionId) {
@@ -410,6 +416,13 @@ export function resetPdfState() {
   pdfPageData = {};
   pageSettings = {};
   pdfNavigation.style.display = 'none';
+
+  // Add a check to ensure pdfNavigation exists before accessing its style
+  if (pdfNavigation) {
+    pdfNavigation.style.display = 'none';
+  } else {
+    console.warn('pdfNavigation element is undefined in resetPdfState');
+  }
 }
 
 /**
@@ -459,3 +472,8 @@ export function getPageSettings() {
 export function setPageSettings(settings) {
   pageSettings = settings;
 }
+
+// Make key functions available globally
+window.resetPdfState = resetPdfState;
+window.processPdfData = processPdfData;
+window.pdfPageData = pdfPageData;

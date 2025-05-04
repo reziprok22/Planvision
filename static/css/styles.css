@@ -308,7 +308,8 @@ tr:nth-child(even) {
     height: 30px;
     animation: spin 2s linear infinite;
     margin: 20px auto;
-    display: none;
+    display: none; /* Initially hidden */
+    z-index: 1000; /* Ensure it's above other elements */
 }
 
 @keyframes spin {
@@ -810,20 +811,21 @@ tr:nth-child(even) {
 
 /* Improve image container for zooming */
 #imageContainer {
-    overflow: auto !important; /* Changed from 'auto' to ensure scrollbars appear when needed */
     position: relative;
+    width: 100%;
     max-width: 100%;
+    overflow: auto; /* Force scrollbars when needed */
     margin-top: 10px;
     border: 1px solid #ddd;
     background: #f9f9f9;
     min-height: 300px;
-    display: flex;
-    justify-content: center;
 }
 
 #uploadedImage {
-    transform-origin: top left;
-    max-width: none; /* Allow image to grow beyond container when zoomed */
+    display: block;
+    max-width: none; /* Critical - prevents resizing with container */
+    width: auto;     /* Allow natural width */
+    height: auto;    /* Maintain aspect ratio */
 }
 
 #annotationOverlay {
@@ -832,7 +834,6 @@ tr:nth-child(even) {
     left: 0;
     pointer-events: none;
     z-index: 5;
-    transform-origin: top left;
 }
 
 /* Zoom control styles */

@@ -30,12 +30,15 @@ export function setupAnnotations(elements) {
  * @param {number} index - The index of the prediction
  */
 export function addAnnotation(prediction, index) {
-  // Skalierungsfaktor berechnen
+  console.log("Adding annotation:", index, prediction);
+  
+  // Calculate the scale factor
   const scale = uploadedImage.width / uploadedImage.naturalWidth;
+  console.log("Scale factor:", scale, "Image width:", uploadedImage.width, "Natural width:", uploadedImage.naturalWidth);
   
   const elementId = `annotation-${index}`;
   
-  // Klassen-Präfix basierend auf der Kategorie
+  // Class prefix based on category
   let classPrefix;
   let color;
   
@@ -43,11 +46,11 @@ export function addAnnotation(prediction, index) {
   const labels = window.currentLabels || currentLabels;
   const lineLabels = window.currentLineLabels || currentLineLabels;
   
-  // Suche das entsprechende Label
+  // Find the corresponding label
   const label = labels.find(l => l.id === prediction.label);
   
   if (label) {
-    // Verwende den Namen als Klassenpräfix und die definierte Farbe
+    // Use the name as class prefix and the defined color
     classPrefix = label.name.toLowerCase()
       .replace('ä', 'ae')
       .replace('ö', 'oe')
@@ -55,7 +58,7 @@ export function addAnnotation(prediction, index) {
       .replace(' ', '_');
     color = label.color;
   } else {
-    // Fallback für unbekannte Labels
+    // Fallback for unknown labels
     switch(prediction.label) {
       case 1: classPrefix = 'fenster'; color = 'blue'; break;
       case 2: classPrefix = 'tuer'; color = 'red'; break;
@@ -66,7 +69,7 @@ export function addAnnotation(prediction, index) {
     }
   }
   
-  // Label-Text vorbereiten, je nach Typ
+  // Prepare label text based on type
   let labelText;
   
   if (prediction.type === "line" && prediction.length !== undefined) {
@@ -82,7 +85,7 @@ export function addAnnotation(prediction, index) {
     }
   }
   
-  // Je nach Typ (Rechteck, Polygon, oder Linie) unterschiedlich behandeln
+  // Handle different types (rectangle, polygon, or line)
   if (prediction.type === "rectangle" || prediction.box || prediction.bbox) {
     addRectangleAnnotation(prediction, index, scale, classPrefix, color, labelText, elementId);
   } else if (prediction.type === "polygon" && prediction.polygon) {
@@ -351,13 +354,13 @@ export function adaptSvgOverlay() {
   const imageRect = uploadedImage.getBoundingClientRect();
   const containerRect = imageContainer.getBoundingClientRect();
   
-  // Calculate the current dimensions of the image, accounting for any scaling
-  const currentWidth = uploadedImage.width;
-  const currentHeight = uploadedImage.height;
+  // Use natural dimensions instead of current dimensions
+  const imageWidth = uploadedImage.naturalWidth;
+  const imageHeight = uploadedImage.naturalHeight;
   
   // SVG auf gleiche Größe wie das Bild setzen
-  annotationOverlay.setAttribute('width', currentWidth);
-  annotationOverlay.setAttribute('height', currentHeight);
+  annotationOverlay.setAttribute('width', imageWidth);
+  annotationOverlay.setAttribute('height', imageHeight);
   
   // Position exakt an Bild ausrichten
   const offsetX = imageRect.left - containerRect.left;
@@ -367,10 +370,10 @@ export function adaptSvgOverlay() {
   annotationOverlay.style.left = `${offsetX}px`;
   annotationOverlay.style.top = `${offsetY}px`;
   
-  // Wichtig: ViewBox setzen für bessere Skalierung
-  annotationOverlay.setAttribute('viewBox', `0 0 ${currentWidth} ${currentHeight}`);
-  annotationOverlay.style.width = `${currentWidth}px`;
-  annotationOverlay.style.height = `${currentHeight}px`;
+  // ViewBox setzen für bessere Skalierung
+  annotationOverlay.setAttribute('viewBox', `0 0 ${imageWidth} ${imageHeight}`);
+  annotationOverlay.style.width = `${imageWidth}px`;
+  annotationOverlay.style.height = `${imageHeight}px`;
   
   // After setting position and size, reposition all annotations
   repositionAllAnnotations();

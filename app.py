@@ -159,9 +159,13 @@ def predict():
                 plan_scale=plan_scale, 
                 threshold=threshold
             )
-            
+
             # debug
-            print(f"Vorhersage abgeschlossen: {len(boxes)} Objekte gefunden")
+            # print(f"Prediction results: {len(boxes)} objects found")
+            # print(f"Boxes: {boxes}")
+            # print(f"Labels: {labels}")
+            # print(f"Scores: {scores}")
+            # print(f"Vorhersage abgeschlossen: {len(boxes)} Objekte gefunden")
 
             results = []
             for box, label, score, area in zip(boxes, labels, scores, areas):
@@ -194,6 +198,9 @@ def predict():
                 })
                 # Debugging Ausgabe
                 print(f"Sende Antwort mit page_sizes: {pdf_info.get('page_sizes', [])}")
+
+            print(f"Final response data: {response_data}")
+            print(f"Predictions in response: {len(response_data['predictions'])}")
 
                 
             return jsonify(response_data)
