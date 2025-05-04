@@ -904,11 +904,7 @@ function updatePageNavigation() {
 
 // Funktion zum Löschen aller Anmerkungen ohne das Bild zu löschen
 function clearAnnotations() {
-    // Remove only labels from image container
-    const labels = imageContainer.querySelectorAll('.box-label');
-    labels.forEach(label => label.remove());
-    
-    // Clear all annotations from SVG
+    // Clear all SVG elements including labels
     while (annotationOverlay.firstChild) {
         annotationOverlay.removeChild(annotationOverlay.firstChild);
     }
@@ -1401,6 +1397,7 @@ function updateResultsTable() {
 }
 
 // Funktion zum Hervorheben einer Box beim Hovern
+// In the highlightBox function:
 function highlightBox(elementId, isHighlighted) {
     const element = document.getElementById(elementId);
     if (!element) return;
@@ -1412,11 +1409,21 @@ function highlightBox(elementId, isHighlighted) {
         // All elements use strokeWidth now
         element.style.strokeWidth = '3px';
         element.style.fillOpacity = '0.5';
-        labelElement.style.opacity = '1.0';
+        
+        // For SVG labels, adjust opacity
+        const labelRect = labelElement.querySelector('rect');
+        if (labelRect) {
+            labelRect.setAttribute('opacity', '1.0');
+        }
     } else {
         element.style.strokeWidth = '2px';
         element.style.fillOpacity = '0.1';
-        labelElement.style.opacity = '1.0';
+        
+        // For SVG labels, restore default opacity
+        const labelRect = labelElement.querySelector('rect');
+        if (labelRect) {
+            labelRect.setAttribute('opacity', '0.8');
+        }
     }
 }
 
@@ -1593,37 +1600,70 @@ function addAnnotation(prediction, index) {
 }
 
 // Funktion zum Hinzufügen eines Labels
+// Replace the current addLabel function with this
 function addLabel(x, y, text, parentId, classPrefix, color) {
-    const label = document.createElement('div');
-    label.className = `box-label ${classPrefix}-label`;
+    // Create an SVG text element instead of a div
+    const label = document.createElementNS("http://www.w3.org/2000/svg", "g");
     label.id = `label-${parentId}`;
-    label.textContent = text;
-    label.style.left = `${x}px`;
-    label.style.top = `${y}px`;
+    label.setAttribute("class", `svg-label ${classPrefix}-label`);
     
-    // Direkt die Farbe anwenden, wenn angegeben
+    // Create a background rectangle
+    const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    background.setAttribute("rx", "3"); // Rounded corners
+    background.setAttribute("ry", "3");
+    
+    // Set the background color
     if (color) {
-        label.style.backgroundColor = color;
+        background.setAttribute("fill", color);
+    } else {
+        // Default colors based on class prefix if no specific color
+        switch(classPrefix) {
+            case 'fenster': background.setAttribute("fill", "blue"); break;
+            case 'tuer': background.setAttribute("fill", "red"); break;
+            case 'wand': background.setAttribute("fill", "#d4d638"); break;
+            case 'lukarne': background.setAttribute("fill", "orange"); break;
+            case 'dach': background.setAttribute("fill", "purple"); break;
+            case 'line': background.setAttribute("fill", "#FF9500"); break;
+            default: background.setAttribute("fill", "gray");
+        }
     }
     
-    imageContainer.appendChild(label);
-
-    // In the addLabel function, add this at the end:
-    if (currentZoom !== 1.0) {
-        // Store original position if this is a new label
-        label.setAttribute('data-original-left', `${x}px`);
-        label.setAttribute('data-original-top', `${y}px`);
-        
-        // Apply current zoom to position
-        label.style.left = `${x * currentZoom}px`;
-        label.style.top = `${y * currentZoom}px`;
-        label.style.fontSize = `${12 / currentZoom}px`;
-        label.style.padding = `${2 / currentZoom}px ${5 / currentZoom}px`;
-    } else {
-        // Apply position normally
-        label.style.left = `${x}px`;
-        label.style.top = `${y}px`;
+    // Create the text element
+    const textElement = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    textElement.setAttribute("fill", "white");
+    textElement.setAttribute("font-size", "12");
+    textElement.setAttribute("x", "5"); // Padding within the background
+    textElement.setAttribute("y", "14"); // Text baseline position
+    
+    // Special color for labels that need darker text
+    if (classPrefix === 'wand') {
+        textElement.setAttribute("fill", "#333");
     }
+    
+    // Set the text content
+    textElement.textContent = text;
+    
+    // Add elements to the group
+    label.appendChild(background);
+    label.appendChild(textElement);
+    
+    // Position the group
+    label.setAttribute("transform", `translate(${x}, ${y - 20})`);
+    
+    // Calculate background width based on text width (approximate for SVG)
+    // We'll need to adjust this width after the text is added to the DOM
+    
+    // Add the label to the SVG overlay
+    annotationOverlay.appendChild(label);
+    
+    // Now that the text is in the DOM, we can get its actual width
+    const textWidth = textElement.getComputedTextLength();
+    
+    // Set the background width and height based on text dimensions
+    background.setAttribute("width", textWidth + 10); // Text width plus padding
+    background.setAttribute("height", "20");
+    
+    return label;
 }
 
 // Funktion zum Zurücksetzen der Ergebnisse
@@ -1841,12 +1881,32 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Function to update annotation positions after zooming
-// Replace updateAnnotationsForZoom function
 function updateAnnotationsForZoom() {
     console.log("Updating annotations for zoom level:", currentZoom);
     
-    // Labels are still HTML elements that need special handling
-    document.querySelectorAll('.box-label').forEach(label => {
+    // SVG elements don't need position updates
+    // because they'll be transformed with the parent SVG element
+    
+    // For SVG label text elements, we DON'T want to counteract the zoom
+    // Instead, let the text scale naturally with the zoom
+    document.querySelectorAll('g.svg-label').forEach(labelGroup => {
+        // Get the text and rectangle elements
+        const textElement = labelGroup.querySelector('text');
+        const rect = labelGroup.querySelector('rect');
+        
+        if (textElement && rect) {
+            // Calculate the width of the text at current zoom level
+            // We need to make sure the background rectangle scales appropriately
+            const textWidth = textElement.getComputedTextLength();
+            
+            // Update the rectangle width to match the text
+            rect.setAttribute('width', textWidth + 10);
+        }
+    });
+    
+    // If there are still any old HTML/DOM labels (during transition period),
+    // we handle them the old way but WITHOUT inverse scaling
+    document.querySelectorAll('.box-label:not(.svg-label)').forEach(label => {
         // Store original values if not already stored
         if (!label.hasAttribute('data-original-left')) {
             label.setAttribute('data-original-left', label.style.left.replace('px', ''));
@@ -1865,25 +1925,12 @@ function updateAnnotationsForZoom() {
         label.style.left = `${newLeft}px`;
         label.style.top = `${newTop}px`;
         
-        // Scale font size inversely with zoom to maintain readable text
-        label.style.fontSize = `${12 / currentZoom}px`;
-        label.style.padding = `${2 / currentZoom}px ${5 / currentZoom}px`;
+        // Remove any previous font size and padding adjustments
+        // so the text can scale naturally with zoom
+        label.style.removeProperty('font-size');
+        label.style.removeProperty('padding');
     });
-    
-    // SVG elements don't need updates because they'll be transformed with the SVG
 }
-    
-    // Update labels similarly
-    document.querySelectorAll('.box-label').forEach(label => {
-        const originalLeft = parseFloat(label.getAttribute('data-original-left') || label.style.left);
-        const originalTop = parseFloat(label.getAttribute('data-original-top') || label.style.top);
-        
-        // Store original values if not already stored
-        if (!label.hasAttribute('data-original-left')) {
-            label.setAttribute('data-original-left', originalLeft);
-            label.setAttribute('data-original-top', originalTop);
-        }
-    });
 
 
 // Function to display current zoom level
@@ -2110,41 +2157,48 @@ function repositionAllAnnotations() {
     });
 
     // 3. Alle Labels neu positionieren
-    document.querySelectorAll('.box-label').forEach(label => {
+    document.querySelectorAll('g.svg-label').forEach(label => {
         const id = label.id.replace('label-', '');
         const index = parseInt(id.split('-')[1]);
+        
         if (window.data && window.data.predictions && window.data.predictions[index]) {
-            const pred = window.data.predictions[index];  
+            const pred = window.data.predictions[index];
+            
+            // Get the current transform to extract the translation components
+            const transform = label.getAttribute('transform');
             
             if (pred.box || pred.bbox) {
-                // Update position logic for rectangle labels
+                // For rectangle labels
                 const [x1, y1] = pred.box || pred.bbox;
-                label.style.left = `${x1 * scaleX + offsetX}px`;
-                label.style.top = `${(y1 * scaleY + offsetY) - 20}px`;
+                const newX = x1 * scaleX;
+                const newY = y1 * scaleY - 20; // Adjust for label height
+                
+                label.setAttribute("transform", `translate(${newX}, ${newY})`);
             } 
             else if (pred.polygon && pred.polygon.all_points_x && pred.polygon.all_points_y) {
-                // Für Polygon-Labels - Berechne Schwerpunkt
+                // For polygon labels - calculate centroid
                 const { all_points_x, all_points_y } = pred.polygon;
                 let centerX = 0, centerY = 0;
+                
                 for (let i = 0; i < all_points_x.length; i++) {
                     centerX += all_points_x[i];
                     centerY += all_points_y[i];
                 }
-                centerX = (centerX / all_points_x.length) * scaleX + offsetX;
-                centerY = (centerY / all_points_y.length) * scaleY + offsetY;
                 
-                label.style.left = `${centerX - label.offsetWidth/2}px`;
-                label.style.top = `${centerY - 20}px`;
-            } 
+                centerX = (centerX / all_points_x.length) * scaleX;
+                centerY = (centerY / all_points_y.length) * scaleY - 20;
+                
+                label.setAttribute("transform", `translate(${centerX}, ${centerY})`);
+            }
             else if (pred.type === "line" && pred.line) {
-                // Für Linien-Labels - nehme den letzten Punkt
+                // For line labels - position at the end point
                 const { all_points_x, all_points_y } = pred.line;
+                
                 if (all_points_x && all_points_y && all_points_x.length > 0) {
-                    const lastX = all_points_x[all_points_x.length - 1];
-                    const lastY = all_points_y[all_points_y.length - 1];
+                    const lastX = all_points_x[all_points_x.length - 1] * scaleX;
+                    const lastY = all_points_y[all_points_y.length - 1] * scaleY - 5;
                     
-                    label.style.left = `${(lastX * scaleX + offsetX) + 5}px`;
-                    label.style.top = `${(lastY * scaleY + offsetY) - 5}px`;
+                    label.setAttribute("transform", `translate(${lastX + 5}, ${lastY})`);
                 }
             }
         }

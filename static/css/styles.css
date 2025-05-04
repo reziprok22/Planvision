@@ -256,6 +256,15 @@ button:hover {
     pointer-events: none;
 }
 
+.svg-label {
+    pointer-events: none;
+}
+
+.svg-label rect {
+    opacity: 0.8;
+}
+
+
 /* Tabellenstile */
 table {
     width: 100%;
