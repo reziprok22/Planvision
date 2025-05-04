@@ -395,6 +395,25 @@ tr:nth-child(even) {
 }
 
 /* Editor-Bereich */
+.editor-canvas-container {
+    position: relative;
+    transform-origin: top left;
+    margin-top: 15px;
+    border: 1px solid #ddd;
+    background-color: #fff;
+  }
+  
+  #editorCanvas {
+    display: block;
+    max-width: none;
+    transform-origin: top left;
+  }
+  
+  .editor-section {
+    overflow: auto;
+    max-height: 80vh;
+  }
+
 .editor-section {
     position: relative;
 }
@@ -437,11 +456,6 @@ tr:nth-child(even) {
     flex: 0 0 120px;
 }
 
-#editorCanvas {
-    max-width: 100%;
-    border: 1px solid #ddd;
-    background: #f9f9f9;
-}
 
 /* Responsives Design */
 @media (max-width: 992px) {
@@ -819,6 +833,8 @@ tr:nth-child(even) {
     border: 1px solid #ddd;
     background: #f9f9f9;
     min-height: 300px;
+    display: block;
+    padding: 0;
 }
 
 #uploadedImage {

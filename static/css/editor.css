@@ -42,8 +42,11 @@
 }
 
 #editorCanvas {
+    max-width: none /* Remove max-width restriction */
+    transform-origin: top left;
     display: none;
-    max-width: 100%;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
 }
 
 /* Editor-Buttons */

@@ -184,8 +184,7 @@
             <div class="results-section" id="resultsSection" style="display: none;">
                 <div class="results-header">
                     <h2>Erkennungsergebnisse</h2>
-                    <button id="editorToggle" class="editor-toggle" onclick="window.initEditor.toggleEditor()">Editor einschalten</button>
-                </div>
+                    <button id="editorToggle" class="editor-toggle">Editor einschalten</button>                </div>
                 
                 <div class="annotation-controls">
                     <button class="toggle-button active" id="toggleFenster">Fenster</button>
@@ -196,6 +195,7 @@
                     <div class="zoom-control">
                         <button id="resetZoomBtn" class="toggle-button" title="Zoom">100%</button>
                         <div class="zoom-dropdown">
+                          <button class="zoom-option" data-zoom="0.25">25%</button>
                           <button class="zoom-option" data-zoom="0.5">50%</button>
                           <button class="zoom-option" data-zoom="0.75">75%</button>
                           <button class="zoom-option" data-zoom="1.0">100%</button>
@@ -203,6 +203,9 @@
                           <button class="zoom-option" data-zoom="1.5">150%</button>
                           <button class="zoom-option" data-zoom="2.0">200%</button>
                           <button class="zoom-option" data-zoom="3.0">300%</button>
+                          <button class="zoom-option" data-zoom="4.0">500%</button>
+                          <button class="zoom-option" data-zoom="5.0">500%</button>
+                          <button class="zoom-option" data-zoom="6.0">600%</button>
                         </div>
                       </div>                 
                 </div>
@@ -276,8 +279,9 @@
                         <button id="cancelEditBtn" class="cancel-button">Abbrechen</button>
                     </div>
                 </div>
-                <canvas id="editorCanvas" style="display: none;"></canvas>
-            </div>
+                <div class="editor-canvas-container">
+                    <canvas id="editorCanvas" style="display: none;"></canvas>
+                </div>
         </div>
     </div>
     

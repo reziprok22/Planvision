@@ -5,9 +5,9 @@
 
 // Global variables for zoom functionality (dann braucht es let oder const nicht)
 window.currentZoom = 1.0;
-window.minZoom = 0.1;
-window.maxZoom = 3.0;
-window.zoomStep = 0.2; // Changed from 0.1 to 0.2 for larger zoom steps (20% instead of 10%)
+window.minZoom = 0.25;
+window.maxZoom = 6.0;
+window.zoomStep = 0.25;
 
 // DOM references - will be initialized when setupZoom is called
 let imageContainer;
@@ -162,9 +162,19 @@ export function handleZoom(event) {
   
   // Update all bounding boxes and labels
   updateAnnotationsForZoom();
+
+  // Update the zoom button text
+  if (resetZoomBtn) {
+    resetZoomBtn.textContent = `${Math.round(window.currentZoom * 100)}%`;
+  }
   
   // Display current zoom level
   showZoomLevel();
+
+  // Notify editor of zoom change if it exists
+  if (typeof window.syncEditorZoom === 'function') {
+    window.syncEditorZoom(window.currentZoom);
+  }
 }
 
 /**
@@ -352,6 +362,13 @@ export function enhanceAdaptSvgOverlay(originalAdaptSvgOverlay) {
   };
 }
 
+
+
+// Make zoom functions globally accessible
+window.setZoomLevel = setZoomLevel;
+window.resetZoom = resetZoom;
+window.getCurrentZoom = getCurrentZoom;
+
 /**
  * Get the current zoom level
  * @returns {number} The current zoom level
@@ -359,8 +376,9 @@ export function enhanceAdaptSvgOverlay(originalAdaptSvgOverlay) {
 export function getCurrentZoom() {
   return window.currentZoom;
 }
-
-// Make zoom functions globally accessible
-window.setZoomLevel = setZoomLevel;
-window.resetZoom = resetZoom;
-window.getCurrentZoom = getCurrentZoom;
+ 
+  // Notify editor of zoom change if editor is active
+  if (typeof window.syncEditorZoom === 'function') {
+    console.log("Notifying editor of zoom change:", window.currentZoom);
+    window.syncEditorZoom(window.currentZoom);
+  }

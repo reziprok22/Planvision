@@ -16,6 +16,11 @@ let isDrawingPolygon = false;
 let currentLine = null;
 let linePoints = [];
 let isDrawingLine = false;
+let lastKnownZoom = 1.0;
+
+window.isEditorActive = false;
+
+
 
 // Hauptelemente für Editor-Zugriff
 let uploadedImage, imageContainer, annotationOverlay, resultsSection;
@@ -53,6 +58,14 @@ function initEditor(elements) {
     objectTypeSelect = document.getElementById('objectTypeSelect');
     addLineBtn = document.getElementById('addLineBtn');
 
+    // Anstatt onclick="window.initEditor.toggleEditor() im index.html
+    if (editorToggle) {
+        // Remove any existing event listeners first
+        editorToggle.removeEventListener('click', toggleEditor);
+        // Add the click event listener
+        editorToggle.addEventListener('click', toggleEditor);
+        console.log("Editor-Toggle-Event-Listener hinzugefügt");
+    }
     
     // Überprüfen, ob alle Editor-Elemente vorhanden sind
     console.log("Editor-Elemente geladen:", {
@@ -122,16 +135,25 @@ function initEditor(elements) {
 }
 
 // Funktion zum Ein-/Ausschalten des Editors
-// Funktion zum Ein-/Ausschalten des Editors
 function toggleEditor() {
     console.log("Toggle-Editor aufgerufen, aktueller Status:", isEditorActive);
     isEditorActive = !isEditorActive;
+    window.isEditorActive = isEditorActive; // Update the global variable
     
     if (isEditorActive) {
         // Editor aktivieren
         editorToggle.textContent = 'Editor ausschalten';
         editorToggle.classList.add('active');
         editorSection.style.display = 'block';
+
+        // Ensure editor section has scroll capabilities
+        editorSection.style.overflow = 'auto';
+
+        // Zoom
+        initializeZoomAwareCanvas();
+
+        // Sync with current zoom level
+        syncWithCurrentZoom();
         
         // Aktuelle Ergebnisse sichern
         if (window.data && window.data.predictions) {
@@ -182,11 +204,25 @@ function toggleEditor() {
 
 // Editor initialisieren
 function initializeEditor(image) {
-    console.log("Editor initialisieren mit Bild:", image.width, "x", image.height);
+    console.log("Editor initialisieren mit Bild:", image.width, "x", image.height);   
+    console.log("Current zoom when initializing editor:", lastKnownZoom);
     
     // Bildgröße anpassen
     editorCanvas.width = image.width;
     editorCanvas.height = image.height;
+    // editorCanvas.width = image.naturalWidth; // Originalgrösse
+    // editorCanvas.height = image.naturalHeight; // Originalgrösse
+
+    // Get current zoom level from window object
+    lastKnownZoom = (typeof window.getCurrentZoom === 'function') ? 
+    window.getCurrentZoom() : 1.0;
+
+    // Apply zoom to the editor
+    applyZoomToEditor();
+
+    // Apply zoom transformation
+    // editorCanvas.style.transform = `scale(${lastKnownZoom})`;
+    // editorCanvas.style.transformOrigin = 'top left';
     
     // Context abrufen
     ctx = editorCanvas.getContext('2d');
@@ -627,30 +663,85 @@ function drawAllBoxes() {
     }
 }
 
+// Zoom-Funktion im Editor
+function applyZoomToEditor() {
+    // Get current zoom level
+    const currentZoom = (typeof window.getCurrentZoom === 'function') ? 
+      window.getCurrentZoom() : 1.0;
+    
+    console.log("Applying zoom to editor:", currentZoom);
+    
+    // Apply zoom to canvas container instead of the canvas itself
+    const canvasContainer = editorSection.querySelector('.editor-canvas-container') || editorSection;
+    
+    if (canvasContainer) {
+      // Set scale transform on the container
+      canvasContainer.style.transform = `scale(${currentZoom})`;
+      canvasContainer.style.transformOrigin = 'top left';
+      canvasContainer.style.width = `${100/currentZoom}%`;
+      canvasContainer.style.height = 'auto';
+    }
+    
+    // Adjust editor section overflow
+    editorSection.style.overflow = 'auto';
+    
+    // Store current zoom for future reference
+    lastKnownZoom = currentZoom;
+  }
+  
+  // Update the syncWithCurrentZoom function
+  function syncWithCurrentZoom() {
+    applyZoomToEditor();
+    redrawCanvas(); // Redraw with current zoom
+  }
+  
+  // Update the global syncEditorZoom function
+  window.syncEditorZoom = function(zoom) {
+    lastKnownZoom = zoom;
+    if (isEditorActive) {
+      applyZoomToEditor();
+      redrawCanvas();
+    }
+  };
+
+// Helper function to get corrected mouse coordinates
+function getZoomAdjustedCoordinates(event) {
+    const rect = editorCanvas.getBoundingClientRect();
+    const zoom = lastKnownZoom;
+    
+    // Calculate coordinates accounting for zoom
+    const x = (event.clientX - rect.left) / zoom;
+    const y = (event.clientY - rect.top) / zoom;
+    
+    return { x, y };
+  }
+
+
 // Mouse-Down-Handler
 function handleMouseDown(event) {
     if (currentMode !== 'add') return;
     
-    const rect = editorCanvas.getBoundingClientRect();
-    startX = event.clientX - rect.left;
-    startY = event.clientY - rect.top;
-    
-    console.log("Mouse down bei:", startX, startY);
+    const { x, y } = getZoomAdjustedCoordinates(event);
+    startX = x;
+    startY = y;
     
     // Neue Box initialisieren
     newBox = {
-        x: startX,
-        y: startY,
-        width: 0,
-        height: 0
+      x: startX,
+      y: startY,
+      width: 0,
+      height: 0
     };
-}
+  }
 
 // Mouse-Move-Handler
 function handleMouseMove(event) {
     const rect = editorCanvas.getBoundingClientRect();
-    const currentX = event.clientX - rect.left;
-    const currentY = event.clientY - rect.top;
+    const zoom = (typeof window.getCurrentZoom === 'function') ? 
+        window.getCurrentZoom() : lastKnownZoom;
+    
+    const currentX = (event.clientX - rect.left) / zoom;
+    const currentY = (event.clientY - rect.top) / zoom;
     
     if (currentMode === 'add' && newBox) {
         // Box-Dimensionen aktualisieren
@@ -686,8 +777,11 @@ function handleMouseUp(event) {
     
     // Finale Box-Dimensionen
     const rect = editorCanvas.getBoundingClientRect();
-    const endX = event.clientX - rect.left;
-    const endY = event.clientY - rect.top;
+    const zoom = (typeof window.getCurrentZoom === 'function') ? 
+        window.getCurrentZoom() : lastKnownZoom;
+    
+    const endX = (event.clientX - rect.left) / zoom;
+    const endY = (event.clientY - rect.top) / zoom;
     
     console.log("Mouse up bei:", endX, endY);
     
@@ -751,10 +845,16 @@ function handleMouseUp(event) {
 
 // Click-Handler
 function handleClick(event) {
-    const rect = editorCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    if (currentMode !== 'add' || !newBox) return;
     
+    // Finale Box-Dimensionen
+    const rect = editorCanvas.getBoundingClientRect();
+    const zoom = (typeof window.getCurrentZoom === 'function') ? 
+        window.getCurrentZoom() : lastKnownZoom;
+
+    const x = (event.clientX - rect.left) / zoom;
+    const y = (event.clientY - rect.top) / zoom;
+  
     console.log("Klick bei:", x, y, "im Modus:", currentMode);
     
     if (currentMode === 'addPolygon') {
@@ -821,8 +921,13 @@ function handleClick(event) {
 // Funktion für Doppelklick
 function handleDoubleClick(event) {
     const rect = editorCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const zoom = (typeof window.getCurrentZoom === 'function') ? 
+        window.getCurrentZoom() : lastKnownZoom;
+    
+    const x = (event.clientX - rect.left) / zoom;
+    const y = (event.clientY - rect.top) / zoom;
+    
+    console.log("Doppelklick bei:", x, y, "im Modus:", currentMode);
     
     if (currentMode === 'addLine' && isDrawingLine && linePoints.length >= 2) {
         // Linie abschließen
@@ -837,6 +942,36 @@ function handleDoubleClick(event) {
             // Canvas neu zeichnen
             redrawCanvas();
         }
+    }
+}
+
+// Add a function to sync the editor with current zoom level
+function syncWithCurrentZoom() {
+    const currentZoom = (typeof window.getCurrentZoom === 'function') ? 
+        window.getCurrentZoom() : 1.0;
+    
+    if (lastKnownZoom !== currentZoom) {
+        lastKnownZoom = currentZoom;
+        
+        if (editorCanvas) {
+            editorCanvas.style.transform = `scale(${currentZoom})`;
+            editorCanvas.style.transformOrigin = 'top left';
+        }
+    }
+}
+
+// Initialize the zoom-aware canvas behavior
+function initializeZoomAwareCanvas() {
+    // Make sure editor canvas respects current zoom
+    if (editorCanvas) {
+        const currentZoom = (typeof window.getCurrentZoom === 'function') ? 
+            window.getCurrentZoom() : 1.0;
+        
+        editorCanvas.style.transform = `scale(${currentZoom})`;
+        editorCanvas.style.transformOrigin = 'top left';
+        lastKnownZoom = currentZoom;
+        
+        console.log("Editor canvas initialized with zoom:", currentZoom);
     }
 }
 
@@ -1258,6 +1393,15 @@ function updateEditorResults() {
         window.dispatchEvent(new Event('resize'));
     }, 200);
 }
+
+// Make syncWithCurrentZoom accessible globally
+window.syncEditorZoom = function(zoom) {
+    lastKnownZoom = zoom;
+    if (isEditorActive && editorCanvas) {
+        editorCanvas.style.transform = `scale(${zoom})`;
+        editorCanvas.style.transformOrigin = 'top left';
+    }
+};
 
 // Exportiere die Editor-Initialisierungsfunktion
 window.initEditor = initEditor;
