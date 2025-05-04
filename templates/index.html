@@ -283,21 +283,14 @@
     
     <!-- Editor muss vor Main geladen werden, da mein eine func vom editor aufruft -->
     <script src="static/js/editor.js"></script>
-    <script src="static/js/main.js"></script>
-    <script>
-        // save und load-Button
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("DOM geladen, initialisiere Projekt-Buttons");
-            
-            // Event-Listener für Speichern entfernen, da diese in main.js bereits definiert sind
-            // Event-Listener für Laden entfernen, da diese in main.js bereits definiert sind
-            
-            // Stattdessen eine Prüfung, ob die Hauptfunktionen verfügbar sind
-            console.log("Prüfe, ob main.js Funktionen verfügbar sind:", {
-                saveProject: typeof window.saveProject === 'function',
-                loadProjectList: typeof window.loadProjectList === 'function'
-            });
-        });
+    
+    <!-- ES6 Modules -->
+    <script type="module" src="static/js/zoom.js"></script>
+    <script type="module" src="static/js/annotations.js"></script>
+    <script type="module" src="static/js/pdf-handler.js"></script>
+    <script type="module" src="static/js/project.js"></script>
+    <script type="module" src="static/js/labels.js"></script>
+    <script type="module" src="static/js/main.js"></script>
     </script>
 </body>
 </html>

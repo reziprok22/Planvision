@@ -11,6 +11,7 @@ static/uploads
 static/temp
 static/reports
 projects
+static/js/mainone_file.js
 
 # Einzelne Datei ignorieren
 Notizen_FL.txt
