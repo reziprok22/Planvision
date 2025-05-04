@@ -415,7 +415,6 @@ export function resetPdfState() {
   allPdfPages = [];
   pdfPageData = {};
   pageSettings = {};
-  pdfNavigation.style.display = 'none';
 
   // Add a check to ensure pdfNavigation exists before accessing its style
   if (pdfNavigation) {

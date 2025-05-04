@@ -3,11 +3,11 @@
  * Part of the Fenster-Erkennungstool project
  */
 
-// Private variables
-let currentZoom = 1.0;
-const minZoom = 0.1;
-const maxZoom = 10.0;
-const zoomStep = 0.1;
+// Global variables for zoom functionality (dann braucht es let oder const nicht)
+window.currentZoom = 1.0;
+window.minZoom = 0.1;
+window.maxZoom = 3.0;
+window.zoomStep = 0.2; // Changed from 0.1 to 0.2 for larger zoom steps (20% instead of 10%)
 
 // DOM references - will be initialized when setupZoom is called
 let imageContainer;
@@ -20,12 +20,25 @@ let resetZoomBtn;
  * @param {Object} elements - Object containing DOM references
  */
 export function setupZoom(elements) {
+  console.log("Setting up zoom module");
+  
+  // Store DOM references
   imageContainer = elements.imageContainer;
   uploadedImage = elements.uploadedImage;
   annotationOverlay = elements.annotationOverlay;
   resetZoomBtn = elements.resetZoomBtn;
   
-  // Set up event listeners
+  // Validate required elements
+  if (!imageContainer || !uploadedImage || !annotationOverlay) {
+    console.warn("Missing required elements for zoom functionality:", {
+      imageContainer: !!imageContainer,
+      uploadedImage: !!uploadedImage,
+      annotationOverlay: !!annotationOverlay
+    });
+    return;
+  }
+  
+  // Set up event listeners after DOM elements are stored
   setupZoomEventListeners();
   
   // Add double-click event listener to reset zoom
@@ -41,9 +54,12 @@ export function setupZoom(elements) {
   
   // Set up zoom option buttons
   document.querySelectorAll('.zoom-option').forEach(option => {
-    option.addEventListener('click', function() {
+    option.addEventListener('click', function(e) {
+      console.log("Zoom option clicked:", this.dataset.zoom);
       const zoomLevel = parseFloat(this.dataset.zoom);
       setZoomLevel(zoomLevel);
+      // Prevent the click from bubbling up
+      e.stopPropagation();
     });
   });
   
@@ -54,7 +70,7 @@ export function setupZoom(elements) {
     });
   }
   
-  console.log('Zoom module initialized');
+  console.log('Zoom module initialized successfully');
 }
 
 /**
@@ -63,12 +79,26 @@ export function setupZoom(elements) {
 export function setupZoomEventListeners() {
   console.log("Setting up zoom event listeners");
   
+  // Check if imageContainer exists before using it
+  if (!imageContainer) {
+    console.warn("imageContainer not initialized yet, cannot set up zoom event listeners");
+    return;
+  }
+  
   // Remove existing listeners first to avoid duplicates
-  imageContainer.removeEventListener('wheel', handleZoom);
+  try {
+    imageContainer.removeEventListener('wheel', handleZoom);
+  } catch (error) {
+    console.warn("Error removing wheel event listener:", error);
+  }
   
   // Add the wheel event listener with the correct options
-  imageContainer.addEventListener('wheel', handleZoom, { passive: false });
-  console.log("Wheel event listener added to imageContainer");
+  try {
+    imageContainer.addEventListener('wheel', handleZoom, { passive: false });
+    console.log("Wheel event listener added to imageContainer");
+  } catch (error) {
+    console.error("Error adding wheel event listener:", error);
+  }
 }
 
 /**
@@ -99,27 +129,27 @@ export function handleZoom(event) {
   const delta = event.deltaY || event.detail || event.wheelDelta;
   const zoomIn = delta < 0;
   
-  // Calculate new zoom level
-  let newZoom = currentZoom;
+  // Calculate new zoom level using global zoomStep
+  let newZoom = window.currentZoom;
   if (zoomIn) {
-    newZoom = Math.min(currentZoom + zoomStep, maxZoom);
+    newZoom = Math.min(window.currentZoom + window.zoomStep, window.maxZoom);
   } else {
-    newZoom = Math.max(currentZoom - zoomStep, minZoom);
+    newZoom = Math.max(window.currentZoom - window.zoomStep, window.minZoom);
   }
   
   // Only proceed if zoom level changed
-  if (newZoom === currentZoom) return;
+  if (newZoom === window.currentZoom) return;
   
   // Calculate the scale ratio
-  const ratio = newZoom / currentZoom;
-  currentZoom = newZoom;
+  const ratio = newZoom / window.currentZoom;
+  window.currentZoom = newZoom;
   
   // Apply zoom to the image and SVG overlay
-  uploadedImage.style.transform = `scale(${currentZoom})`;
+  uploadedImage.style.transform = `scale(${window.currentZoom})`;
   uploadedImage.style.transformOrigin = 'top left';
   
   // Also apply the same transform to the SVG overlay
-  annotationOverlay.style.transform = `scale(${currentZoom})`;
+  annotationOverlay.style.transform = `scale(${window.currentZoom})`;
   annotationOverlay.style.transformOrigin = 'top left';
   
   // Calculate new scroll position to keep the mouse point fixed
@@ -142,9 +172,11 @@ export function handleZoom(event) {
  * @param {number} level - The zoom level to set
  */
 export function setZoomLevel(level) {
+  console.log(`Setting zoom level to ${level}`);
+  
   // Store old zoom for ratio calculation
-  const oldZoom = currentZoom;
-  currentZoom = level;
+  const oldZoom = window.currentZoom;
+  window.currentZoom = level;
   
   // Get the center of the viewport
   const containerRect = imageContainer.getBoundingClientRect();
@@ -160,14 +192,14 @@ export function setZoomLevel(level) {
   const centerYInContent = centerY + scrollTop;
   
   // Apply zoom to the image and SVG overlay
-  uploadedImage.style.transform = `scale(${currentZoom})`;
+  uploadedImage.style.transform = `scale(${window.currentZoom})`;
   uploadedImage.style.transformOrigin = 'top left';
   
-  annotationOverlay.style.transform = `scale(${currentZoom})`;
+  annotationOverlay.style.transform = `scale(${window.currentZoom})`;
   annotationOverlay.style.transformOrigin = 'top left';
   
   // Calculate the scale ratio
-  const ratio = currentZoom / oldZoom;
+  const ratio = window.currentZoom / oldZoom;
   
   // Calculate new scroll position to keep the center point fixed
   const newScrollLeft = centerXInContent * ratio - centerX;
@@ -182,7 +214,7 @@ export function setZoomLevel(level) {
   
   // Update the zoom button text
   if (resetZoomBtn) {
-    resetZoomBtn.textContent = `${Math.round(currentZoom * 100)}%`;
+    resetZoomBtn.textContent = `${Math.round(window.currentZoom * 100)}%`;
   }
   
   // Display current zoom level
@@ -193,9 +225,9 @@ export function setZoomLevel(level) {
  * Reset zoom to 100%
  */
 export function resetZoom() {
-  console.log("Resetting zoom from:", currentZoom, "to 1.0");
+  console.log("Resetting zoom from:", window.currentZoom, "to 1.0");
 
-  currentZoom = 1.0;
+  window.currentZoom = 1.0;
   uploadedImage.style.transform = '';
   annotationOverlay.style.transform = '';
   
@@ -216,7 +248,7 @@ export function resetZoom() {
  * Update annotation positions after zooming
  */
 export function updateAnnotationsForZoom() {
-  console.log("Updating annotations for zoom level:", currentZoom);
+  console.log("Updating annotations for zoom level:", window.currentZoom);
   
   // SVG elements don't need position updates
   // because they'll be transformed with the parent SVG element
@@ -252,8 +284,8 @@ export function updateAnnotationsForZoom() {
     const originalTop = parseFloat(label.getAttribute('data-original-top'));
     
     // Scale positions with current zoom level
-    const newLeft = originalLeft * currentZoom;
-    const newTop = originalTop * currentZoom;
+    const newLeft = originalLeft * window.currentZoom;
+    const newTop = originalTop * window.currentZoom;
     
     // Apply the new positions
     label.style.left = `${newLeft}px`;
@@ -290,7 +322,7 @@ export function showZoomLevel() {
   }
   
   // Update the text
-  zoomIndicator.textContent = `Zoom: ${Math.round(currentZoom * 100)}%`;
+  zoomIndicator.textContent = `Zoom: ${Math.round(window.currentZoom * 100)}%`;
   zoomIndicator.style.opacity = '1';
   
   // Hide the indicator after a delay
@@ -310,11 +342,11 @@ export function enhanceAdaptSvgOverlay(originalAdaptSvgOverlay) {
     originalAdaptSvgOverlay();
     
     // Then apply current zoom if not at 1.0
-    if (currentZoom !== 1.0) {
-      uploadedImage.style.transform = `scale(${currentZoom})`;
+    if (window.currentZoom !== 1.0) {
+      uploadedImage.style.transform = `scale(${window.currentZoom})`;
       uploadedImage.style.transformOrigin = 'top left';
       
-      annotationOverlay.style.transform = `scale(${currentZoom})`;
+      annotationOverlay.style.transform = `scale(${window.currentZoom})`;
       annotationOverlay.style.transformOrigin = 'top left';
     }
   };
@@ -325,5 +357,10 @@ export function enhanceAdaptSvgOverlay(originalAdaptSvgOverlay) {
  * @returns {number} The current zoom level
  */
 export function getCurrentZoom() {
-  return currentZoom;
+  return window.currentZoom;
 }
+
+// Make zoom functions globally accessible
+window.setZoomLevel = setZoomLevel;
+window.resetZoom = resetZoom;
+window.getCurrentZoom = getCurrentZoom;
