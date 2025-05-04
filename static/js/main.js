@@ -904,11 +904,11 @@ function updatePageNavigation() {
 
 // Funktion zum Löschen aller Anmerkungen ohne das Bild zu löschen
 function clearAnnotations() {
-    // Alle Annotationen entfernen
-    const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
-    boxes.forEach(box => box.remove());
+    // Remove only labels from image container
+    const labels = imageContainer.querySelectorAll('.box-label');
+    labels.forEach(label => label.remove());
     
-    // SVG leeren
+    // Clear all annotations from SVG
     while (annotationOverlay.firstChild) {
         annotationOverlay.removeChild(annotationOverlay.firstChild);
     }
@@ -1166,6 +1166,9 @@ function displayResults(responseData) {
         // Alte Annotationen entfernen. Ist um bestehende Boxen beim Navigieren zu neuen Plan zu entfernen.
         const boxes = imageContainer.querySelectorAll('.bounding-box, .box-label');
         boxes.forEach(box => box.remove());
+
+        // Clear annotations
+        clearAnnotations();
         
         // SVG leeren
         while (annotationOverlay.firstChild) {
@@ -1406,22 +1409,13 @@ function highlightBox(elementId, isHighlighted) {
     if (!labelElement) return;
     
     if (isHighlighted) {
-        if (element.classList.contains('bounding-box')) {
-            element.style.borderWidth = '4px';
-            element.style.opacity = '1.0';
-        } else { // Polygone
-            element.style.strokeWidth = '3px';
-            element.style.fillOpacity = '0.5';
-        }
+        // All elements use strokeWidth now
+        element.style.strokeWidth = '3px';
+        element.style.fillOpacity = '0.5';
         labelElement.style.opacity = '1.0';
     } else {
-        if (element.classList.contains('bounding-box')) {
-            element.style.borderWidth = '2px';
-            element.style.opacity = '0.8';
-        } else {
-            element.style.strokeWidth = '2px';
-            element.style.fillOpacity = '0.1';
-        }
+        element.style.strokeWidth = '2px';
+        element.style.fillOpacity = '0.1';
         labelElement.style.opacity = '1.0';
     }
 }
@@ -1487,24 +1481,25 @@ function addAnnotation(prediction, index) {
         const scaledWidth = (x2 - x1) * scale;
         const scaledHeight = (y2 - y1) * scale;
         
-        // Box hinzufügen
-        const box = document.createElement('div');
-        box.className = `bounding-box ${classPrefix}-box`;
-        box.id = elementId;
-        box.style.left = `${scaledX1}px`;
-        box.style.top = `${scaledY1}px`;
-        box.style.width = `${scaledWidth}px`;
-        box.style.height = `${scaledHeight}px`;
+        // Create SVG rectangle instead of div
+        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        rect.setAttribute("x", scaledX1);
+        rect.setAttribute("y", scaledY1);
+        rect.setAttribute("width", scaledWidth);
+        rect.setAttribute("height", scaledHeight);
+        rect.setAttribute("class", `rect-annotation ${classPrefix}-annotation`);
+        rect.id = elementId;
         
-        // Hier direkt die Farbe anwenden, anstatt auf CSS-Klassen zu vertrauen
+        // Apply color directly
         if (label && label.color) {
-            box.style.borderColor = label.color;
-            box.style.backgroundColor = `${label.color}20`; // Mit 20% Opacity
+            rect.style.fill = `${label.color}20`; // 20% opacity
+            rect.style.stroke = label.color;
         }
         
-        imageContainer.appendChild(box);
+        // Add to SVG overlay instead of image container
+        annotationOverlay.appendChild(rect);
         
-        // Label hinzufügen mit Farbe
+        // Label positioning stays similar
         addLabel(scaledX1, scaledY1 - 20, labelText, elementId, classPrefix, label ? label.color : null);
     } else if (prediction.type === "polygon" && prediction.polygon) {
         // Polygon-Daten extrahieren
@@ -1612,7 +1607,7 @@ function addLabel(x, y, text, parentId, classPrefix, color) {
     }
     
     imageContainer.appendChild(label);
-    
+
     // In the addLabel function, add this at the end:
     if (currentZoom !== 1.0) {
         // Store original position if this is a new label
@@ -1666,22 +1661,38 @@ function adaptSvgOverlay() {
     const imageRect = uploadedImage.getBoundingClientRect();
     const containerRect = imageContainer.getBoundingClientRect();
     
+    // Calculate the current dimensions of the image, accounting for any scaling
+    const currentWidth = uploadedImage.width;
+    const currentHeight = uploadedImage.height;
+    
     // SVG auf gleiche Größe wie das Bild setzen
-    annotationOverlay.setAttribute('width', uploadedImage.width);
-    annotationOverlay.setAttribute('height', uploadedImage.height);
+    annotationOverlay.setAttribute('width', currentWidth);
+    annotationOverlay.setAttribute('height', currentHeight);
     
     // Position exakt an Bild ausrichten
+    const offsetX = imageRect.left - containerRect.left;
+    const offsetY = imageRect.top - containerRect.top;
+    
     annotationOverlay.style.position = 'absolute';
-    annotationOverlay.style.left = `${imageRect.left - containerRect.left}px`;
-    annotationOverlay.style.top = `${imageRect.top - containerRect.top}px`;
+    annotationOverlay.style.left = `${offsetX}px`;
+    annotationOverlay.style.top = `${offsetY}px`;
     
     // Wichtig: ViewBox setzen für bessere Skalierung
-    annotationOverlay.setAttribute('viewBox', `0 0 ${uploadedImage.width} ${uploadedImage.height}`);
-    annotationOverlay.style.width = `${uploadedImage.width}px`;
-    annotationOverlay.style.height = `${uploadedImage.height}px`;
+    annotationOverlay.setAttribute('viewBox', `0 0 ${currentWidth} ${currentHeight}`);
+    annotationOverlay.style.width = `${currentWidth}px`;
+    annotationOverlay.style.height = `${currentHeight}px`;
     
-    // Bestehende Annotationen neu positionieren
+    // After setting position and size, reposition all annotations
     repositionAllAnnotations();
+    
+    // Make sure we also apply the current zoom level
+    if (currentZoom !== 1.0) {
+        uploadedImage.style.transform = `scale(${currentZoom})`;
+        uploadedImage.style.transformOrigin = 'top left';
+        
+        annotationOverlay.style.transform = `scale(${currentZoom})`;
+        annotationOverlay.style.transformOrigin = 'top left';
+    }
 }
 
 // Global zoom variables
@@ -1691,14 +1702,10 @@ const maxZoom = 10.0;
 const zoomStep = 0.1;
 
 // Function to handle zoom - improved to center on mouse position
+// Modified handleZoom function to properly scale rectangular boxes
 function handleZoom(event) {
-    console.log("Wheel event detected:", event.ctrlKey, event.deltaY);
-
     // Only handle zoom events when Ctrl key is pressed
     if (!event.ctrlKey) return;
-
-    console.log("Ctrl+wheel detected, zooming");
-
     
     // Prevent default browser zoom behavior
     event.preventDefault();
@@ -1834,40 +1841,25 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Function to update annotation positions after zooming
-// Function to update annotation positions after zooming
+// Replace updateAnnotationsForZoom function
 function updateAnnotationsForZoom() {
     console.log("Updating annotations for zoom level:", currentZoom);
     
-    // Update positions of all bounding boxes
-    document.querySelectorAll('.bounding-box').forEach(box => {
-        // Store original values if not already stored
-        if (!box.hasAttribute('data-original-left')) {
-            box.setAttribute('data-original-left', box.style.left);
-            box.setAttribute('data-original-top', box.style.top);
-            box.setAttribute('data-original-width', box.style.width);
-            box.setAttribute('data-original-height', box.style.height);
-        }
-        
-        // The boxes don't need position updates since they're inside the transformed container
-        // But we might need to adjust other properties like border width based on zoom
-        box.style.borderWidth = 2 / currentZoom + 'px';
-    });
-    
-    // Update labels similarly
+    // Labels are still HTML elements that need special handling
     document.querySelectorAll('.box-label').forEach(label => {
         // Store original values if not already stored
         if (!label.hasAttribute('data-original-left')) {
-            label.setAttribute('data-original-left', label.style.left);
-            label.setAttribute('data-original-top', label.style.top);
+            label.setAttribute('data-original-left', label.style.left.replace('px', ''));
+            label.setAttribute('data-original-top', label.style.top.replace('px', ''));
         }
         
         // Get original positions
-        const originalLeft = label.getAttribute('data-original-left').replace('px', '');
-        const originalTop = label.getAttribute('data-original-top').replace('px', '');
+        const originalLeft = parseFloat(label.getAttribute('data-original-left'));
+        const originalTop = parseFloat(label.getAttribute('data-original-top'));
         
         // Scale positions with current zoom level
-        const newLeft = parseFloat(originalLeft) * currentZoom;
-        const newTop = parseFloat(originalTop) * currentZoom;
+        const newLeft = originalLeft * currentZoom;
+        const newTop = originalTop * currentZoom;
         
         // Apply the new positions
         label.style.left = `${newLeft}px`;
@@ -1877,6 +1869,8 @@ function updateAnnotationsForZoom() {
         label.style.fontSize = `${12 / currentZoom}px`;
         label.style.padding = `${2 / currentZoom}px ${5 / currentZoom}px`;
     });
+    
+    // SVG elements don't need updates because they'll be transformed with the SVG
 }
     
     // Update labels similarly
@@ -1890,7 +1884,7 @@ function updateAnnotationsForZoom() {
             label.setAttribute('data-original-top', originalTop);
         }
     });
-}
+
 
 // Function to display current zoom level
 function showZoomLevel() {
@@ -2028,28 +2022,29 @@ function repositionAllAnnotations() {
     
     console.log("Skalierung:", scaleX, scaleY, "Offset:", offsetX, offsetY);
     
-    // 1. Alle Rechtecke neu positionieren
-    document.querySelectorAll('.bounding-box').forEach(box => {
-        const id = box.id;
+    // 2. SVG-Elemente neu positionieren
+    // Anstatt die einzelnen Elemente zu verschieben, passen wir das SVG-Overlay an
+    annotationOverlay.style.left = `${offsetX}px`;
+    annotationOverlay.style.top = `${offsetY}px`;
+
+    // 2a. Rechtecke neu skalieren
+    document.querySelectorAll('rect.rect-annotation').forEach(rect => {
+        const id = rect.id;
         const index = parseInt(id.split('-')[1]);
         if (window.data && window.data.predictions && window.data.predictions[index]) {
             const pred = window.data.predictions[index];
             if (pred.box || pred.bbox) {
                 const [x1, y1, x2, y2] = pred.box || pred.bbox;
-                box.style.left = `${x1 * scaleX + offsetX}px`;
-                box.style.top = `${y1 * scaleY + offsetY}px`;
-                box.style.width = `${(x2 - x1) * scaleX}px`;
-                box.style.height = `${(y2 - y1) * scaleY}px`;
+                rect.setAttribute("x", x1 * scaleX);
+                rect.setAttribute("y", y1 * scaleY);
+                rect.setAttribute("width", (x2 - x1) * scaleX);
+                rect.setAttribute("height", (y2 - y1) * scaleY);
             }
         }
     });
 
-    // 2. SVG-Elemente neu positionieren
-    // Anstatt die einzelnen Elemente zu verschieben, passen wir das SVG-Overlay an
-    annotationOverlay.style.left = `${offsetX}px`;
-    annotationOverlay.style.top = `${offsetY}px`;
     
-    // 2a. Polygone neu skalieren
+    // 2b. Polygone neu skalieren
     document.querySelectorAll('polygon.polygon-annotation').forEach(polygon => {
         const id = polygon.id;
         const index = parseInt(id.split('-')[1]);
@@ -2068,7 +2063,7 @@ function repositionAllAnnotations() {
         }
     });
     
-    // 2b. Linien neu skalieren
+    // 2c. Linien neu skalieren
     document.querySelectorAll('path.line-annotation').forEach(path => {
         const id = path.id;
         const index = parseInt(id.split('-')[1]);
@@ -2088,7 +2083,7 @@ function repositionAllAnnotations() {
         }
     });
     
-    // 2c. Linienpunkte neu skalieren
+    // 2d. Linienpunkte neu skalieren
     document.querySelectorAll('circle.line-point').forEach(circle => {
         // Wir müssen die Zugehörigkeit zu einer Linie ermitteln
         const parentNodes = Array.from(annotationOverlay.children);
@@ -2119,10 +2114,10 @@ function repositionAllAnnotations() {
         const id = label.id.replace('label-', '');
         const index = parseInt(id.split('-')[1]);
         if (window.data && window.data.predictions && window.data.predictions[index]) {
-            const pred = window.data.predictions[index];
+            const pred = window.data.predictions[index];  
             
             if (pred.box || pred.bbox) {
-                // Für Rechteck-Labels
+                // Update position logic for rectangle labels
                 const [x1, y1] = pred.box || pred.bbox;
                 label.style.left = `${x1 * scaleX + offsetX}px`;
                 label.style.top = `${(y1 * scaleY + offsetY) - 20}px`;
@@ -2159,8 +2154,9 @@ function repositionAllAnnotations() {
 // Event-Listener für Bildgrößenänderungen
 window.addEventListener('resize', function() {
     if (uploadedImage.src) {
-        // Wenn das Bild geladen ist, SVG und Annotationen neu anpassen
-        setTimeout(adaptSvgOverlay, 100); // Kurze Verzögerung für stabilere Neuberechnung
+        // When the window is resized, reset the SVG overlay
+        console.log("Window resize detected - updating SVG overlay");
+        adaptSvgOverlay();
     }
 });
 

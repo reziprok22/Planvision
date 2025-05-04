@@ -249,6 +249,13 @@ button:hover {
     background-color: rgba(255, 165, 0, 0.8);
 }
 
+/* Add this to styles.css */
+.rect-annotation {
+    fill-opacity: 0.1;
+    stroke-width: 2px;
+    pointer-events: none;
+}
+
 /* Tabellenstile */
 table {
     width: 100%;
