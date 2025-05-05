@@ -9,6 +9,7 @@ import * as AnnotationsModule from './annotations.js';
 import * as PdfModule from './pdf-handler.js';
 import * as ProjectModule from './project.js';
 import * as LabelsModule from './labels.js';
+import * as FabricHandler from './fabric-handler.js';
 
 // Global variables
 window.data = null;
@@ -198,11 +199,23 @@ function displayResults(responseData) {
   uploadedImage.onload = function() {
     console.log("Image loaded:", uploadedImage.width, "x", uploadedImage.height);
     
-    // Clear existing annotations
-    AnnotationsModule.clearAnnotations();
-    
-    // Adapt SVG overlay
-    AnnotationsModule.adaptSvgOverlay();
+    // Use Fabric.js to display annotations if available
+    if (typeof FabricHandler.displayAnnotations === 'function') {
+      FabricHandler.setLabels(window.currentLabels || []);
+      FabricHandler.displayAnnotations(responseData.predictions);
+    } else {
+      // Fallback to old annotation system
+      // Clear existing annotations
+      AnnotationsModule.clearAnnotations();
+      
+      // Adapt SVG overlay
+      AnnotationsModule.adaptSvgOverlay();
+      
+      // Add annotations
+      responseData.predictions.forEach((pred, index) => {
+        AnnotationsModule.addAnnotation(pred, index);
+      });
+    }
     
     // Show results areas
     resultsSection.style.display = 'block';
@@ -214,10 +227,10 @@ function displayResults(responseData) {
     // Fill table
     updateResultsTable();
     
-    // Add annotations
-    responseData.predictions.forEach((pred, index) => {
-      AnnotationsModule.addAnnotation(pred, index);
-    });
+    // Process PDF data if present
+    if (responseData.is_pdf) {
+      PdfModule.processPdfData(responseData);
+    }
     
     // Simulate a resize event after a short delay to fix positioning issues
     setTimeout(function() {
@@ -294,27 +307,34 @@ function displayPdfPage(pageNumber, pageData) {
   uploadedImage.onload = function() {
     console.log("Image loaded:", uploadedImage.width, "x", uploadedImage.height);
     
-    // Clear existing annotations
-    AnnotationsModule.clearAnnotations();
-    
-    // Adapt SVG overlay
-    AnnotationsModule.adaptSvgOverlay();
+    // Use Fabric.js to display annotations if available
+    if (typeof FabricHandler.displayAnnotations === 'function') {
+      FabricHandler.setLabels(window.currentLabels || []);
+      FabricHandler.displayAnnotations(pageData.predictions);
+    } else {
+      // Fallback to old annotation system
+      // Clear existing annotations
+      AnnotationsModule.clearAnnotations();
+      
+      // Adapt SVG overlay
+      AnnotationsModule.adaptSvgOverlay();
+      
+      // Add annotations
+      if (window.data && window.data.predictions && window.data.predictions.length > 0) {
+        console.log(`Adding ${window.data.predictions.length} annotations`);
+        window.data.predictions.forEach((pred, index) => {
+          AnnotationsModule.addAnnotation(pred, index);
+        });
+      } else {
+        console.warn("No predictions found for annotations");
+      }
+    }
     
     // Update summary
     updateSummary();
     
     // Fill table
     updateResultsTable();
-    
-    // Add annotations
-    if (window.data && window.data.predictions && window.data.predictions.length > 0) {
-      console.log(`Adding ${window.data.predictions.length} annotations`);
-      window.data.predictions.forEach((pred, index) => {
-        AnnotationsModule.addAnnotation(pred, index);
-      });
-    } else {
-      console.warn("No predictions found for annotations");
-    }
     
     // Simulate a resize event after a short delay
     setTimeout(function() {
@@ -418,13 +438,35 @@ function updateResultsTable() {
     
     resultsBody.appendChild(row);
     
-    // Highlight on hover over table
+    // Highlight on hover over table for legacy annotations
     const elementId = `annotation-${index}`;
     row.addEventListener('mouseover', () => {
-      AnnotationsModule.highlightBox(elementId, true);
+      if (typeof AnnotationsModule.highlightBox === 'function') {
+        AnnotationsModule.highlightBox(elementId, true);
+      }
+      
+      // For Fabric.js, highlight the corresponding object
+      if (typeof FabricHandler.highlightObject === 'function') {
+        FabricHandler.highlightObject(index, true);
+      }
     });
+    
     row.addEventListener('mouseout', () => {
-      AnnotationsModule.highlightBox(elementId, false);
+      if (typeof AnnotationsModule.highlightBox === 'function') {
+        AnnotationsModule.highlightBox(elementId, false);
+      }
+      
+      // For Fabric.js, unhighlight the corresponding object
+      if (typeof FabricHandler.highlightObject === 'function') {
+        FabricHandler.highlightObject(index, false);
+      }
+    });
+    
+    // Add click handler to select in Fabric.js
+    row.addEventListener('click', () => {
+      if (typeof FabricHandler.selectObjectByIndex === 'function') {
+        FabricHandler.selectObjectByIndex(index);
+      }
     });
   });
 }
@@ -448,7 +490,46 @@ function clearResults() {
   if (summary) summary.innerHTML = '';
   
   // Clear all annotations
-  AnnotationsModule.clearAnnotations();
+  if (typeof AnnotationsModule.clearAnnotations === 'function') {
+    AnnotationsModule.clearAnnotations();
+  }
+  
+  // Clear Fabric.js canvas if available
+  if (typeof FabricHandler.clearAnnotations === 'function') {
+    FabricHandler.clearAnnotations();
+  }
+}
+
+/**
+ * Test Fabric.js implementation 
+ */
+function testFabricJs() {
+  // Get Fabric.js canvas
+  const canvas = FabricHandler.getCanvas();
+  
+  if (!canvas) {
+    console.error("Fabric.js canvas not initialized");
+    return;
+  }
+  
+  // Create a simple rectangle
+  const rect = new fabric.Rect({
+    left: 100,
+    top: 100,
+    width: 100,
+    height: 100,
+    fill: 'rgba(0, 0, 255, 0.3)',
+    stroke: 'blue',
+    strokeWidth: 2,
+    rx: 5,
+    ry: 5
+  });
+  
+  // Add to canvas
+  canvas.add(rect);
+  canvas.renderAll();
+  
+  console.log("Test rectangle added to Fabric.js canvas");
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -511,6 +592,18 @@ document.addEventListener('DOMContentLoaded', function() {
   const areaLabelsTab = document.getElementById('areaLabelsTab');
   const lineLabelsTab = document.getElementById('lineLabelsTab');
   const resetZoomBtn = document.getElementById('resetZoomBtn');
+  
+  // Editor elements
+  const editorToggle = document.getElementById('editorToggle');
+  const addBoxBtn = document.getElementById('addBoxBtn');
+  const addPolygonBtn = document.getElementById('addPolygonBtn');
+  const addLineBtn = document.getElementById('addLineBtn');
+  const editBoxBtn = document.getElementById('editBoxBtn');
+  const deleteBoxBtn = document.getElementById('deleteBoxBtn');
+  const saveEditBtn = document.getElementById('saveEditBtn');
+  const cancelEditBtn = document.getElementById('cancelEditBtn');
+  const objectTypeSelect = document.getElementById('objectTypeSelect');
+  const lineTypeSelect = document.getElementById('lineTypeSelect');
 
   // Check if all required elements are present
   console.log("Main UI elements loaded:", {
@@ -599,6 +692,19 @@ document.addEventListener('DOMContentLoaded', function() {
   // Make updateUIForLabels globally accessible
   window.updateUIForLabels = LabelsModule.updateUIForLabels;
   
+  // 6. Setup Fabric.js handler
+  if (typeof FabricHandler.setupFabricHandler === 'function') {
+    FabricHandler.setupFabricHandler({
+      imageContainer,
+      uploadedImage
+    });
+    
+    // Set labels to Fabric.js handler
+    if (typeof FabricHandler.setLabels === 'function' && window.currentLabels) {
+      FabricHandler.setLabels(window.currentLabels);
+    }
+  }
+  
   // Format selection handler for manual adjustments
   if (formatSelect) {
     formatSelect.addEventListener('change', function() {
@@ -644,6 +750,11 @@ document.addEventListener('DOMContentLoaded', function() {
       fensterElements.forEach(el => {
         el.style.display = this.classList.contains('active') ? 'block' : 'none';
       });
+      
+      // Also toggle Fabric.js objects if available
+      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
+        FabricHandler.toggleObjectsByLabel(1, this.classList.contains('active'));
+      }
     });
   }
   
@@ -654,6 +765,11 @@ document.addEventListener('DOMContentLoaded', function() {
       tuerElements.forEach(el => {
         el.style.display = this.classList.contains('active') ? 'block' : 'none';
       });
+      
+      // Also toggle Fabric.js objects if available
+      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
+        FabricHandler.toggleObjectsByLabel(2, this.classList.contains('active'));
+      }
     });
   }
   
@@ -664,6 +780,11 @@ document.addEventListener('DOMContentLoaded', function() {
       wandElements.forEach(el => {
         el.style.display = this.classList.contains('active') ? 'block' : 'none';
       });
+      
+      // Also toggle Fabric.js objects if available
+      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
+        FabricHandler.toggleObjectsByLabel(3, this.classList.contains('active'));
+      }
     });
   }
   
@@ -674,6 +795,11 @@ document.addEventListener('DOMContentLoaded', function() {
       lukarneElements.forEach(el => {
         el.style.display = this.classList.contains('active') ? 'block' : 'none';
       });
+      
+      // Also toggle Fabric.js objects if available
+      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
+        FabricHandler.toggleObjectsByLabel(4, this.classList.contains('active'));
+      }
     });
   }
   
@@ -684,6 +810,11 @@ document.addEventListener('DOMContentLoaded', function() {
       dachElements.forEach(el => {
         el.style.display = this.classList.contains('active') ? 'block' : 'none';
       });
+      
+      // Also toggle Fabric.js objects if available
+      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
+        FabricHandler.toggleObjectsByLabel(5, this.classList.contains('active'));
+      }
     });
   }
   
@@ -701,6 +832,226 @@ document.addEventListener('DOMContentLoaded', function() {
   } else {
     console.warn("Editor initialization function not found. Please ensure editor.js is loaded before the main script.");
   }
+
+  // Setup event handlers for new Fabric.js editor buttons
+  if (editorToggle) {
+    editorToggle.addEventListener('click', function() {
+      const isActive = this.classList.contains('active');
+      
+      if (!isActive) {
+        // Enable editor
+        this.classList.add('active');
+        this.textContent = 'Editor ausschalten';
+        
+        // Enable Fabric.js editing
+        if (typeof FabricHandler.enableEditing === 'function') {
+          FabricHandler.enableEditing();
+        }
+      } else {
+        // Disable editor
+        this.classList.remove('active');
+        this.textContent = 'Editor einschalten';
+        
+        // Disable Fabric.js editing and save changes
+        if (typeof FabricHandler.disableEditing === 'function') {
+          FabricHandler.disableEditing();
+        }
+        
+        if (typeof FabricHandler.saveAnnotations === 'function') {
+          FabricHandler.saveAnnotations();
+        }
+      }
+    });
+  }
+
+  // Add functionality for editor buttons
+  if (addBoxBtn) {
+    addBoxBtn.addEventListener('click', function() {
+      // Get selected label ID
+      const labelId = parseInt(objectTypeSelect.value);
+      
+      // Enable rectangle drawing
+      if (typeof FabricHandler.enableDrawingMode === 'function') {
+        FabricHandler.enableDrawingMode('rectangle', labelId);
+      }
+      
+      // Update UI
+      addBoxBtn.classList.add('active');
+      editBoxBtn.classList.remove('active');
+      deleteBoxBtn.classList.remove('active');
+      if (addPolygonBtn) addPolygonBtn.classList.remove('active');
+      if (addLineBtn) addLineBtn.classList.remove('active');
+    });
+  }
+
+  if (addPolygonBtn) {
+    addPolygonBtn.addEventListener('click', function() {
+      // Get selected label ID
+      const labelId = parseInt(objectTypeSelect.value);
+      
+      // Enable polygon drawing
+      if (typeof FabricHandler.enableDrawingMode === 'function') {
+        FabricHandler.enableDrawingMode('polygon', labelId);
+      }
+      
+      // Update UI
+      addBoxBtn.classList.remove('active');
+      editBoxBtn.classList.remove('active');
+      deleteBoxBtn.classList.remove('active');
+      addPolygonBtn.classList.add('active');
+      if (addLineBtn) addLineBtn.classList.remove('active');
+    });
+  }
+
+  if (addLineBtn) {
+    addLineBtn.addEventListener('click', function() {
+      // Get selected line label ID
+      const labelId = parseInt(lineTypeSelect ? lineTypeSelect.value : 1);
+      
+      // Enable line drawing
+      if (typeof FabricHandler.enableDrawingMode === 'function') {
+        FabricHandler.enableDrawingMode('line', labelId);
+      }
+      
+      // Update UI
+      addBoxBtn.classList.remove('active');
+      editBoxBtn.classList.remove('active');
+      deleteBoxBtn.classList.remove('active');
+      if (addPolygonBtn) addPolygonBtn.classList.remove('active');
+      addLineBtn.classList.add('active');
+    });
+  }
+
+  if (editBoxBtn) {
+    editBoxBtn.addEventListener('click', function() {
+      // Enable editing mode
+      if (typeof FabricHandler.enableEditing === 'function') {
+        FabricHandler.enableEditing();
+      }
+      
+      // Update UI
+      addBoxBtn.classList.remove('active');
+      editBoxBtn.classList.add('active');
+      deleteBoxBtn.classList.remove('active');
+      if (addPolygonBtn) addPolygonBtn.classList.remove('active');
+      if (addLineBtn) addLineBtn.classList.remove('active');
+    });
+  }
+
+  if (deleteBoxBtn) {
+    deleteBoxBtn.addEventListener('click', function() {
+      // Delete selected object
+      if (typeof FabricHandler.deleteSelected === 'function') {
+        FabricHandler.deleteSelected();
+      }
+      
+      // Save changes
+      if (typeof FabricHandler.saveAnnotations === 'function') {
+        FabricHandler.saveAnnotations();
+      }
+    });
+  }
+
+  if (saveEditBtn) {
+    saveEditBtn.addEventListener('click', function() {
+      // Save annotations
+      if (typeof FabricHandler.saveAnnotations === 'function') {
+        FabricHandler.saveAnnotations();
+      }
+      
+      // Update UI
+      if (editorToggle) {
+        editorToggle.classList.remove('active');
+        editorToggle.textContent = 'Editor einschalten';
+      }
+      
+      // Disable editing mode
+      if (typeof FabricHandler.disableEditing === 'function') {
+        FabricHandler.disableEditing();
+      }
+    });
+  }
+
+  if (cancelEditBtn) {
+    cancelEditBtn.addEventListener('click', function() {
+      // Reload original annotations without saving changes
+      if (typeof FabricHandler.cancelEditing === 'function') {
+        FabricHandler.cancelEditing();
+      }
+      
+      // Update UI
+      if (editorToggle) {
+        editorToggle.classList.remove('active');
+        editorToggle.textContent = 'Editor einschalten';
+      }
+    });
+  }
+
+  // Object type selection change handler
+  if (objectTypeSelect) {
+    objectTypeSelect.addEventListener('change', function() {
+      const labelId = parseInt(this.value);
+      
+      // Change label of selected object
+      if (typeof FabricHandler.changeSelectedLabel === 'function') {
+        FabricHandler.changeSelectedLabel(labelId);
+      }
+    });
+  }
+
+  // Line type selection change handler
+  if (lineTypeSelect) {
+    lineTypeSelect.addEventListener('change', function() {
+      const labelId = parseInt(this.value);
+      
+      // Change label of selected line
+      if (typeof FabricHandler.changeSelectedLineType === 'function') {
+        FabricHandler.changeSelectedLineType(labelId);
+      }
+    });
+  }
+
+  // Add keyboard shortcuts
+  document.addEventListener('keydown', function(e) {
+    // Check if editor is active
+    const isEditorActive = editorToggle && editorToggle.classList.contains('active');
+    
+    if (isEditorActive) {
+      // Delete key - delete selected
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (typeof FabricHandler.deleteSelected === 'function') {
+          FabricHandler.deleteSelected();
+          
+          // Save changes
+          if (typeof FabricHandler.saveAnnotations === 'function') {
+            FabricHandler.saveAnnotations();
+          }
+        }
+      }
+      
+      // Ctrl+C - Copy
+      if (e.ctrlKey && e.key === 'c') {
+        if (typeof FabricHandler.copySelected === 'function') {
+          FabricHandler.copySelected();
+        }
+      }
+      
+      // Esc - Exit drawing mode
+      if (e.key === 'Escape') {
+        // Enable edit mode
+        if (typeof FabricHandler.enableEditing === 'function') {
+          FabricHandler.enableEditing();
+        }
+        
+        // Update UI
+        if (addBoxBtn) addBoxBtn.classList.remove('active');
+        if (editBoxBtn) editBoxBtn.classList.add('active');
+        if (deleteBoxBtn) deleteBoxBtn.classList.remove('active');
+        if (addPolygonBtn) addPolygonBtn.classList.remove('active');
+        if (addLineBtn) addLineBtn.classList.remove('active');
+      }
+    }
+  });
 
   // Form submission handler
   if (uploadForm) {
@@ -770,8 +1121,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
- // Create a global function to get PDF pages
-window.getAllPdfPages = function() {
+  // Create a global function to get PDF pages
+  window.getAllPdfPages = function() {
     // Check if the function exists in the module first
     if (typeof PdfModule.getAllPdfPages === 'function') {
       return PdfModule.getAllPdfPages();
@@ -786,4 +1137,5 @@ window.getAllPdfPages = function() {
   window.updateSummary = updateSummary;
   window.updateResultsTable = updateResultsTable;
   window.clearResults = clearResults;
+  window.testFabricJs = testFabricJs;
 });
