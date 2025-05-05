@@ -1,5 +1,5 @@
 /**
- * labels.js - Module for label management
+ * labels.js - Centralized module for label management
  * Part of the Fenster-Erkennungstool project
  */
 
@@ -323,6 +323,13 @@ function saveLabels(type = 'area') {
   }
   
   updateUIForLabels(type);
+  
+  // Notify FabricHandler about label changes if available
+  if (typeof window.FabricHandler !== 'undefined' && typeof window.FabricHandler.setLabels === 'function') {
+    if (type === 'area' || type === 'both') {
+      window.FabricHandler.setLabels(currentLabels);
+    }
+  }
 }
 
 /**
@@ -459,6 +466,9 @@ export function updateUIForLabels(type = 'both') {
         objectTypeSelect.value = selectedValue;
       }
     }
+    
+    // Update toggle buttons based on labels
+    updateToggleButtons();
   }
   
   // Update line type dropdown for line labels
@@ -488,6 +498,79 @@ export function updateUIForLabels(type = 'both') {
 }
 
 /**
+ * Update annotation toggle buttons based on current labels
+ */
+function updateToggleButtons() {
+  const toggleButtonsContainer = document.querySelector('.annotation-controls');
+  if (!toggleButtonsContainer) return;
+  
+  // Clear existing toggle buttons
+  const existingButtons = toggleButtonsContainer.querySelectorAll('.toggle-button:not(#resetZoomBtn)');
+  existingButtons.forEach(button => {
+    if (!button.id || button.id !== 'resetZoomBtn') {
+      button.remove();
+    }
+  });
+  
+  // Add new toggle buttons based on current labels
+  currentLabels.forEach(label => {
+    const buttonId = `toggle${label.name.replace(/\s+/g, '')}`;
+    
+    // Check if button already exists
+    if (!document.getElementById(buttonId)) {
+      const button = document.createElement('button');
+      button.id = buttonId;
+      button.className = 'toggle-button active';
+      button.textContent = label.name;
+      button.dataset.labelId = label.id;
+      
+      // Add to container before resetZoomBtn if it exists
+      const resetZoomBtn = document.getElementById('resetZoomBtn');
+      if (resetZoomBtn && resetZoomBtn.parentNode === toggleButtonsContainer) {
+        toggleButtonsContainer.insertBefore(button, resetZoomBtn);
+      } else {
+        toggleButtonsContainer.appendChild(button);
+      }
+      
+      // Add event listener
+      button.addEventListener('click', function() {
+        this.classList.toggle('active');
+        const labelId = parseInt(this.dataset.labelId);
+        toggleLabelVisibility(labelId, this.classList.contains('active'));
+      });
+    }
+  });
+}
+
+/**
+ * Toggle visibility of annotations with a specific label
+ * @param {number} labelId - The label ID to toggle
+ * @param {boolean} isVisible - Whether annotations should be visible
+ */
+function toggleLabelVisibility(labelId, isVisible) {
+  const label = currentLabels.find(l => l.id === labelId);
+  if (!label) return;
+
+  // Class name for this label's annotations (convert spaces to underscores, handle umlauts)
+  const className = label.name.toLowerCase()
+    .replace(/ä/g, 'ae')
+    .replace(/ö/g, 'oe')
+    .replace(/ü/g, 'ue')
+    .replace(/\s+/g, '_');
+  
+  // Legacy SVG elements
+  const elements = document.querySelectorAll(`.${className}-annotation, .${className}-box, .${className}-label`);
+  elements.forEach(el => {
+    el.style.display = isVisible ? 'block' : 'none';
+  });
+  
+  // Use Fabric.js API if available
+  if (typeof window.FabricHandler !== 'undefined' && typeof window.FabricHandler.toggleObjectsByLabel === 'function') {
+    window.FabricHandler.toggleObjectsByLabel(labelId, isVisible);
+  }
+}
+
+/**
  * Get the current area labels
  * @returns {Array} The current area labels
  */
@@ -501,6 +584,85 @@ export function getAreaLabels() {
  */
 export function getLineLabels() {
   return currentLineLabels;
+}
+
+/**
+ * Find a label by ID
+ * @param {number} id - The label ID
+ * @param {string} type - The label type ('area' or 'line')
+ * @returns {Object|null} The label object or null if not found
+ */
+export function getLabelById(id, type = 'area') {
+  const labels = type === 'area' ? currentLabels : currentLineLabels;
+  return labels.find(label => label.id === id) || null;
+}
+
+/**
+ * Generate label name based on ID
+ * @param {number} labelId - The label ID
+ * @param {string} type - Label type ('area' or 'line')
+ * @returns {string} The label name
+ */
+export function getLabelName(labelId, type = 'area') {
+  const label = getLabelById(labelId, type);
+  
+  if (label) {
+    return label.name;
+  }
+  
+  // Fallback names if label not found
+  if (type === 'area') {
+    switch (labelId) {
+      case 1: return "Fenster";
+      case 2: return "Tür";
+      case 3: return "Wand";
+      case 4: return "Lukarne";
+      case 5: return "Dach";
+      default: return "Andere";
+    }
+  } else { // line
+    switch (labelId) {
+      case 1: return "Strecke";
+      case 2: return "Höhe";
+      case 3: return "Breite";
+      case 4: return "Abstand";
+      default: return "Messlinie";
+    }
+  }
+}
+
+/**
+ * Get color for a label
+ * @param {number} labelId - The label ID
+ * @param {string} type - Label type ('area' or 'line')
+ * @returns {string} The label color
+ */
+export function getLabelColor(labelId, type = 'area') {
+  const label = getLabelById(labelId, type);
+  
+  if (label) {
+    return label.color;
+  }
+  
+  // Fallback colors if label not found
+  if (type === 'area') {
+    switch (labelId) {
+      case 1: return "#0000FF"; // Fenster - Blue
+      case 2: return "#FF0000"; // Tür - Red
+      case 3: return "#D4D638"; // Wand - Yellow
+      case 4: return "#FFA500"; // Lukarne - Orange
+      case 5: return "#800080"; // Dach - Purple
+      default: return "#808080"; // Other - Gray
+    }
+  } else { // line
+    switch (labelId) {
+      case 1: return "#FF9500"; // Strecke - Orange
+      case 2: return "#00AAFF"; // Höhe - Blue
+      case 3: return "#4CAF50"; // Breite - Green
+      case 4: return "#9C27B0"; // Abstand - Purple
+      default: return "#FF9500"; // Default - Orange
+    }
+  }
 }
 
 /**
@@ -522,3 +684,15 @@ export function setLineLabels(labels) {
   window.currentLineLabels = labels;
   saveLabels('line');
 }
+
+// Export functions as a global object for easier access from other modules
+window.LabelsManager = {
+  getAreaLabels,
+  getLineLabels,
+  getLabelById,
+  getLabelName,
+  getLabelColor,
+  setAreaLabels,
+  setLineLabels,
+  updateUIForLabels
+};

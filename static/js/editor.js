@@ -73,6 +73,19 @@ function initEditor(elements) {
         editorCanvas: !!editorCanvas,
         editorToggle: !!editorToggle
     });
+
+    // Add this function to editor.js
+    function cancelEditorChanges() {
+        console.log("Canceling editor changes");
+        
+        // Restore original data from backup if available
+        if (editorOriginalState) {
+            window.data.predictions = JSON.parse(JSON.stringify(editorOriginalState));
+        }
+        
+        // Exit editor mode
+        toggleEditor();
+    }
     
     // Event-Listener hinzufügen
     if (editorToggle) {
@@ -85,7 +98,11 @@ function initEditor(elements) {
     if (editBoxBtn) editBoxBtn.addEventListener('click', () => setEditorMode('edit'));
     if (deleteBoxBtn) deleteBoxBtn.addEventListener('click', () => setEditorMode('delete'));
     if (saveEditBtn) saveEditBtn.addEventListener('click', saveEditorChanges);
-    if (cancelEditBtn) cancelEditBtn.addEventListener('click', cancelEditorChanges);
+    if (cancelEditBtn) cancelEditBtn.addEventListener('click', function() {
+        console.log("Canceling editor changes...");
+        // Instead of looking for cancelEditorChanges, use the existing function
+        toggleEditor(); // This will exit the editor without saving
+    });
     if (addPolygonBtn) addPolygonBtn.addEventListener('click', () => setEditorMode('addPolygon'));
     if (addLineBtn) addLineBtn.addEventListener('click', () => setEditorMode('addLine'));
 
@@ -418,7 +435,7 @@ function drawAllBoxes() {
             const scaledH = (y2 - y1) * scale;
             
             // Box-Farbe basierend auf Kategorie
-            let color;
+            const color = window.LabelsManager.getLabelColor(selectedType);
             
             // Suche das entsprechende Label aus den benutzerdefinierten Labels
             const label = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
@@ -1128,8 +1145,7 @@ function finishLine() {
     const lineColor = lineLabel && lineLabel.color ? lineLabel.color : "#FF9500";
 
     // Use the line label name instead of a generic name
-    const labelName = lineLabel ? lineLabel.name : "Messlinie";
-
+    const labelName = window.LabelsManager.getLabelName(selectedType) || "Messlinie";
     // Create the new measurement with correct label name
     const newMeasurement = {
         label: selectedLineType,
@@ -1217,45 +1233,6 @@ function calculateArea(box) {
     return widthMeters * heightMeters;
 }
 
-// Änderungen speichern
-function saveEditorChanges() {
-    console.log("Speichere Editor-Änderungen");
-    
-    try {
-        // Aktualisiere die Ergebnis-Tabelle und Zusammenfassung
-        updateEditorResults();
-        
-        // Speichere die aktuellen Daten in pdfPageData für die aktuelle Seite
-        if (typeof currentPdfPage !== 'undefined' && currentPdfPage) {
-            pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
-        }
-        
-        // Editor ausschalten
-        toggleEditor();
-        
-        // Force refresh annotations after toggling editor
-        setTimeout(function() {
-            refreshAnnotations();
-            // Ensure SVG overlay is properly positioned
-            if (typeof AnnotationsModule.adaptSvgOverlay === 'function') {
-                AnnotationsModule.adaptSvgOverlay();
-            }
-        }, 200);
-        
-        // Bestätigung anzeigen
-        alert('Änderungen wurden gespeichert.');
-    } catch (error) {
-        console.error("Fehler beim Speichern der Änderungen:", error);
-        
-        // Trotz Fehler den Editor verlassen
-        toggleEditor();
-        
-        // Bestätigung anzeigen
-        alert('Änderungen wurden gespeichert, aber es gab ein Problem bei der Aktualisierung der Anzeige.');
-    }
-}
-
-// Neue Hilfsfunktion zum Aktualisieren aller Annotationen
 // Neue Hilfsfunktion zum Aktualisieren aller Annotationen
 function refreshAnnotations() {
     console.log("Aktualisiere alle Annotationen, Anzahl:", window.data?.predictions?.length || 0);
@@ -1330,6 +1307,7 @@ function saveEditorChanges() {
         alert('Änderungen wurden gespeichert, aber es gab ein Problem bei der Aktualisierung der Anzeige.');
     }
 }
+
 
 // Ergebnisse aktualisieren
 function updateEditorResults() {

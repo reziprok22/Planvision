@@ -63,17 +63,39 @@ function initCanvas() {
 /**
  * Resize canvas to match container size
  */
+// In fabric-handler.js, update the resizeCanvas function:
 function resizeCanvas() {
-  if (!canvas || !imageContainer) return;
+  if (!canvas || !imageContainer || !uploadedImage) return;
   
-  // Make sure uploadedImage is loaded before setting dimensions
-  if (uploadedImage.complete) {
-    canvas.setWidth(uploadedImage.width);
-    canvas.setHeight(uploadedImage.height);
+  console.log("Resizing Fabric.js canvas to match image dimensions");
+  
+  // Wait for the image to be fully loaded
+  if (uploadedImage.complete && uploadedImage.naturalWidth > 0) {
+    // Use the image's displayed dimensions
+    const width = uploadedImage.width || uploadedImage.naturalWidth;
+    const height = uploadedImage.height || uploadedImage.naturalHeight;
+    
+    console.log(`Setting canvas size to ${width}x${height} (natural: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight})`);
+    
+    // Set canvas dimensions
+    canvas.setWidth(width);
+    canvas.setHeight(height);
+    
+    // Make sure the canvas container has the right position
+    const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+    if (canvasContainer) {
+      canvasContainer.style.position = 'absolute';
+      canvasContainer.style.top = '0';
+      canvasContainer.style.left = '0';
+      canvasContainer.style.width = `${width}px`;
+      canvasContainer.style.height = `${height}px`;
+    }
+    
+    canvas.renderAll();
   } else {
+    // If image isn't loaded yet, set up an event listener
     uploadedImage.onload = function() {
-      canvas.setWidth(uploadedImage.width);
-      canvas.setHeight(uploadedImage.height);
+      resizeCanvas(); // Call this function again when image loads
     };
   }
 }
@@ -193,7 +215,9 @@ export function getCurrentZoom() {
  * @param {Array} labels - The labels configuration
  */
 export function setLabels(labels) {
-  currentLabels = labels;
+  if (window.LabelsManager) {
+    // No need to store labels locally, as they're managed by LabelsManager
+  }
 }
 
 /**
@@ -477,7 +501,7 @@ export function changeSelectedLineType(typeId) {
     const label = lineLabels.find(l => l.id === typeId);
     
     if (label) {
-      const color = label.color;
+      const color = window.LabelsManager.getLabelColor(labelId);
       
       // Update line properties
       activeObject.set({
@@ -549,8 +573,8 @@ function enableRectangleDrawing(labelId) {
     startY = pointer.y;
     
     // Get color for the label
-    let color = 'gray';
-    let labelName = 'Other';
+    let color = window.LabelsManager.getLabelColor(labelId);
+    let labelName = window.LabelsManager.getLabelName(labelId);
     
     const label = currentLabels.find(l => l.id === labelId);
     if (label) {
@@ -862,7 +886,7 @@ function updateDataSummary() {
     }
     
     // Get line color
-    const color = data.color || '#FF9500';
+    const color = window.LabelsManager.getLabelColor(labelId) || '#FF9500';
     
     // Create polyline
     const line = new fabric.Polyline(points, {

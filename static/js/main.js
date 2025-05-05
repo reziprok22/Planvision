@@ -3,9 +3,8 @@
  * This file coordinates the modules and handles the primary application flow
  */
 
-// Add this at the top of your main.js or in a separate script that loads before fabric-handler.js
+// Fabric.js text baseline patch
 if (typeof fabric !== 'undefined') {
-  // Patch for the textBaseline issue
   const originalInitialize = fabric.Text.prototype.initialize;
   fabric.Text.prototype.initialize = function() {
     const result = originalInitialize.apply(this, arguments);
@@ -18,7 +17,6 @@ if (typeof fabric !== 'undefined') {
 
 // Import modules
 import * as ZoomModule from './zoom.js';
-import * as AnnotationsModule from './annotations.js';
 import * as PdfModule from './pdf-handler.js';
 import * as ProjectModule from './project.js';
 import * as LabelsModule from './labels.js';
@@ -33,153 +31,111 @@ window.data = null;
  * @returns {Object} Processed data in the desired format
  */
 function processApiResponse(apiResponse) {
-    // Create output format
-    const result = {
-      count: {},
-      total_area: {},
-      predictions: []
-    };
-    
-    let fensterCount = 0;
-    let tuerCount = 0;
-    let wandCount = 0;
-    let lukarneCount = 0;
-    let dachCount = 0;
-    let otherCount = 0;
-    let lineCount = 0;
-    
-    let fensterArea = 0;
-    let tuerArea = 0;
-    let wandArea = 0;
-    let lukarneArea = 0;
-    let dachArea = 0;
-    let otherArea = 0;
-    
-    // Make sure predictions is an array
-    const predictions = apiResponse.predictions || [];
-    
-    if (Array.isArray(predictions)) {
-      // Process each prediction
-      predictions.forEach(pred => {
-        // Determine type based on existing properties
-        let predType = "rectangle";
-        if (pred.type === "line" || (pred.line && pred.length !== undefined)) {
-          predType = "line";
-          lineCount++;
-        } else if (pred.type === "polygon" || pred.polygon) {
-          predType = "polygon";
-        } else if (pred.box || pred.bbox) {
-          predType = "rectangle";
-        }
-        
-        // Check if a custom label exists for this ID
-        const customLabel = window.currentLabels ? window.currentLabels.find(l => l.id === pred.label) : null;
-        let label_name;
-        
-        if (customLabel) {
-          label_name = customLabel.name;
-        } else {
-          // Fallback to standard names
-          switch(pred.label) {
-            case 1: 
-              label_name = "Fenster";
-              if (predType !== "line") {
-                fensterCount++;
-                fensterArea += pred.area || 0;
-              }
-              break;
-            case 2: 
-              label_name = "Tür";
-              if (predType !== "line") {
-                tuerCount++;
-                tuerArea += pred.area || 0;
-              }
-              break;
-            case 3: 
-              label_name = "Wand";
-              if (predType !== "line") {
-                wandCount++;
-                wandArea += pred.area || 0;
-              }
-              break;
-            case 4: 
-              label_name = "Lukarne";
-              if (predType !== "line") {
-                lukarneCount++;
-                lukarneArea += pred.area || 0;
-              }
-              break;
-            case 5: 
-              label_name = "Dach";
-              if (predType !== "line") {
-                dachCount++;
-                dachArea += pred.area || 0;
-              }
-              break;
-            default: 
-              label_name = predType === "line" ? "Messlinie" : "Andere";
-              if (predType !== "line") {
-                otherCount++;
-                otherArea += pred.area || 0;
-              }
-          }
-        }
+  // Create output format
+  const result = {
+    count: {},
+    total_area: {},
+    predictions: []
+  };
+  
+  let fensterCount = 0;
+  let tuerCount = 0;
+  let wandCount = 0;
+  let lukarneCount = 0;
+  let dachCount = 0;
+  let otherCount = 0;
+  let lineCount = 0;
+  
+  let fensterArea = 0;
+  let tuerArea = 0;
+  let wandArea = 0;
+  let lukarneArea = 0;
+  let dachArea = 0;
+  let otherArea = 0;
+  
+  // Make sure predictions is an array
+  const predictions = apiResponse.predictions || [];
+  
+  if (Array.isArray(predictions)) {
+    // Process each prediction
+    predictions.forEach(pred => {
+      // Determine type based on existing properties
+      let predType = "rectangle";
+      if (pred.type === "line" || (pred.line && pred.length !== undefined)) {
+        predType = "line";
+        lineCount++;
+      } else if (pred.type === "polygon" || pred.polygon) {
+        predType = "polygon";
+      } else if (pred.box || pred.bbox) {
+        predType = "rectangle";
+      }
+      
+      // Get label information from centralized LabelsManager
+      let label_name;
+      let color;
+      
+      if (predType === "line") {
+        label_name = window.LabelsManager.getLabelName(pred.label || 1, 'line');
+        color = window.LabelsManager.getLabelColor(pred.label || 1, 'line');
+      } else {
+        label_name = window.LabelsManager.getLabelName(pred.label || 0, 'area');
+        color = window.LabelsManager.getLabelColor(pred.label || 0, 'area');
         
         // Update counts and areas based on label
-        if (customLabel && predType !== "line") {
-          switch(pred.label) {
-            case 1: fensterCount++; fensterArea += pred.area || 0; break;
-            case 2: tuerCount++; tuerArea += pred.area || 0; break;
-            case 3: wandCount++; wandArea += pred.area || 0; break;
-            case 4: lukarneCount++; lukarneArea += pred.area || 0; break;
-            case 5: dachCount++; dachArea += pred.area || 0; break;
-            default: otherCount++; otherArea += pred.area || 0;
-          }
+        switch(pred.label) {
+          case 1: fensterCount++; fensterArea += pred.area || 0; break;
+          case 2: tuerCount++; tuerArea += pred.area || 0; break;
+          case 3: wandCount++; wandArea += pred.area || 0; break;
+          case 4: lukarneCount++; lukarneArea += pred.area || 0; break;
+          case 5: dachCount++; dachArea += pred.area || 0; break;
+          default: otherCount++; otherArea += pred.area || 0;
         }
-        
-        // Add processed prediction
-        result.predictions.push({
-          ...pred,
-          type: predType,
-          label_name: label_name
-        });
+      }
+      
+      // Add processed prediction
+      result.predictions.push({
+        ...pred,
+        type: predType,
+        label_name: label_name,
+        color: color
       });
-    } else {
-      console.warn("No predictions found in API response or not an array");
-    }
-    
-    // Set summary data
-    result.count = {
-      fenster: fensterCount,
-      tuer: tuerCount,
-      wand: wandCount,
-      lukarne: lukarneCount,
-      dach: dachCount,
-      other: otherCount,
-      line: lineCount
-    };
-    
-    result.total_area = {
-      fenster: fensterArea,
-      tuer: tuerArea,
-      wand: wandArea,
-      lukarne: lukarneArea,
-      dach: dachArea,
-      other: otherArea
-    };
-    
-    // Copy PDF-specific information from the original response
-    if (apiResponse.is_pdf) {
-      result.is_pdf = apiResponse.is_pdf;
-      result.pdf_image_url = apiResponse.pdf_image_url;
-      result.session_id = apiResponse.session_id;
-      result.current_page = apiResponse.current_page;
-      result.page_count = apiResponse.page_count;
-      result.all_pages = apiResponse.all_pages;
-      result.page_sizes = apiResponse.page_sizes;
-    }
-    
-    return result;
+    });
+  } else {
+    console.warn("No predictions found in API response or not an array");
+  }
+  
+  // Set summary data
+  result.count = {
+    fenster: fensterCount,
+    tuer: tuerCount,
+    wand: wandCount,
+    lukarne: lukarneCount,
+    dach: dachCount,
+    other: otherCount,
+    line: lineCount
+  };
+  
+  result.total_area = {
+    fenster: fensterArea,
+    tuer: tuerArea,
+    wand: wandArea,
+    lukarne: lukarneArea,
+    dach: dachArea,
+    other: otherArea
+  };
+  
+  // Copy PDF-specific information from the original response
+  if (apiResponse.is_pdf) {
+    result.is_pdf = apiResponse.is_pdf;
+    result.pdf_image_url = apiResponse.pdf_image_url;
+    result.session_id = apiResponse.session_id;
+    result.current_page = apiResponse.current_page;
+    result.page_count = apiResponse.page_count;
+    result.all_pages = apiResponse.all_pages;
+    result.page_sizes = apiResponse.page_sizes;
+  }
+  
+  return result;
 }
 
 /**
@@ -212,23 +168,8 @@ function displayResults(responseData) {
   uploadedImage.onload = function() {
     console.log("Image loaded:", uploadedImage.width, "x", uploadedImage.height);
     
-    // Use Fabric.js to display annotations if available
-    if (typeof FabricHandler.displayAnnotations === 'function') {
-      FabricHandler.setLabels(window.currentLabels || []);
-      FabricHandler.displayAnnotations(responseData.predictions);
-    } else {
-      // Fallback to old annotation system
-      // Clear existing annotations
-      AnnotationsModule.clearAnnotations();
-      
-      // Adapt SVG overlay
-      AnnotationsModule.adaptSvgOverlay();
-      
-      // Add annotations
-      responseData.predictions.forEach((pred, index) => {
-        AnnotationsModule.addAnnotation(pred, index);
-      });
-    }
+    // Use Fabric.js to display annotations
+    FabricHandler.displayAnnotations(responseData.predictions);
     
     // Show results areas
     resultsSection.style.display = 'block';
@@ -320,28 +261,8 @@ function displayPdfPage(pageNumber, pageData) {
   uploadedImage.onload = function() {
     console.log("Image loaded:", uploadedImage.width, "x", uploadedImage.height);
     
-    // Use Fabric.js to display annotations if available
-    if (typeof FabricHandler.displayAnnotations === 'function') {
-      FabricHandler.setLabels(window.currentLabels || []);
-      FabricHandler.displayAnnotations(pageData.predictions);
-    } else {
-      // Fallback to old annotation system
-      // Clear existing annotations
-      AnnotationsModule.clearAnnotations();
-      
-      // Adapt SVG overlay
-      AnnotationsModule.adaptSvgOverlay();
-      
-      // Add annotations
-      if (window.data && window.data.predictions && window.data.predictions.length > 0) {
-        console.log(`Adding ${window.data.predictions.length} annotations`);
-        window.data.predictions.forEach((pred, index) => {
-          AnnotationsModule.addAnnotation(pred, index);
-        });
-      } else {
-        console.warn("No predictions found for annotations");
-      }
-    }
+    // Use Fabric.js to display annotations
+    FabricHandler.displayAnnotations(pageData.predictions);
     
     // Update summary
     updateSummary();
@@ -414,22 +335,6 @@ function updateResultsTable() {
   window.data.predictions.forEach((pred, index) => {
     const row = document.createElement('tr');
     
-    // Find the matching label for this prediction
-    let labelName = pred.label_name || "Andere";
-    
-    // Choose label collection based on type
-    if (pred.type === "line") {
-      // For lines, use the stored label_name directly
-      labelName = pred.label_name || "Messlinie";
-    } else {
-      // For area objects, look up in currentLabels
-      const customLabel = window.currentLabels ? 
-        window.currentLabels.find(l => l.id === pred.label) : null;
-      if (customLabel) {
-        labelName = customLabel.name;
-      }
-    }
-    
     // Determine measurement type (area or length)
     let measurementValue = '';
     
@@ -443,7 +348,7 @@ function updateResultsTable() {
     
     row.innerHTML = `
       <td>${index + 1}</td>
-      <td>${labelName}</td>
+      <td>${pred.label_name || "Andere"}</td>
       <td>${pred.type || (pred.polygon ? "Polygon" : "Rechteck")}</td>
       <td>${(pred.score * 100).toFixed(1)}%</td>
       <td>${measurementValue}</td>
@@ -451,35 +356,18 @@ function updateResultsTable() {
     
     resultsBody.appendChild(row);
     
-    // Highlight on hover over table for legacy annotations
-    const elementId = `annotation-${index}`;
+    // Add hover and click effects
     row.addEventListener('mouseover', () => {
-      if (typeof AnnotationsModule.highlightBox === 'function') {
-        AnnotationsModule.highlightBox(elementId, true);
-      }
-      
-      // For Fabric.js, highlight the corresponding object
-      if (typeof FabricHandler.highlightObject === 'function') {
-        FabricHandler.highlightObject(index, true);
-      }
+      FabricHandler.highlightObject(index, true);
     });
     
     row.addEventListener('mouseout', () => {
-      if (typeof AnnotationsModule.highlightBox === 'function') {
-        AnnotationsModule.highlightBox(elementId, false);
-      }
-      
-      // For Fabric.js, unhighlight the corresponding object
-      if (typeof FabricHandler.highlightObject === 'function') {
-        FabricHandler.highlightObject(index, false);
-      }
+      FabricHandler.highlightObject(index, false);
     });
     
     // Add click handler to select in Fabric.js
     row.addEventListener('click', () => {
-      if (typeof FabricHandler.selectObjectByIndex === 'function') {
-        FabricHandler.selectObjectByIndex(index);
-      }
+      FabricHandler.selectObjectByIndex(index);
     });
   });
 }
@@ -502,47 +390,8 @@ function clearResults() {
   if (resultsBody) resultsBody.innerHTML = '';
   if (summary) summary.innerHTML = '';
   
-  // Clear all annotations
-  if (typeof AnnotationsModule.clearAnnotations === 'function') {
-    AnnotationsModule.clearAnnotations();
-  }
-  
-  // Clear Fabric.js canvas if available
-  if (typeof FabricHandler.clearAnnotations === 'function') {
-    FabricHandler.clearAnnotations();
-  }
-}
-
-/**
- * Test Fabric.js implementation 
- */
-function testFabricJs() {
-  // Get Fabric.js canvas
-  const canvas = FabricHandler.getCanvas();
-  
-  if (!canvas) {
-    console.error("Fabric.js canvas not initialized");
-    return;
-  }
-  
-  // Create a simple rectangle
-  const rect = new fabric.Rect({
-    left: 100,
-    top: 100,
-    width: 100,
-    height: 100,
-    fill: 'rgba(0, 0, 255, 0.3)',
-    stroke: 'blue',
-    strokeWidth: 2,
-    rx: 5,
-    ry: 5
-  });
-  
-  // Add to canvas
-  canvas.add(rect);
-  canvas.renderAll();
-  
-  console.log("Test rectangle added to Fabric.js canvas");
+  // Clear Fabric.js canvas
+  FabricHandler.clearAnnotations();
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -558,30 +407,10 @@ document.addEventListener('DOMContentLoaded', function() {
   const resultsTableSection = document.getElementById('resultsTableSection');
   const uploadedImage = document.getElementById('uploadedImage');
   const imageContainer = document.getElementById('imageContainer');
-  let annotationOverlay = document.getElementById('annotationOverlay');
   const resultsBody = document.getElementById('resultsBody');
   const summary = document.getElementById('summary');
   const loader = document.getElementById('loader');
   const errorMessage = document.getElementById('errorMessage');
-
-  // In main.js where modules are initialized, make sure annotationOverlay exists before initializing
-  if (!annotationOverlay && imageContainer) {
-    annotationOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    annotationOverlay.id = "annotationOverlay";
-    annotationOverlay.style.position = "absolute";
-    annotationOverlay.style.top = "0";
-    annotationOverlay.style.left = "0";
-    annotationOverlay.style.pointerEvents = "none";
-    annotationOverlay.style.zIndex = "5";
-    imageContainer.appendChild(annotationOverlay);
-  }
-  
-  // Toggle buttons
-  const toggleFenster = document.getElementById('toggleFenster');
-  const toggleTuer = document.getElementById('toggleTuer');
-  const toggleWand = document.getElementById('toggleWand');
-  const toggleLukarne = document.getElementById('toggleLukarne');
-  const toggleDach = document.getElementById('toggleDach');
 
   // PDF navigation elements
   const pdfNavigation = document.getElementById('pdfNavigation');
@@ -643,26 +472,13 @@ document.addEventListener('DOMContentLoaded', function() {
   ZoomModule.setupZoom({
     imageContainer,
     uploadedImage,
-    annotationOverlay,
     resetZoomBtn
   });
   
   // Make getCurrentZoom accessible globally for other modules
   window.getCurrentZoom = ZoomModule.getCurrentZoom;
   
-  // 2. Setup annotations handling
-  AnnotationsModule.setupAnnotations({
-    imageContainer,
-    uploadedImage,
-    annotationOverlay
-  });
-  
-  // Make addAnnotation accessible globally
-  window.addAnnotation = AnnotationsModule.addAnnotation;
-  window.clearAnnotations = AnnotationsModule.clearAnnotations;
-  window.highlightBox = AnnotationsModule.highlightBox;
-  
-  // 3. Setup PDF handler
+  // 2. Setup PDF handler
   PdfModule.setupPdfHandler({
     pdfNavigation,
     currentPageSpan,
@@ -677,7 +493,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Set callback for displaying PDF pages
   PdfModule.setDisplayPageCallback(displayPdfPage);
   
-  // 4. Setup project functionality
+  // 3. Setup project functionality
   ProjectModule.setupProject({
     projectList,
     saveProjectBtn,
@@ -693,7 +509,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.loadProjectList = ProjectModule.loadProjectList;
   window.loadProject = ProjectModule.loadProject;
   
-  // 5. Setup labels management
+  // 4. Setup labels management
   LabelsModule.setupLabels({
     labelManagerModal,
     manageLabelBtn,
@@ -717,18 +533,11 @@ document.addEventListener('DOMContentLoaded', function() {
   // Make updateUIForLabels globally accessible
   window.updateUIForLabels = LabelsModule.updateUIForLabels;
   
-  // 6. Setup Fabric.js handler
-  if (typeof FabricHandler.setupFabricHandler === 'function') {
-    FabricHandler.setupFabricHandler({
-      imageContainer,
-      uploadedImage
-    });
-    
-    // Set labels to Fabric.js handler
-    if (typeof FabricHandler.setLabels === 'function' && window.currentLabels) {
-      FabricHandler.setLabels(window.currentLabels);
-    }
-  }
+  // 5. Setup Fabric.js handler
+  FabricHandler.setupFabricHandler({
+    imageContainer,
+    uploadedImage
+  });
   
   // Format selection handler for manual adjustments
   if (formatSelect) {
@@ -767,98 +576,20 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
-  // Toggle button handlers
-  if (toggleFenster) {
-    toggleFenster.addEventListener('click', function() {
-      this.classList.toggle('active');
-      const fensterElements = document.querySelectorAll('.fenster-annotation, .fenster-box, .fenster-label');
-      fensterElements.forEach(el => {
-        el.style.display = this.classList.contains('active') ? 'block' : 'none';
-      });
-      
-      // Also toggle Fabric.js objects if available
-      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
-        FabricHandler.toggleObjectsByLabel(1, this.classList.contains('active'));
-      }
-    });
-  }
-  
-  if (toggleTuer) {
-    toggleTuer.addEventListener('click', function() {
-      this.classList.toggle('active');
-      const tuerElements = document.querySelectorAll('.tuer-annotation, .tuer-box, .tuer-label');
-      tuerElements.forEach(el => {
-        el.style.display = this.classList.contains('active') ? 'block' : 'none';
-      });
-      
-      // Also toggle Fabric.js objects if available
-      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
-        FabricHandler.toggleObjectsByLabel(2, this.classList.contains('active'));
-      }
-    });
-  }
-  
-  if (toggleWand) {
-    toggleWand.addEventListener('click', function() {
-      this.classList.toggle('active');
-      const wandElements = document.querySelectorAll('.wand-annotation, .wand-box, .wand-label');
-      wandElements.forEach(el => {
-        el.style.display = this.classList.contains('active') ? 'block' : 'none';
-      });
-      
-      // Also toggle Fabric.js objects if available
-      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
-        FabricHandler.toggleObjectsByLabel(3, this.classList.contains('active'));
-      }
-    });
-  }
-  
-  if (toggleLukarne) {
-    toggleLukarne.addEventListener('click', function() {
-      this.classList.toggle('active');
-      const lukarneElements = document.querySelectorAll('.lukarne-annotation, .lukarne-box, .lukarne-label');
-      lukarneElements.forEach(el => {
-        el.style.display = this.classList.contains('active') ? 'block' : 'none';
-      });
-      
-      // Also toggle Fabric.js objects if available
-      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
-        FabricHandler.toggleObjectsByLabel(4, this.classList.contains('active'));
-      }
-    });
-  }
-  
-  if (toggleDach) {
-    toggleDach.addEventListener('click', function() {
-      this.classList.toggle('active');
-      const dachElements = document.querySelectorAll('.dach-annotation, .dach-box, .dach-label');
-      dachElements.forEach(el => {
-        el.style.display = this.classList.contains('active') ? 'block' : 'none';
-      });
-      
-      // Also toggle Fabric.js objects if available
-      if (typeof FabricHandler.toggleObjectsByLabel === 'function') {
-        FabricHandler.toggleObjectsByLabel(5, this.classList.contains('active'));
-      }
-    });
-  }
-  
   // Initialize Editor
   if (typeof window.initEditor === 'function') {
     window.initEditor({
       uploadedImage: uploadedImage,
       imageContainer: imageContainer,
-      annotationOverlay: annotationOverlay,
       resultsSection: resultsSection,
       updateSummary: updateSummary,
-      updateResultsTable: updateResultsTable,
-      addAnnotation: AnnotationsModule.addAnnotation
+      updateResultsTable: updateResultsTable
     });
   } else {
     console.warn("Editor initialization function not found. Please ensure editor.js is loaded before the main script.");
   }
 
-  // Setup event handlers for new Fabric.js editor buttons
+  // Setup event handlers for Fabric.js editor buttons
   if (editorToggle) {
     editorToggle.addEventListener('click', function() {
       const isActive = this.classList.contains('active');
@@ -1162,5 +893,4 @@ document.addEventListener('DOMContentLoaded', function() {
   window.updateSummary = updateSummary;
   window.updateResultsTable = updateResultsTable;
   window.clearResults = clearResults;
-  window.testFabricJs = testFabricJs;
 });
