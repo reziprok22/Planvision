@@ -1233,6 +1233,15 @@ function saveEditorChanges() {
         // Editor ausschalten
         toggleEditor();
         
+        // Force refresh annotations after toggling editor
+        setTimeout(function() {
+            refreshAnnotations();
+            // Ensure SVG overlay is properly positioned
+            if (typeof AnnotationsModule.adaptSvgOverlay === 'function') {
+                AnnotationsModule.adaptSvgOverlay();
+            }
+        }, 200);
+        
         // Bestätigung anzeigen
         alert('Änderungen wurden gespeichert.');
     } catch (error) {
@@ -1246,19 +1255,6 @@ function saveEditorChanges() {
     }
 }
 
-// saveEditorChanges hinzufügen
-function cancelEditorChanges() {
-    console.log("Verwerfe Editor-Änderungen");
-    
-    // Zurück zu den Originaldaten
-    if (editorOriginalState) {
-        window.data.predictions = JSON.parse(JSON.stringify(editorOriginalState));
-    }
-    
-    // Editor ausschalten
-    toggleEditor();
-}
-
 // Neue Hilfsfunktion zum Aktualisieren aller Annotationen
 // Neue Hilfsfunktion zum Aktualisieren aller Annotationen
 function refreshAnnotations() {
@@ -1269,27 +1265,70 @@ function refreshAnnotations() {
     boxes.forEach(box => box.remove());
     
     // SVG leeren
-    while (annotationOverlay.firstChild) {
-        annotationOverlay.removeChild(annotationOverlay.firstChild);
-    }
+    if (annotationOverlay) {
+        while (annotationOverlay.firstChild) {
+            annotationOverlay.removeChild(annotationOverlay.firstChild);
+        }
     
-    // Alle Annotationen neu hinzufügen
-    if (window.data && window.data.predictions) {
-        window.data.predictions.forEach((pred, index) => {
-            try {
-                addAnnotation(pred, index);
-            } catch (error) {
-                console.error(`Fehler beim Hinzufügen der Annotation ${index}:`, error);
-            }
-        });
+        // Alle Annotationen neu hinzufügen
+        if (window.data && window.data.predictions) {
+            window.data.predictions.forEach((pred, index) => {
+                try {
+                    // Use the addAnnotation function that was passed during initialization
+                    addAnnotation(pred, index);
+                } catch (error) {
+                    console.error(`Fehler beim Hinzufügen der Annotation ${index}:`, error);
+                }
+            });
+        } else {
+            console.warn("Keine Vorhersagen gefunden für Annotationen");
+        }
     } else {
-        console.warn("Keine Vorhersagen gefunden für Annotationen");
+        console.error("annotationOverlay ist nicht verfügbar!");
     }
     
     // Simuliere ein Resize-Event nach kurzer Verzögerung
     setTimeout(function() {
         window.dispatchEvent(new Event('resize'));
     }, 200);
+}
+
+// saveEditorChanges hinzufügen
+function saveEditorChanges() {
+    console.log("Speichere Editor-Änderungen");
+    
+    try {
+        // Aktualisiere die Ergebnis-Tabelle und Zusammenfassung
+        updateEditorResults();
+        
+        // Speichere die aktuellen Daten in pdfPageData für die aktuelle Seite
+        if (typeof currentPdfPage !== 'undefined' && currentPdfPage) {
+            pdfPageData[currentPdfPage] = JSON.parse(JSON.stringify(window.data));
+        }
+        
+        // Editor ausschalten
+        toggleEditor();
+        
+        // Force refresh annotations after toggling editor
+        setTimeout(function() {
+            refreshAnnotations();
+            // Ensure SVG overlay is properly positioned
+            if (typeof adaptSvgOverlay === 'function') {  // Use local reference
+                adaptSvgOverlay();
+            }
+        }, 200);
+        
+        // Bestätigung anzeigen
+        alert('Änderungen wurden gespeichert.');
+    } catch (error) {
+        console.error("Fehler beim Speichern der Änderungen:", error);
+        
+        // Trotz Fehler den Editor verlassen
+        toggleEditor();
+        
+        // Bestätigung anzeigen
+        alert('Änderungen wurden gespeichert, aber es gab ein Problem bei der Aktualisierung der Anzeige.');
+    }
 }
 
 // Ergebnisse aktualisieren

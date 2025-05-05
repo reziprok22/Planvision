@@ -285,7 +285,8 @@ export function addRectangleAnnotation(data, index) {
       backgroundColor: color,
       padding: 5,
       objectType: 'label',
-      annotationIndex: index
+      annotationIndex: index,
+      textBaseline: 'top' // Valid value: 'top', 'middle', 'bottom', 'alphabetic', 'hanging', 'ideographic'
     });
     
     // Add text to canvas
@@ -624,7 +625,8 @@ function enableRectangleDrawing(labelId) {
       backgroundColor: color,
       padding: 5,
       objectType: 'label',
-      annotationIndex: canvas.getObjects().indexOf(rect)
+      annotationIndex: canvas.getObjects().indexOf(rect),
+      textBaseline: 'top'
     });
     
     // Add text
@@ -794,7 +796,8 @@ function updateDataSummary() {
       originalData: { ...data },
       labelId: labelId,
       labelName: label_name,
-      area: data.area || 0
+      area: data.area || 0,
+      textBaseline: 'top'
     });
     
     // Add polygon to canvas
@@ -819,7 +822,8 @@ function updateDataSummary() {
       backgroundColor: color,
       padding: 5,
       objectType: 'label',
-      annotationIndex: index
+      annotationIndex: index,
+      textBaseline: 'top'
     });
     
     // Add text to canvas
@@ -869,7 +873,8 @@ function updateDataSummary() {
       annotationType: 'line',
       annotationIndex: index,
       originalData: { ...data },
-      length: data.length || 0
+      length: data.length || 0,
+      textBaseline: 'top' 
     });
     
     // Add line to canvas
@@ -904,7 +909,8 @@ function updateDataSummary() {
       fontSize: 12,
       fill: color,
       objectType: 'label',
-      annotationIndex: index
+      annotationIndex: index,
+      textBaseline: 'top'
     });
     
     // Add text to canvas

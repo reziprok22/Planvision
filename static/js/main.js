@@ -3,6 +3,19 @@
  * This file coordinates the modules and handles the primary application flow
  */
 
+// Add this at the top of your main.js or in a separate script that loads before fabric-handler.js
+if (typeof fabric !== 'undefined') {
+  // Patch for the textBaseline issue
+  const originalInitialize = fabric.Text.prototype.initialize;
+  fabric.Text.prototype.initialize = function() {
+    const result = originalInitialize.apply(this, arguments);
+    if (this.textBaseline === 'alphabetical') {
+      this.textBaseline = 'alphabetic';
+    }
+    return result;
+  };
+}
+
 // Import modules
 import * as ZoomModule from './zoom.js';
 import * as AnnotationsModule from './annotations.js';
@@ -545,11 +558,23 @@ document.addEventListener('DOMContentLoaded', function() {
   const resultsTableSection = document.getElementById('resultsTableSection');
   const uploadedImage = document.getElementById('uploadedImage');
   const imageContainer = document.getElementById('imageContainer');
-  const annotationOverlay = document.getElementById('annotationOverlay');
+  let annotationOverlay = document.getElementById('annotationOverlay');
   const resultsBody = document.getElementById('resultsBody');
   const summary = document.getElementById('summary');
   const loader = document.getElementById('loader');
   const errorMessage = document.getElementById('errorMessage');
+
+  // In main.js where modules are initialized, make sure annotationOverlay exists before initializing
+  if (!annotationOverlay && imageContainer) {
+    annotationOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    annotationOverlay.id = "annotationOverlay";
+    annotationOverlay.style.position = "absolute";
+    annotationOverlay.style.top = "0";
+    annotationOverlay.style.left = "0";
+    annotationOverlay.style.pointerEvents = "none";
+    annotationOverlay.style.zIndex = "5";
+    imageContainer.appendChild(annotationOverlay);
+  }
   
   // Toggle buttons
   const toggleFenster = document.getElementById('toggleFenster');

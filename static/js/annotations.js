@@ -305,12 +305,18 @@ export function addLabel(x, y, text, parentId, classPrefix, color) {
 /**
  * Clear all annotations from the SVG overlay
  */
-export function clearAnnotations() {
-  // Clear all SVG elements including labels
-  while (annotationOverlay.firstChild) {
-    annotationOverlay.removeChild(annotationOverlay.firstChild);
+  // Check if annotationOverlay exists before trying to clear it
+  export function clearAnnotations() {
+    // Check if annotationOverlay exists before trying to clear it
+    if (annotationOverlay) {
+      // Clear all SVG elements including labels
+      while (annotationOverlay.firstChild) {
+        annotationOverlay.removeChild(annotationOverlay.firstChild);
+      }
+    } else {
+      console.warn("annotationOverlay is not initialized yet");
+    }
   }
-}
 
 /**
  * Highlight a specific annotation

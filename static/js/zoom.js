@@ -35,9 +35,28 @@ export function setupZoom(elements) {
       uploadedImage: !!uploadedImage,
       annotationOverlay: !!annotationOverlay
     });
-    return;
+    
+    // Create annotationOverlay if it doesn't exist
+    if (imageContainer && !annotationOverlay) {
+      annotationOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      annotationOverlay.id = "annotationOverlay";
+      annotationOverlay.style.position = "absolute";
+      annotationOverlay.style.top = "0";
+      annotationOverlay.style.left = "0";
+      annotationOverlay.style.pointerEvents = "none";
+      annotationOverlay.style.zIndex = "5";
+      imageContainer.appendChild(annotationOverlay);
+      
+      // Update the elements object to include the new overlay
+      elements.annotationOverlay = annotationOverlay;
+      console.log("Created missing annotationOverlay element");
+    } else {
+      return; // Exit if essential elements are still missing
+    }
   }
   
+  // Continue with setup...
+  setupZoomEventListeners();
   // Set up event listeners after DOM elements are stored
   setupZoomEventListeners();
   
