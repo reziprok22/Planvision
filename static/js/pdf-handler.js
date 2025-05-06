@@ -11,6 +11,12 @@ let allPdfPages = [];
 let pdfPageData = {};
 let pageSettings = {};
 
+// Background processing state
+let activeRequests = 0;
+let maxConcurrentRequests = 2; // Maximum number of concurrent API calls
+let processingQueue = [];
+let processingCancelled = false;
+
 // DOM references
 let pdfNavigation;
 let currentPageSpan;
@@ -54,7 +60,7 @@ export function setupPdfHandler(elements) {
   
   if (reprocessBtn) {
     reprocessBtn.addEventListener('click', function() {
-      // Aktuelle Seite neu verarbeiten mit den momentanen Formularwerten
+      // Process current page with current form values
       navigateToPdfPage(currentPdfPage, true);
     });
   }
@@ -143,6 +149,11 @@ export function processPdfData(responseData) {
   } else {
     pdfNavigation.style.display = 'none';
   }
+  
+  // Make sure main loader is hidden
+  if (loader) {
+    loader.style.display = 'none';
+  }
 }
 
 /**
@@ -152,6 +163,9 @@ export function processPdfData(responseData) {
  */
 export function navigateToPdfPage(pageNumber, forceReprocess = false) {
   console.log(`Navigating to PDF page ${pageNumber} of ${totalPdfPages}, Force reprocess: ${forceReprocess}`);
+  
+  // Cancel any ongoing background processing when navigating
+  cancelBackgroundProcessing();
   
   // Save current edits of the current page
   if (window.data && currentPdfPage) {
@@ -170,6 +184,12 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
     if (displayPdfPageCallback) {
       displayPdfPageCallback(pageNumber, pdfPageData[pageNumber]);
     }
+    
+    // After navigating to a page, restart background processing with adjusted priorities
+    setTimeout(() => {
+      processRemainingPagesInBackground();
+    }, 500);
+    
     return;
   }
   
@@ -200,10 +220,6 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
     console.log(`Settings for page ${pageNumber} updated:`, pageSettings[pageNumber]);
   }
   
-  // Update UI status
-  loader.style.display = 'block';
-  errorMessage.style.display = 'none';
-  
   // Prepare form data
   const formData = new FormData();
   formData.append('session_id', pdfSessionId);
@@ -223,6 +239,14 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
     scale: pageSettings[pageNumber].plan_scale,
     threshold: pageSettings[pageNumber].threshold
   });
+  
+  // Show the main loader in the upload section
+  if (loader) {
+    loader.style.display = 'block';
+  }
+  if (errorMessage) {
+    errorMessage.style.display = 'none';
+  }
   
   // API call for page analysis
   fetch('/analyze_page', {
@@ -257,14 +281,24 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
     if (displayPdfPageCallback) {
       displayPdfPageCallback(pageNumber, processedData);
     }
+    
+    // After loading a new page, restart background processing
+    setTimeout(() => {
+      processRemainingPagesInBackground();
+    }, 500);
   })
   .catch(error => {
     console.error('Error:', error);
-    errorMessage.textContent = 'Error: ' + error.message;
-    errorMessage.style.display = 'block';
+    if (errorMessage) {
+      errorMessage.textContent = 'Error: ' + error.message;
+      errorMessage.style.display = 'block';
+    }
   })
   .finally(() => {
-    loader.style.display = 'none';
+    // Hide the main loader in the upload section when finished
+    if (loader) {
+      loader.style.display = 'none';
+    }
   });
 }
 
@@ -284,137 +318,290 @@ export function updatePdfNavigation() {
 }
 
 /**
- * Show background processing indicator
+ * Show background processing indicator with cancel button
  */
 function showBackgroundProcessingIndicator() {
+  // Remove any existing indicator
+  const existingIndicator = document.getElementById('backgroundProcessingIndicator');
+  if (existingIndicator) {
+    existingIndicator.remove();
+  }
+  
   const indicator = document.createElement('div');
   indicator.id = 'backgroundProcessingIndicator';
   indicator.className = 'background-processing';
   indicator.innerHTML = `
-    <div class="processing-spinner"></div>
-    <span>Analyzing additional pages in background: <span id="processedPagesCount">1</span>/${totalPdfPages}</span>
+    <div class="processing-spinner" id="processingSpinner"></div>
+    <div>
+      <div>Analyzing pages in background: <span id="processedPagesCount">1</span>/${totalPdfPages}</div>
+      <div id="currentProcessingText">Starting analysis...</div>
+    </div>
+    <button id="cancelProcessingBtn">Cancel</button>
   `;
   document.body.appendChild(indicator);
+  
+  // Add cancel button event listener
+  const cancelBtn = document.getElementById('cancelProcessingBtn');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', cancelBackgroundProcessing);
+  }
 }
 
 /**
- * Process remaining PDF pages in background
+ * Process remaining PDF pages in background with throttling
  */
 function processRemainingPagesInBackground() {
-  const indicator = document.getElementById('backgroundProcessingIndicator');
-  const counter = document.getElementById('processedPagesCount');
+  // Reset state
+  processingCancelled = false;
+  processingQueue = [];
+  activeRequests = 0;
   
-  // Start with page 2, since page 1 is already loaded
-  let currentProcessingPage = 2;
-  
-  function processNextPage() {
-    if (currentProcessingPage > totalPdfPages) {
-      // All pages processed
-      if (indicator) {
-        indicator.innerHTML = `<span>All ${totalPdfPages} pages analyzed!</span>`;
-        // Hide indicator after a short delay
-        setTimeout(() => {
-          indicator.style.opacity = '0';
-          setTimeout(() => indicator.remove(), 500);
-        }, 3000);
-      }
-      return;
+  // Build the queue of pages to process (skip current page which is already loaded)
+  for (let i = 1; i <= totalPdfPages; i++) {
+    if (i !== currentPdfPage && !pdfPageData[i]) {
+      processingQueue.push(i);
     }
-    
-    // Show current progress
-    if (counter) counter.textContent = currentProcessingPage;
-  
-    // Do page analysis in background
-    const formData = new FormData();
-    formData.append('session_id', pdfSessionId);
-    formData.append('page', currentProcessingPage);
-    
-    // Make sure we use the correct settings for THIS page
-    let currentPageSettings = pageSettings[currentProcessingPage];
-    
-    // If no settings for this page, create them
-    if (!currentPageSettings) {
-      // Take values from the form as a base
-      let formWidth = document.getElementById('formatWidth').value;
-      let formHeight = document.getElementById('formatHeight').value;
-      
-      // If detected page sizes are available, use them for the respective page
-      if (window.data && window.data.page_sizes && window.data.page_sizes.length >= currentProcessingPage) {
-        // Round the values and convert them to strings
-        formWidth = String(Math.round(window.data.page_sizes[currentProcessingPage-1][0]));
-        formHeight = String(Math.round(window.data.page_sizes[currentProcessingPage-1][1]));
-        console.log(`Using detected page size for page ${currentProcessingPage}: ${formWidth} × ${formHeight} mm`);
-      }
-      
-      currentPageSettings = {
-        format_width: formWidth,
-        format_height: formHeight,
-        dpi: document.getElementById('dpi').value,
-        plan_scale: document.getElementById('planScale').value,
-        threshold: document.getElementById('threshold').value
-      };
-      
-      // Save the settings
-      pageSettings[currentProcessingPage] = currentPageSettings;
-    }
-    
-    formData.append('format_width', currentPageSettings.format_width);
-    formData.append('format_height', currentPageSettings.format_height);
-    formData.append('dpi', currentPageSettings.dpi);
-    formData.append('plan_scale', currentPageSettings.plan_scale);
-    formData.append('threshold', currentPageSettings.threshold);
-    
-    fetch('/analyze_page', {
-      method: 'POST',
-      body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-      // Process data and store
-      const processedData = window.processApiResponse ? 
-        window.processApiResponse(data) : data;
-      
-      // Add PDF info back
-      processedData.is_pdf = data.is_pdf || false;
-      processedData.pdf_image_url = data.pdf_image_url || null;
-      processedData.session_id = data.session_id;
-      processedData.current_page = data.current_page;
-      processedData.page_count = data.page_count;
-      processedData.all_pages = data.all_pages;
-      
-      // Store in pdfPageData
-      pdfPageData[currentProcessingPage] = processedData;
-      
-      console.log(`Page ${currentProcessingPage} analyzed in background`);
-      
-      // Go to next page
-      currentProcessingPage++;
-      // Short pause between requests
-      setTimeout(processNextPage, 500);
-    })
-    .catch(error => {
-      console.error(`Error analyzing page ${currentProcessingPage}:`, error);
-      
-      // Continue despite errors
-      currentProcessingPage++;
-      setTimeout(processNextPage, 500);
-    });
   }
   
-  // Start processing
-  processNextPage();
+  // Start processing if there are pages in the queue
+  if (processingQueue.length > 0) {
+    updateProcessingIndicator();
+    processNextBatch();
+  } else {
+    // All pages already processed
+    showProcessingComplete();
+  }
+}
+
+/**
+ * Process the next batch of pages (up to maxConcurrentRequests)
+ */
+function processNextBatch() {
+  if (processingCancelled || processingQueue.length === 0) {
+    if (activeRequests === 0) {
+      showProcessingComplete();
+    }
+    return;
+  }
+  
+  // Process up to maxConcurrentRequests pages at once
+  const availableSlots = maxConcurrentRequests - activeRequests;
+  
+  for (let i = 0; i < availableSlots && processingQueue.length > 0; i++) {
+    const pageNum = processingQueue.shift();
+    processPdfPage(pageNum);
+  }
+}
+
+/**
+ * Process a single PDF page
+ * @param {number} pageNumber - The page number to process
+ */
+function processPdfPage(pageNumber) {
+  // Skip already processed pages or if processing is cancelled
+  if (pdfPageData[pageNumber] || processingCancelled) {
+    return;
+  }
+  
+  console.log(`Processing page ${pageNumber} in background`);
+  activeRequests++;
+  
+  // Update the indicator to show which page is being processed
+  updateProcessingIndicator(pageNumber);
+  
+  // Prepare form data
+  const formData = new FormData();
+  formData.append('session_id', pdfSessionId);
+  formData.append('page', pageNumber);
+  
+  // Use settings for this page
+  const currentPageSettings = pageSettings[pageNumber] || createDefaultPageSettings(pageNumber);
+  
+  formData.append('format_width', currentPageSettings.format_width);
+  formData.append('format_height', currentPageSettings.format_height);
+  formData.append('dpi', currentPageSettings.dpi);
+  formData.append('plan_scale', currentPageSettings.plan_scale);
+  formData.append('threshold', currentPageSettings.threshold);
+  
+  fetch('/analyze_page', {
+    method: 'POST',
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    // Process data and store
+    const processedData = window.processApiResponse ? 
+      window.processApiResponse(data) : data;
+    
+    // Add PDF info back
+    processedData.is_pdf = data.is_pdf || false;
+    processedData.pdf_image_url = data.pdf_image_url || null;
+    processedData.session_id = data.session_id;
+    processedData.current_page = data.current_page;
+    processedData.page_count = data.page_count;
+    processedData.all_pages = data.all_pages;
+    processedData.page_sizes = data.page_sizes || [];
+    
+    // Store in pdfPageData
+    pdfPageData[pageNumber] = processedData;
+    
+    console.log(`Page ${pageNumber} analyzed in background`);
+  })
+  .catch(error => {
+    console.error(`Error analyzing page ${pageNumber}:`, error);
+  })
+  .finally(() => {
+    activeRequests--;
+    updateProcessingIndicator(0); // Update with no specific page
+    
+    // Process more pages if available
+    setTimeout(processNextBatch, 300);
+  });
+}
+
+/**
+ * Create default page settings based on current form values
+ * @param {number} pageNumber - The page number
+ * @returns {Object} The default settings
+ */
+function createDefaultPageSettings(pageNumber) {
+  // Take values from the form as a base
+  let formWidth = document.getElementById('formatWidth').value;
+  let formHeight = document.getElementById('formatHeight').value;
+  
+  // If detected page sizes are available, use them
+  if (window.data && window.data.page_sizes && window.data.page_sizes.length >= pageNumber) {
+    // Round the values and convert them to strings
+    formWidth = String(Math.round(window.data.page_sizes[pageNumber-1][0]));
+    formHeight = String(Math.round(window.data.page_sizes[pageNumber-1][1]));
+    console.log(`Using detected page size for page ${pageNumber}: ${formWidth} × ${formHeight} mm`);
+  }
+  
+  return {
+    format_width: formWidth,
+    format_height: formHeight,
+    dpi: document.getElementById('dpi').value,
+    plan_scale: document.getElementById('planScale').value,
+    threshold: document.getElementById('threshold').value
+  };
+}
+
+/**
+ * Update processing indicator to show progress
+ * @param {number} processingPage - The page currently being processed (0 if none)
+ */
+function updateProcessingIndicator(processingPage = 0) {
+  const indicator = document.getElementById('backgroundProcessingIndicator');
+  const counter = document.getElementById('processedPagesCount');
+  const currentProcessingText = document.getElementById('currentProcessingText');
+  const spinner = document.getElementById('processingSpinner');
+  
+  if (!indicator || !counter || !currentProcessingText) return;
+  
+  // Count processed pages (excluding the current page which is always processed)
+  const totalProcessed = Object.keys(pdfPageData).length;
+  const remainingCount = processingQueue.length;
+  
+  // Update the counter
+  counter.textContent = totalProcessed;
+  
+  // Update processing text
+  if (processingPage > 0) {
+    currentProcessingText.textContent = `Currently analyzing page ${processingPage}...`;
+  } else if (activeRequests > 0) {
+    const pages = Array.from({ length: activeRequests }).map((_, i) => 
+      processingQueue[i] || '?').join(', ');
+    currentProcessingText.textContent = `Processing ${activeRequests} page(s) in parallel...`;
+  } else if (processingQueue.length > 0) {
+    currentProcessingText.textContent = `Queued: ${processingQueue.length} pages remaining...`;
+  } else {
+    currentProcessingText.textContent = `Complete!`;
+  }
+  
+  // Update text based on processing state
+  if (processingCancelled) {
+    currentProcessingText.textContent = 'Processing cancelled';
+    if (spinner) spinner.style.display = 'none';  // Hide spinner
+    
+    setTimeout(() => {
+      indicator.style.opacity = '0';
+      setTimeout(() => indicator.remove(), 500);
+    }, 2000);
+  } else if (totalProcessed >= totalPdfPages || (remainingCount === 0 && activeRequests === 0)) {
+    showProcessingComplete();
+  }
+}
+
+/**
+ * Show processing complete message
+ */
+function showProcessingComplete() {
+  const indicator = document.getElementById('backgroundProcessingIndicator');
+  const spinner = document.getElementById('processingSpinner');
+  if (!indicator) return;
+  
+  const totalProcessed = Object.keys(pdfPageData).length;
+  
+  // Stop the spinner animation
+  if (spinner) {
+    spinner.style.animation = 'none';
+    spinner.style.display = 'none';
+  }
+  
+  // Update text
+  indicator.innerHTML = `<span>All ${totalProcessed} pages analyzed successfully!</span>`;
+  
+  // Hide indicator after a short delay
+  setTimeout(() => {
+    indicator.style.opacity = '0';
+    setTimeout(() => indicator.remove(), 500);
+  }, 3000);
+}
+
+/**
+ * Cancel ongoing background processing
+ */
+export function cancelBackgroundProcessing() {
+  if (!processingCancelled) {
+    console.log("Cancelling background processing");
+    processingCancelled = true;
+    processingQueue = [];
+    
+    const indicator = document.getElementById('backgroundProcessingIndicator');
+    const spinner = document.getElementById('processingSpinner');
+    
+    if (indicator) {
+      if (spinner) {
+        spinner.style.animation = 'none';
+        spinner.style.display = 'none';
+      }
+      
+      indicator.innerHTML = `<span>Processing cancelled</span>`;
+      setTimeout(() => {
+        indicator.style.opacity = '0';
+        setTimeout(() => indicator.remove(), 500);
+      }, 2000);
+    }
+  }
 }
 
 /**
  * Reset PDF state
  */
 export function resetPdfState() {
+  // Cancel any ongoing processing
+  cancelBackgroundProcessing();
+  
+  // Reset all state variables
   pdfSessionId = null;
   currentPdfPage = 1;
   totalPdfPages = 1;
   allPdfPages = [];
   pdfPageData = {};
   pageSettings = {};
+  processingQueue = [];
+  activeRequests = 0;
+  processingCancelled = true;
 
   // Add a check to ensure pdfNavigation exists before accessing its style
   if (pdfNavigation) {
@@ -470,6 +657,14 @@ export function getPageSettings() {
  */
 export function setPageSettings(settings) {
   pageSettings = settings;
+}
+
+/**
+ * Get all PDF pages URLs
+ * @returns {Array} Array of page URLs
+ */
+export function getAllPdfPages() {
+  return allPdfPages;
 }
 
 // Make key functions available globally

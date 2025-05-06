@@ -1220,4 +1220,35 @@ export function cancelEditing() {
   // Disable editing
   disableEditing();
 }
+
+// Expose functions through window.FabricHandler
+window.FabricHandler = {
+  // Canvas management
+  initCanvas,
+  getCanvas,
+  clearAnnotations,
+  resetView,
   
+  // Drawing and editing
+  enableDrawingMode,
+  enableEditing,
+  disableEditing,
+  saveAnnotations,
+  cancelEditing,
+  
+  // Object manipulation
+  deleteSelected,
+  copySelected,
+  changeSelectedLabel,
+  changeSelectedLineType,
+  
+  // Annotation display
+  displayAnnotations,
+  highlightObject,
+  selectObjectByIndex,
+  toggleObjectsByLabel,
+  
+  // Utilities
+  getCurrentZoom,
+  setLabels
+};

@@ -394,63 +394,182 @@ tr:nth-child(even) {
     background-color: rgba(128, 128, 128, 0.66);
 }
 
-/* Editor-Bereich */
+/* Editor-section layout with proper positioning */
+.editor-section {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    background: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-top: 0;
+    overflow: auto;
+    max-height: 80vh;
+}
+
+/* Editor toolbar with sticky positioning */
+.editor-toolbar, .editor-controls {
+    position: sticky;
+    top: 0;
+    background-color: white;
+    z-index: 100;
+    padding: 10px 0;
+    border-bottom: 1px solid #ddd;
+    margin-bottom: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.editor-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: 20px;
+}
+
+.editor-group label {
+    margin-bottom: 0;
+    font-weight: bold;
+}
+
+/* Editor canvas container */
 .editor-canvas-container {
+    width: 100%;
     position: relative;
     transform-origin: top left;
     margin-top: 15px;
     border: 1px solid #ddd;
     background-color: #fff;
-  }
-  
-  #editorCanvas {
-    display: block;
-    max-width: none;
-    transform-origin: top left;
-  }
-  
-  .editor-section {
+    min-height: 300px;
     overflow: auto;
-    max-height: 80vh;
-  }
-
-.editor-section {
-    position: relative;
 }
 
-.editor-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 15px;
-    align-items: center;
+#editorCanvas {
+    max-width: none; /* Remove max-width restriction */
+    transform-origin: top left;
+    display: block;
+    border: 1px solid #ddd;
+    background: #f9f9f9;
 }
 
+/* Editor button styles */
 .editor-button {
-    flex: 0 0 auto;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
 }
 
-.editor-actions {
-    margin-left: auto;
-    display: flex;
-    gap: 10px;
+.editor-button:hover {
+    background-color: #3a80d2;
+}
+
+.editor-button.active {
+    background-color: #2a70c2;
+}
+
+/* Save/Cancel buttons */
+.editor-action-button {
+    padding: 8px 15px;
+    font-size: 15px;
+    margin-left: 10px;
 }
 
 .save-button {
-    background: #4CAF50;
+    background-color: #4CAF50;
 }
 
 .save-button:hover {
-    background: #45a049;
+    background-color: #45a049;
 }
 
 .cancel-button {
-    background: #f44336;
+    background-color: #f44336;
 }
 
 .cancel-button:hover {
+    background-color: #d32f2f;
+}
+
+/* Background processing indicator styles */
+.background-processing {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 15px;
+    background-color: rgba(0, 0, 0, 0.7);
+    color: white;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    z-index: 1000;
+    transition: opacity 0.5s;
+}
+
+.processing-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: white;
+    margin-right: 10px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+#cancelProcessingBtn {
+    margin-left: 10px;
+    padding: 3px 8px;
+    background: #f44336;
+    border: none;
+    color: white;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 12px;
+}
+
+#cancelProcessingBtn:hover {
     background: #d32f2f;
 }
+
+
+/* Responsive design for editor */
+@media (max-width: 768px) {
+    .editor-toolbar, .editor-controls {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .editor-group {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+    
+    .editor-action-buttons {
+        margin-top: 10px;
+        width: 100%;
+        display: flex;
+        justify-content: space-between;
+    }
+    
+    .editor-action-button {
+        margin: 0;
+    }
+}
+
+
+
 
 .object-type-select {
     flex: 0 0 120px;

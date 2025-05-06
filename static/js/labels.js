@@ -694,5 +694,6 @@ window.LabelsManager = {
   getLabelColor,
   setAreaLabels,
   setLineLabels,
-  updateUIForLabels
+  updateUIForLabels,
+  saveLabels
 };

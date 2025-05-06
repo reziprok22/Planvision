@@ -211,6 +211,7 @@ def predict():
         print(f"Allgemeiner Fehler: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
+
 @app.route('/analyze_page', methods=['POST'])
 def analyze_page():
     try:
