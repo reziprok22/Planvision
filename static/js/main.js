@@ -33,25 +33,25 @@ window.data = null;
 function processApiResponse(apiResponse) {
   // Create output format
   const result = {
-    count: {},
-    total_area: {},
+    count: {
+      fenster: 0,
+      tuer: 0,
+      wand: 0,
+      lukarne: 0,
+      dach: 0,
+      other: 0,
+      line: 0
+    },
+    total_area: {
+      fenster: 0,
+      tuer: 0,
+      wand: 0,
+      lukarne: 0,
+      dach: 0,
+      other: 0
+    },
     predictions: []
   };
-  
-  let fensterCount = 0;
-  let tuerCount = 0;
-  let wandCount = 0;
-  let lukarneCount = 0;
-  let dachCount = 0;
-  let otherCount = 0;
-  let lineCount = 0;
-  
-  let fensterArea = 0;
-  let tuerArea = 0;
-  let wandArea = 0;
-  let lukarneArea = 0;
-  let dachArea = 0;
-  let otherArea = 0;
   
   // Make sure predictions is an array
   const predictions = apiResponse.predictions || [];
@@ -63,7 +63,7 @@ function processApiResponse(apiResponse) {
       let predType = "rectangle";
       if (pred.type === "line" || (pred.line && pred.length !== undefined)) {
         predType = "line";
-        lineCount++;
+        result.count.line++;
       } else if (pred.type === "polygon" || pred.polygon) {
         predType = "polygon";
       } else if (pred.box || pred.bbox) {
@@ -83,12 +83,29 @@ function processApiResponse(apiResponse) {
         
         // Update counts and areas based on label
         switch(pred.label) {
-          case 1: fensterCount++; fensterArea += pred.area || 0; break;
-          case 2: tuerCount++; tuerArea += pred.area || 0; break;
-          case 3: wandCount++; wandArea += pred.area || 0; break;
-          case 4: lukarneCount++; lukarneArea += pred.area || 0; break;
-          case 5: dachCount++; dachArea += pred.area || 0; break;
-          default: otherCount++; otherArea += pred.area || 0;
+          case 1: 
+            result.count.fenster++; 
+            result.total_area.fenster += pred.area || 0; 
+            break;
+          case 2: 
+            result.count.tuer++; 
+            result.total_area.tuer += pred.area || 0; 
+            break;
+          case 3: 
+            result.count.wand++; 
+            result.total_area.wand += pred.area || 0; 
+            break;
+          case 4: 
+            result.count.lukarne++; 
+            result.total_area.lukarne += pred.area || 0; 
+            break;
+          case 5: 
+            result.count.dach++; 
+            result.total_area.dach += pred.area || 0; 
+            break;
+          default: 
+            result.count.other++; 
+            result.total_area.other += pred.area || 0;
         }
       }
       
@@ -104,26 +121,6 @@ function processApiResponse(apiResponse) {
     console.warn("No predictions found in API response or not an array");
   }
   
-  // Set summary data
-  result.count = {
-    fenster: fensterCount,
-    tuer: tuerCount,
-    wand: wandCount,
-    lukarne: lukarneCount,
-    dach: dachCount,
-    other: otherCount,
-    line: lineCount
-  };
-  
-  result.total_area = {
-    fenster: fensterArea,
-    tuer: tuerArea,
-    wand: wandArea,
-    lukarne: lukarneArea,
-    dach: dachArea,
-    other: otherArea
-  };
-  
   // Copy PDF-specific information from the original response
   if (apiResponse.is_pdf) {
     result.is_pdf = apiResponse.is_pdf;
@@ -136,6 +133,42 @@ function processApiResponse(apiResponse) {
   }
   
   return result;
+}
+
+// Debug Annotation
+function debugAnnotations(predictions) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  const img = document.getElementById('uploadedImage');
+  
+  // Set canvas size to match image
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  
+  // Draw the image
+  ctx.drawImage(img, 0, 0);
+  
+  // Draw boxes for each prediction
+  predictions.forEach((pred, index) => {
+    if (pred.box) {
+      const [x1, y1, x2, y2] = pred.box;
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+      
+      // Draw label
+      ctx.fillStyle = 'red';
+      ctx.font = '16px Arial';
+      ctx.fillText(`#${index + 1}: ${pred.area.toFixed(2)} m²`, x1, y1 - 5);
+    }
+  });
+  
+  // Show debug canvas
+  canvas.style.position = 'absolute';
+  canvas.style.top = '0';
+  canvas.style.left = '0';
+  canvas.style.zIndex = '100';
+  document.getElementById('imageContainer').appendChild(canvas);
 }
 
 /**
@@ -162,6 +195,11 @@ function displayResults(responseData) {
     const uploadedFile = document.getElementById('file').files[0];
     const displayImageUrl = URL.createObjectURL(uploadedFile);
     uploadedImage.src = displayImageUrl;
+  }
+
+  // Debug-Code
+  if (responseData.predictions && responseData.predictions.length > 0) {
+    debugAnnotations(responseData.predictions);
   }
   
   // Wait for image to load
@@ -394,100 +432,112 @@ function clearResults() {
   FabricHandler.clearAnnotations();
 }
 
-document.addEventListener('DOMContentLoaded', function() {
+/**
+ * Initialize and set up event handlers for the application
+ */
+function initApp() {
   console.log("DOM fully loaded. Initializing application...");
 
-  // Get main UI elements
-  const uploadForm = document.getElementById('uploadForm');
-  const formatSelect = document.getElementById('formatSelect');
-  const customFormatFields = document.getElementById('customFormatFields');
-  const formatWidth = document.getElementById('formatWidth');
-  const formatHeight = document.getElementById('formatHeight');
-  const resultsSection = document.getElementById('resultsSection');
-  const resultsTableSection = document.getElementById('resultsTableSection');
-  const uploadedImage = document.getElementById('uploadedImage');
-  const imageContainer = document.getElementById('imageContainer');
-  const resultsBody = document.getElementById('resultsBody');
-  const summary = document.getElementById('summary');
-  const loader = document.getElementById('loader');
-  const errorMessage = document.getElementById('errorMessage');
+  // Collect DOM elements
+  const elements = {
+    // Main UI elements
+    uploadForm: document.getElementById('uploadForm'),
+    formatSelect: document.getElementById('formatSelect'),
+    customFormatFields: document.getElementById('customFormatFields'),
+    formatWidth: document.getElementById('formatWidth'),
+    formatHeight: document.getElementById('formatHeight'),
+    resultsSection: document.getElementById('resultsSection'),
+    resultsTableSection: document.getElementById('resultsTableSection'),
+    uploadedImage: document.getElementById('uploadedImage'),
+    imageContainer: document.getElementById('imageContainer'),
+    resultsBody: document.getElementById('resultsBody'),
+    summary: document.getElementById('summary'),
+    loader: document.getElementById('loader'),
+    errorMessage: document.getElementById('errorMessage'),
 
-  // PDF navigation elements
-  const pdfNavigation = document.getElementById('pdfNavigation');
-  const prevPageBtn = document.getElementById('prevPageBtn');
-  const nextPageBtn = document.getElementById('nextPageBtn');
-  const currentPageSpan = document.getElementById('currentPage');
-  const totalPagesSpan = document.getElementById('totalPages');
-  const reprocessBtn = document.getElementById('reprocessBtn');
-  
-  // Project elements
-  const projectList = document.getElementById('projectList');
-  const saveProjectBtn = document.getElementById('saveProjectBtn');
-  const loadProjectBtn = document.getElementById('loadProjectBtn');
-  const exportPdfBtn = document.getElementById('exportPdfBtn');
-  const exportAnnotatedPdfBtn = document.getElementById('exportAnnotatedPdfBtn');
-  
-  // Label manager elements
-  const labelManagerModal = document.getElementById('labelManagerModal');
-  const manageLabelBtn = document.getElementById('manageLabelBtn');
-  const closeModalBtn = labelManagerModal ? labelManagerModal.querySelector('.close') : null;
-  const labelTableBody = document.getElementById('labelTableBody');
-  const addLabelBtn = document.getElementById('addLabelBtn');
-  const importLabelsBtn = document.getElementById('importLabelsBtn');
-  const exportLabelsBtn = document.getElementById('exportLabelsBtn');
-  const resetLabelsBtn = document.getElementById('resetLabelsBtn');
-  const labelForm = document.getElementById('labelForm');
-  const labelFormTitle = document.getElementById('labelFormTitle');
-  const labelIdInput = document.getElementById('labelId');
-  const labelNameInput = document.getElementById('labelName');
-  const labelColorInput = document.getElementById('labelColor');
-  const saveLabelBtn = document.getElementById('saveLabelBtn');
-  const cancelLabelBtn = document.getElementById('cancelLabelBtn');
-  const areaLabelsTab = document.getElementById('areaLabelsTab');
-  const lineLabelsTab = document.getElementById('lineLabelsTab');
-  const resetZoomBtn = document.getElementById('resetZoomBtn');
-  
-  // Editor elements
-  const editorToggle = document.getElementById('editorToggle');
-  const addBoxBtn = document.getElementById('addBoxBtn');
-  const addPolygonBtn = document.getElementById('addPolygonBtn');
-  const addLineBtn = document.getElementById('addLineBtn');
-  const editBoxBtn = document.getElementById('editBoxBtn');
-  const deleteBoxBtn = document.getElementById('deleteBoxBtn');
-  const saveEditBtn = document.getElementById('saveEditBtn');
-  const cancelEditBtn = document.getElementById('cancelEditBtn');
-  const objectTypeSelect = document.getElementById('objectTypeSelect');
-  const lineTypeSelect = document.getElementById('lineTypeSelect');
+    // PDF navigation elements
+    pdfNavigation: document.getElementById('pdfNavigation'),
+    prevPageBtn: document.getElementById('prevPageBtn'),
+    nextPageBtn: document.getElementById('nextPageBtn'),
+    currentPageSpan: document.getElementById('currentPage'),
+    totalPagesSpan: document.getElementById('totalPages'),
+    reprocessBtn: document.getElementById('reprocessBtn'),
+    
+    // Project elements
+    projectList: document.getElementById('projectList'),
+    saveProjectBtn: document.getElementById('saveProjectBtn'),
+    loadProjectBtn: document.getElementById('loadProjectBtn'),
+    exportPdfBtn: document.getElementById('exportPdfBtn'),
+    exportAnnotatedPdfBtn: document.getElementById('exportAnnotatedPdfBtn'),
+    
+    // Label manager elements
+    labelManagerModal: document.getElementById('labelManagerModal'),
+    manageLabelBtn: document.getElementById('manageLabelBtn'),
+    closeModalBtn: document.getElementById('labelManagerModal') ? 
+      document.getElementById('labelManagerModal').querySelector('.close') : null,
+    labelTableBody: document.getElementById('labelTableBody'),
+    addLabelBtn: document.getElementById('addLabelBtn'),
+    importLabelsBtn: document.getElementById('importLabelsBtn'),
+    exportLabelsBtn: document.getElementById('exportLabelsBtn'),
+    resetLabelsBtn: document.getElementById('resetLabelsBtn'),
+    labelForm: document.getElementById('labelForm'),
+    labelFormTitle: document.getElementById('labelFormTitle'),
+    labelIdInput: document.getElementById('labelId'),
+    labelNameInput: document.getElementById('labelName'),
+    labelColorInput: document.getElementById('labelColor'),
+    saveLabelBtn: document.getElementById('saveLabelBtn'),
+    cancelLabelBtn: document.getElementById('cancelLabelBtn'),
+    areaLabelsTab: document.getElementById('areaLabelsTab'),
+    lineLabelsTab: document.getElementById('lineLabelsTab'),
+    resetZoomBtn: document.getElementById('resetZoomBtn'),
+    
+    // Editor elements
+    editorToggle: document.getElementById('editorToggle'),
+    editorButtons: {
+      addBoxBtn: document.getElementById('addBoxBtn'),
+      addPolygonBtn: document.getElementById('addPolygonBtn'),
+      addLineBtn: document.getElementById('addLineBtn'),
+      editBoxBtn: document.getElementById('editBoxBtn'),
+      deleteBoxBtn: document.getElementById('deleteBoxBtn'),
+      saveEditBtn: document.getElementById('saveEditBtn'),
+      cancelEditBtn: document.getElementById('cancelEditBtn')
+    },
+    objectTypeSelect: document.getElementById('objectTypeSelect'),
+    lineTypeSelect: document.getElementById('lineTypeSelect')
+  };
 
-  // Check if all required elements are present
-  console.log("Main UI elements loaded:", {
-    uploadForm: !!uploadForm,
-    resultsSection: !!resultsSection,
-    uploadedImage: !!uploadedImage
-  });
-  
   // Initialize modules
+  initializeModules(elements);
   
+  // Set up event handlers
+  setupEventHandlers(elements);
+
+  // Make functions globally accessible
+  exposeGlobalFunctions();
+}
+
+/**
+ * Initialize all modules with required elements
+ * @param {Object} elements - DOM elements for initialization
+ */
+function initializeModules(elements) {
   // 1. Setup zoom functionality
   ZoomModule.setupZoom({
-    imageContainer,
-    uploadedImage,
-    resetZoomBtn
+    imageContainer: elements.imageContainer,
+    uploadedImage: elements.uploadedImage,
+    resetZoomBtn: elements.resetZoomBtn
   });
-  
-  // Make getCurrentZoom accessible globally for other modules
-  window.getCurrentZoom = ZoomModule.getCurrentZoom;
   
   // 2. Setup PDF handler
   PdfModule.setupPdfHandler({
-    pdfNavigation,
-    currentPageSpan,
-    totalPagesSpan,
-    prevPageBtn,
-    nextPageBtn,
-    reprocessBtn,
-    loader,
-    errorMessage
+    pdfNavigation: elements.pdfNavigation,
+    currentPageSpan: elements.currentPageSpan,
+    totalPagesSpan: elements.totalPagesSpan,
+    prevPageBtn: elements.prevPageBtn,
+    nextPageBtn: elements.nextPageBtn,
+    reprocessBtn: elements.reprocessBtn,
+    loader: elements.loader,
+    errorMessage: elements.errorMessage
   });
   
   // Set callback for displaying PDF pages
@@ -495,402 +545,241 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // 3. Setup project functionality
   ProjectModule.setupProject({
-    projectList,
-    saveProjectBtn,
-    loadProjectBtn,
-    exportPdfBtn,
-    exportAnnotatedPdfBtn
+    projectList: elements.projectList,
+    saveProjectBtn: elements.saveProjectBtn,
+    loadProjectBtn: elements.loadProjectBtn,
+    exportPdfBtn: elements.exportPdfBtn,
+    exportAnnotatedPdfBtn: elements.exportAnnotatedPdfBtn
   }, {
     pdfModule: PdfModule
   });
   
-  // Make project functions globally accessible
-  window.saveProject = ProjectModule.saveProject;
-  window.loadProjectList = ProjectModule.loadProjectList;
-  window.loadProject = ProjectModule.loadProject;
-  
   // 4. Setup labels management
   LabelsModule.setupLabels({
-    labelManagerModal,
-    manageLabelBtn,
-    closeModalBtn,
-    labelTableBody,
-    addLabelBtn,
-    importLabelsBtn,
-    exportLabelsBtn,
-    resetLabelsBtn,
-    labelForm,
-    labelFormTitle,
-    labelIdInput,
-    labelNameInput,
-    labelColorInput,
-    saveLabelBtn,
-    cancelLabelBtn,
-    areaLabelsTab,
-    lineLabelsTab
+    labelManagerModal: elements.labelManagerModal,
+    manageLabelBtn: elements.manageLabelBtn,
+    closeModalBtn: elements.closeModalBtn,
+    labelTableBody: elements.labelTableBody,
+    addLabelBtn: elements.addLabelBtn,
+    importLabelsBtn: elements.importLabelsBtn,
+    exportLabelsBtn: elements.exportLabelsBtn,
+    resetLabelsBtn: elements.resetLabelsBtn,
+    labelForm: elements.labelForm,
+    labelFormTitle: elements.labelFormTitle,
+    labelIdInput: elements.labelIdInput,
+    labelNameInput: elements.labelNameInput,
+    labelColorInput: elements.labelColorInput,
+    saveLabelBtn: elements.saveLabelBtn,
+    cancelLabelBtn: elements.cancelLabelBtn,
+    areaLabelsTab: elements.areaLabelsTab,
+    lineLabelsTab: elements.lineLabelsTab
   });
-  
-  // Make updateUIForLabels globally accessible
-  window.updateUIForLabels = LabelsModule.updateUIForLabels;
   
   // 5. Setup Fabric.js handler
   FabricHandler.setupFabricHandler({
-    imageContainer,
-    uploadedImage
+    imageContainer: elements.imageContainer,
+    uploadedImage: elements.uploadedImage
   });
   
-  // Format selection handler for manual adjustments
-  if (formatSelect) {
-    formatSelect.addEventListener('change', function() {
-      if (formatSelect.value === 'auto') {
-        // Enable automatic detection (hide format fields)
-        customFormatFields.style.display = 'none';
-        // Here you could restore detected values
-      } else if (formatSelect.value === 'custom') {
-        // Custom format (show fields)
-        customFormatFields.style.display = 'block';
-      } else {
-        // Predefined formats
-        customFormatFields.style.display = 'none';
-        
-        // Standard format sizes
-        const formatSizes = {
-          'A4 (Hochformat)': [210, 297],
-          'A4 (Querformat)': [297, 210],
-          'A3 (Hochformat)': [297, 420],
-          'A3 (Querformat)': [420, 297],
-          'A2 (Hochformat)': [420, 594],
-          'A2 (Querformat)': [594, 420],
-          'A1 (Hochformat)': [594, 841],
-          'A1 (Querformat)': [841, 594],
-          'A0 (Hochformat)': [841, 1189],
-          'A0 (Querformat)': [1189, 841]
-        };
-        
-        const size = formatSizes[formatSelect.value];
-        if (size) {
-          formatWidth.value = size[0];
-          formatHeight.value = size[1];
-        }
-      }
-    });
-  }
-  
-  // Initialize Editor
+  // 6. Initialize Editor if the function exists
   if (typeof window.initEditor === 'function') {
     window.initEditor({
-      uploadedImage: uploadedImage,
-      imageContainer: imageContainer,
-      resultsSection: resultsSection,
+      uploadedImage: elements.uploadedImage,
+      imageContainer: elements.imageContainer,
+      resultsSection: elements.resultsSection,
       updateSummary: updateSummary,
       updateResultsTable: updateResultsTable
     });
   } else {
     console.warn("Editor initialization function not found. Please ensure editor.js is loaded before the main script.");
   }
+}
 
-  // Setup event handlers for Fabric.js editor buttons
-  if (editorToggle) {
-    editorToggle.addEventListener('click', function() {
-      const isActive = this.classList.contains('active');
-      
-      if (!isActive) {
-        // Enable editor
-        this.classList.add('active');
-        this.textContent = 'Editor ausschalten';
-        
-        // Enable Fabric.js editing
-        if (typeof FabricHandler.enableEditing === 'function') {
-          FabricHandler.enableEditing();
-        }
-      } else {
-        // Disable editor
-        this.classList.remove('active');
-        this.textContent = 'Editor einschalten';
-        
-        // Disable Fabric.js editing and save changes
-        if (typeof FabricHandler.disableEditing === 'function') {
-          FabricHandler.disableEditing();
-        }
-        
-        if (typeof FabricHandler.saveAnnotations === 'function') {
-          FabricHandler.saveAnnotations();
-        }
-      }
-    });
-  }
+/**
+ * Set up all event handlers for the application
+ * @param {Object} elements - DOM elements for event handlers
+ */
+function setupEventHandlers(elements) {
+  // Format selection handler
+  setupFormatSelection(elements.formatSelect, elements.customFormatFields);
+  
+  // Form submission handler
+  setupFormSubmission(elements.uploadForm, elements.loader, elements.errorMessage);
+  
+  // Editor toggle and buttons
+  setupEditorControls(elements);
+  
+  // Setup keyboard shortcuts
+  setupKeyboardShortcuts();
+}
 
-  // Add functionality for editor buttons
-  if (addBoxBtn) {
-    addBoxBtn.addEventListener('click', function() {
-      // Get selected label ID
-      const labelId = parseInt(objectTypeSelect.value);
+/**
+ * Set up format selection dropdown handler
+ * @param {HTMLElement} formatSelect - Format selection dropdown
+ * @param {HTMLElement} customFormatFields - Custom format fields container
+ */
+function setupFormatSelection(formatSelect, customFormatFields) {
+  if (!formatSelect || !customFormatFields) return;
+  
+  formatSelect.addEventListener('change', function() {
+    if (formatSelect.value === 'auto') {
+      // Enable automatic detection (hide format fields)
+      customFormatFields.style.display = 'none';
+    } else if (formatSelect.value === 'custom') {
+      // Custom format (show fields)
+      customFormatFields.style.display = 'block';
+    } else {
+      // Predefined formats
+      customFormatFields.style.display = 'none';
       
-      // Enable rectangle drawing
-      if (typeof FabricHandler.enableDrawingMode === 'function') {
-        FabricHandler.enableDrawingMode('rectangle', labelId);
-      }
+      // Standard format sizes
+      const formatSizes = {
+        'A4 (Hochformat)': [210, 297],
+        'A4 (Querformat)': [297, 210],
+        'A3 (Hochformat)': [297, 420],
+        'A3 (Querformat)': [420, 297],
+        'A2 (Hochformat)': [420, 594],
+        'A2 (Querformat)': [594, 420],
+        'A1 (Hochformat)': [594, 841],
+        'A1 (Querformat)': [841, 594],
+        'A0 (Hochformat)': [841, 1189],
+        'A0 (Querformat)': [1189, 841]
+      };
       
-      // Update UI
-      addBoxBtn.classList.add('active');
-      editBoxBtn.classList.remove('active');
-      deleteBoxBtn.classList.remove('active');
-      if (addPolygonBtn) addPolygonBtn.classList.remove('active');
-      if (addLineBtn) addLineBtn.classList.remove('active');
-    });
-  }
-
-  if (addPolygonBtn) {
-    addPolygonBtn.addEventListener('click', function() {
-      // Get selected label ID
-      const labelId = parseInt(objectTypeSelect.value);
-      
-      // Enable polygon drawing
-      if (typeof FabricHandler.enableDrawingMode === 'function') {
-        FabricHandler.enableDrawingMode('polygon', labelId);
-      }
-      
-      // Update UI
-      addBoxBtn.classList.remove('active');
-      editBoxBtn.classList.remove('active');
-      deleteBoxBtn.classList.remove('active');
-      addPolygonBtn.classList.add('active');
-      if (addLineBtn) addLineBtn.classList.remove('active');
-    });
-  }
-
-  if (addLineBtn) {
-    addLineBtn.addEventListener('click', function() {
-      // Get selected line label ID
-      const labelId = parseInt(lineTypeSelect ? lineTypeSelect.value : 1);
-      
-      // Enable line drawing
-      if (typeof FabricHandler.enableDrawingMode === 'function') {
-        FabricHandler.enableDrawingMode('line', labelId);
-      }
-      
-      // Update UI
-      addBoxBtn.classList.remove('active');
-      editBoxBtn.classList.remove('active');
-      deleteBoxBtn.classList.remove('active');
-      if (addPolygonBtn) addPolygonBtn.classList.remove('active');
-      addLineBtn.classList.add('active');
-    });
-  }
-
-  if (editBoxBtn) {
-    editBoxBtn.addEventListener('click', function() {
-      // Enable editing mode
-      if (typeof FabricHandler.enableEditing === 'function') {
-        FabricHandler.enableEditing();
-      }
-      
-      // Update UI
-      addBoxBtn.classList.remove('active');
-      editBoxBtn.classList.add('active');
-      deleteBoxBtn.classList.remove('active');
-      if (addPolygonBtn) addPolygonBtn.classList.remove('active');
-      if (addLineBtn) addLineBtn.classList.remove('active');
-    });
-  }
-
-  if (deleteBoxBtn) {
-    deleteBoxBtn.addEventListener('click', function() {
-      // Delete selected object
-      if (typeof FabricHandler.deleteSelected === 'function') {
-        FabricHandler.deleteSelected();
-      }
-      
-      // Save changes
-      if (typeof FabricHandler.saveAnnotations === 'function') {
-        FabricHandler.saveAnnotations();
-      }
-    });
-  }
-
-  if (saveEditBtn) {
-    saveEditBtn.addEventListener('click', function() {
-      // Save annotations
-      if (typeof FabricHandler.saveAnnotations === 'function') {
-        FabricHandler.saveAnnotations();
-      }
-      
-      // Update UI
-      if (editorToggle) {
-        editorToggle.classList.remove('active');
-        editorToggle.textContent = 'Editor einschalten';
-      }
-      
-      // Disable editing mode
-      if (typeof FabricHandler.disableEditing === 'function') {
-        FabricHandler.disableEditing();
-      }
-    });
-  }
-
-  if (cancelEditBtn) {
-    cancelEditBtn.addEventListener('click', function() {
-      // Reload original annotations without saving changes
-      if (typeof FabricHandler.cancelEditing === 'function') {
-        FabricHandler.cancelEditing();
-      }
-      
-      // Update UI
-      if (editorToggle) {
-        editorToggle.classList.remove('active');
-        editorToggle.textContent = 'Editor einschalten';
-      }
-    });
-  }
-
-  // Object type selection change handler
-  if (objectTypeSelect) {
-    objectTypeSelect.addEventListener('change', function() {
-      const labelId = parseInt(this.value);
-      
-      // Change label of selected object
-      if (typeof FabricHandler.changeSelectedLabel === 'function') {
-        FabricHandler.changeSelectedLabel(labelId);
-      }
-    });
-  }
-
-  // Line type selection change handler
-  if (lineTypeSelect) {
-    lineTypeSelect.addEventListener('change', function() {
-      const labelId = parseInt(this.value);
-      
-      // Change label of selected line
-      if (typeof FabricHandler.changeSelectedLineType === 'function') {
-        FabricHandler.changeSelectedLineType(labelId);
-      }
-    });
-  }
-
-  // Add keyboard shortcuts
-  document.addEventListener('keydown', function(e) {
-    // Check if editor is active
-    const isEditorActive = editorToggle && editorToggle.classList.contains('active');
-    
-    if (isEditorActive) {
-      // Delete key - delete selected
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (typeof FabricHandler.deleteSelected === 'function') {
-          FabricHandler.deleteSelected();
-          
-          // Save changes
-          if (typeof FabricHandler.saveAnnotations === 'function') {
-            FabricHandler.saveAnnotations();
-          }
-        }
-      }
-      
-      // Ctrl+C - Copy
-      if (e.ctrlKey && e.key === 'c') {
-        if (typeof FabricHandler.copySelected === 'function') {
-          FabricHandler.copySelected();
-        }
-      }
-      
-      // Esc - Exit drawing mode
-      if (e.key === 'Escape') {
-        // Enable edit mode
-        if (typeof FabricHandler.enableEditing === 'function') {
-          FabricHandler.enableEditing();
-        }
-        
-        // Update UI
-        if (addBoxBtn) addBoxBtn.classList.remove('active');
-        if (editBoxBtn) editBoxBtn.classList.add('active');
-        if (deleteBoxBtn) deleteBoxBtn.classList.remove('active');
-        if (addPolygonBtn) addPolygonBtn.classList.remove('active');
-        if (addLineBtn) addLineBtn.classList.remove('active');
+      const size = formatSizes[formatSelect.value];
+      if (size) {
+        document.getElementById('formatWidth').value = size[0];
+        document.getElementById('formatHeight').value = size[1];
       }
     }
   });
+}
 
-  // Form submission handler
-  if (uploadForm) {
-    uploadForm.addEventListener('submit', function(e) {
-      e.preventDefault();
+/**
+ * Set up form submission handler
+ * @param {HTMLElement} uploadForm - Upload form element
+ * @param {HTMLElement} loader - Loader element
+ * @param {HTMLElement} errorMessage - Error message element
+ */
+function setupFormSubmission(uploadForm, loader, errorMessage) {
+  if (!uploadForm) return;
+  
+  uploadForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    // Check if data already exists
+    const hasExistingData = Object.keys(PdfModule.getPdfPageData()).length > 0;
+    
+    if (hasExistingData) {
+      // Ask for confirmation if data already exists
+      if (!confirm("All existing changes will be lost. Do you really want to analyze the plan again?")) {
+        return; // Abort if user clicks "Cancel"
+      }
+    }
+    
+    // Reset UI
+    clearResults();
+    loader.style.display = 'block';
+    errorMessage.style.display = 'none';
+    
+    // Reset stored data when starting a new analysis
+    PdfModule.resetPdfState();
+    
+    const formData = new FormData(uploadForm);
+    
+    // API call for data
+    fetch('/predict', {
+      method: 'POST',
+      body: formData
+    })
+    .then(response => {
+      if (!response.ok) {
+        return response.json().then(data => {
+          throw new Error(data.error || 'Error with request');
+        });
+      }
+      return response.json();
+    })
+    .then(data => {
+      console.log("Original API response:", data);
       
-      // Check if data already exists
-      const hasExistingData = Object.keys(PdfModule.getPdfPageData()).length > 0;
+      // Process the response data and convert to desired format
+      const processedData = processApiResponse(data);
       
-      if (hasExistingData) {
-        // Ask for confirmation if data already exists
-        if (!confirm("All existing changes will be lost. Do you really want to analyze the plan again?")) {
-          return; // Abort if user clicks "Cancel"
-        }
+      // Process PDF-specific data
+      if (data.is_pdf) {
+        PdfModule.processPdfData(processedData);
       }
       
-      // Reset UI
-      clearResults();
-      loader.style.display = 'block';
-      errorMessage.style.display = 'none';
+      displayResults(processedData);
+    })
+    .catch(error => {
+      console.error('Error:', error);
+      errorMessage.textContent = 'Error: ' + error.message;
+      errorMessage.style.display = 'block';
       
-      // Reset stored data when starting a new analysis
-      PdfModule.resetPdfState();
-      
-      const formData = new FormData(uploadForm);
-      
-      // API call for real data
-      fetch('/predict', {
-        method: 'POST',
-        body: formData
-      })
-      .then(response => {
-        if (!response.ok) {
-          return response.json().then(data => {
-            throw new Error(data.error || 'Error with request');
-          });
-        }
-        return response.json();
-      })
-      .then(data => {
-        console.log("Original API response:", data);
-        
-        // Check if data is present
-        if (!data.predictions || data.predictions.length === 0) {
-          console.warn("No predictions found in response!");
-        } else {
-          console.log(`${data.predictions.length} predictions received`);
-        }
-        
-        // Process the response data and convert to desired format
-        const processedData = processApiResponse(data);
-        
-        // Process PDF-specific data
-        if (data.is_pdf) {
-          PdfModule.processPdfData(processedData);
-        }
-        
-        displayResults(processedData);
-      })
-      .catch(error => {
-        console.error('Error:', error);
-        errorMessage.textContent = 'Error: ' + error.message;
-        errorMessage.style.display = 'block';
-        
-        loader.style.display = 'none';
-      });
+      loader.style.display = 'none';
     });
-  }
+  });
+}
+
+/**
+ * Set up editor controls event handlers
+ * @param {Object} elements - DOM elements for editor controls
+ */
+function setupEditorControls(elements) {
+  // Skip if editor toggle doesn't exist
+  if (!elements.editorToggle) return;
   
-  // Create a global function to get PDF pages
+  // No need to add event listeners here as they're handled in editor.js
+}
+
+/**
+ * Set up keyboard shortcuts
+ */
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', function(e) {
+    // Check if editor is active
+    const isEditorActive = document.getElementById('editorToggle') && 
+                          document.getElementById('editorToggle').classList.contains('active');
+    
+    if (isEditorActive) {
+      // Editor shortcuts are handled in editor.js
+      // We don't need to duplicate them here
+    }
+  });
+}
+
+/**
+ * Expose global functions for use by other modules
+ */
+function exposeGlobalFunctions() {
+  // Make zoom functions globally accessible
+  window.getCurrentZoom = ZoomModule.getCurrentZoom;
+  
+  // Make project functions globally accessible
+  window.saveProject = ProjectModule.saveProject;
+  window.loadProjectList = ProjectModule.loadProjectList;
+  window.loadProject = ProjectModule.loadProject;
+  
+  // Make labels function globally accessible
+  window.updateUIForLabels = LabelsModule.updateUIForLabels;
+  
+  // Make PDF functions globally accessible
   window.getAllPdfPages = function() {
-    // Check if the function exists in the module first
     if (typeof PdfModule.getAllPdfPages === 'function') {
       return PdfModule.getAllPdfPages();
     }
-    // Fallback to empty array
     return [];
   };
-  
-  // Make functions available globally
+
+  // Make main functions globally accessible
   window.displayPdfPage = displayPdfPage;
   window.processApiResponse = processApiResponse;
   window.updateSummary = updateSummary;
   window.updateResultsTable = updateResultsTable;
   window.clearResults = clearResults;
-});
+}
+
+// Initialize application when DOM is loaded
+document.addEventListener('DOMContentLoaded', initApp);

@@ -24,6 +24,16 @@ export function setupFabricHandler(elements) {
   
   // Initialize Fabric.js canvas
   initCanvas();
+
+  // Add this to setupFabricHandler function after initializing the canvas
+  window.addEventListener('resize', function() {
+    // Throttle resize events
+    clearTimeout(window.resizeTimeout);
+    window.resizeTimeout = setTimeout(function() {
+      console.log("Window resized, adjusting canvas");
+      resizeCanvas();
+    }, 200);
+  });
   
   // Set up event listeners
   setupEventListeners();
@@ -71,31 +81,47 @@ function resizeCanvas() {
   
   // Wait for the image to be fully loaded
   if (uploadedImage.complete && uploadedImage.naturalWidth > 0) {
-    // Use the image's displayed dimensions
-    const width = uploadedImage.width || uploadedImage.naturalWidth;
-    const height = uploadedImage.height || uploadedImage.naturalHeight;
+    // Use the natural dimensions of the image
+    const width = uploadedImage.naturalWidth;
+    const height = uploadedImage.naturalHeight;
     
     console.log(`Setting canvas size to ${width}x${height} (natural: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight})`);
     
-    // Set canvas dimensions
+    // Set canvas dimensions to match the NATURAL dimensions of the image
     canvas.setWidth(width);
     canvas.setHeight(height);
     
-    // Make sure the canvas container has the right position
+    // Make sure the canvas container matches the displayed image size
     const canvasContainer = document.getElementsByClassName('canvas-container')[0];
     if (canvasContainer) {
       canvasContainer.style.position = 'absolute';
       canvasContainer.style.top = '0';
       canvasContainer.style.left = '0';
-      canvasContainer.style.width = `${width}px`;
-      canvasContainer.style.height = `${height}px`;
+      // Set the container to match the image's DISPLAYED size, not natural size
+      canvasContainer.style.width = `${uploadedImage.offsetWidth}px`;
+      canvasContainer.style.height = `${uploadedImage.offsetHeight}px`;
+      
+      // Set canvas scale to match the display scale of the image
+      const scaleX = uploadedImage.offsetWidth / width;
+      const scaleY = uploadedImage.offsetHeight / height;
+      
+      console.log(`Image display scale: ${scaleX.toFixed(4)} x ${scaleY.toFixed(4)}`);
+      
+      // Apply scaling transformation to the canvas
+      canvas.setZoom(scaleX);
+      
+      // Make sure the canvas is responsive
+      if (canvas.wrapperEl) {
+        canvas.wrapperEl.style.width = `${uploadedImage.offsetWidth}px`;
+        canvas.wrapperEl.style.height = `${uploadedImage.offsetHeight}px`;
+      }
     }
     
     canvas.renderAll();
   } else {
     // If image isn't loaded yet, set up an event listener
     uploadedImage.onload = function() {
-      resizeCanvas(); // Call this function again when image loads
+      setTimeout(resizeCanvas, 100); // Small delay to ensure image is fully rendered
     };
   }
 }
@@ -106,8 +132,17 @@ function resizeCanvas() {
 function setupEventListeners() {
   if (!canvas) return;
   
+  // Get reference to global zoom level if available
+  const getGlobalZoom = typeof window.getCurrentZoom === 'function' ? 
+    window.getCurrentZoom : () => 1.0;
+  
   // Zoom with mouse wheel
   canvas.on('mouse:wheel', function(opt) {
+    // If we're using global zoom functionality, don't apply canvas zoom
+    if (typeof window.setZoomLevel === 'function') {
+      return; // Let the global zoom handler take care of it
+    }
+    
     const delta = opt.e.deltaY;
     let zoom = canvas.getZoom();
     zoom *= 0.999 ** delta;
@@ -116,14 +151,8 @@ function setupEventListeners() {
     if (zoom > 10) zoom = 10;
     if (zoom < 0.1) zoom = 0.1;
     
-    // Store current zoom
-    currentZoom = zoom;
-    
     // Zoom to point where mouse is
     canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-    
-    // Update UI indicator if available
-    updateZoomIndicator(zoom);
     
     opt.e.preventDefault();
     opt.e.stopPropagation();
@@ -194,6 +223,32 @@ function updateZoomIndicator(zoom) {
   }, 2000);
 }
 
+// Add this function to sync with global zoom functionality
+export function syncEditorZoom(zoomLevel) {
+  if (!canvas) return;
+  
+  console.log(`Syncing fabric canvas zoom to ${zoomLevel}`);
+  
+  // First, calculate the base scale (displayed size / natural size)
+  const baseScaleX = uploadedImage.offsetWidth / uploadedImage.naturalWidth;
+  const baseScaleY = uploadedImage.offsetHeight / uploadedImage.naturalHeight;
+  
+  // Apply combined scaling
+  const newZoom = baseScaleX * zoomLevel;
+  canvas.setZoom(newZoom);
+  
+  // Update container sizes if needed
+  if (canvas.wrapperEl) {
+    canvas.wrapperEl.style.width = `${uploadedImage.offsetWidth * zoomLevel}px`;
+    canvas.wrapperEl.style.height = `${uploadedImage.offsetHeight * zoomLevel}px`;
+  }
+  
+  canvas.renderAll();
+}
+
+// Make sure to expose this function globally
+window.syncEditorZoom = syncEditorZoom;
+
 /**
  * Get the current Fabric.js canvas instance
  * @returns {fabric.Canvas} The canvas instance
@@ -250,13 +305,52 @@ window.resetFabricView = resetView;
  * @returns {fabric.Object} The created fabric object
  */
 export function addRectangleAnnotation(data, index) {
-    if (!canvas) return null;
+  if (!canvas) return null;
+  
+  // Extract data
+  const [x1, y1, x2, y2] = data.box || data.bbox;
+  
+  // Log original box coordinates for debugging
+  console.log(`Original box #${index}: [${x1}, ${y1}, ${x2}, ${y2}]`);
+  
+  // Calculate image scale factors
+  const imgWidth = uploadedImage.naturalWidth;
+  const imgHeight = uploadedImage.naturalHeight;
+  const canvasWidth = canvas.width;
+  const canvasHeight = canvas.height;
+  
+  // Apply scaling if needed
+  let scaledX1 = x1;
+  let scaledY1 = y1;
+  let scaledX2 = x2;
+  let scaledY2 = y2;
+  
+  // If coordinates are larger than image dimensions, they might need scaling
+  if (x2 > imgWidth * 2 || y2 > imgHeight * 2) {
+    console.log(`Box coordinates appear too large for image; attempting to scale`);
     
-    // Extract data
-    const [x1, y1, x2, y2] = data.box || data.bbox;
-    const width = x2 - x1;
-    const height = y2 - y1;
-    const labelId = data.label || 0;
+    // Get plan scale and DPI for possible scaling
+    const planScale = parseInt(document.getElementById('planScale').value || 100);
+    const dpi = parseInt(document.getElementById('dpi').value || 300);
+    
+    // Pixels per metric unit calculation
+    const pixelsPerInch = dpi;
+    const pixelsPerMm = pixelsPerInch / 25.4;
+    const pixelsPerMeter = pixelsPerMm * 1000;
+    
+    // Try scaling if coordinates are in meters
+    const scaleFactor = planScale / 100; // Adjust based on your scaling logic
+    scaledX1 = x1 * scaleFactor;
+    scaledY1 = y1 * scaleFactor;
+    scaledX2 = x2 * scaleFactor;
+    scaledY2 = y2 * scaleFactor;
+    
+    console.log(`Scaled box: [${scaledX1}, ${scaledY1}, ${scaledX2}, ${scaledY2}]`);
+  }
+  
+  const width = scaledX2 - scaledX1;
+  const height = scaledY2 - scaledY1;
+  const labelId = data.label || 0;
     
     // Get color from labels if available
     let color = 'gray';
@@ -968,20 +1062,34 @@ function updateDataSummary() {
    * @param {Array} predictions - The predictions data
    */
   export function displayAnnotations(predictions) {
-    if (!canvas || !predictions) return;
+    if (!canvas || !predictions) {
+      console.warn("Cannot display annotations: canvas or predictions missing");
+      return;
+    }
+    
+    console.log(`Displaying ${predictions.length} annotations`);
     
     // Clear canvas
     clearAnnotations();
     
-    // Add each annotation
+    // Add each annotation with debug info
     predictions.forEach((prediction, index) => {
-      addAnnotation(prediction, index);
+      console.log(`Adding annotation #${index}: Type: ${prediction.type || 'unknown'}, Label: ${prediction.label || 'unknown'}`);
+      console.log("Box coordinates:", prediction.box);
+      
+      const result = addAnnotation(prediction, index);
+      if (!result) {
+        console.warn(`Failed to add annotation #${index}`);
+      }
     });
     
-    // Render canvas
+    // Render canvas and make sure all objects are visible
     canvas.renderAll();
+    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset transform
+    
+    // Log final object count
+    console.log(`Canvas now has ${canvas.getObjects().length} objects`);
   }
-  
 
   /**
  * Convert annotations from fabric.js objects back to prediction format
