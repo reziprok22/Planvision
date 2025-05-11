@@ -161,9 +161,13 @@ export function handleZoom(event) {
   // Display current zoom level
   showZoomLevel();
 
+  // Apply zoom to the image
+  uploadedImage.style.transform = `scale(${window.currentZoom})`;
+  uploadedImage.style.transformOrigin = 'top left';
+
   // Notify Fabric.js canvas of zoom change
-  if (typeof window.syncEditorZoom === 'function') {
-    window.syncEditorZoom(window.currentZoom);
+  if (typeof window.FabricHandler.syncEditorZoom === 'function') {
+    window.FabricHandler.syncEditorZoom(window.currentZoom);
   }
 }
 

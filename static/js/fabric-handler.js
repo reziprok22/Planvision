@@ -45,6 +45,9 @@ export function setupFabricHandler(elements) {
 /**
  * Initialize the Fabric.js canvas
  */
+/**
+ * Initialize the Fabric.js canvas
+ */
 export function initCanvas() {
   console.log("Initializing Fabric.js canvas");
   
@@ -73,11 +76,47 @@ export function initCanvas() {
   // Initialize Fabric.js canvas
   canvas = new fabric.Canvas('annotationCanvas');
   
-  // Set canvas size to match container
-  resizeCanvas();
+  // Set canvas size to match the NATURAL size of the image
+  // This is critical - canvas dimensions should match image pixel dimensions
+  const naturalWidth = uploadedImage.naturalWidth;
+  const naturalHeight = uploadedImage.naturalHeight;
+  
+  console.log(`Setting canvas size to ${naturalWidth}x${naturalHeight} (natural image dimensions)`);
+  canvas.setWidth(naturalWidth);
+  canvas.setHeight(naturalHeight);
+  
+  // Set the canvas container to match the DISPLAYED size of the image
+  const displayWidth = uploadedImage.offsetWidth;
+  const displayHeight = uploadedImage.offsetHeight;
+  
+  // Get canvas container
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    canvasContainer.style.position = 'absolute';
+    canvasContainer.style.top = '0';
+    canvasContainer.style.left = '0';
+    canvasContainer.style.width = `${displayWidth}px`;
+    canvasContainer.style.height = `${displayHeight}px`;
+  }
+  
+  // Set zoom level based on the ratio of displayed size to natural size
+  const zoomX = displayWidth / naturalWidth;
+  const zoomY = displayHeight / naturalHeight;
+  const zoom = Math.min(zoomX, zoomY); // Use the smaller ratio to fit the image
+  
+  console.log(`Calculated initial zoom: ${zoom.toFixed(4)}`);
+  canvas.setZoom(zoom);
   
   // Set up event listeners
   setupEventListeners();
+  
+  // Sync with global zoom if needed
+  if (typeof window.getCurrentZoom === 'function') {
+    const globalZoom = window.getCurrentZoom();
+    if (globalZoom !== 1.0) {
+      syncEditorZoom(globalZoom);
+    }
+  }
   
   console.log("Canvas initialized, size:", canvas.width, "x", canvas.height, "zoom:", canvas.getZoom());
   
@@ -191,6 +230,26 @@ function resizeCanvas() {
  */
 function setupEventListeners() {
   if (!canvas) return;
+
+  // Füge einen Scroll-Event-Listener hinzu
+  if (imageContainer) {
+    imageContainer.addEventListener('scroll', function() {
+      // Aktualisiere Canvas-Position beim Scrollen
+      const imageRect = uploadedImage.getBoundingClientRect();
+      const containerRect = imageContainer.getBoundingClientRect();
+      
+      // Berechne relative Position unter Berücksichtigung der Scroll-Position
+      const relLeft = imageRect.left - containerRect.left + imageContainer.scrollLeft;
+      const relTop = imageRect.top - containerRect.top + imageContainer.scrollTop;
+      
+      // Aktualisiere Canvas-Container-Position
+      const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+      if (canvasContainer) {
+        canvasContainer.style.top = `${relTop}px`;
+        canvasContainer.style.left = `${relLeft}px`;
+      }
+    });
+  }
   
   // Zoom with mouse wheel
   canvas.on('mouse:wheel', function(opt) {
@@ -255,6 +314,7 @@ function setupEventListeners() {
   });
 }
 
+
 /**
  * Sync with global zoom functionality
  * @param {number} zoomLevel - Current global zoom level
@@ -264,21 +324,55 @@ export function syncEditorZoom(zoomLevel) {
   
   console.log(`Syncing fabric canvas zoom to ${zoomLevel}`);
   
-  // First, calculate the base scale (displayed size / natural size)
-  const baseScaleX = uploadedImage.offsetWidth / uploadedImage.naturalWidth;
-  const baseScaleY = uploadedImage.offsetHeight / uploadedImage.naturalHeight;
+  // Store current zoom for debugging
+  currentZoom = zoomLevel;
   
-  // Apply combined scaling (base scale * zoom level)
-  const newZoom = baseScaleX * zoomLevel;
-  canvas.setZoom(newZoom);
+  // IMPORTANT: We need accurate image and container positions
+  const imageRect = uploadedImage.getBoundingClientRect();
+  const containerRect = imageContainer.getBoundingClientRect();
   
-  // Update container sizes if needed
-  if (canvas.wrapperEl) {
-    canvas.wrapperEl.style.width = `${uploadedImage.offsetWidth * zoomLevel}px`;
-    canvas.wrapperEl.style.height = `${uploadedImage.offsetHeight * zoomLevel}px`;
+  // Calculate the scroll offsets
+  const scrollLeft = imageContainer.scrollLeft;
+  const scrollTop = imageContainer.scrollTop;
+  
+  // Calculate precise relative position
+  const relLeft = imageRect.left - containerRect.left + scrollLeft;
+  const relTop = imageRect.top - containerRect.top + scrollTop;
+  
+  // Get canvas container
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    // Update position to exactly match the image
+    canvasContainer.style.position = 'absolute';
+    canvasContainer.style.top = `${relTop}px`;
+    canvasContainer.style.left = `${relLeft}px`;
+    
+    // Match the exact displayed size of the image
+    canvasContainer.style.width = `${imageRect.width}px`;
+    canvasContainer.style.height = `${imageRect.height}px`;
+    
+    console.log(`Canvas container positioned at: ${relLeft}x${relTop}, Size: ${imageRect.width}x${imageRect.height}`);
   }
   
+  // Get the base scale - this is critical for correct annotation positioning
+  // How much is the displayed image scaled compared to its natural size?
+  const scaleX = imageRect.width / uploadedImage.naturalWidth;
+  const scaleY = imageRect.height / uploadedImage.naturalHeight;
+  
+  console.log(`Image scale factors: X=${scaleX.toFixed(4)}, Y=${scaleY.toFixed(4)}`);
+  
+  // Set fabric canvas zoom to match this scale
+  canvas.setZoom(scaleX);
+  
+  // Make sure canvas dimensions match image natural dimensions
+  canvas.setWidth(uploadedImage.naturalWidth);
+  canvas.setHeight(uploadedImage.naturalHeight);
+  
+  // Force canvas to recalculate its position and render
+  canvas.calcOffset();
   canvas.renderAll();
+  
+  console.log(`Canvas synced - Natural: ${canvas.width}x${canvas.height}, Display: ${imageRect.width}x${imageRect.height}, Zoom: ${canvas.getZoom()}`);
 }
 
 /**
