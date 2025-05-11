@@ -3,7 +3,7 @@
  * Part of the Fenster-Erkennungstool project
  */
 
-// Global variables for zoom functionality (dann braucht es let oder const nicht)
+// Global variables for zoom functionality
 window.currentZoom = 1.0;
 window.minZoom = 0.25;
 window.maxZoom = 6.0;
@@ -12,7 +12,6 @@ window.zoomStep = 0.25;
 // DOM references - will be initialized when setupZoom is called
 let imageContainer;
 let uploadedImage;
-let annotationOverlay;
 let resetZoomBtn;
 
 /**
@@ -25,39 +24,18 @@ export function setupZoom(elements) {
   // Store DOM references
   imageContainer = elements.imageContainer;
   uploadedImage = elements.uploadedImage;
-  annotationOverlay = elements.annotationOverlay;
   resetZoomBtn = elements.resetZoomBtn;
   
   // Validate required elements
-  if (!imageContainer || !uploadedImage || !annotationOverlay) {
+  if (!imageContainer || !uploadedImage) {
     console.warn("Missing required elements for zoom functionality:", {
       imageContainer: !!imageContainer,
-      uploadedImage: !!uploadedImage,
-      annotationOverlay: !!annotationOverlay
+      uploadedImage: !!uploadedImage
     });
-    
-    // Create annotationOverlay if it doesn't exist
-    if (imageContainer && !annotationOverlay) {
-      annotationOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      annotationOverlay.id = "annotationOverlay";
-      annotationOverlay.style.position = "absolute";
-      annotationOverlay.style.top = "0";
-      annotationOverlay.style.left = "0";
-      annotationOverlay.style.pointerEvents = "none";
-      annotationOverlay.style.zIndex = "5";
-      imageContainer.appendChild(annotationOverlay);
-      
-      // Update the elements object to include the new overlay
-      elements.annotationOverlay = annotationOverlay;
-      console.log("Created missing annotationOverlay element");
-    } else {
-      return; // Exit if essential elements are still missing
-    }
+    return;
   }
   
-  // Continue with setup...
-  setupZoomEventListeners();
-  // Set up event listeners after DOM elements are stored
+  // Setup zoom event listeners
   setupZoomEventListeners();
   
   // Add double-click event listener to reset zoom
@@ -163,13 +141,9 @@ export function handleZoom(event) {
   const ratio = newZoom / window.currentZoom;
   window.currentZoom = newZoom;
   
-  // Apply zoom to the image and SVG overlay
+  // Apply zoom to the image
   uploadedImage.style.transform = `scale(${window.currentZoom})`;
   uploadedImage.style.transformOrigin = 'top left';
-  
-  // Also apply the same transform to the SVG overlay
-  annotationOverlay.style.transform = `scale(${window.currentZoom})`;
-  annotationOverlay.style.transformOrigin = 'top left';
   
   // Calculate new scroll position to keep the mouse point fixed
   const newScrollLeft = mouseXInContent * ratio - mouseX;
@@ -178,9 +152,6 @@ export function handleZoom(event) {
   // Set the new scroll position
   imageContainer.scrollLeft = newScrollLeft;
   imageContainer.scrollTop = newScrollTop;
-  
-  // Update all bounding boxes and labels
-  updateAnnotationsForZoom();
 
   // Update the zoom button text
   if (resetZoomBtn) {
@@ -190,7 +161,7 @@ export function handleZoom(event) {
   // Display current zoom level
   showZoomLevel();
 
-  // Notify editor of zoom change if it exists
+  // Notify Fabric.js canvas of zoom change
   if (typeof window.syncEditorZoom === 'function') {
     window.syncEditorZoom(window.currentZoom);
   }
@@ -220,12 +191,9 @@ export function setZoomLevel(level) {
   const centerXInContent = centerX + scrollLeft;
   const centerYInContent = centerY + scrollTop;
   
-  // Apply zoom to the image and SVG overlay
+  // Apply zoom to the image
   uploadedImage.style.transform = `scale(${window.currentZoom})`;
   uploadedImage.style.transformOrigin = 'top left';
-  
-  annotationOverlay.style.transform = `scale(${window.currentZoom})`;
-  annotationOverlay.style.transformOrigin = 'top left';
   
   // Calculate the scale ratio
   const ratio = window.currentZoom / oldZoom;
@@ -238,9 +206,6 @@ export function setZoomLevel(level) {
   imageContainer.scrollLeft = newScrollLeft;
   imageContainer.scrollTop = newScrollTop;
   
-  // Update all bounding boxes and labels
-  updateAnnotationsForZoom();
-  
   // Update the zoom button text
   if (resetZoomBtn) {
     resetZoomBtn.textContent = `${Math.round(window.currentZoom * 100)}%`;
@@ -248,6 +213,11 @@ export function setZoomLevel(level) {
   
   // Display current zoom level
   showZoomLevel();
+  
+  // Notify Fabric.js canvas of zoom change
+  if (typeof window.syncEditorZoom === 'function') {
+    window.syncEditorZoom(window.currentZoom);
+  }
 }
 
 /**
@@ -258,9 +228,8 @@ export function resetZoom() {
 
   window.currentZoom = 1.0;
   uploadedImage.style.transform = '';
-  annotationOverlay.style.transform = '';
   
-  // Reset all stored original positions
+  // Reset stored original positions if any exist
   document.querySelectorAll('[data-original-left]').forEach(el => {
     el.removeAttribute('data-original-left');
     el.removeAttribute('data-original-top');
@@ -271,60 +240,11 @@ export function resetZoom() {
   });
   
   showZoomLevel();
-}
-
-/**
- * Update annotation positions after zooming
- */
-export function updateAnnotationsForZoom() {
-  console.log("Updating annotations for zoom level:", window.currentZoom);
   
-  // SVG elements don't need position updates
-  // because they'll be transformed with the parent SVG element
-  
-  // For SVG label text elements, we DON'T want to counteract the zoom
-  // Instead, let the text scale naturally with the zoom
-  document.querySelectorAll('g.svg-label').forEach(labelGroup => {
-    // Get the text and rectangle elements
-    const textElement = labelGroup.querySelector('text');
-    const rect = labelGroup.querySelector('rect');
-    
-    if (textElement && rect) {
-      // Calculate the width of the text at current zoom level
-      // We need to make sure the background rectangle scales appropriately
-      const textWidth = textElement.getComputedTextLength();
-      
-      // Update the rectangle width to match the text
-      rect.setAttribute('width', textWidth + 10);
-    }
-  });
-  
-  // If there are still any old HTML/DOM labels (during transition period),
-  // we handle them the old way but WITHOUT inverse scaling
-  document.querySelectorAll('.box-label:not(.svg-label)').forEach(label => {
-    // Store original values if not already stored
-    if (!label.hasAttribute('data-original-left')) {
-      label.setAttribute('data-original-left', label.style.left.replace('px', ''));
-      label.setAttribute('data-original-top', label.style.top.replace('px', ''));
-    }
-    
-    // Get original positions
-    const originalLeft = parseFloat(label.getAttribute('data-original-left'));
-    const originalTop = parseFloat(label.getAttribute('data-original-top'));
-    
-    // Scale positions with current zoom level
-    const newLeft = originalLeft * window.currentZoom;
-    const newTop = originalTop * window.currentZoom;
-    
-    // Apply the new positions
-    label.style.left = `${newLeft}px`;
-    label.style.top = `${newTop}px`;
-    
-    // Remove any previous font size and padding adjustments
-    // so the text can scale naturally with zoom
-    label.style.removeProperty('font-size');
-    label.style.removeProperty('padding');
-  });
+  // Notify Fabric.js canvas of zoom reset
+  if (typeof window.syncEditorZoom === 'function') {
+    window.syncEditorZoom(1.0);
+  }
 }
 
 /**
@@ -361,28 +281,6 @@ export function showZoomLevel() {
   }, 2000);
 }
 
-/**
- * Apply zoom transformations when the SVG overlay is adapted
- * @param {Function} originalAdaptSvgOverlay - The original function to adapt SVG overlay
- */
-export function enhanceAdaptSvgOverlay(originalAdaptSvgOverlay) {
-  return function() {
-    // Call the original function first
-    originalAdaptSvgOverlay();
-    
-    // Then apply current zoom if not at 1.0
-    if (window.currentZoom !== 1.0) {
-      uploadedImage.style.transform = `scale(${window.currentZoom})`;
-      uploadedImage.style.transformOrigin = 'top left';
-      
-      annotationOverlay.style.transform = `scale(${window.currentZoom})`;
-      annotationOverlay.style.transformOrigin = 'top left';
-    }
-  };
-}
-
-
-
 // Make zoom functions globally accessible
 window.setZoomLevel = setZoomLevel;
 window.resetZoom = resetZoom;
@@ -395,9 +293,3 @@ window.getCurrentZoom = getCurrentZoom;
 export function getCurrentZoom() {
   return window.currentZoom;
 }
- 
-  // Notify editor of zoom change if editor is active
-  if (typeof window.syncEditorZoom === 'function') {
-    console.log("Notifying editor of zoom change:", window.currentZoom);
-    window.syncEditorZoom(window.currentZoom);
-  }

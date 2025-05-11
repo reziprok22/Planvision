@@ -197,11 +197,6 @@ function displayResults(responseData) {
     uploadedImage.src = displayImageUrl;
   }
 
-  // Debug-Code
-  if (responseData.predictions && responseData.predictions.length > 0) {
-    debugAnnotations(responseData.predictions);
-  }
-  
   // Wait for image to load
   uploadedImage.onload = function() {
     console.log("Image loaded:", uploadedImage.width, "x", uploadedImage.height);
@@ -314,6 +309,7 @@ function displayPdfPage(pageNumber, pageData) {
     }, 200);
   };
 }
+
 
 /**
  * Update summary display

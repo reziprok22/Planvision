@@ -12,6 +12,7 @@ let isDragging = false;
 let lastPosX, lastPosY;
 let labelFont = '12px Arial';
 let currentLabels = [];
+let currentLineLabels = [];
 
 /**
  * Initialize the Fabric.js handler with required DOM elements
@@ -22,21 +23,21 @@ export function setupFabricHandler(elements) {
   imageContainer = elements.imageContainer;
   uploadedImage = elements.uploadedImage;
   
-  // Initialize Fabric.js canvas
-  initCanvas();
-
-  // Add this to setupFabricHandler function after initializing the canvas
+  // Load labels from LabelsManager if available
+  if (window.LabelsManager) {
+    currentLabels = window.LabelsManager.getAreaLabels();
+    currentLineLabels = window.LabelsManager.getLineLabels();
+  }
+  
+  // Add window resize handler
   window.addEventListener('resize', function() {
     // Throttle resize events
     clearTimeout(window.resizeTimeout);
     window.resizeTimeout = setTimeout(function() {
       console.log("Window resized, adjusting canvas");
-      resizeCanvas();
+      if (canvas) resizeCanvas();
     }, 200);
   });
-  
-  // Set up event listeners
-  setupEventListeners();
   
   console.log('Fabric.js handler initialized');
 }
@@ -44,7 +45,9 @@ export function setupFabricHandler(elements) {
 /**
  * Initialize the Fabric.js canvas
  */
-function initCanvas() {
+export function initCanvas() {
+  console.log("Initializing Fabric.js canvas");
+  
   // Create canvas element if it doesn't exist
   let canvasElement = document.getElementById('annotationCanvas');
   if (!canvasElement) {
@@ -66,14 +69,15 @@ function initCanvas() {
   // Set canvas size to match container
   resizeCanvas();
   
-  // Add window resize handler
-  window.addEventListener('resize', resizeCanvas);
+  // Set up event listeners
+  setupEventListeners();
+  
+  return canvas;
 }
 
 /**
  * Resize canvas to match container size
  */
-// In fabric-handler.js, update the resizeCanvas function:
 function resizeCanvas() {
   if (!canvas || !imageContainer || !uploadedImage) return;
   
@@ -132,10 +136,6 @@ function resizeCanvas() {
 function setupEventListeners() {
   if (!canvas) return;
   
-  // Get reference to global zoom level if available
-  const getGlobalZoom = typeof window.getCurrentZoom === 'function' ? 
-    window.getCurrentZoom : () => 1.0;
-  
   // Zoom with mouse wheel
   canvas.on('mouse:wheel', function(opt) {
     // If we're using global zoom functionality, don't apply canvas zoom
@@ -185,45 +185,24 @@ function setupEventListeners() {
     isDragging = false;
     canvas.selection = true;
   });
+  
+  // Object selection event
+  canvas.on('selection:created', function(opt) {
+    const selectedObject = opt.selected[0];
+    if (selectedObject && selectedObject.objectType === 'annotation') {
+      // Update object type selector if available
+      const objectTypeSelect = document.getElementById('objectTypeSelect');
+      if (objectTypeSelect && selectedObject.labelId !== undefined) {
+        objectTypeSelect.value = selectedObject.labelId;
+      }
+    }
+  });
 }
 
 /**
- * Update zoom indicator UI element if it exists
- * @param {number} zoom - Current zoom level
+ * Sync with global zoom functionality
+ * @param {number} zoomLevel - Current global zoom level
  */
-function updateZoomIndicator(zoom) {
-  // Check if zoom indicator exists
-  let zoomIndicator = document.getElementById('zoomIndicator');
-  
-  if (!zoomIndicator) {
-    // Create indicator if it doesn't exist
-    zoomIndicator = document.createElement('div');
-    zoomIndicator.id = 'zoomIndicator';
-    zoomIndicator.style.position = 'fixed';
-    zoomIndicator.style.bottom = '20px';
-    zoomIndicator.style.right = '20px';
-    zoomIndicator.style.padding = '8px 12px';
-    zoomIndicator.style.background = 'rgba(0, 0, 0, 0.7)';
-    zoomIndicator.style.color = 'white';
-    zoomIndicator.style.borderRadius = '4px';
-    zoomIndicator.style.fontSize = '14px';
-    zoomIndicator.style.zIndex = '1000';
-    zoomIndicator.style.transition = 'opacity 1s';
-    document.body.appendChild(zoomIndicator);
-  }
-  
-  // Update text
-  zoomIndicator.textContent = `Zoom: ${Math.round(zoom * 100)}%`;
-  zoomIndicator.style.opacity = '1';
-  
-  // Hide after delay
-  clearTimeout(zoomIndicator.timeout);
-  zoomIndicator.timeout = setTimeout(() => {
-    zoomIndicator.style.opacity = '0';
-  }, 2000);
-}
-
-// Add this function to sync with global zoom functionality
 export function syncEditorZoom(zoomLevel) {
   if (!canvas) return;
   
@@ -233,7 +212,7 @@ export function syncEditorZoom(zoomLevel) {
   const baseScaleX = uploadedImage.offsetWidth / uploadedImage.naturalWidth;
   const baseScaleY = uploadedImage.offsetHeight / uploadedImage.naturalHeight;
   
-  // Apply combined scaling
+  // Apply combined scaling (base scale * zoom level)
   const newZoom = baseScaleX * zoomLevel;
   canvas.setZoom(newZoom);
   
@@ -245,9 +224,6 @@ export function syncEditorZoom(zoomLevel) {
   
   canvas.renderAll();
 }
-
-// Make sure to expose this function globally
-window.syncEditorZoom = syncEditorZoom;
 
 /**
  * Get the current Fabric.js canvas instance
@@ -270,9 +246,15 @@ export function getCurrentZoom() {
  * @param {Array} labels - The labels configuration
  */
 export function setLabels(labels) {
-  if (window.LabelsManager) {
-    // No need to store labels locally, as they're managed by LabelsManager
-  }
+  currentLabels = labels;
+}
+
+/**
+ * Set the current line labels for annotations
+ * @param {Array} labels - The line labels configuration
+ */
+export function setLineLabels(labels) {
+  currentLineLabels = labels;
 }
 
 /**
@@ -290,132 +272,578 @@ export function resetView() {
   if (!canvas) return;
   currentZoom = 1.0;
   canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
-  updateZoomIndicator(1.0);
 }
-
-// Export functions to be accessible from outside
-window.getCurrentZoom = getCurrentZoom;
-window.resetFabricView = resetView;
-
 
 /**
  * Add a rectangle annotation to the canvas
  * @param {Object} data - The annotation data
  * @param {number} index - The annotation index
- * @returns {fabric.Object} The created fabric object
+ * @returns {Object} The created fabric objects
  */
 export function addRectangleAnnotation(data, index) {
   if (!canvas) return null;
   
   // Extract data
   const [x1, y1, x2, y2] = data.box || data.bbox;
-  
-  // Log original box coordinates for debugging
-  console.log(`Original box #${index}: [${x1}, ${y1}, ${x2}, ${y2}]`);
-  
-  // Calculate image scale factors
-  const imgWidth = uploadedImage.naturalWidth;
-  const imgHeight = uploadedImage.naturalHeight;
-  const canvasWidth = canvas.width;
-  const canvasHeight = canvas.height;
-  
-  // Apply scaling if needed
-  let scaledX1 = x1;
-  let scaledY1 = y1;
-  let scaledX2 = x2;
-  let scaledY2 = y2;
-  
-  // If coordinates are larger than image dimensions, they might need scaling
-  if (x2 > imgWidth * 2 || y2 > imgHeight * 2) {
-    console.log(`Box coordinates appear too large for image; attempting to scale`);
-    
-    // Get plan scale and DPI for possible scaling
-    const planScale = parseInt(document.getElementById('planScale').value || 100);
-    const dpi = parseInt(document.getElementById('dpi').value || 300);
-    
-    // Pixels per metric unit calculation
-    const pixelsPerInch = dpi;
-    const pixelsPerMm = pixelsPerInch / 25.4;
-    const pixelsPerMeter = pixelsPerMm * 1000;
-    
-    // Try scaling if coordinates are in meters
-    const scaleFactor = planScale / 100; // Adjust based on your scaling logic
-    scaledX1 = x1 * scaleFactor;
-    scaledY1 = y1 * scaleFactor;
-    scaledX2 = x2 * scaleFactor;
-    scaledY2 = y2 * scaleFactor;
-    
-    console.log(`Scaled box: [${scaledX1}, ${scaledY1}, ${scaledX2}, ${scaledY2}]`);
-  }
-  
-  const width = scaledX2 - scaledX1;
-  const height = scaledY2 - scaledY1;
+  const width = x2 - x1;
+  const height = y2 - y1;
   const labelId = data.label || 0;
     
-    // Get color from labels if available
-    let color = 'gray';
-    let label_name = 'Other';
+  // Get color and label name from LabelsManager if available
+  let color = 'gray';
+  let label_name = 'Other';
+  
+  if (window.LabelsManager) {
+    color = window.LabelsManager.getLabelColor(labelId, 'area');
+    label_name = window.LabelsManager.getLabelName(labelId, 'area');
+  } else {
+    // Fallback colors
+    switch (labelId) {
+      case 1: color = 'blue'; label_name = 'Fenster'; break;
+      case 2: color = 'red'; label_name = 'Tür'; break;
+      case 3: color = '#d4d638'; label_name = 'Wand'; break;
+      case 4: color = 'orange'; label_name = 'Lukarne'; break;
+      case 5: color = 'purple'; label_name = 'Dach'; break;
+    }
+  }
     
-    // Find matching label
-    const label = currentLabels.find(l => l.id === labelId);
-    if (label) {
-      color = label.color;
-      label_name = label.name;
-    } else {
-      // Fallback colors
-      switch (labelId) {
-        case 1: color = 'blue'; label_name = 'Fenster'; break;
-        case 2: color = 'red'; label_name = 'Tür'; break;
-        case 3: color = '#d4d638'; label_name = 'Wand'; break;
-        case 4: color = 'orange'; label_name = 'Lukarne'; break;
-        case 5: color = 'purple'; label_name = 'Dach'; break;
-      }
+  // Create rectangle
+  const rect = new fabric.Rect({
+    left: x1,
+    top: y1,
+    width: width,
+    height: height,
+    fill: color + '20', // 20% opacity
+    stroke: color,
+    strokeWidth: 2,
+    objectType: 'annotation',
+    annotationType: 'rectangle',
+    annotationIndex: index,
+    originalData: { ...data },
+    labelId: labelId,
+    labelName: label_name,
+    area: data.area || 0
+  });
+    
+  // Add rectangle to canvas
+  canvas.add(rect);
+    
+  // Create text label
+  const labelText = `#${index + 1}: ${(data.area || 0).toFixed(2)} m²`;
+  const text = new fabric.Text(labelText, {
+    left: x1,
+    top: y1 - 20,
+    fontSize: 12,
+    fill: 'white',
+    backgroundColor: color,
+    padding: 5,
+    objectType: 'label',
+    annotationIndex: index,
+    textBaseline: 'alphabetic'
+  });
+    
+  // Add text to canvas
+  canvas.add(text);
+  canvas.bringToFront(text);
+    
+  // Return objects
+  return { rect, text };
+}
+
+/**
+ * Add a polygon annotation to the canvas
+ * @param {Object} data - The annotation data
+ * @param {number} index - The annotation index
+ * @returns {Object} The created fabric objects
+ */
+export function addPolygonAnnotation(data, index) {
+  if (!canvas) return null;
+  
+  let points = [];
+  
+  // Extract data - support multiple polygon formats
+  if (data.polygon && (data.polygon.all_points_x || data.polygon.all_points_y)) {
+    // Format: {polygon: {all_points_x: [...], all_points_y: [...]}}
+    const { all_points_x, all_points_y } = data.polygon;
+    
+    // Validate polygon data
+    if (!all_points_x || !all_points_y || all_points_x.length < 3) {
+      console.warn("Invalid polygon data:", data);
+      return null;
     }
     
-    // Create rectangle
-    const rect = new fabric.Rect({
-      left: x1,
-      top: y1,
-      width: width,
-      height: height,
-      fill: color + '20', // 20% opacity
-      stroke: color,
-      strokeWidth: 2,
-      objectType: 'annotation',
-      annotationType: 'rectangle',
-      annotationIndex: index,
-      originalData: { ...data },
-      labelId: labelId,
-      labelName: label_name,
-      area: data.area || 0
-    });
-    
-    // Add rectangle to canvas
-    canvas.add(rect);
-    
-    // Create text label
-    const labelText = `#${index + 1}: ${(data.area || 0).toFixed(2)} m²`;
-    const text = new fabric.Text(labelText, {
-      left: x1,
-      top: y1 - 20,
-      fontSize: 12,
-      fill: 'white',
-      backgroundColor: color,
-      padding: 5,
-      objectType: 'label',
-      annotationIndex: index,
-      textBaseline: 'top' // Valid value: 'top', 'middle', 'bottom', 'alphabetic', 'hanging', 'ideographic'
-    });
-    
-    // Add text to canvas
-    canvas.add(text);
-    canvas.bringToFront(text);
-    
-    // Return objects
-    return { rect, text };
+    // Create points array
+    for (let i = 0; i < all_points_x.length; i++) {
+      points.push({
+        x: all_points_x[i],
+        y: all_points_y[i]
+      });
+    }
+  } else if (data.points) {
+    // Format: {points: [{x: ..., y: ...}, ...]}
+    points = data.points;
+  } else {
+    console.warn("Unsupported polygon format:", data);
+    return null;
   }
+  
+  const labelId = data.label || 0;
+  
+  // Get color and label name
+  let color = 'gray';
+  let label_name = 'Other';
+  
+  if (window.LabelsManager) {
+    color = window.LabelsManager.getLabelColor(labelId, 'area');
+    label_name = window.LabelsManager.getLabelName(labelId, 'area');
+  } else {
+    // Fallback colors
+    switch (labelId) {
+      case 1: color = 'blue'; label_name = 'Fenster'; break;
+      case 2: color = 'red'; label_name = 'Tür'; break;
+      case 3: color = '#d4d638'; label_name = 'Wand'; break;
+      case 4: color = 'orange'; label_name = 'Lukarne'; break;
+      case 5: color = 'purple'; label_name = 'Dach'; break;
+    }
+  }
+  
+  // Create polygon
+  const polygon = new fabric.Polygon(points, {
+    fill: color + '20', // 20% opacity
+    stroke: color,
+    strokeWidth: 2,
+    objectType: 'annotation',
+    annotationType: 'polygon',
+    annotationIndex: index,
+    originalData: { ...data },
+    labelId: labelId,
+    labelName: label_name,
+    area: data.area || 0
+  });
+  
+  // Add polygon to canvas
+  canvas.add(polygon);
+  
+  // Calculate centroid for label positioning
+  let centerX = 0, centerY = 0;
+  for (let i = 0; i < points.length; i++) {
+    centerX += points[i].x;
+    centerY += points[i].y;
+  }
+  centerX /= points.length;
+  centerY /= points.length;
+  
+  // Create text label
+  const labelText = `#${index + 1}: ${(data.area || 0).toFixed(2)} m²`;
+  const text = new fabric.Text(labelText, {
+    left: centerX,
+    top: centerY - 20,
+    fontSize: 12,
+    fill: 'white',
+    backgroundColor: color,
+    padding: 5,
+    objectType: 'label',
+    annotationIndex: index,
+    textBaseline: 'alphabetic'
+  });
+  
+  // Add text to canvas
+  canvas.add(text);
+  canvas.bringToFront(text);
+  
+  // Return objects
+  return { polygon, text };
+}
 
-  /**
+/**
+ * Add a line annotation to the canvas
+ * @param {Object} data - The annotation data
+ * @param {number} index - The annotation index
+ * @returns {Object} The created fabric objects
+ */
+export function addLineAnnotation(data, index) {
+  if (!canvas) return null;
+  
+  let points = [];
+  
+  // Extract data - support multiple line formats
+  if (data.line && (data.line.all_points_x || data.line.all_points_y)) {
+    // Format: {line: {all_points_x: [...], all_points_y: [...]}}
+    const { all_points_x, all_points_y } = data.line;
+    
+    // Validate line data
+    if (!all_points_x || !all_points_y || all_points_x.length < 2) {
+      console.warn("Invalid line data:", data);
+      return null;
+    }
+    
+    // Create points array
+    for (let i = 0; i < all_points_x.length; i++) {
+      points.push({
+        x: all_points_x[i],
+        y: all_points_y[i]
+      });
+    }
+  } else if (data.points) {
+    // Format: {points: [{x: ..., y: ...}, ...]}
+    points = data.points;
+  } else {
+    console.warn("Unsupported line format:", data);
+    return null;
+  }
+  
+  const labelId = data.lineType || 1;
+  
+  // Get color from line labels
+  let color = '#FF9500'; // Default orange
+  let label_name = 'Strecke';
+  
+  if (window.LabelsManager) {
+    color = window.LabelsManager.getLabelColor(labelId, 'line');
+    label_name = window.LabelsManager.getLabelName(labelId, 'line');
+  }
+  
+  // Create polyline
+  const line = new fabric.Polyline(points, {
+    fill: '',
+    stroke: color,
+    strokeWidth: 2,
+    objectType: 'annotation',
+    annotationType: 'line',
+    annotationIndex: index,
+    originalData: { ...data },
+    lineType: labelId,
+    lineName: label_name,
+    length: data.length || 0
+  });
+  
+  // Add line to canvas
+  canvas.add(line);
+  
+  // Add circles at line points
+  const circles = [];
+  for (let i = 0; i < points.length; i++) {
+    const circle = new fabric.Circle({
+      left: points[i].x - 4, // Adjust for radius
+      top: points[i].y - 4,  // Adjust for radius
+      radius: 4,
+      fill: color,
+      stroke: '#fff',
+      strokeWidth: 1,
+      objectType: 'linePoint',
+      lineIndex: index,
+      pointIndex: i
+    });
+    canvas.add(circle);
+    circles.push(circle);
+  }
+  
+  // Get last point for text positioning
+  const lastPoint = points[points.length - 1];
+  
+  // Create text label
+  const labelText = `${(data.length || 0).toFixed(2)} m`;
+  const text = new fabric.Text(labelText, {
+    left: lastPoint.x + 5,
+    top: lastPoint.y - 15,
+    fontSize: 12,
+    fill: color,
+    objectType: 'label',
+    annotationIndex: index,
+    textBaseline: 'alphabetic'
+  });
+  
+  // Add text to canvas
+  canvas.add(text);
+  canvas.bringToFront(text);
+  
+  // Return objects
+  return { line, circles, text };
+}
+
+/**
+ * Add an annotation to the canvas based on its type
+ * @param {Object} prediction - The prediction data
+ * @param {number} index - The prediction index
+ */
+export function addAnnotation(prediction, index) {
+  if (!canvas) return;
+  
+  // Determine annotation type
+  if (prediction.type === "line" || (prediction.line !== undefined)) {
+    return addLineAnnotation(prediction, index);
+  } else if (prediction.type === "polygon" || prediction.polygon !== undefined) {
+    return addPolygonAnnotation(prediction, index);
+  } else if (prediction.box !== undefined || prediction.bbox !== undefined) {
+    return addRectangleAnnotation(prediction, index);
+  } else {
+    console.warn("Unknown annotation type:", prediction);
+  }
+}
+
+/**
+ * Display annotations from prediction data
+ * @param {Array} predictions - The predictions data
+ */
+export function displayAnnotations(predictions) {
+  if (!canvas) {
+    // Initialize canvas if it doesn't exist
+    initCanvas();
+  }
+  
+  if (!canvas || !predictions) {
+    console.warn("Cannot display annotations: canvas or predictions missing");
+    return;
+  }
+  
+  console.log(`Displaying ${predictions.length} annotations`);
+  
+  // Clear canvas
+  clearAnnotations();
+  
+  // Add each annotation with debug info
+  predictions.forEach((prediction, index) => {
+    console.log(`Adding annotation #${index}: Type: ${prediction.type || 'unknown'}, Label: ${prediction.label || 'unknown'}`);
+    
+    const result = addAnnotation(prediction, index);
+    if (!result) {
+      console.warn(`Failed to add annotation #${index}`);
+    }
+  });
+  
+  // Render canvas and make sure all objects are visible
+  canvas.renderAll();
+  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset transform
+  
+  // Log final object count
+  console.log(`Canvas now has ${canvas.getObjects().length} objects`);
+}
+
+/**
+ * Convert annotations from fabric.js objects back to prediction format
+ * @returns {Array} Array of prediction objects
+ */
+export function getAnnotationsData() {
+  if (!canvas) return [];
+  
+  const annotations = [];
+  
+  // Get all annotation objects
+  const objects = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  
+  // Convert each object to prediction format
+  objects.forEach(obj => {
+    if (obj.annotationType === 'rectangle') {
+      // Rectangle format
+      const x1 = obj.left;
+      const y1 = obj.top;
+      const x2 = obj.left + obj.width;
+      const y2 = obj.top + obj.height;
+      
+      annotations.push({
+        box: [x1, y1, x2, y2],
+        label: obj.labelId,
+        label_name: obj.labelName,
+        type: 'rectangle',
+        area: calculateRectangleArea(obj.width, obj.height),
+        score: obj.originalData?.score || 1.0
+      });
+    } else if (obj.annotationType === 'polygon') {
+      // Polygon format
+      const points = obj.points;
+      const all_points_x = points.map(p => p.x);
+      const all_points_y = points.map(p => p.y);
+      
+      annotations.push({
+        polygon: {
+          all_points_x,
+          all_points_y
+        },
+        label: obj.labelId,
+        label_name: obj.labelName,
+        type: 'polygon',
+        area: calculatePolygonArea(points),
+        score: obj.originalData?.score || 1.0
+      });
+    } else if (obj.annotationType === 'line') {
+      // Line format
+      const points = obj.points;
+      const all_points_x = points.map(p => p.x);
+      const all_points_y = points.map(p => p.y);
+      
+      annotations.push({
+        line: {
+          all_points_x,
+          all_points_y
+        },
+        type: 'line',
+        lineType: obj.lineType || 1,
+        length: calculateLineLength(points),
+        score: obj.originalData?.score || 1.0
+      });
+    }
+  });
+  
+  return annotations;
+}
+
+/**
+ * Calculate rectangle area in square meters
+ * @param {number} width - Width in pixels
+ * @param {number} height - Height in pixels
+ * @returns {number} Area in square meters
+ */
+function calculateRectangleArea(width, height) {
+  // Get current settings
+  const planScale = parseInt(document.getElementById('planScale').value || 100);
+  const dpi = parseInt(document.getElementById('dpi').value || 300);
+  
+  // Calculate pixels per meter
+  const pixelsPerInch = dpi;
+  const pixelsPerMm = pixelsPerInch / 25.4;
+  const pixelsPerMeter = pixelsPerMm * (1000 / planScale);
+  
+  // Convert to square meters
+  const widthMeters = width / pixelsPerMeter;
+  const heightMeters = height / pixelsPerMeter;
+  
+  return widthMeters * heightMeters;
+}
+
+/**
+ * Calculate polygon area in square meters
+ * @param {Array} points - Array of {x,y} points
+ * @returns {number} Area in square meters
+ */
+function calculatePolygonArea(points) {
+  // Get current settings
+  const planScale = parseInt(document.getElementById('planScale').value || 100);
+  const dpi = parseInt(document.getElementById('dpi').value || 300);
+  
+  // Calculate pixels per meter
+  const pixelsPerInch = dpi;
+  const pixelsPerMm = pixelsPerInch / 25.4;
+  const pixelsPerMeter = pixelsPerMm * (1000 / planScale);
+  
+  // Use Shoelace formula to calculate area in pixels
+  let area = 0;
+  const n = points.length;
+  
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += points[i].x * points[j].y;
+    area -= points[j].x * points[i].y;
+  }
+  
+  area = Math.abs(area) / 2;
+  
+  // Convert to square meters
+  return area / (pixelsPerMeter * pixelsPerMeter);
+}
+
+/**
+ * Calculate line length in meters
+ * @param {Array} points - Array of {x,y} points
+ * @returns {number} Length in meters
+ */
+function calculateLineLength(points) {
+  if (points.length < 2) return 0;
+  
+  // Get current settings
+  const planScale = parseInt(document.getElementById('planScale').value || 100);
+  const dpi = parseInt(document.getElementById('dpi').value || 300);
+  
+  // Calculate pixels per meter
+  const pixelsPerInch = dpi;
+  const pixelsPerMm = pixelsPerInch / 25.4;
+  const pixelsPerMeter = pixelsPerMm * (1000 / planScale);
+  
+  // Calculate length
+  let totalLength = 0;
+  
+  for (let i = 0; i < points.length - 1; i++) {
+    const dx = points[i+1].x - points[i].x;
+    const dy = points[i+1].y - points[i].y;
+    const segmentLength = Math.sqrt(dx*dx + dy*dy);
+    totalLength += segmentLength;
+  }
+  
+  // Convert to meters
+  return totalLength / pixelsPerMeter;
+}
+
+/**
+ * Highlight an object by its annotation index
+ * @param {number} index - The annotation index
+ * @param {boolean} isHighlighted - Whether to highlight or unhighlight
+ */
+export function highlightObject(index, isHighlighted) {
+  if (!canvas) return;
+  
+  // Find object with matching annotationIndex
+  const objects = canvas.getObjects();
+  const targetObj = objects.find(obj => obj.objectType === 'annotation' && obj.annotationIndex === index);
+  
+  if (targetObj) {
+    if (isHighlighted) {
+      targetObj.set({
+        strokeWidth: 4,
+        opacity: 0.8
+      });
+    } else {
+      targetObj.set({
+        strokeWidth: 2,
+        opacity: 1.0
+      });
+    }
+    canvas.renderAll();
+  }
+}
+
+/**
+ * Select an object by its annotation index
+ * @param {number} index - The annotation index
+ */
+export function selectObjectByIndex(index) {
+  if (!canvas) return;
+  
+  // Find object with matching annotationIndex
+  const objects = canvas.getObjects();
+  const targetObj = objects.find(obj => obj.objectType === 'annotation' && obj.annotationIndex === index);
+  
+  if (targetObj) {
+    canvas.setActiveObject(targetObj);
+    canvas.renderAll();
+  }
+}
+
+/**
+ * Toggle visibility of objects by label ID
+ * @param {number} labelId - The label ID
+ * @param {boolean} isVisible - Whether objects should be visible
+ */
+export function toggleObjectsByLabel(labelId, isVisible) {
+  if (!canvas) return;
+  
+  // Find all objects with this label
+  canvas.getObjects().forEach(obj => {
+    if (obj.objectType === 'annotation' && obj.labelId === labelId) {
+      obj.visible = isVisible;
+      
+      // Also toggle associated labels
+      const objIndex = obj.annotationIndex;
+      canvas.getObjects().forEach(o => {
+        if (o.objectType === 'label' && o.annotationIndex === objIndex) {
+          o.visible = isVisible;
+        }
+      });
+    }
+  });
+  
+  canvas.renderAll();
+}
+
+/**
  * Enable object selection and editing
  */
 export function enableEditing() {
@@ -476,7 +904,24 @@ export function deleteSelected() {
         canvas.remove(obj);
       });
     } else {
-      // Delete single object
+      // For rectangle and polygon, also delete associated label
+      if (activeObject.objectType === 'annotation') {
+        const objIndex = activeObject.annotationIndex;
+        
+        // Delete labels
+        canvas.getObjects().forEach(obj => {
+          if (obj.objectType === 'label' && obj.annotationIndex === objIndex) {
+            canvas.remove(obj);
+          }
+          
+          // Delete line points if it's a line
+          if (activeObject.annotationType === 'line' && obj.objectType === 'linePoint' && obj.lineIndex === objIndex) {
+            canvas.remove(obj);
+          }
+        });
+      }
+      
+      // Delete the object itself
       canvas.remove(activeObject);
     }
     
@@ -548,7 +993,7 @@ export function changeSelectedLabel(labelId) {
   
   if (activeObject && activeObject.objectType === 'annotation') {
     // Get the label information
-    const label = currentLabels.find(l => l.id === labelId);
+    const label = window.LabelsManager.getLabelById(labelId, 'area');
     
     if (label) {
       // Update object properties
@@ -584,21 +1029,16 @@ export function changeSelectedLineType(typeId) {
   const activeObject = canvas.getActiveObject();
   
   if (activeObject && activeObject.objectType === 'annotation' && activeObject.annotationType === 'line') {
-    // Find the line label for this ID using currentLineLabels if available
-    const lineLabels = window.currentLineLabels || [
-      { id: 1, name: "Strecke", color: "#FF9500" },
-      { id: 2, name: "Höhe", color: "#00AAFF" },
-      { id: 3, name: "Breite", color: "#4CAF50" },
-      { id: 4, name: "Abstand", color: "#9C27B0" }
-    ];
+    // Get the line label information
+    const lineLabel = window.LabelsManager.getLabelById(typeId, 'line');
     
-    const label = lineLabels.find(l => l.id === typeId);
-    
-    if (label) {
-      const color = window.LabelsManager.getLabelColor(labelId);
+    if (lineLabel) {
+      const color = lineLabel.color;
       
       // Update line properties
       activeObject.set({
+        lineType: typeId,
+        lineName: lineLabel.name,
         stroke: color
       });
       
@@ -629,6 +1069,10 @@ export function changeSelectedLineType(typeId) {
  * @param {number} labelId - The label ID to assign to new annotations
  */
 export function enableDrawingMode(type, labelId) {
+  if (!canvas) {
+    initCanvas();
+  }
+  
   if (!canvas) return;
   
   // Disable selection
@@ -636,6 +1080,11 @@ export function enableDrawingMode(type, labelId) {
   
   // Set cursor
   canvas.defaultCursor = 'crosshair';
+  
+  // Remove existing drawing event handlers
+  canvas.off('mouse:down');
+  canvas.off('mouse:move');
+  canvas.off('mouse:up');
   
   // Set up drawing handlers based on type
   if (type === 'rectangle') {
@@ -655,26 +1104,15 @@ function enableRectangleDrawing(labelId) {
   let startX, startY;
   let rect;
   
-  // Remove existing handlers
-  canvas.off('mouse:down');
-  canvas.off('mouse:move');
-  canvas.off('mouse:up');
-  
   // Mouse down handler
   canvas.on('mouse:down', function(o) {
     const pointer = canvas.getPointer(o.e);
     startX = pointer.x;
     startY = pointer.y;
     
-    // Get color for the label
-    let color = window.LabelsManager.getLabelColor(labelId);
-    let labelName = window.LabelsManager.getLabelName(labelId);
-    
-    const label = currentLabels.find(l => l.id === labelId);
-    if (label) {
-      color = label.color;
-      labelName = label.name;
-    }
+    // Get color and label name
+    const color = window.LabelsManager.getLabelColor(labelId, 'area');
+    const labelName = window.LabelsManager.getLabelName(labelId, 'area');
     
     // Create rectangle
     rect = new fabric.Rect({
@@ -692,6 +1130,7 @@ function enableRectangleDrawing(labelId) {
     });
     
     canvas.add(rect);
+    canvas.renderAll();
   });
   
   // Mouse move handler
@@ -724,15 +1163,15 @@ function enableRectangleDrawing(labelId) {
     const area = calculateRectangleArea(rect.width, rect.height);
     rect.area = area;
     
+    // Set annotation index
+    const annotationIndex = canvas.getObjects().filter(obj => obj.objectType === 'annotation').length - 1;
+    rect.annotationIndex = annotationIndex;
+    
     // Create label text
-    const labelText = `#${canvas.getObjects().filter(obj => obj.objectType === 'annotation').length}: ${area.toFixed(2)} m²`;
+    const labelText = `#${annotationIndex + 1}: ${area.toFixed(2)} m²`;
     
     // Get color
-    let color = 'gray';
-    const label = currentLabels.find(l => l.id === labelId);
-    if (label) {
-      color = label.color;
-    }
+    const color = window.LabelsManager.getLabelColor(labelId, 'area');
     
     // Create text
     const text = new fabric.Text(labelText, {
@@ -743,8 +1182,8 @@ function enableRectangleDrawing(labelId) {
       backgroundColor: color,
       padding: 5,
       objectType: 'label',
-      annotationIndex: canvas.getObjects().indexOf(rect),
-      textBaseline: 'top'
+      annotationIndex: annotationIndex,
+      textBaseline: 'alphabetic'
     });
     
     // Add text
@@ -755,6 +1194,306 @@ function enableRectangleDrawing(labelId) {
     rect = null;
     canvas.renderAll();
   });
+}
+
+/**
+ * Enable polygon drawing mode
+ * @param {number} labelId - The label ID to assign
+ */
+function enablePolygonDrawing(labelId) {
+  let points = [];
+  let polygon = null;
+  let activeLine = null;
+  let activeShape = false;
+  
+  // Get color for the label
+  const color = window.LabelsManager.getLabelColor(labelId, 'area');
+  const labelName = window.LabelsManager.getLabelName(labelId, 'area');
+  
+  // Mouse down handler
+  canvas.on('mouse:down', function(o) {
+    const pointer = canvas.getPointer(o.e);
+    
+    // Check if double click to close polygon
+    if (points.length > 2 && Math.abs(pointer.x - points[0].x) < 20 && Math.abs(pointer.y - points[0].y) < 20) {
+      // Close the polygon
+      generatePolygon(points);
+      
+      // Reset for next polygon
+      points = [];
+      polygon = null;
+      activeLine = null;
+      activeShape = false;
+      
+      // Remove all temporary objects
+      canvas.getObjects().forEach(function(obj) {
+        if (obj.temp) {
+          canvas.remove(obj);
+        }
+      });
+      
+      canvas.renderAll();
+      return;
+    }
+    
+    // Add new point
+    points.push({ x: pointer.x, y: pointer.y });
+    
+    // Create circle for the point
+    const circle = new fabric.Circle({
+      radius: 5,
+      fill: color,
+      stroke: '#fff',
+      strokeWidth: 1,
+      left: pointer.x - 5,
+      top: pointer.y - 5,
+      originX: 'center',
+      originY: 'center',
+      temp: true
+    });
+    
+    // If there are already 2 or more points, create a line
+    if (points.length > 1) {
+      if (activeLine) {
+        // Update the last line
+        activeLine.set({
+          x2: pointer.x,
+          y2: pointer.y
+        });
+      }
+      
+      // Create a new line
+      const line = new fabric.Line([
+        points[points.length - 2].x,
+        points[points.length - 2].y,
+        pointer.x,
+        pointer.y
+      ], {
+        stroke: color,
+        strokeWidth: 2,
+        temp: true
+      });
+      
+      activeLine = line;
+      canvas.add(line);
+    }
+    
+    canvas.add(circle);
+    
+    // Create or update the active shape (polygon)
+    if (points.length > 2) {
+      if (activeShape) {
+        canvas.remove(activeShape);
+      }
+      
+      activeShape = new fabric.Polygon(points, {
+        fill: color + '20',
+        stroke: color,
+        strokeWidth: 2,
+        temp: true
+      });
+      
+      canvas.add(activeShape);
+      activeShape.moveTo(-1); // Move to background
+    }
+    
+    canvas.renderAll();
+  });
+  
+  // Function to generate the final polygon
+  function generatePolygon(pointsList) {
+    // Create the polygon with the collected points
+    const annotationIndex = canvas.getObjects().filter(obj => obj.objectType === 'annotation').length;
+    
+    const finalPolygon = new fabric.Polygon(pointsList, {
+      fill: color + '20',
+      stroke: color,
+      strokeWidth: 2,
+      objectType: 'annotation',
+      annotationType: 'polygon',
+      annotationIndex: annotationIndex,
+      labelId: labelId,
+      labelName: labelName
+    });
+    
+    // Calculate area
+    const area = calculatePolygonArea(pointsList);
+    finalPolygon.area = area;
+    
+    canvas.add(finalPolygon);
+    
+    // Calculate centroid for label position
+    let centerX = 0, centerY = 0;
+    for (let i = 0; i < pointsList.length; i++) {
+      centerX += pointsList[i].x;
+      centerY += pointsList[i].y;
+    }
+    centerX /= pointsList.length;
+    centerY /= pointsList.length;
+    
+    // Create label
+    const labelText = `#${annotationIndex + 1}: ${area.toFixed(2)} m²`;
+    const text = new fabric.Text(labelText, {
+      left: centerX,
+      top: centerY - 20,
+      fontSize: 12,
+      fill: 'white',
+      backgroundColor: color,
+      padding: 5,
+      objectType: 'label',
+      annotationIndex: annotationIndex,
+      textBaseline: 'alphabetic'
+    });
+    
+    canvas.add(text);
+    canvas.bringToFront(text);
+    
+    canvas.renderAll();
+  }
+}
+
+/**
+ * Enable line drawing mode
+ * @param {number} labelId - The line type ID to assign
+ */
+function enableLineDrawing(labelId) {
+  let points = [];
+  let line = null;
+  let activeLine = null;
+  
+  // Get color for the line type
+  const color = window.LabelsManager.getLabelColor(labelId, 'line');
+  const lineName = window.LabelsManager.getLabelName(labelId, 'line');
+  
+  // Mouse down handler
+  canvas.on('mouse:down', function(o) {
+    const pointer = canvas.getPointer(o.e);
+    
+    // Add new point
+    points.push({ x: pointer.x, y: pointer.y });
+    
+    // Create circle for the point
+    const circle = new fabric.Circle({
+      radius: 5,
+      fill: color,
+      stroke: '#fff',
+      strokeWidth: 1,
+      left: pointer.x - 5,
+      top: pointer.y - 5,
+      originX: 'center',
+      originY: 'center',
+      temp: true
+    });
+    
+    canvas.add(circle);
+    
+    // If there are already 2 or more points
+    if (points.length > 1) {
+      // If there's an active line, remove it
+      if (activeLine) {
+        canvas.remove(activeLine);
+      }
+      
+      // Create a polyline with all points
+      line = new fabric.Polyline(points, {
+        fill: '',
+        stroke: color,
+        strokeWidth: 2,
+        temp: true
+      });
+      
+      canvas.add(line);
+      
+      // Double click to end line
+      if (points.length > 1 && 
+          Math.abs(pointer.x - points[points.length - 2].x) < 20 && 
+          Math.abs(pointer.y - points[points.length - 2].y) < 20) {
+        
+        // Remove the last point (duplicate)
+        points.pop();
+        
+        // Finish the line
+        generateLine(points);
+        
+        // Reset for next line
+        points = [];
+        line = null;
+        activeLine = null;
+        
+        // Remove all temporary objects
+        canvas.getObjects().forEach(function(obj) {
+          if (obj.temp) {
+            canvas.remove(obj);
+          }
+        });
+        
+        canvas.renderAll();
+      }
+    }
+    
+    canvas.renderAll();
+  });
+  
+  // Function to generate the final line
+  function generateLine(pointsList) {
+    const annotationIndex = canvas.getObjects().filter(obj => obj.objectType === 'annotation').length;
+    
+    const finalLine = new fabric.Polyline(pointsList, {
+      fill: '',
+      stroke: color,
+      strokeWidth: 2,
+      objectType: 'annotation',
+      annotationType: 'line',
+      annotationIndex: annotationIndex,
+      lineType: labelId,
+      lineName: lineName
+    });
+    
+    // Calculate length
+    const length = calculateLineLength(pointsList);
+    finalLine.length = length;
+    
+    canvas.add(finalLine);
+    
+    // Add circles at each point
+    const circles = [];
+    for (let i = 0; i < pointsList.length; i++) {
+      const circle = new fabric.Circle({
+        left: pointsList[i].x - 4,
+        top: pointsList[i].y - 4,
+        radius: 4,
+        fill: color,
+        stroke: '#fff',
+        strokeWidth: 1,
+        objectType: 'linePoint',
+        lineIndex: annotationIndex,
+        pointIndex: i
+      });
+      
+      canvas.add(circle);
+      circles.push(circle);
+    }
+    
+    // Get last point for label
+    const lastPoint = pointsList[pointsList.length - 1];
+    
+    // Create label
+    const labelText = `${length.toFixed(2)} m`;
+    const text = new fabric.Text(labelText, {
+      left: lastPoint.x + 5,
+      top: lastPoint.y - 15,
+      fontSize: 12,
+      fill: color,
+      objectType: 'label',
+      annotationIndex: annotationIndex,
+      textBaseline: 'alphabetic'
+    });
+    
+    canvas.add(text);
+    canvas.bringToFront(text);
+    
+    canvas.renderAll();
+  }
 }
 
 /**
@@ -853,467 +1592,6 @@ function updateDataSummary() {
   }
 }
 
-// Function for polygon and line drawing would go here too
-  
-  /**
-   * Add a polygon annotation to the canvas
-   * @param {Object} data - The annotation data
-   * @param {number} index - The annotation index
-   * @returns {fabric.Object} The created fabric object
-   */
-  export function addPolygonAnnotation(data, index) {
-    if (!canvas || !data.polygon) return null;
-    
-    // Extract data
-    const { all_points_x, all_points_y } = data.polygon;
-    const labelId = data.label || 0;
-    
-    // Validate polygon data
-    if (!all_points_x || !all_points_y || all_points_x.length < 3) {
-      console.warn("Invalid polygon data:", data);
-      return null;
-    }
-    
-    // Create points array for fabric.js
-    const points = [];
-    for (let i = 0; i < all_points_x.length; i++) {
-      points.push({
-        x: all_points_x[i],
-        y: all_points_y[i]
-      });
-    }
-    
-    // Get color from labels if available
-    let color = 'gray';
-    let label_name = 'Other';
-    
-    // Find matching label
-    const label = currentLabels.find(l => l.id === labelId);
-    if (label) {
-      color = label.color;
-      label_name = label.name;
-    } else {
-      // Fallback colors
-      switch (labelId) {
-        case 1: color = 'blue'; label_name = 'Fenster'; break;
-        case 2: color = 'red'; label_name = 'Tür'; break;
-        case 3: color = '#d4d638'; label_name = 'Wand'; break;
-        case 4: color = 'orange'; label_name = 'Lukarne'; break;
-        case 5: color = 'purple'; label_name = 'Dach'; break;
-      }
-    }
-    
-    // Create polygon
-    const polygon = new fabric.Polygon(points, {
-      fill: color + '20', // 20% opacity
-      stroke: color,
-      strokeWidth: 2,
-      objectType: 'annotation',
-      annotationType: 'polygon',
-      annotationIndex: index,
-      originalData: { ...data },
-      labelId: labelId,
-      labelName: label_name,
-      area: data.area || 0,
-      textBaseline: 'top'
-    });
-    
-    // Add polygon to canvas
-    canvas.add(polygon);
-    
-    // Calculate centroid for label positioning
-    let centerX = 0, centerY = 0;
-    for (let i = 0; i < points.length; i++) {
-      centerX += points[i].x;
-      centerY += points[i].y;
-    }
-    centerX /= points.length;
-    centerY /= points.length;
-    
-    // Create text label
-    const labelText = `#${index + 1}: ${(data.area || 0).toFixed(2)} m²`;
-    const text = new fabric.Text(labelText, {
-      left: centerX,
-      top: centerY - 20,
-      fontSize: 12,
-      fill: 'white',
-      backgroundColor: color,
-      padding: 5,
-      objectType: 'label',
-      annotationIndex: index,
-      textBaseline: 'top'
-    });
-    
-    // Add text to canvas
-    canvas.add(text);
-    canvas.bringToFront(text);
-    
-    // Return objects
-    return { polygon, text };
-  }
-  
-  /**
-   * Add a line annotation to the canvas
-   * @param {Object} data - The annotation data
-   * @param {number} index - The annotation index
-   * @returns {fabric.Object} The created fabric object
-   */
-  export function addLineAnnotation(data, index) {
-    if (!canvas || !data.line) return null;
-    
-    // Extract data
-    const { all_points_x, all_points_y } = data.line;
-    
-    // Validate line data
-    if (!all_points_x || !all_points_y || all_points_x.length < 2) {
-      console.warn("Invalid line data:", data);
-      return null;
-    }
-    
-    // Create points array for fabric.js
-    const points = [];
-    for (let i = 0; i < all_points_x.length; i++) {
-      points.push({
-        x: all_points_x[i],
-        y: all_points_y[i]
-      });
-    }
-    
-    // Get line color
-    const color = window.LabelsManager.getLabelColor(labelId) || '#FF9500';
-    
-    // Create polyline
-    const line = new fabric.Polyline(points, {
-      fill: '',
-      stroke: color,
-      strokeWidth: 2,
-      objectType: 'annotation',
-      annotationType: 'line',
-      annotationIndex: index,
-      originalData: { ...data },
-      length: data.length || 0,
-      textBaseline: 'top' 
-    });
-    
-    // Add line to canvas
-    canvas.add(line);
-    
-    // Add circles at line points
-    const circles = [];
-    for (let i = 0; i < points.length; i++) {
-      const circle = new fabric.Circle({
-        left: points[i].x - 4, // Adjust for radius
-        top: points[i].y - 4,  // Adjust for radius
-        radius: 4,
-        fill: color,
-        stroke: '#fff',
-        strokeWidth: 1,
-        objectType: 'linePoint',
-        lineIndex: index,
-        pointIndex: i
-      });
-      canvas.add(circle);
-      circles.push(circle);
-    }
-    
-    // Get last point for text positioning
-    const lastPoint = points[points.length - 1];
-    
-    // Create text label
-    const labelText = `${(data.length || 0).toFixed(2)} m`;
-    const text = new fabric.Text(labelText, {
-      left: lastPoint.x + 5,
-      top: lastPoint.y - 15,
-      fontSize: 12,
-      fill: color,
-      objectType: 'label',
-      annotationIndex: index,
-      textBaseline: 'top'
-    });
-    
-    // Add text to canvas
-    canvas.add(text);
-    canvas.bringToFront(text);
-    
-    // Return objects
-    return { line, circles, text };
-  }
-  
-  /**
-   * Add an annotation to the canvas based on its type
-   * @param {Object} prediction - The prediction data
-   * @param {number} index - The prediction index
-   */
-  export function addAnnotation(prediction, index) {
-    if (!canvas) return;
-    
-    // Determine annotation type
-    if (prediction.type === "line" || (prediction.line && prediction.length !== undefined)) {
-      return addLineAnnotation(prediction, index);
-    } else if (prediction.type === "polygon" || prediction.polygon) {
-      return addPolygonAnnotation(prediction, index);
-    } else if (prediction.box || prediction.bbox) {
-      return addRectangleAnnotation(prediction, index);
-    }
-  }
-  
-  /**
-   * Display annotations from prediction data
-   * @param {Array} predictions - The predictions data
-   */
-  export function displayAnnotations(predictions) {
-    if (!canvas || !predictions) {
-      console.warn("Cannot display annotations: canvas or predictions missing");
-      return;
-    }
-    
-    console.log(`Displaying ${predictions.length} annotations`);
-    
-    // Clear canvas
-    clearAnnotations();
-    
-    // Add each annotation with debug info
-    predictions.forEach((prediction, index) => {
-      console.log(`Adding annotation #${index}: Type: ${prediction.type || 'unknown'}, Label: ${prediction.label || 'unknown'}`);
-      console.log("Box coordinates:", prediction.box);
-      
-      const result = addAnnotation(prediction, index);
-      if (!result) {
-        console.warn(`Failed to add annotation #${index}`);
-      }
-    });
-    
-    // Render canvas and make sure all objects are visible
-    canvas.renderAll();
-    canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset transform
-    
-    // Log final object count
-    console.log(`Canvas now has ${canvas.getObjects().length} objects`);
-  }
-
-  /**
- * Convert annotations from fabric.js objects back to prediction format
- * @returns {Array} Array of prediction objects
- */
-export function getAnnotationsData() {
-    if (!canvas) return [];
-    
-    const annotations = [];
-    
-    // Get all annotation objects
-    const objects = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-    
-    // Convert each object to prediction format
-    objects.forEach(obj => {
-      if (obj.annotationType === 'rectangle') {
-        // Rectangle format
-        const x1 = obj.left;
-        const y1 = obj.top;
-        const x2 = obj.left + obj.width;
-        const y2 = obj.top + obj.height;
-        
-        annotations.push({
-          ...obj.originalData,
-          box: [x1, y1, x2, y2],
-          label: obj.labelId,
-          label_name: obj.labelName,
-          type: 'rectangle',
-          area: calculateRectangleArea(obj.width, obj.height)
-        });
-      } else if (obj.annotationType === 'polygon') {
-        // Polygon format
-        const points = obj.points;
-        const all_points_x = points.map(p => p.x);
-        const all_points_y = points.map(p => p.y);
-        
-        annotations.push({
-          ...obj.originalData,
-          polygon: {
-            all_points_x,
-            all_points_y
-          },
-          label: obj.labelId,
-          label_name: obj.labelName,
-          type: 'polygon',
-          area: calculatePolygonArea(points)
-        });
-      } else if (obj.annotationType === 'line') {
-        // Line format
-        const points = obj.points;
-        const all_points_x = points.map(p => p.x);
-        const all_points_y = points.map(p => p.y);
-        
-        annotations.push({
-          ...obj.originalData,
-          line: {
-            all_points_x,
-            all_points_y
-          },
-          type: 'line',
-          length: calculateLineLength(points)
-        });
-      }
-    });
-    
-    return annotations;
-  }
-  
-  /**
-   * Calculate rectangle area in square meters
-   * @param {number} width - Width in pixels
-   * @param {number} height - Height in pixels
-   * @returns {number} Area in square meters
-   */
-  function calculateRectangleArea(width, height) {
-    // Get current settings
-    const planScale = parseInt(document.getElementById('planScale').value || 100);
-    const dpi = parseInt(document.getElementById('dpi').value || 300);
-    
-    // Calculate pixels per meter
-    const pixelsPerInch = dpi;
-    const pixelsPerMm = pixelsPerInch / 25.4;
-    const pixelsPerMeter = pixelsPerMm * (1000 / planScale);
-    
-    // Convert to square meters
-    const widthMeters = width / pixelsPerMeter;
-    const heightMeters = height / pixelsPerMeter;
-    
-    return widthMeters * heightMeters;
-  }
-  
-  /**
-   * Calculate polygon area in square meters
-   * @param {Array} points - Array of {x,y} points
-   * @returns {number} Area in square meters
-   */
-  function calculatePolygonArea(points) {
-    // Get current settings
-    const planScale = parseInt(document.getElementById('planScale').value || 100);
-    const dpi = parseInt(document.getElementById('dpi').value || 300);
-    
-    // Calculate pixels per meter
-    const pixelsPerInch = dpi;
-    const pixelsPerMm = pixelsPerInch / 25.4;
-    const pixelsPerMeter = pixelsPerMm * (1000 / planScale);
-    
-    // Use Shoelace formula to calculate area in pixels
-    let area = 0;
-    const n = points.length;
-    
-    for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      area += points[i].x * points[j].y;
-      area -= points[j].x * points[i].y;
-    }
-    
-    area = Math.abs(area) / 2;
-    
-    // Convert to square meters
-    return area / (pixelsPerMeter * pixelsPerMeter);
-  }
-  
-  /**
-   * Calculate line length in meters
-   * @param {Array} points - Array of {x,y} points
-   * @returns {number} Length in meters
-   */
-  function calculateLineLength(points) {
-    if (points.length < 2) return 0;
-    
-    // Get current settings
-    const planScale = parseInt(document.getElementById('planScale').value || 100);
-    const dpi = parseInt(document.getElementById('dpi').value || 300);
-    
-    // Calculate pixels per meter
-    const pixelsPerInch = dpi;
-    const pixelsPerMm = pixelsPerInch / 25.4;
-    const pixelsPerMeter = pixelsPerMm * (1000 / planScale);
-    
-    // Calculate length
-    let totalLength = 0;
-    
-    for (let i = 0; i < points.length - 1; i++) {
-      const dx = points[i+1].x - points[i].x;
-      const dy = points[i+1].y - points[i].y;
-      const segmentLength = Math.sqrt(dx*dx + dy*dy);
-      totalLength += segmentLength;
-    }
-    
-    // Convert to meters
-    return totalLength / pixelsPerMeter;
-  }
-
-/**
- * Highlight an object by its annotation index
- * @param {number} index - The annotation index
- * @param {boolean} isHighlighted - Whether to highlight or unhighlight
- */
-export function highlightObject(index, isHighlighted) {
-  if (!canvas) return;
-  
-  // Find object with matching annotationIndex
-  const objects = canvas.getObjects();
-  const targetObj = objects.find(obj => obj.objectType === 'annotation' && obj.annotationIndex === index);
-  
-  if (targetObj) {
-    if (isHighlighted) {
-      targetObj.set({
-        strokeWidth: 4,
-        opacity: 0.8
-      });
-    } else {
-      targetObj.set({
-        strokeWidth: 2,
-        opacity: 1.0
-      });
-    }
-    canvas.renderAll();
-  }
-}
-
-/**
- * Select an object by its annotation index
- * @param {number} index - The annotation index
- */
-export function selectObjectByIndex(index) {
-  if (!canvas) return;
-  
-  // Find object with matching annotationIndex
-  const objects = canvas.getObjects();
-  const targetObj = objects.find(obj => obj.objectType === 'annotation' && obj.annotationIndex === index);
-  
-  if (targetObj) {
-    canvas.setActiveObject(targetObj);
-    canvas.renderAll();
-  }
-}
-
-/**
- * Toggle visibility of objects by label ID
- * @param {number} labelId - The label ID
- * @param {boolean} isVisible - Whether objects should be visible
- */
-export function toggleObjectsByLabel(labelId, isVisible) {
-  if (!canvas) return;
-  
-  // Find all objects with this label
-  canvas.getObjects().forEach(obj => {
-    if (obj.objectType === 'annotation' && obj.labelId === labelId) {
-      obj.visible = isVisible;
-      
-      // Also toggle associated labels
-      const objIndex = obj.annotationIndex;
-      canvas.getObjects().forEach(o => {
-        if (o.objectType === 'label' && o.annotationIndex === objIndex) {
-          o.visible = isVisible;
-        }
-      });
-    }
-  });
-  
-  canvas.renderAll();
-}
-
 /**
  * Cancel editing and restore original annotations
  */
@@ -1358,5 +1636,7 @@ window.FabricHandler = {
   
   // Utilities
   getCurrentZoom,
-  setLabels
+  setLabels,
+  setLineLabels,
+  syncEditorZoom
 };
