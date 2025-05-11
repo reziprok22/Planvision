@@ -48,6 +48,13 @@ export function setupFabricHandler(elements) {
 export function initCanvas() {
   console.log("Initializing Fabric.js canvas");
   
+  // Überprüfe, ob das Bild geladen ist
+  if (!uploadedImage || !uploadedImage.complete || uploadedImage.naturalWidth === 0) {
+    console.warn("Image not fully loaded yet, delaying canvas initialization");
+    setTimeout(initCanvas, 100);
+    return null;
+  }
+  
   // Create canvas element if it doesn't exist
   let canvasElement = document.getElementById('annotationCanvas');
   if (!canvasElement) {
@@ -72,7 +79,24 @@ export function initCanvas() {
   // Set up event listeners
   setupEventListeners();
   
+  console.log("Canvas initialized, size:", canvas.width, "x", canvas.height, "zoom:", canvas.getZoom());
+  
   return canvas;
+}
+
+function checkImageAspectRatio() {
+  if (!uploadedImage) return;
+  
+  // Überprüfe, ob das Bild verzerrt dargestellt wird
+  const naturalRatio = uploadedImage.naturalWidth / uploadedImage.naturalHeight;
+  const displayedRatio = uploadedImage.offsetWidth / uploadedImage.offsetHeight;
+  
+  const ratioDifference = Math.abs(naturalRatio - displayedRatio);
+  
+  if (ratioDifference > 0.01) { // Mehr als 1% Unterschied
+    console.warn(`Image aspect ratio mismatch: natural=${naturalRatio.toFixed(4)}, displayed=${displayedRatio.toFixed(4)}`);
+    console.warn("This may cause annotation positioning issues!");
+  }
 }
 
 /**
@@ -80,41 +104,70 @@ export function initCanvas() {
  */
 function resizeCanvas() {
   if (!canvas || !imageContainer || !uploadedImage) return;
+
+    // Überprüfe Seitenverhältnis
+    checkImageAspectRatio();
   
-  console.log("Resizing Fabric.js canvas to match image dimensions");
-  
-  // Wait for the image to be fully loaded
+  // Warte bis das Bild vollständig geladen ist
   if (uploadedImage.complete && uploadedImage.naturalWidth > 0) {
-    // Use the natural dimensions of the image
+    // Hole die natürlichen Dimensionen des Bildes
     const width = uploadedImage.naturalWidth;
     const height = uploadedImage.naturalHeight;
     
-    console.log(`Setting canvas size to ${width}x${height} (natural: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight})`);
+    console.log(`Setting canvas size to ${width}x${height} (natural: ${width}x${height})`);
     
-    // Set canvas dimensions to match the NATURAL dimensions of the image
+    // Setze die Canvas-Dimensionen auf die NATÜRLICHEN Dimensionen des Bildes
     canvas.setWidth(width);
     canvas.setHeight(height);
     
-    // Make sure the canvas container matches the displayed image size
+    // Stelle sicher, dass der Canvas-Container der angezeigten Bildgröße entspricht
     const canvasContainer = document.getElementsByClassName('canvas-container')[0];
     if (canvasContainer) {
+      // Setze exakte Position des Canvas-Containers
       canvasContainer.style.position = 'absolute';
       canvasContainer.style.top = '0';
       canvasContainer.style.left = '0';
-      // Set the container to match the image's DISPLAYED size, not natural size
+      
+      // WICHTIG: Übernimm die exakte Position und Dimensionen des Bildes
+      const imageRect = uploadedImage.getBoundingClientRect();
+      const containerRect = imageContainer.getBoundingClientRect();
+      
+      // Berechne relative Position des Bildes innerhalb des Containers
+      const relativeTop = imageRect.top - containerRect.top;
+      const relativeLeft = imageRect.left - containerRect.left;
+      
+      canvasContainer.style.top = `${relativeTop}px`;
+      canvasContainer.style.left = `${relativeLeft}px`;
       canvasContainer.style.width = `${uploadedImage.offsetWidth}px`;
       canvasContainer.style.height = `${uploadedImage.offsetHeight}px`;
       
-      // Set canvas scale to match the display scale of the image
-      const scaleX = uploadedImage.offsetWidth / width;
-      const scaleY = uploadedImage.offsetHeight / height;
+      // Berechne das Skalierungsverhältnis
+      // KRITISCH: Wenn das angezeigte Bild die gleiche Größe hat wie das Original,
+      // sollte der Zoom-Wert 1.0, nicht 0.01 sein!
+      let scaleX, scaleY;
       
-      console.log(`Image display scale: ${scaleX.toFixed(4)} x ${scaleY.toFixed(4)}`);
+      // Prüfe, ob die offsetWidth/Height korrekt sind
+      if (uploadedImage.offsetWidth === 0 || uploadedImage.offsetHeight === 0) {
+        console.warn("Image offset dimensions are zero, using default scale of 1.0");
+        scaleX = scaleY = 1.0;
+      } else {
+        scaleX = uploadedImage.offsetWidth / width;
+        scaleY = uploadedImage.offsetHeight / height;
+      }
       
-      // Apply scaling transformation to the canvas
-      canvas.setZoom(scaleX);
+      // WICHTIG: Wenn die Werte fast gleich sind (kleine Rundungsfehler), verwende 1.0
+      if (Math.abs(scaleX - 1.0) < 0.05) scaleX = 1.0;
+      if (Math.abs(scaleY - 1.0) < 0.05) scaleY = 1.0;
       
-      // Make sure the canvas is responsive
+      console.log(`Calculated scale factors: X=${scaleX.toFixed(4)}, Y=${scaleY.toFixed(4)}`);
+      
+      // Verwende einen sinnvollen Mindestwert für die Skalierung
+      const zoomLevel = Math.max(scaleX, 0.1); // Verwende mindestens 0.1 (10%)
+      
+      console.log(`Setting canvas zoom to: ${zoomLevel}`);
+      canvas.setZoom(zoomLevel);
+      
+      // WICHTIG: Stelle sicher, dass der Wrapper die korrekten Dimensionen hat
       if (canvas.wrapperEl) {
         canvas.wrapperEl.style.width = `${uploadedImage.offsetWidth}px`;
         canvas.wrapperEl.style.height = `${uploadedImage.offsetHeight}px`;
@@ -122,10 +175,13 @@ function resizeCanvas() {
     }
     
     canvas.renderAll();
+    console.log(`Final canvas state: size=${canvas.width}x${canvas.height}, zoom=${canvas.getZoom()}`);
   } else {
-    // If image isn't loaded yet, set up an event listener
+    console.warn("Image not fully loaded, delaying canvas resizing");
+    // Wenn das Bild noch nicht geladen ist, richte einen Event-Listener ein
     uploadedImage.onload = function() {
-      setTimeout(resizeCanvas, 100); // Small delay to ensure image is fully rendered
+      console.log("Image finished loading, now resizing canvas");
+      setTimeout(resizeCanvas, 100);
     };
   }
 }
@@ -274,6 +330,29 @@ export function resetView() {
   canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
 }
 
+function validateCoordinates(coords, index) {
+  const [x1, y1, x2, y2] = coords;
+  
+  // Überprüfe auf ungewöhnliche Werte
+  if (x1 < 0 || y1 < 0 || x2 < 0 || y2 < 0) {
+    console.warn(`Annotation #${index} has negative coordinates: [${x1}, ${y1}, ${x2}, ${y2}]`);
+  }
+  
+  if (x1 >= canvas.width || y1 >= canvas.height || x2 >= canvas.width || y2 >= canvas.height) {
+    console.warn(`Annotation #${index} has out-of-bounds coordinates: [${x1}, ${y1}, ${x2}, ${y2}]`);
+  }
+  
+  const width = x2 - x1;
+  const height = y2 - y1;
+  
+  if (width <= 0 || height <= 0) {
+    console.warn(`Annotation #${index} has invalid dimensions: ${width}x${height}`);
+  }
+  
+  // Alles in Ordnung
+  return coords;
+}
+
 /**
  * Add a rectangle annotation to the canvas
  * @param {Object} data - The annotation data
@@ -283,11 +362,28 @@ export function resetView() {
 export function addRectangleAnnotation(data, index) {
   if (!canvas) return null;
   
-  // Extract data
-  const [x1, y1, x2, y2] = data.box || data.bbox;
+  // Extrahiere Daten
+  const coords = validateCoordinates(data.box || data.bbox, index);
+  const [x1, y1, x2, y2] = coords;
   const width = x2 - x1;
   const height = y2 - y1;
   const labelId = data.label || 0;
+  
+  // Debug-Informationen
+  console.log(`Adding rectangle #${index}: [${x1}, ${y1}, ${x2}, ${y2}], size: ${width}x${height}`);
+  
+  // WICHTIG: Überprüfe und korrigiere den Zoom-Wert, wenn er zu niedrig ist
+  const currentZoom = canvas.getZoom();
+  if (currentZoom < 0.1) {
+    console.warn(`Canvas zoom too low (${currentZoom}), correcting to 1.0`);
+    canvas.setZoom(1.0);
+  }
+  
+  // debug
+  console.log(`Annotation #${index} coordinates: [${x1}, ${y1}, ${x2}, ${y2}]`);
+  console.log(`Current image size: ${uploadedImage.width}x${uploadedImage.height}`);
+  console.log(`Natural image size: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight}`);
+  console.log(`Canvas size: ${canvas.width}x${canvas.height}, Zoom: ${canvas.getZoom()}`);
     
   // Get color and label name from LabelsManager if available
   let color = 'gray';

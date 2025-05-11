@@ -145,37 +145,6 @@ button:hover {
     display: block;
 }
 
-.bounding-box {
-    position: absolute;
-    border: 2px solid red;
-    background-color: rgba(255, 0, 0, 0.1);
-    pointer-events: none;
-}
-
-#annotationOverlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    pointer-events: none;
-    z-index: 5;
-}
-
-.polygon-annotation {
-    fill-opacity: 0.1;
-    stroke-width: 2px;
-    pointer-events: none;
-}
-
-.line-annotation {
-    fill: none;
-    stroke-width: 2px;
-    pointer-events: none;
-}
-
-.line-point {
-    pointer-events: none;
-}
-
 .box-label {
     position: absolute;
     padding: 2px 5px;
@@ -247,21 +216,6 @@ button:hover {
 
 .lukarne-label {
     background-color: rgba(255, 165, 0, 0.8);
-}
-
-/* Add this to styles.css */
-.rect-annotation {
-    fill-opacity: 0.1;
-    stroke-width: 2px;
-    pointer-events: none;
-}
-
-.svg-label {
-    pointer-events: none;
-}
-
-.svg-label rect {
-    opacity: 0.8;
 }
 
 
