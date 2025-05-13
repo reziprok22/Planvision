@@ -801,9 +801,20 @@ export function displayAnnotations(predictions) {
     }
   });
   
-  // Render canvas and make sure all objects are visible
+  // Render canvas 
   canvas.renderAll();
-  canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset transform
+  
+  // ENTFERNE diese Zeile, die den Transform zurücksetzt:
+  // canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset transform
+  
+  // STATTDESSEN: Verwende den aktuellen Zoom, falls dieser nicht 1.0 ist
+  if (typeof window.getCurrentZoom === 'function') {
+    const currentZoom = window.getCurrentZoom();
+    if (currentZoom !== 1.0) {
+      console.log(`Applying current zoom to canvas: ${currentZoom}`);
+      syncEditorZoom(currentZoom);
+    }
+  }
   
   // Log final object count
   console.log(`Canvas now has ${canvas.getObjects().length} objects`);

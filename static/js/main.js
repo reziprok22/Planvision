@@ -135,44 +135,9 @@ function processApiResponse(apiResponse) {
   return result;
 }
 
-// Debug Annotation
-function debugAnnotations(predictions) {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  const img = document.getElementById('uploadedImage');
-  
-  // Set canvas size to match image
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  
-  // Draw the image
-  ctx.drawImage(img, 0, 0);
-  
-  // Draw boxes for each prediction
-  predictions.forEach((pred, index) => {
-    if (pred.box) {
-      const [x1, y1, x2, y2] = pred.box;
-      ctx.strokeStyle = 'red';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
-      
-      // Draw label
-      ctx.fillStyle = 'red';
-      ctx.font = '16px Arial';
-      ctx.fillText(`#${index + 1}: ${pred.area.toFixed(2)} m²`, x1, y1 - 5);
-    }
-  });
-  
-  // Show debug canvas
-  canvas.style.position = 'absolute';
-  canvas.style.top = '0';
-  canvas.style.left = '0';
-  canvas.style.zIndex = '100';
-  document.getElementById('imageContainer').appendChild(canvas);
-}
-
 /**
  * Display results in the UI
+ * Funktion wird am Anfang nach "Plan analysieren" aufgerufen
  * @param {Object} responseData - The processed response data
  */
 function displayResults(responseData) {
@@ -186,10 +151,18 @@ function displayResults(responseData) {
   // Set local and global data
   window.data = responseData;
   
+  // WICHTIG: Standardmäßig Ergebnisbereich anzeigen
+  resultsSection.style.display = 'block';
+  resultsTableSection.style.display = 'block';
+  
   // Get image source - either from PDF or direct upload
   if (responseData.is_pdf && responseData.pdf_image_url) {
     console.log("PDF detected - Image URL:", responseData.pdf_image_url);
     uploadedImage.src = responseData.pdf_image_url + '?t=' + new Date().getTime(); // Cache-busting
+    
+    // Process PDF-specific data first, um sicherzustellen, dass das PdfModule richtig eingerichtet ist
+    // REIHENFOLGE GEÄNDERT: Zuerst PDF-Daten verarbeiten
+    PdfModule.processPdfData(responseData);
   } else {
     // Regular image file
     const uploadedFile = document.getElementById('file').files[0];
@@ -214,20 +187,28 @@ function displayResults(responseData) {
     // Fill table
     updateResultsTable();
     
-    // Process PDF data if present
-    if (responseData.is_pdf) {
-      PdfModule.processPdfData(responseData);
-    }
-    
-    // Simulate a resize event after a short delay to fix positioning issues
+    // NEUE LÖSUNG: Eine minimale "Bewegung" simulieren, um die Annotationen zu aktualisieren
     setTimeout(function() {
-      window.dispatchEvent(new Event('resize'));
-    }, 200);
+      // Eine "minimale" Zoom-Änderung, die den Nebeneffekt hat, die Annotationen neu zu positionieren
+      if (window.FabricHandler && typeof window.FabricHandler.syncEditorZoom === 'function') {
+        console.log("Applying micro-adjustment to trigger correct positioning");
+        const currentZoom = window.getCurrentZoom ? window.getCurrentZoom() : 1.0;
+        
+        // Zoom minimal ändern und zurücksetzen, um die Neupositionierung auszulösen
+        window.FabricHandler.syncEditorZoom(currentZoom + 0.001);
+        
+        // Nach kurzer Verzögerung den originalen Zoom wiederherstellen
+        setTimeout(function() {
+          window.FabricHandler.syncEditorZoom(currentZoom);
+        }, 20);
+      }
+    }, 100);
   };
 }
 
 /**
  * Display a specific PDF page
+ * Funktion wird beim Seitenwechsel aufgerufen
  * @param {number} pageNumber - The page number to display
  * @param {Object} pageData - The page data
  */
@@ -281,6 +262,12 @@ function displayPdfPage(pageNumber, pageData) {
   const imageUrl = pageData.pdf_image_url || (allPdfPages[pageNumber-1] || '');
   
   console.log(`Displaying image: ${imageUrl}`);
+  
+  // WICHTIG: Speichere den aktuellen Zoom-Wert vor dem Laden des neuen Bildes
+  const currentZoom = window.getCurrentZoom ? window.getCurrentZoom() : 1.0;
+  console.log(`Current zoom before loading page: ${currentZoom}`);
+  
+  // Lade das Bild
   uploadedImage.src = imageUrl + '?t=' + new Date().getTime(); // Cache-busting
   
   // Show results areas
@@ -294,8 +281,36 @@ function displayPdfPage(pageNumber, pageData) {
   uploadedImage.onload = function() {
     console.log("Image loaded:", uploadedImage.width, "x", uploadedImage.height);
     
-    // Use Fabric.js to display annotations
-    FabricHandler.displayAnnotations(pageData.predictions);
+    // WICHTIGE ÄNDERUNG: Canvas komplett zurücksetzen und neu initialisieren
+    if (window.FabricHandler) {
+      // 1. Canvas zurücksetzen
+      window.FabricHandler.clearAnnotations();
+      
+      // 2. Canvas mit dem gespeicherten Zoom-Wert initialisieren
+      setTimeout(function() {
+        // Stell sicher, dass das Bild den richtigen Zoom hat
+        uploadedImage.style.transform = `scale(${currentZoom})`;
+        uploadedImage.style.transformOrigin = 'top left';
+        
+        console.log("Reinitializing canvas with zoom:", currentZoom);
+        
+        // Canvas neu initialisieren (damit er die aktuelle Bildgröße berücksichtigt)
+        if (typeof window.FabricHandler.initCanvas === 'function') {
+          const canvas = window.FabricHandler.initCanvas();
+          
+          // 3. Erst danach die Annotationen anzeigen
+          if (canvas) {
+            setTimeout(function() {
+              console.log("Displaying annotations after canvas initialization");
+              window.FabricHandler.displayAnnotations(pageData.predictions);
+              
+              // Explizit den Canvas mit dem aktuellen Zoom synchronisieren
+              window.FabricHandler.syncEditorZoom(currentZoom);
+            }, 50);
+          }
+        }
+      }, 100);
+    }
     
     // Update summary
     updateSummary();
@@ -304,9 +319,9 @@ function displayPdfPage(pageNumber, pageData) {
     updateResultsTable();
     
     // Simulate a resize event after a short delay
-    setTimeout(function() {
-      window.dispatchEvent(new Event('resize'));
-    }, 200);
+    //setTimeout(function() {
+    //  window.dispatchEvent(new Event('resize'));
+    //}, 200);
   };
 }
 
