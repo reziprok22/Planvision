@@ -1,3 +1,6 @@
+Fehler:
+- Wenn Seite neu geladen wird ctrl+r und dann direkt ein Projekt geladen wird, wird nur die Seite 1 angezeigt und ich kann nicht hin und her wechseln.
+
 train model
 - Zu grosse Images können nicht trainiert werden, reduzieren, wenn möglich.
 - Im train_model windowdataset, use_preprocessing auf True stellen, um mit vorverarbeiteten Bilder zu trainieren (ist unklar, ob es besser wird, aus meiner Sicht)

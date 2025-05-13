@@ -48,6 +48,7 @@ export function setupFabricHandler(elements) {
 /**
  * Initialize the Fabric.js canvas
  */
+// In static/js/fabric-handler.js, Funktion initCanvas() anpassen:
 export function initCanvas() {
   console.log("Initializing Fabric.js canvas");
   
@@ -77,7 +78,6 @@ export function initCanvas() {
   canvas = new fabric.Canvas('annotationCanvas');
   
   // Set canvas size to match the NATURAL size of the image
-  // This is critical - canvas dimensions should match image pixel dimensions
   const naturalWidth = uploadedImage.naturalWidth;
   const naturalHeight = uploadedImage.naturalHeight;
   
@@ -89,23 +89,39 @@ export function initCanvas() {
   const displayWidth = uploadedImage.offsetWidth;
   const displayHeight = uploadedImage.offsetHeight;
   
-  // Get canvas container
-  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-  if (canvasContainer) {
-    canvasContainer.style.position = 'absolute';
-    canvasContainer.style.top = '0';
-    canvasContainer.style.left = '0';
-    canvasContainer.style.width = `${displayWidth}px`;
-    canvasContainer.style.height = `${displayHeight}px`;
-  }
+  // WICHTIG: Berechne einen vernünftigen Zoom-Faktor
+  const containerWidth = imageContainer.clientWidth;
+  const containerHeight = imageContainer.clientHeight;
   
-  // Set zoom level based on the ratio of displayed size to natural size
-  const zoomX = displayWidth / naturalWidth;
-  const zoomY = displayHeight / naturalHeight;
-  const zoom = Math.min(zoomX, zoomY); // Use the smaller ratio to fit the image
+  // Berechne Zoom-Faktoren, um das Bild in den Container zu passen
+  const zoomX = containerWidth / naturalWidth;
+  const zoomY = containerHeight / naturalHeight;
+  let zoom = Math.min(zoomX, zoomY) * 0.95; // 95% der verfügbaren Größe nutzen
+  
+  // Stelle sicher, dass der Zoom vernünftig ist
+  if (zoom < 0.05) zoom = 0.05; // Mindest-Zoom
+  if (zoom > 1.0) zoom = 1.0;  // Maximal-Zoom
   
   console.log(`Calculated initial zoom: ${zoom.toFixed(4)}`);
   canvas.setZoom(zoom);
+  
+  // Get canvas container
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    // WICHTIG: Setze die Canvas-Container-Größe
+    canvasContainer.style.position = 'absolute';
+    canvasContainer.style.top = '0';
+    canvasContainer.style.left = '0';
+    canvasContainer.style.width = `${containerWidth}px`;
+    canvasContainer.style.height = `${containerHeight}px`;
+    
+    // Setze Overflow für Scrolling
+    canvasContainer.style.overflow = 'auto';
+    canvasContainer.style.display = 'block';
+  }
+  
+  // Stelle sicher, dass der Canvas sichtbar ist
+  canvasElement.style.display = 'block';
   
   // Set up event listeners
   setupEventListeners();
@@ -314,11 +330,11 @@ function setupEventListeners() {
   });
 }
 
-
 /**
  * Sync with global zoom functionality
  * @param {number} zoomLevel - Current global zoom level
  */
+// In static/js/fabric-handler.js, Funktion syncEditorZoom
 export function syncEditorZoom(zoomLevel) {
   if (!canvas) return;
   
@@ -327,7 +343,7 @@ export function syncEditorZoom(zoomLevel) {
   // Store current zoom for debugging
   currentZoom = zoomLevel;
   
-  // IMPORTANT: We need accurate image and container positions
+  // WICHTIG: We need accurate image and container positions
   const imageRect = uploadedImage.getBoundingClientRect();
   const containerRect = imageContainer.getBoundingClientRect();
   
@@ -335,14 +351,15 @@ export function syncEditorZoom(zoomLevel) {
   const scrollLeft = imageContainer.scrollLeft;
   const scrollTop = imageContainer.scrollTop;
   
-  // Calculate precise relative position
-  const relLeft = imageRect.left - containerRect.left + scrollLeft;
-  const relTop = imageRect.top - containerRect.top + scrollTop;
+  // WICHTIG: HIER IST DAS PROBLEM - Keine negativen Position-Werte verwenden
+  // Calculate precise relative position - aber verhindere negative Werte
+  const relLeft = Math.max(0, imageRect.left - containerRect.left + scrollLeft);
+  const relTop = Math.max(0, imageRect.top - containerRect.top + scrollTop);
   
   // Get canvas container
   const canvasContainer = document.getElementsByClassName('canvas-container')[0];
   if (canvasContainer) {
-    // Update position to exactly match the image
+    // Update position to exactly match the image - Keine negativen Werte
     canvasContainer.style.position = 'absolute';
     canvasContainer.style.top = `${relTop}px`;
     canvasContainer.style.left = `${relLeft}px`;
@@ -350,6 +367,11 @@ export function syncEditorZoom(zoomLevel) {
     // Match the exact displayed size of the image
     canvasContainer.style.width = `${imageRect.width}px`;
     canvasContainer.style.height = `${imageRect.height}px`;
+    canvasContainer.style.overflow = 'hidden';
+    
+    // WICHTIG: Stelle sicher, dass der Canvas-Container sichtbar ist
+    canvasContainer.style.display = 'block';
+    canvasContainer.style.zIndex = '10'; // Höherer z-index, um über anderen Elementen zu sein
     
     console.log(`Canvas container positioned at: ${relLeft}x${relTop}, Size: ${imageRect.width}x${imageRect.height}`);
   }
@@ -361,8 +383,16 @@ export function syncEditorZoom(zoomLevel) {
   
   console.log(`Image scale factors: X=${scaleX.toFixed(4)}, Y=${scaleY.toFixed(4)}`);
   
+  // WICHTIG: Verwende einen vernünftigen Zoom-Wert, um zu verhindern, dass Annotationen zu klein sind
+  let finalZoom = scaleX;
+  if (finalZoom < 0.1) {
+    console.warn(`Scale factor ${scaleX.toFixed(6)} is too small, using minimum 0.1`);
+    finalZoom = 0.1;
+  }
+  
   // Set fabric canvas zoom to match this scale
-  canvas.setZoom(scaleX);
+  console.log(`Setting canvas zoom to ${finalZoom.toFixed(4)}`);
+  canvas.setZoom(finalZoom);
   
   // Make sure canvas dimensions match image natural dimensions
   canvas.setWidth(uploadedImage.naturalWidth);
@@ -371,6 +401,11 @@ export function syncEditorZoom(zoomLevel) {
   // Force canvas to recalculate its position and render
   canvas.calcOffset();
   canvas.renderAll();
+  
+  // Debug-Ausgabe
+  console.log(`Nach canvas.renderAll(): Canvas hat ${canvas.getObjects().length} Objekte`);
+  console.log(`Canvas-Dimensionen: ${canvas.width}x${canvas.height}, Zoom: ${canvas.getZoom()}`);
+  console.log(`Canvas-Position: (${canvasContainer.style.left}, ${canvasContainer.style.top})`);
   
   console.log(`Canvas synced - Natural: ${canvas.width}x${canvas.height}, Display: ${imageRect.width}x${imageRect.height}, Zoom: ${canvas.getZoom()}`);
 }
@@ -453,6 +488,7 @@ function validateCoordinates(coords, index) {
  * @param {number} index - The annotation index
  * @returns {Object} The created fabric objects
  */
+// In static/js/fabric-handler.js, Funktion addRectangleAnnotation() anpassen
 export function addRectangleAnnotation(data, index) {
   if (!canvas) return null;
   
@@ -464,21 +500,15 @@ export function addRectangleAnnotation(data, index) {
   const labelId = data.label || 0;
   
   // Debug-Informationen
-  console.log(`Adding rectangle #${index}: [${x1}, ${y1}, ${x2}, ${y2}], size: ${width}x${height}`);
+  // console.log(`Adding rectangle #${index}: [${x1}, ${y1}, ${x2}, ${y2}], size: ${width}x${height}`);
   
-  // WICHTIG: Überprüfe und korrigiere den Zoom-Wert, wenn er zu niedrig ist
+  // WICHTIG: Überprüfe den Zoom-Faktor und korrigiere ihn bei Bedarf
   const currentZoom = canvas.getZoom();
-  if (currentZoom < 0.1) {
-    console.warn(`Canvas zoom too low (${currentZoom}), correcting to 1.0`);
-    canvas.setZoom(1.0);
+  if (currentZoom < 0.05) {
+    console.log(`Canvas zoom too low (${currentZoom}), using minimum 0.05`);
+    canvas.setZoom(0.05);
   }
   
-  // debug
-  console.log(`Annotation #${index} coordinates: [${x1}, ${y1}, ${x2}, ${y2}]`);
-  console.log(`Current image size: ${uploadedImage.width}x${uploadedImage.height}`);
-  console.log(`Natural image size: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight}`);
-  console.log(`Canvas size: ${canvas.width}x${canvas.height}, Zoom: ${canvas.getZoom()}`);
-    
   // Get color and label name from LabelsManager if available
   let color = 'gray';
   let label_name = 'Other';
@@ -512,7 +542,10 @@ export function addRectangleAnnotation(data, index) {
     originalData: { ...data },
     labelId: labelId,
     labelName: label_name,
-    area: data.area || 0
+    area: data.area || 0,
+    selectable: true,  // WICHTIG: Stelle sicher, dass es auswählbar ist
+    hasControls: true, // WICHTIG: Stelle sicher, dass es Steuerelemente hat
+    hasBorders: true   // WICHTIG: Stelle sicher, dass es Ränder hat
   });
     
   // Add rectangle to canvas
@@ -529,7 +562,8 @@ export function addRectangleAnnotation(data, index) {
     padding: 5,
     objectType: 'label',
     annotationIndex: index,
-    textBaseline: 'alphabetic'
+    textBaseline: 'alphabetic', // Wichtig: Korrektes textBaseline
+    selectable: false // Texte nicht auswählbar machen
   });
     
   // Add text to canvas
@@ -791,6 +825,14 @@ export function displayAnnotations(predictions) {
   // Clear canvas
   clearAnnotations();
   
+  // WICHTIG: Mit Zoom 1.0 arbeiten im Editor
+  if (window.isEditorActive) {
+    canvas.setZoom(1.0);
+  }
+  
+  // Log current canvas state
+  console.log(`Canvas state: size=${canvas.width}x${canvas.height}, zoom=${canvas.getZoom()}`);
+  
   // Add each annotation with debug info
   predictions.forEach((prediction, index) => {
     console.log(`Adding annotation #${index}: Type: ${prediction.type || 'unknown'}, Label: ${prediction.label || 'unknown'}`);
@@ -804,20 +846,89 @@ export function displayAnnotations(predictions) {
   // Render canvas 
   canvas.renderAll();
   
-  // ENTFERNE diese Zeile, die den Transform zurücksetzt:
-  // canvas.setViewportTransform([1, 0, 0, 1, 0, 0]); // Reset transform
-  
-  // STATTDESSEN: Verwende den aktuellen Zoom, falls dieser nicht 1.0 ist
-  if (typeof window.getCurrentZoom === 'function') {
-    const currentZoom = window.getCurrentZoom();
-    if (currentZoom !== 1.0) {
-      console.log(`Applying current zoom to canvas: ${currentZoom}`);
-      syncEditorZoom(currentZoom);
+  // WICHTIG: Versuche zum Zentrum der Objekte zu scrollen (nur im Editor)
+  if (window.isEditorActive) {
+    try {
+      const scrollContainer = document.querySelector('.scroll-container');
+      if (scrollContainer) {
+        const objects = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+        if (objects.length > 0) {
+          // Berechne den Mittelpunkt aller Objekte
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          
+          objects.forEach(obj => {
+            const left = obj.left || 0;
+            const top = obj.top || 0;
+            const width = obj.width || 0;
+            const height = obj.height || 0;
+            
+            minX = Math.min(minX, left);
+            minY = Math.min(minY, top);
+            maxX = Math.max(maxX, left + width);
+            maxY = Math.max(maxY, top + height);
+          });
+          
+          // Berechne das Zentrum
+          const centerX = (minX + maxX) / 2;
+          const centerY = (minY + maxY) / 2;
+          
+          // Scroll zur Mitte (mit Offset für Containergrößen)
+          const scrollX = centerX - scrollContainer.clientWidth / 2;
+          const scrollY = centerY - scrollContainer.clientHeight / 2;
+          
+          console.log(`Scrolling to center of objects: ${centerX},${centerY} (scroll: ${scrollX},${scrollY})`);
+          
+          // Sanft scrollen mit Animation
+          setTimeout(function() {
+            scrollContainer.scrollLeft = Math.max(0, scrollX);
+            scrollContainer.scrollTop = Math.max(0, scrollY);
+          }, 100);
+        }
+      }
+    } catch (error) {
+      console.warn("Error while trying to center objects:", error);
     }
   }
   
   // Log final object count
   console.log(`Canvas now has ${canvas.getObjects().length} objects`);
+}
+
+// Neue Funktion zum Zentrieren des Canvas auf die Annotationen
+function centerCanvas() {
+  if (!canvas) return;
+  
+  // Finde die Grenzen aller Objekte
+  const objects = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  if (objects.length === 0) return;
+  
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  
+  objects.forEach(obj => {
+    const bounds = obj.getBoundingRect();
+    minX = Math.min(minX, bounds.left);
+    minY = Math.min(minY, bounds.top);
+    maxX = Math.max(maxX, bounds.left + bounds.width);
+    maxY = Math.max(maxY, bounds.top + bounds.height);
+  });
+  
+  // Berechne Zentrum der Annotationen
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  
+  // Finde den Container
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (!canvasContainer) return;
+  
+  // Berechne die Position zum Scrollen
+  const containerWidth = canvasContainer.clientWidth;
+  const containerHeight = canvasContainer.clientHeight;
+  
+  // Setze Scroll-Position, um Annotationen zu zentrieren
+  canvasContainer.scrollLeft = centerX * canvas.getZoom() - containerWidth / 2;
+  canvasContainer.scrollTop = centerY * canvas.getZoom() - containerHeight / 2;
+  
+  console.log(`Centered canvas at ${centerX},${centerY} with zoom ${canvas.getZoom()}`);
 }
 
 /**
@@ -1706,18 +1817,25 @@ export function saveAnnotations() {
   // Get all annotations
   const annotations = getAnnotationsData();
   
+  // Debug-Ausgabe
+  console.log(`Speichere ${annotations.length} Annotationen vom Editor`);
+  
   // Update window.data.predictions
   if (window.data) {
     window.data.predictions = annotations;
     
     // Update counts and totals
     updateDataSummary();
+    
+    console.log(`${annotations.length} Annotationen gespeichert und in window.data aktualisiert`);
   }
   
   // If we have PDF page data
   if (typeof window.updatePdfPageData === 'function') {
     window.updatePdfPageData(window.data);
   }
+  
+  return annotations;
 }
 
 /**
@@ -1793,19 +1911,453 @@ function updateDataSummary() {
   }
 }
 
+// In static/js/fabric-handler.js, neue Funktion hinzufügen
+export function setCanvasZoom(zoomLevel) {
+  if (!canvas) return;
+  
+  console.log(`Setting canvas zoom to ${zoomLevel}`);
+  
+  // Minimalen Zoom-Wert sicherstellen
+  if (zoomLevel < 0.05) zoomLevel = 0.05;
+  
+  // Aktuellen Zoom speichern
+  currentZoom = zoomLevel;
+  
+  // Zoom auf die Mitte des Canvas setzen
+  const center = canvas.getCenter();
+  canvas.zoomToPoint(new fabric.Point(center.left, center.top), zoomLevel);
+  
+  // Canvas rendern
+  canvas.renderAll();
+  
+  return zoomLevel;
+}
+
+/**
+ * Initialisiere den Editor mit vorhandenen Annotationen
+ * Diese Funktion sollte explizit aufgerufen werden, wenn der Editor geöffnet wird
+ */
+export function initEditor() {
+  console.log("Initialisiere Editor mit bestehenden Annotationen");
+  
+  // Canvas zurücksetzen
+  if (canvas) {
+    canvas.dispose();
+    canvas = null;
+  }
+  
+  // Canvas-Element aus dem DOM entfernen, falls vorhanden
+  const oldCanvas = document.getElementById('annotationCanvas');
+  if (oldCanvas) {
+    oldCanvas.parentNode.removeChild(oldCanvas);
+  }
+  
+  // Editor-Container ermitteln
+  const editorContainer = document.querySelector('.editor-canvas-container');
+  if (!editorContainer) {
+    console.error("Editor-Container nicht gefunden");
+    return null;
+  }
+  
+  // WICHTIG: Scroll-Container erstellen, der Bild und Canvas enthält
+  let scrollContainer = editorContainer.querySelector('.scroll-container');
+  if (!scrollContainer) {
+    scrollContainer = document.createElement('div');
+    scrollContainer.className = 'scroll-container';
+    scrollContainer.style.position = 'absolute';
+    scrollContainer.style.top = '0';
+    scrollContainer.style.left = '0';
+    scrollContainer.style.width = '100%';
+    scrollContainer.style.height = '100%';
+    scrollContainer.style.overflow = 'auto';
+    scrollContainer.style.zIndex = '1';
+    editorContainer.appendChild(scrollContainer);
+  }
+  
+  // Bild-Element im Scroll-Container hinzufügen/aktualisieren
+  let editorImage = scrollContainer.querySelector('#editorImage');
+  if (!editorImage) {
+    editorImage = document.createElement('img');
+    editorImage.id = 'editorImage';
+    editorImage.style.position = 'absolute';
+    editorImage.style.top = '0';
+    editorImage.style.left = '0';
+    editorImage.style.maxWidth = 'none'; // WICHTIG: maxWidth entfernen
+    editorImage.style.zIndex = '1';
+    scrollContainer.appendChild(editorImage);
+  }
+  editorImage.src = uploadedImage.src;
+  
+  // Neues Canvas-Element erstellen
+  const canvasElement = document.createElement('canvas');
+  canvasElement.id = 'annotationCanvas';
+  canvasElement.style.position = 'absolute';
+  canvasElement.style.top = '0';
+  canvasElement.style.left = '0';
+  canvasElement.style.pointerEvents = 'all';
+  canvasElement.style.zIndex = '2';
+  
+  // Canvas zum Scroll-Container hinzufügen
+  scrollContainer.appendChild(canvasElement);
+  
+  // Bild-Dimensions aus uploadedImage holen
+  const naturalWidth = uploadedImage.naturalWidth;
+  const naturalHeight = uploadedImage.naturalHeight;
+  
+  // WICHTIG: Aktuellen Zoom-Wert aus dem Ansichtsbereich übernehmen
+  let zoomFactor = 1.0;
+  if (typeof window.getCurrentZoom === 'function') {
+    zoomFactor = window.getCurrentZoom();
+    console.log(`Übernahme des Zoom-Faktors aus der Ansicht: ${zoomFactor}`);
+  }
+  
+  // Setze Bildgröße basierend auf dem Zoom-Faktor
+  const scaledWidth = naturalWidth * zoomFactor;
+  const scaledHeight = naturalHeight * zoomFactor;
+  
+  editorImage.style.width = `${scaledWidth}px`;
+  editorImage.style.height = `${scaledHeight}px`;
+  
+  // Fabric.js Canvas initialisieren
+  canvas = new fabric.Canvas('annotationCanvas');
+  
+  // Canvas auf die natürliche Bildgröße setzen
+  canvas.setWidth(naturalWidth);
+  canvas.setHeight(naturalHeight);
+  
+  // WICHTIG: Zoom auf den Wert aus der Ansicht setzen
+  canvas.setZoom(zoomFactor);
+  
+  console.log(`Editor-Canvas erstellt mit Größe ${naturalWidth}x${naturalHeight}, Zoom=${zoomFactor.toFixed(4)}`);
+  
+  // Stelle sicher, dass der Canvas-Container genau die gleiche Größe wie das skalierte Bild hat
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    canvasContainer.style.position = 'absolute';
+    canvasContainer.style.top = '0';
+    canvasContainer.style.left = '0';
+    canvasContainer.style.width = `${scaledWidth}px`;
+    canvasContainer.style.height = `${scaledHeight}px`;
+    canvasContainer.style.overflow = 'hidden'; // Kein Overflow im Canvas-Container!
+  }
+  
+  // Event-Listener einrichten
+  setupEventListeners();
+  
+  // WICHTIG: Scroll-Position übernehmen
+  if (imageContainer && scrollContainer) {
+    setTimeout(function() {
+      scrollContainer.scrollLeft = imageContainer.scrollLeft;
+      scrollContainer.scrollTop = imageContainer.scrollTop;
+    }, 100);
+  }
+    
+  // Event-Listener für den Editor einrichten
+  setupEditorEventListeners();
+  
+  return canvas;
+}
+
 /**
  * Cancel editing and restore original annotations
  */
 export function cancelEditing() {
   if (!canvas) return;
   
-  // Reload original data
-  if (window.data && window.data.predictions) {
-    displayAnnotations(window.data.predictions);
+  console.log("Bearbeitung abgebrochen, stelle Originalzustand wieder her");
+  
+  // Wir sollten den Originalzustand wiederherstellen
+  if (window.data && window.data.original_predictions) {
+    // Wenn es eine Sicherung der Original-Annotationen gibt, diese wiederherstellen
+    window.data.predictions = window.data.original_predictions;
+    console.log("Original-Annotationen wiederhergestellt:", window.data.original_predictions.length);
+  } else if (window.data && window.data.predictions) {
+    console.log("Keine Original-Annotationen gefunden, lade aktuelle Annotationen");
   }
   
   // Disable editing
   disableEditing();
+}
+
+/**
+ * Debug-Funktion zur Überprüfung und Reparatur des Canvas-Zustands
+ */
+export function debugEditor() {
+  console.log("=== EDITOR DEBUG ===");
+  
+  // Canvas-Zustand überprüfen
+  if (!canvas) {
+    console.error("Canvas ist nicht initialisiert!");
+    return false;
+  }
+  
+  // Canvas-Dimensionen ausgeben
+  console.log(`Canvas Dimensionen: ${canvas.width} x ${canvas.height}`);
+  console.log(`Canvas Zoom: ${canvas.getZoom()}`);
+  
+  // Objekte auf dem Canvas zählen
+  const objects = canvas.getObjects();
+  console.log(`Canvas hat ${objects.length} Objekte`);
+  
+  // Objekte nach Typ gruppieren
+  const annotations = objects.filter(obj => obj.objectType === 'annotation');
+  const labels = objects.filter(obj => obj.objectType === 'label');
+  
+  console.log(`Davon sind ${annotations.length} Annotationen und ${labels.length} Labels`);
+  
+  // Beispielhaft erstes Objekt ausgeben, falls vorhanden
+  if (annotations.length > 0) {
+    const firstAnnotation = annotations[0];
+    console.log("Erste Annotation:", {
+      type: firstAnnotation.annotationType,
+      position: `(${firstAnnotation.left}, ${firstAnnotation.top})`,
+      size: `${firstAnnotation.width} x ${firstAnnotation.height}`,
+      label: firstAnnotation.labelId,
+      visible: firstAnnotation.visible,
+      selectable: firstAnnotation.selectable
+    });
+  }
+  
+  // Versuchen, Zoom zu korrigieren und Annotationen zu zentrieren
+  try {
+    // Zoom auf vernünftigen Wert setzen
+    const newZoom = Math.min(Math.max(0.25, canvas.getZoom()), 1.0);
+    if (newZoom !== canvas.getZoom()) {
+      console.log(`Korrigiere Zoom von ${canvas.getZoom()} auf ${newZoom}`);
+      canvas.setZoom(newZoom);
+    }
+    
+    // Annotationen zentrieren
+    if (annotations.length > 0) {
+      // Grenzen aller Annotationen berechnen
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      
+      annotations.forEach(obj => {
+        minX = Math.min(minX, obj.left || 0);
+        minY = Math.min(minY, obj.top || 0);
+        maxX = Math.max(maxX, (obj.left || 0) + (obj.width || 0));
+        maxY = Math.max(maxY, (obj.top || 0) + (obj.height || 0));
+      });
+      
+      const centerX = (minX + maxX) / 2;
+      const centerY = (minY + maxY) / 2;
+      
+      // Zum Zentrum scrollen
+      const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+      if (canvasContainer) {
+        const scrollX = centerX * newZoom - canvasContainer.clientWidth / 2;
+        const scrollY = centerY * newZoom - canvasContainer.clientHeight / 2;
+        
+        console.log(`Scrolle zu (${centerX}, ${centerY}), Scroll-Position: (${scrollX}, ${scrollY})`);
+        canvasContainer.scrollLeft = scrollX;
+        canvasContainer.scrollTop = scrollY;
+      }
+    }
+    
+    // Canvas rendern
+    canvas.renderAll();
+    
+    return true;
+  } catch (err) {
+    console.error("Fehler beim Reparieren des Canvas:", err);
+    return false;
+  }
+}
+
+/**
+ * Event-Listener für den Editor einrichten
+ */
+function setupEditorEventListeners() {
+  if (!canvas) return;
+  
+  // Finde den scroll-container für das Zoomen im Editor
+  const scrollContainer = document.querySelector('.scroll-container');
+  if (!scrollContainer) return;
+  
+  // Entferne bisherige Event-Listener
+  scrollContainer.removeEventListener('wheel', handleEditorZoom);
+  
+  // Füge neuen Event-Listener für das Mausrad hinzu
+  scrollContainer.addEventListener('wheel', handleEditorZoom, { passive: false });
+  
+  console.log("Editor-Zoom-Event-Listener hinzugefügt");
+}
+
+/**
+ * Zoom-Event im Editor verarbeiten
+ * @param {Event} event - Das Wheel-Event
+ */
+function handleEditorZoom(event) {
+  // Nur zoomen, wenn Strg gedrückt ist
+  if (!event.ctrlKey) return;
+  
+  // Standardverhalten verhindern
+  event.preventDefault();
+  
+  // Scroll-Container ermitteln
+  const scrollContainer = document.querySelector('.scroll-container');
+  if (!scrollContainer || !canvas) return;
+  
+  // Bild ermitteln
+  const editorImage = document.getElementById('editorImage');
+  if (!editorImage) return;
+  
+  // Aktuellen Zoom ermitteln
+  let currentZoom = canvas.getZoom();
+  
+  // Zoom-Änderung ermitteln
+  const delta = event.deltaY;
+  const zoomStep = 0.1;
+  
+  // Neuen Zoom berechnen
+  let newZoom = currentZoom;
+  if (delta < 0) {
+    // Vergrößern
+    newZoom = Math.min(currentZoom + zoomStep, 5.0);
+  } else {
+    // Verkleinern
+    newZoom = Math.max(currentZoom - zoomStep, 0.1);
+  }
+  
+  // Wenn der Zoom sich nicht geändert hat, nichts tun
+  if (newZoom === currentZoom) return;
+  
+  // Position des Mauszeigers relativ zum Scroll-Container
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const mouseX = event.clientX - containerRect.left + scrollContainer.scrollLeft;
+  const mouseY = event.clientY - containerRect.top + scrollContainer.scrollTop;
+  
+  // Bildgröße anpassen
+  const naturalWidth = uploadedImage.naturalWidth;
+  const naturalHeight = uploadedImage.naturalHeight;
+  
+  const oldWidth = parseFloat(editorImage.style.width);
+  const oldHeight = parseFloat(editorImage.style.height);
+  
+  const newWidth = naturalWidth * newZoom;
+  const newHeight = naturalHeight * newZoom;
+  
+  editorImage.style.width = `${newWidth}px`;
+  editorImage.style.height = `${newHeight}px`;
+  
+  // Canvas-Zoom aktualisieren
+  canvas.setZoom(newZoom);
+  
+  // Canvas-Container-Größe anpassen
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    canvasContainer.style.width = `${newWidth}px`;
+    canvasContainer.style.height = `${newHeight}px`;
+  }
+  
+  // Scroll-Position anpassen, um Zoom zum Mauszeiger zu ermöglichen
+  const scaleChange = newZoom / currentZoom;
+  
+  // Berechne neue Scroll-Position
+  const newScrollX = mouseX * scaleChange - (event.clientX - containerRect.left);
+  const newScrollY = mouseY * scaleChange - (event.clientY - containerRect.top);
+  
+  scrollContainer.scrollLeft = newScrollX;
+  scrollContainer.scrollTop = newScrollY;
+  
+  // Canvas neu rendern
+  canvas.renderAll();
+  
+  // Globalen Zoom-Wert aktualisieren
+  window.currentZoom = newZoom;
+  
+  // Zoom-Anzeige aktualisieren, falls vorhanden
+  const resetZoomBtn = document.getElementById('resetZoomBtn');
+  if (resetZoomBtn) {
+    resetZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
+  }
+  
+  console.log(`Editor-Zoom geändert: ${currentZoom.toFixed(2)} -> ${newZoom.toFixed(2)}`);
+}
+
+/**
+ * Editor-Zoom auf einen bestimmten Wert setzen
+ * @param {number} zoomLevel - Der Zoom-Faktor
+ */
+export function setEditorZoom(zoomLevel) {
+  if (!canvas) return;
+  
+  // Bild ermitteln
+  const editorImage = document.getElementById('editorImage');
+  if (!editorImage) return;
+  
+  // Scroll-Container ermitteln
+  const scrollContainer = document.querySelector('.scroll-container');
+  if (!scrollContainer) return;
+  
+  // Bildgröße anpassen
+  const naturalWidth = uploadedImage.naturalWidth;
+  const naturalHeight = uploadedImage.naturalHeight;
+  
+  const newWidth = naturalWidth * zoomLevel;
+  const newHeight = naturalHeight * zoomLevel;
+  
+  editorImage.style.width = `${newWidth}px`;
+  editorImage.style.height = `${newHeight}px`;
+  
+  // Canvas-Zoom aktualisieren
+  canvas.setZoom(zoomLevel);
+  
+  // Canvas-Container-Größe anpassen
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    canvasContainer.style.width = `${newWidth}px`;
+    canvasContainer.style.height = `${newHeight}px`;
+  }
+  
+  // Zum Zentrum des Bildes scrollen
+  const centerX = newWidth / 2 - scrollContainer.clientWidth / 2;
+  const centerY = newHeight / 2 - scrollContainer.clientHeight / 2;
+  
+  scrollContainer.scrollLeft = Math.max(0, centerX);
+  scrollContainer.scrollTop = Math.max(0, centerY);
+  
+  // Canvas neu rendern
+  canvas.renderAll();
+  
+  // Globalen Zoom-Wert aktualisieren
+  window.currentZoom = zoomLevel;
+  
+  // Zoom-Anzeige aktualisieren, falls vorhanden
+  const resetZoomBtn = document.getElementById('resetZoomBtn');
+  if (resetZoomBtn) {
+    resetZoomBtn.textContent = `${Math.round(zoomLevel * 100)}%`;
+  }
+  
+  console.log(`Editor-Zoom gesetzt auf: ${zoomLevel.toFixed(2)}`);
+}
+
+// In fabric-handler.js, als neue exportierte Funktion:
+/**
+ * Aktualisiert die Anzeige der Annotationen, indem der Canvas neu initialisiert und die Annotationen neu gezeichnet werden
+ */
+export function refreshAnnotations() {
+  console.log("Aktualisiere Annotations-Anzeige");
+  
+  // Canvas löschen und neu initialisieren
+  clearAnnotations();
+  
+  // Neuen Canvas erstellen
+  initCanvas();
+  
+  // Annotationen zeichnen, falls vorhanden
+  if (window.data && window.data.predictions && window.data.predictions.length > 0) {
+    console.log(`Zeichne ${window.data.predictions.length} Annotationen neu`);
+    displayAnnotations(window.data.predictions);
+  } else {
+    console.warn("Keine Annotationen zum Zeichnen gefunden");
+  }
+  
+  // Aktuellen Zoom anwenden
+  if (typeof window.getCurrentZoom === 'function') {
+    const currentZoom = window.getCurrentZoom();
+    syncEditorZoom(currentZoom);
+  }
 }
 
 // Expose functions through window.FabricHandler
@@ -1815,6 +2367,9 @@ window.FabricHandler = {
   getCanvas,
   clearAnnotations,
   resetView,
+  
+  // Neu: Editor-Initialisierung
+  initEditor,
   
   // Drawing and editing
   enableDrawingMode,
@@ -1839,5 +2394,11 @@ window.FabricHandler = {
   getCurrentZoom,
   setLabels,
   setLineLabels,
-  syncEditorZoom
+  syncEditorZoom,
+  
+  // Neu: Zoom-Funktionen für den Editor
+  setEditorZoom,
+
+  // Aktualisiert die Anzeige der Annotationen nach Edior
+  refreshAnnotations
 };

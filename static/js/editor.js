@@ -128,6 +128,9 @@ function setupEditorButtons() {
 // Toggle editor on/off
 function toggleEditor() {
     console.log("Toggling editor, current state:", isEditorActive);
+
+    // Speichere den vorherigen Zustand für Vergleiche
+    const wasEditorActive = isEditorActive;
     
     isEditorActive = !isEditorActive;
     window.isEditorActive = isEditorActive;
@@ -136,21 +139,114 @@ function toggleEditor() {
         // Enable editor
         editorToggle.textContent = 'Editor ausschalten';
         editorToggle.classList.add('active');
-        editorSection.style.display = 'block';
         
         // Hide results section (the regular image view)
         if (resultsSection) {
             resultsSection.style.display = 'none';
         }
         
-        // Initialize fabric canvas if image is loaded
-        if (uploadedImage.src) {
-            if (typeof window.FabricHandler.initCanvas === 'function') {
-                window.FabricHandler.initCanvas();
-                window.FabricHandler.enableEditing();
+        // Zeige Editor-Bereich an
+        editorSection.style.display = 'block';
+
+        // WICHTIG: Sicherung der Original-Annotationen erstellen
+        if (window.data && window.data.predictions) {
+            // Tiefe Kopie der Annotationen erstellen, damit Änderungen nicht die Originale beeinflussen
+            window.data.original_predictions = JSON.parse(JSON.stringify(window.data.predictions));
+            console.log(`Sicherung von ${window.data.original_predictions.length} Original-Annotationen erstellt`);
+        }
+        
+        // Bereinige alle vorherigen Inhalte im Editor-Container
+        const editorContainer = document.querySelector('.editor-canvas-container');
+        if (editorContainer) {
+            // Lösche vorherige Inhalte, behalte nur Scroll-Container
+            const scrollContainer = editorContainer.querySelector('.scroll-container');
+            if (scrollContainer) {
+                // Scroll-Container behalten, Inhalt leeren
+                scrollContainer.innerHTML = '';
             } else {
-                console.error("FabricHandler.initCanvas function not found");
+                // Alles löschen
+                editorContainer.innerHTML = '';
             }
+            
+            editorContainer.style.display = 'block';
+            editorContainer.style.width = '100%';
+            editorContainer.style.height = '70vh';
+            
+            // WICHTIG: Zoom-Controls für den Editor hinzufügen
+            const editorControls = document.querySelector('.editor-controls');
+            if (editorControls) {
+                // Prüfen, ob der Zoom-Button bereits existiert
+                let editorZoomBtn = editorControls.querySelector('#editorResetZoomBtn');
+                
+                if (!editorZoomBtn) {
+                    // Zoom-Button erstellen
+                    editorZoomBtn = document.createElement('button');
+                    editorZoomBtn.id = 'editorResetZoomBtn';
+                    editorZoomBtn.className = 'editor-button';
+                    editorZoomBtn.textContent = '100%';
+                    
+                    // Dropdown für Zoom-Optionen
+                    const zoomDropdown = document.createElement('div');
+                    zoomDropdown.className = 'zoom-dropdown';
+                    
+                    // Zoom-Optionen
+                    const zoomLevels = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+                    
+                    zoomLevels.forEach(level => {
+                        const option = document.createElement('button');
+                        option.className = 'zoom-option';
+                        option.dataset.zoom = level;
+                        option.textContent = `${Math.round(level * 100)}%`;
+                        
+                        option.addEventListener('click', function() {
+                            window.FabricHandler.setEditorZoom(level);
+                            editorZoomBtn.textContent = this.textContent;
+                        });
+                        
+                        zoomDropdown.appendChild(option);
+                    });
+                    
+                    // Zoom-Container erstellen und an die Editor-Controls anhängen
+                    const zoomContainer = document.createElement('div');
+                    zoomContainer.className = 'zoom-control';
+                    zoomContainer.appendChild(editorZoomBtn);
+                    zoomContainer.appendChild(zoomDropdown);
+                    
+                    editorControls.appendChild(zoomContainer);
+                    
+                    // Klick-Event zum Zurücksetzen des Zooms
+                    editorZoomBtn.addEventListener('click', function() {
+                        window.FabricHandler.setEditorZoom(1.0);
+                        this.textContent = '100%';
+                    });
+                }
+                
+                // Aktuellen Zoom-Wert aus der Ansicht übernehmen
+                if (typeof window.getCurrentZoom === 'function') {
+                    const currentZoom = window.getCurrentZoom();
+                    editorZoomBtn.textContent = `${Math.round(currentZoom * 100)}%`;
+                }
+            }
+        }
+        
+        // Bild überprüfen
+        if (uploadedImage && uploadedImage.src) {
+            // Warten, bis das UI aktualisiert wurde
+            setTimeout(function() {
+                // Editor initialisieren mit der neuen Funktion
+                if (typeof window.FabricHandler.initEditor === 'function') {
+                    const editorCanvas = window.FabricHandler.initEditor();
+                    
+                    // Wenn Annotationen vorhanden sind, nach kurzer Verzögerung anzeigen
+                    if (window.data && window.data.predictions && window.data.predictions.length > 0) {
+                        setTimeout(function() {
+                            console.log(`Zeige ${window.data.predictions.length} Annotationen im Editor an...`);
+                            window.FabricHandler.displayAnnotations(window.data.predictions);
+                            window.FabricHandler.enableEditing();
+                        }, 300);
+                    }
+                }
+            }, 200);
         } else {
             alert('Bitte laden Sie zuerst ein Bild hoch und analysieren Sie es.');
             isEditorActive = false;
@@ -160,19 +256,70 @@ function toggleEditor() {
             editorSection.style.display = 'none';
         }
     } else {
-        // Disable editor
+        // Vorheriger Zustand war aktiv, jetzt deaktivieren
         editorToggle.textContent = 'Editor einschalten';
         editorToggle.classList.remove('active');
         editorSection.style.display = 'none';
         
-        // Show results section again
-        if (resultsSection) {
-            resultsSection.style.display = 'block';
-        }
-        
-        // Save changes
-        if (typeof window.FabricHandler.saveAnnotations === 'function') {
-            window.FabricHandler.saveAnnotations();
+        // Änderungen speichern, wenn der Editor aktiv war
+        if (wasEditorActive && typeof window.FabricHandler.saveAnnotations === 'function') {
+            console.log("Speichere Änderungen aus dem Editor");
+            const savedAnnotations = window.FabricHandler.saveAnnotations();
+            
+            // Annotations im normalen View anzeigen
+            setTimeout(function() {
+                console.log("Zeige Ansicht wieder an mit", 
+                    (window.data && window.data.predictions) ? window.data.predictions.length : 0, "Annotationen");
+                
+                // Normalen View wieder anzeigen
+                if (resultsSection) {
+                    resultsSection.style.display = 'block';
+                }
+                
+                // WICHTIG: Canvas explizit neu initialisieren und Annotationen neu zeichnen
+                if (typeof window.FabricHandler.initCanvas === 'function' && window.data && window.data.predictions) {
+                    const canvas = window.FabricHandler.initCanvas();
+                    
+                    setTimeout(function() {
+                        console.log("Zeichne Annotationen neu in normaler Ansicht");
+                        window.FabricHandler.displayAnnotations(window.data.predictions);
+                        
+                        // Aktuellen Zoom anwenden
+                        if (typeof window.getCurrentZoom === 'function') {
+                            const currentZoom = window.getCurrentZoom();
+                            window.FabricHandler.syncEditorZoom(currentZoom);
+                        }
+                        
+                        // Zusätzlich noch Summary und Tabelle aktualisieren
+                        if (typeof window.updateSummary === 'function') {
+                            window.updateSummary();
+                        }
+                        if (typeof window.updateResultsTable === 'function') {
+                            window.updateResultsTable();
+                        }
+                    }, 100);
+                } else if (typeof window.updateAnnotationsDisplay === 'function') {
+                    window.updateAnnotationsDisplay();
+                } else if (typeof window.displayResults === 'function' && window.data) {
+                    window.displayResults(window.data);
+                } else {
+                    console.warn("Keine Funktion zum Aktualisieren der Ansicht gefunden");
+                }
+            }, 100);
+        } else {
+            // Normale Ansicht ohne Speichern anzeigen
+            if (resultsSection) {
+                resultsSection.style.display = 'block';
+                
+                // Auch hier die Annotationen neu zeichnen
+                setTimeout(function() {
+                    if (window.FabricHandler && window.data && window.data.predictions) {
+                        window.FabricHandler.clearAnnotations();
+                        window.FabricHandler.initCanvas();
+                        window.FabricHandler.displayAnnotations(window.data.predictions);
+                    }
+                }, 100);
+            }
         }
     }
 }

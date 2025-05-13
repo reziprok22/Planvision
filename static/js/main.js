@@ -325,6 +325,33 @@ function displayPdfPage(pageNumber, pageData) {
   };
 }
 
+/**
+ * Aktualisiert die PDF-Seitendaten mit den aktuellen Annotationen
+ * @param {Object} data - Die aktualisierten Daten
+ */
+function updatePdfPageData(data) {
+  if (!data) return;
+  
+  // Aktualisiere die Daten für die aktuelle Seite
+  let currentPage = 1;
+  if (data.current_page) {
+      currentPage = parseInt(data.current_page);
+  }
+  
+  console.log(`Aktualisiere PDF-Daten für Seite ${currentPage}`);
+  
+  // PDF-Handler verwenden, falls verfügbar
+  if (typeof PdfModule !== 'undefined' && typeof PdfModule.getPdfPageData === 'function') {
+      const pdfPageData = PdfModule.getPdfPageData();
+      if (pdfPageData) {
+          pdfPageData[currentPage] = JSON.parse(JSON.stringify(data));
+          console.log(`PDF-Seitendaten für Seite ${currentPage} aktualisiert`);
+      }
+  }
+}
+
+// Funktion global verfügbar machen
+window.updatePdfPageData = updatePdfPageData;
 
 /**
  * Update summary display
@@ -442,6 +469,45 @@ function clearResults() {
   // Clear Fabric.js canvas
   FabricHandler.clearAnnotations();
 }
+
+/**
+ * Aktualisiert die Anzeige der Annotationen im normalen Ansichtsview
+ */
+function updateAnnotationsDisplay() {
+  console.log("Aktualisiere Annotations-Anzeige im Ansichtsview");
+  
+  if (!window.data || !window.data.predictions) {
+      console.warn("Keine Daten zum Anzeigen vorhanden");
+      return;
+  }
+  
+  // Aktuelle Seite bestimmen (bei PDF)
+  let currentPage = 1;
+  if (window.data.current_page) {
+      currentPage = parseInt(window.data.current_page);
+  }
+  
+  console.log(`Aktualisiere Seite ${currentPage} mit ${window.data.predictions.length} Annotationen`);
+  
+  // Bei Fabric.js Canvas im Anzeigemodus
+  if (typeof window.FabricHandler !== 'undefined' && typeof window.FabricHandler.displayAnnotations === 'function') {
+      // Fabric.js Canvas im Anzeigemodus aktualisieren
+      window.FabricHandler.clearAnnotations();
+      window.FabricHandler.displayAnnotations(window.data.predictions);
+  }
+  
+  // Aktualisiere Zusammenfassung und Tabelle
+  if (typeof window.updateSummary === 'function') {
+      window.updateSummary();
+  }
+  
+  if (typeof window.updateResultsTable === 'function') {
+      window.updateResultsTable();
+  }
+}
+
+// Funktion global verfügbar machen
+window.updateAnnotationsDisplay = updateAnnotationsDisplay;
 
 /**
  * Initialize and set up event handlers for the application
@@ -782,6 +848,50 @@ function exposeGlobalFunctions() {
       return PdfModule.getAllPdfPages();
     }
     return [];
+  };
+
+  window.debugAnnotationsState = function() {
+    console.log("=== DEBUG ANNOTATIONS STATE ===");
+    
+    if (!window.data) {
+      console.error("window.data ist nicht definiert!");
+      return false;
+    }
+    
+    if (!window.data.predictions) {
+      console.error("window.data.predictions ist nicht definiert!");
+      return false;
+    }
+    
+    console.log(`window.data.predictions enthält ${window.data.predictions.length} Annotationen`);
+    
+    // Die ersten 3 Annotationen anzeigen
+    const sample = window.data.predictions.slice(0, Math.min(3, window.data.predictions.length));
+    console.log("Beispiel-Annotationen:", sample);
+    
+    // Canvas überprüfen
+    if (window.FabricHandler && window.FabricHandler.getCanvas()) {
+      const canvas = window.FabricHandler.getCanvas();
+      console.log(`Canvas enthält ${canvas.getObjects().length} Objekte`);
+      
+      // Gibt es Annotations-Objekte?
+      const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+      console.log(`Davon sind ${annotations.length} Annotations`);
+      
+      // Alles anzeigen
+      if (annotations.length === 0 && window.data.predictions.length > 0) {
+        console.log("PROBLEM: Canvas enthält keine Annotations, obwohl Daten vorhanden sind!");
+        console.log("Versuche, die Annotations neu zu zeichnen...");
+        
+        window.FabricHandler.displayAnnotations(window.data.predictions);
+        return "Annotations neu gezeichnet. Bitte überprüfen!";
+      }
+      
+      return "Debug abgeschlossen.";
+    } else {
+      console.log("Canvas ist nicht initialisiert!");
+      return "Canvas nicht gefunden.";
+    }
   };
 
   // Make main functions globally accessible
