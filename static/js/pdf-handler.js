@@ -34,29 +34,36 @@ let displayPdfPageCallback = null;
  * Initialize the PDF handler with required DOM elements
  * @param {Object} elements - Object containing DOM references
  */
+// In pdf-handler.js
 export function setupPdfHandler(elements) {
-  // Store DOM references
-  pdfNavigation = elements.pdfNavigation;
-  currentPageSpan = elements.currentPageSpan;
-  totalPagesSpan = elements.totalPagesSpan;
-  prevPageBtn = elements.prevPageBtn;
-  nextPageBtn = elements.nextPageBtn;
-  reprocessBtn = elements.reprocessBtn;
-  loader = elements.loader;
-  errorMessage = elements.errorMessage;
+  console.log("Setting up PDF handler with elements:", elements);
+
+  // Store DOM references - mit Null-Prüfung
+  pdfNavigation = elements.pdfNavigation || null;
+  currentPageSpan = elements.currentPageSpan || null;
+  totalPagesSpan = elements.totalPagesSpan || null;
+  prevPageBtn = elements.prevPageBtn || null;
+  nextPageBtn = elements.nextPageBtn || null;
+  reprocessBtn = elements.reprocessBtn || null;
+  loader = elements.loader || null;
+  errorMessage = elements.errorMessage || null;
   
-  // Set up event listeners
-  prevPageBtn.addEventListener('click', function() {
-    if (currentPdfPage > 1) {
-      navigateToPdfPage(currentPdfPage - 1);
-    }
-  });
+  // Set up event listeners - nur wenn die Elemente existieren
+  if (prevPageBtn) {
+    prevPageBtn.addEventListener('click', function() {
+      if (currentPdfPage > 1) {
+        navigateToPdfPage(currentPdfPage - 1);
+      }
+    });
+  }
   
-  nextPageBtn.addEventListener('click', function() {
-    if (currentPdfPage < totalPdfPages) {
-      navigateToPdfPage(currentPdfPage + 1);
-    }
-  });
+  if (nextPageBtn) {
+    nextPageBtn.addEventListener('click', function() {
+      if (currentPdfPage < totalPdfPages) {
+        navigateToPdfPage(currentPdfPage + 1);
+      }
+    });
+  }
   
   if (reprocessBtn) {
     reprocessBtn.addEventListener('click', function() {

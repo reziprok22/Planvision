@@ -24,6 +24,8 @@ import * as FabricHandler from './fabric-handler.js';
 
 // Global variables
 window.data = null;
+window.isEditorActive = false;
+
 
 /**
  * Convert API response to desired format
@@ -214,6 +216,9 @@ function displayResults(responseData) {
  */
 function displayPdfPage(pageNumber, pageData) {
   console.log(`Displaying page ${pageNumber}:`, pageData);
+
+  // Speichern des aktuellen Editor-Modus
+  const wasEditorActive = window.isEditorActive;
   
   // Get references to UI elements
   const uploadedImage = document.getElementById('uploadedImage');
@@ -269,6 +274,13 @@ function displayPdfPage(pageNumber, pageData) {
   
   // Lade das Bild
   uploadedImage.src = imageUrl + '?t=' + new Date().getTime(); // Cache-busting
+
+  // Nach Abschluss des Ladens den richtigen Modus wiederherstellen
+  if (wasEditorActive && typeof window.FabricHandler !== 'undefined') {
+    window.FabricHandler.enableEditing();
+  } else if (typeof window.FabricHandler !== 'undefined') {
+    window.FabricHandler.disableEditing();
+  }
   
   // Show results areas
   resultsSection.style.display = 'block';
@@ -536,9 +548,22 @@ function initApp() {
     pdfNavigation: document.getElementById('pdfNavigation'),
     prevPageBtn: document.getElementById('prevPageBtn'),
     nextPageBtn: document.getElementById('nextPageBtn'),
-    currentPageSpan: document.getElementById('currentPage'),
-    totalPagesSpan: document.getElementById('totalPages'),
+    currentPageSpan: document.getElementById('currentPageSpan'),
+    totalPagesSpan: document.getElementById('totalPagesSpan'),
     reprocessBtn: document.getElementById('reprocessBtn'),
+
+    // Editor controls
+    editorToggle: document.getElementById('editorToggle'),
+    editorControls: document.querySelector('.editor-controls'),
+    addBoxBtn: document.getElementById('addBoxBtn'),
+    addPolygonBtn: document.getElementById('addPolygonBtn'),
+    addLineBtn: document.getElementById('addLineBtn'),
+    editBoxBtn: document.getElementById('editBoxBtn'),
+    deleteBoxBtn: document.getElementById('deleteBoxBtn'),
+    objectTypeSelect: document.getElementById('objectTypeSelect'),
+    lineTypeSelect: document.getElementById('lineTypeSelect'),
+    saveEditBtn: document.getElementById('saveEditBtn'),
+    cancelEditBtn: document.getElementById('cancelEditBtn'),
     
     // Project elements
     projectList: document.getElementById('projectList'),
@@ -567,20 +592,6 @@ function initApp() {
     areaLabelsTab: document.getElementById('areaLabelsTab'),
     lineLabelsTab: document.getElementById('lineLabelsTab'),
     resetZoomBtn: document.getElementById('resetZoomBtn'),
-    
-    // Editor elements
-    editorToggle: document.getElementById('editorToggle'),
-    editorButtons: {
-      addBoxBtn: document.getElementById('addBoxBtn'),
-      addPolygonBtn: document.getElementById('addPolygonBtn'),
-      addLineBtn: document.getElementById('addLineBtn'),
-      editBoxBtn: document.getElementById('editBoxBtn'),
-      deleteBoxBtn: document.getElementById('deleteBoxBtn'),
-      saveEditBtn: document.getElementById('saveEditBtn'),
-      cancelEditBtn: document.getElementById('cancelEditBtn')
-    },
-    objectTypeSelect: document.getElementById('objectTypeSelect'),
-    lineTypeSelect: document.getElementById('lineTypeSelect')
   };
 
   // Initialize modules
@@ -607,12 +618,12 @@ function initializeModules(elements) {
   
   // 2. Setup PDF handler
   PdfModule.setupPdfHandler({
-    pdfNavigation: elements.pdfNavigation,
-    currentPageSpan: elements.currentPageSpan,
-    totalPagesSpan: elements.totalPagesSpan,
-    prevPageBtn: elements.prevPageBtn,
-    nextPageBtn: elements.nextPageBtn,
-    reprocessBtn: elements.reprocessBtn,
+    pdfNavigation: document.getElementById('pdfNavigation'),  // Direkt das Element abrufen
+    currentPageSpan: document.getElementById('currentPage'),  // Direkt das Element abrufen
+    totalPagesSpan: document.getElementById('totalPages'),    // Direkt das Element abrufen
+    prevPageBtn: document.getElementById('prevPageBtn'),      // Direkt das Element abrufen
+    nextPageBtn: document.getElementById('nextPageBtn'),      // Direkt das Element abrufen
+    reprocessBtn: document.getElementById('reprocessBtn'),    // Direkt das Element abrufen
     loader: elements.loader,
     errorMessage: elements.errorMessage
   });
@@ -672,6 +683,93 @@ function initializeModules(elements) {
   }
 }
 
+function toggleEditor() {
+  console.log("Toggling editor mode, current state:", window.isEditorActive);
+  
+  // Toggle editor state
+  window.isEditorActive = !window.isEditorActive;
+  
+  // Update UI - mit Null-Checks
+  const editorToggle = document.getElementById('editorToggle');
+  const editorControls = document.querySelector('.editor-controls');
+  const imageContainer = document.getElementById('imageContainer');
+  const editorSection = document.getElementById('editorSection'); // Falls noch verwendet
+  
+  if (!editorToggle) {
+    console.error("Editor-Toggle-Button nicht gefunden!");
+    return;
+  }
+  
+  if (window.isEditorActive) {
+    // Activate editor mode
+    editorToggle.textContent = 'Ansichtsmodus';
+    editorToggle.classList.add('active');
+    
+    if (editorControls) editorControls.style.display = 'flex';
+    if (imageContainer) imageContainer.classList.add('editing-mode');
+    
+    // Überprüfen, ob editorSection noch verwendet wird
+    if (editorSection) editorSection.style.display = 'block';
+    
+    // Enable editing mode in FabricHandler
+    if (window.FabricHandler && typeof window.FabricHandler.enableEditing === 'function') {
+      try {
+        // Save original state for comparison or cancellation
+        if (typeof window.FabricHandler.saveOriginalState === 'function') {
+          window.FabricHandler.saveOriginalState();
+        }
+        // Enable editing
+        window.FabricHandler.enableEditing();
+      } catch (e) {
+        console.error("Fehler beim Aktivieren des Bearbeitungsmodus:", e);
+      }
+    }
+  } else {
+    // Deactivate editor mode
+    editorToggle.textContent = 'Bearbeitungsmodus';
+    editorToggle.classList.remove('active');
+    
+    if (editorControls) editorControls.style.display = 'none';
+    if (imageContainer) imageContainer.classList.remove('editing-mode');
+    if (editorSection) editorSection.style.display = 'none';
+    
+    // Save changes and disable editing mode
+    if (window.FabricHandler && typeof window.FabricHandler.saveAnnotations === 'function') {
+      try {
+        window.FabricHandler.saveAnnotations();
+        if (typeof window.FabricHandler.disableEditing === 'function') {
+          window.FabricHandler.disableEditing();
+        }
+        
+        // Update UI
+        if (typeof window.updateSummary === 'function') window.updateSummary();
+        if (typeof window.updateResultsTable === 'function') window.updateResultsTable();
+      } catch (e) {
+        console.error("Fehler beim Deaktivieren des Bearbeitungsmodus:", e);
+      }
+    }
+  }
+}
+
+// Mache die toggleEditor-Funktion global verfügbar
+window.toggleEditor = toggleEditor;
+
+// Dieser Block kommt direkt nach der toggleEditor-Funktion
+document.addEventListener('DOMContentLoaded', function() {
+  // Event-Listener für den Bearbeitungsmodus-Button neu setzen
+  const editorToggleBtn = document.getElementById('editorToggle');
+  if (editorToggleBtn) {
+    // Alte Event-Listener entfernen
+    const clone = editorToggleBtn.cloneNode(true);
+    editorToggleBtn.parentNode.replaceChild(clone, editorToggleBtn);
+    
+    // Neuen Event-Listener hinzufügen
+    clone.addEventListener('click', toggleEditor);
+  }
+});
+
+
+
 /**
  * Set up all event handlers for the application
  * @param {Object} elements - DOM elements for event handlers
@@ -683,11 +781,116 @@ function setupEventHandlers(elements) {
   // Form submission handler
   setupFormSubmission(elements.uploadForm, elements.loader, elements.errorMessage);
   
-  // Editor toggle and buttons
-  setupEditorControls(elements);
+  // Editor toggle
+  if (elements.editorToggle) {
+    elements.editorToggle.addEventListener('click', toggleEditor);
+  }
+  
+  // Editor buttons
+  setupEditorButtons(elements);
   
   // Setup keyboard shortcuts
   setupKeyboardShortcuts();
+}
+
+// In main.js
+function setupEditorButtons(elements) {
+  if (!elements.addBoxBtn || !elements.addPolygonBtn || !elements.addLineBtn || 
+      !elements.editBoxBtn || !elements.deleteBoxBtn) {
+    return;
+  }
+  
+  // Drawing mode buttons
+  elements.addBoxBtn.addEventListener('click', function() {
+    setActiveButton(this);
+    const labelId = parseInt(elements.objectTypeSelect.value);
+    window.FabricHandler.enableDrawingMode('rectangle', labelId);
+  });
+  
+  elements.addPolygonBtn.addEventListener('click', function() {
+    setActiveButton(this);
+    const labelId = parseInt(elements.objectTypeSelect.value);
+    window.FabricHandler.enableDrawingMode('polygon', labelId);
+  });
+  
+  elements.addLineBtn.addEventListener('click', function() {
+    setActiveButton(this);
+    const lineTypeSelect = elements.lineTypeSelect;
+    const labelId = lineTypeSelect ? parseInt(lineTypeSelect.value) : 1;
+    window.FabricHandler.enableDrawingMode('line', labelId);
+    
+    // Toggle visibility of label selectors
+    toggleLabelSelectors('line');
+  });
+  
+  elements.editBoxBtn.addEventListener('click', function() {
+    setActiveButton(this);
+    window.FabricHandler.enableEditing();
+    toggleLabelSelectors('area');
+  });
+  
+  elements.deleteBoxBtn.addEventListener('click', function() {
+    window.FabricHandler.deleteSelected();
+  });
+  
+  // Action buttons
+  elements.saveEditBtn.addEventListener('click', function() {
+    window.FabricHandler.saveAnnotations();
+    toggleEditor(); // Exit editor mode
+  });
+  
+  elements.cancelEditBtn.addEventListener('click', function() {
+    window.FabricHandler.cancelEditing();
+    toggleEditor(); // Exit editor mode
+  });
+  
+  // Type select changes
+  elements.objectTypeSelect.addEventListener('change', function() {
+    const labelId = parseInt(this.value);
+    window.FabricHandler.changeSelectedLabel(labelId);
+  });
+  
+  elements.lineTypeSelect.addEventListener('change', function() {
+    const labelId = parseInt(this.value);
+    window.FabricHandler.changeSelectedLineType(labelId);
+  });
+}
+
+// Hilfsfunktion für aktiven Button
+function setActiveButton(activeButton) {
+  const buttons = [
+    document.getElementById('addBoxBtn'),
+    document.getElementById('addPolygonBtn'),
+    document.getElementById('addLineBtn'),
+    document.getElementById('editBoxBtn'),
+    document.getElementById('deleteBoxBtn')
+  ];
+  
+  buttons.forEach(button => {
+    if (button && button !== activeButton) {
+      button.classList.remove('active');
+    }
+  });
+  
+  if (activeButton) {
+    activeButton.classList.add('active');
+  }
+}
+
+// Hilfsfunktion zum Umschalten zwischen Flächenlabels und Linienlabels
+function toggleLabelSelectors(type) {
+  const objectTypeSelect = document.getElementById('objectTypeSelect');
+  const lineTypeSelect = document.getElementById('lineTypeSelect');
+  
+  if (!objectTypeSelect || !lineTypeSelect) return;
+  
+  if (type === 'line') {
+    objectTypeSelect.style.display = 'none';
+    lineTypeSelect.style.display = 'inline-block';
+  } else {
+    objectTypeSelect.style.display = 'inline-block';
+    lineTypeSelect.style.display = 'none';
+  }
 }
 
 /**

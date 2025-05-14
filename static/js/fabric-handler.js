@@ -1144,69 +1144,68 @@ export function getAnnotationsData() {
   return annotations;
 }
 
-// ompletten Neuaufbau der Anzeige nach dem schliessen des Editors. 
-// In fabric-handler.js, überarbeiten wir die reloadAnnotations-Funktion
+// Kompletten Neuaufbau der Anzeige nach dem schliessen des Editors. 
 export function reloadAnnotations() {
   console.log("=== KOMPLETTE NEUINITIALISIERUNG DER ANNOTATIONS-ANZEIGE ===");
   
   // 1. Canvas vollständig zurücksetzen
   if (canvas) {
-    console.log("Bestehenden Canvas zurücksetzen");
-    canvas.dispose();
-    canvas = null;
+      console.log("Bestehenden Canvas zurücksetzen");
+      canvas.dispose();
+      canvas = null;
   }
   
   // 2. Canvas-Element aus dem DOM entfernen
   const oldCanvas = document.getElementById('annotationCanvas');
   if (oldCanvas) {
-    console.log("Canvas-Element aus dem DOM entfernen");
-    oldCanvas.parentNode.removeChild(oldCanvas);
+      console.log("Canvas-Element aus dem DOM entfernen");
+      oldCanvas.parentNode.removeChild(oldCanvas);
   }
   
   // 3. Kurze Verzögerung für DOM-Updates
   setTimeout(function() {
-    // 4. Canvas neu initialisieren
-    console.log("Canvas neu initialisieren");
-    initCanvas();
-    
-    // 5. Annotationen anzeigen, falls vorhanden
-    if (window.data && window.data.predictions) {
-      console.log(`Zeichne ${window.data.predictions.length} Annotationen neu`);
+      // 4. Canvas neu initialisieren
+      console.log("Canvas neu initialisieren");
+      initCanvas();
       
-      // KRITISCH: Ausgabe der ersten Annotation, um sicherzustellen,
-      // dass die richtigen Daten verwendet werden
-      if (window.data.predictions.length > 0) {
-        const firstPrediction = window.data.predictions[0];
-        console.log("Erste Annotation:", {
-          type: firstPrediction.type,
-          box: firstPrediction.box,
-          area: firstPrediction.area
-        });
+      // 5. Annotationen anzeigen, falls vorhanden
+      if (window.data && window.data.predictions) {
+          console.log(`Zeichne ${window.data.predictions.length} Annotationen neu`);
+          
+          // Ausgabe der ersten Annotation, falls vorhanden
+          if (window.data.predictions.length > 0) {
+              const firstPrediction = window.data.predictions[0];
+              console.log("Erste Annotation:", {
+                  type: firstPrediction.type,
+                  box: firstPrediction.box,
+                  area: firstPrediction.area
+              });
+          }
+          
+          // 6. Warten, bis der Canvas fertig initialisiert ist
+          setTimeout(function() {
+              // Sicherstellen, dass Canvas existiert
+              if (!canvas) {
+                  console.error("Canvas noch nicht initialisiert!");
+                  initCanvas();
+              }
+              
+              // 7. Annotationen zeichnen
+              displayAnnotations(window.data.predictions);
+              
+              // 8. Zoom anwenden
+              if (typeof window.getCurrentZoom === 'function') {
+                  const zoom = window.getCurrentZoom();
+                  console.log(`Zoom wird auf ${zoom} gesetzt`);
+                  syncEditorZoom(zoom);
+              }
+              
+              // 9. Aktualisierung der Ansichtsansicht ist abgeschlossen
+              console.log("=== NEUINITIALISIERUNG ABGESCHLOSSEN ===");
+          }, 300);
+      } else {
+          console.warn("Keine Annotationen zum Anzeigen gefunden!");
       }
-      
-      // 6. Warten, bis der Canvas fertig initialisiert ist
-      setTimeout(function() {
-        // Sicherstellen, dass Canvas existiert
-        if (!canvas) {
-          console.error("Canvas noch nicht initialisiert!");
-          initCanvas();
-        }
-        
-        // 7. Annotationen zeichnen
-        displayAnnotations(window.data.predictions);
-        
-        // 8. Zoom anwenden
-        if (typeof window.getCurrentZoom === 'function') {
-          const zoom = window.getCurrentZoom();
-          console.log(`Zoom wird auf ${zoom} gesetzt`);
-          syncEditorZoom(zoom);
-        }
-        
-        console.log("=== NEUINITIALISIERUNG ABGESCHLOSSEN ===");
-      }, 300);
-    } else {
-      console.warn("Keine Annotationen zum Anzeigen gefunden!");
-    }
   }, 100);
 }
 
@@ -1377,6 +1376,8 @@ export function enableEditing() {
     if (obj.objectType === 'annotation') {
       obj.selectable = true;
       obj.evented = true;
+      obj.hasControls = true;
+      obj.hasBorders = true;
     }
   });
   
@@ -1398,8 +1399,12 @@ export function disableEditing() {
   
   // Disable object selection
   canvas.forEachObject(function(obj) {
-    obj.selectable = false;
-    obj.evented = false;
+    if (obj.objectType === 'annotation') {
+      obj.selectable = false;
+      obj.evented = true; // Still allow hover for highlighting
+      obj.hasControls = false;
+      obj.hasBorders = false;
+    }
   });
   
   // Disable selection
@@ -1407,8 +1412,10 @@ export function disableEditing() {
   
   // Update cursor
   canvas.defaultCursor = 'default';
-  canvas.hoverCursor = 'default';
+  canvas.hoverCursor = 'pointer'; // To indicate items can be clicked/highlighted
   
+  // Clear any active selection
+  canvas.discardActiveObject();
   canvas.renderAll();
 }
 
@@ -2019,13 +2026,25 @@ function enableLineDrawing(labelId) {
   }
 }
 
+// Funktion zum Speichern des Originalzustands
+export function saveOriginalState() {
+  if (!window.data || !window.data.predictions) return;
+  
+  window.data.original_predictions = JSON.parse(JSON.stringify(window.data.predictions));
+  console.log(`Sicherung von ${window.data.original_predictions.length} Original-Annotationen erstellt`);
+}
+
+
 /**
  * Save all annotations to the current data format
+ * Wenn der Editor mit gespeichert verlassen wird, sammelt saveAnnotations alle Änderungen 
+ * und konvertiert sie in das Datenformat für window.data.predictions.
+ * window.data.predictions werden mit den neuen Werten überschrieben
  */
 export function saveAnnotations() {
   if (!canvas) {
-    console.error("Kein Canvas gefunden beim Speichern der Annotationen!");
-    return [];
+      console.error("Kein Canvas gefunden beim Speichern der Annotationen!");
+      return [];
   }
   
   console.log("saveAnnotations: Speichere Änderungen aus dem Editor");
@@ -2039,84 +2058,90 @@ export function saveAnnotations() {
   
   // Jedes Objekt einzeln konvertieren und Fläche/Länge neu berechnen
   annotationObjects.forEach((obj, index) => {
-    if (obj.annotationType === 'rectangle') {
-      // Aktuelle Positionen und Dimensionen auslesen
-      const x1 = obj.left;
-      const y1 = obj.top;
-      const x2 = x1 + obj.width;
-      const y2 = y1 + obj.height;
-      
-      // Fläche neu berechnen
-      const area = calculateRectangleArea(obj.width, obj.height);
-      console.log(`Rechteck #${index}: Neue Fläche ${area.toFixed(2)} m²`);
-      
-      // Annotation erstellen
-      updatedAnnotations.push({
-        box: [x1, y1, x2, y2],
-        label: obj.labelId,
-        label_name: obj.labelName,
-        type: 'rectangle',
-        area: area,
-        score: obj.originalData?.score || 1.0
-      });
-    } else if (obj.annotationType === 'polygon') {
-      // Aktuelle Punkte auslesen
-      const points = obj.points;
-      const all_points_x = points.map(p => p.x);
-      const all_points_y = points.map(p => p.y);
-      
-      // Fläche neu berechnen
-      const area = calculatePolygonArea(points);
-      console.log(`Polygon #${index}: Neue Fläche ${area.toFixed(2)} m²`);
-      
-      // Annotation erstellen
-      updatedAnnotations.push({
-        polygon: {
-          all_points_x,
-          all_points_y
-        },
-        label: obj.labelId,
-        label_name: obj.labelName,
-        type: 'polygon',
-        area: area,
-        score: obj.originalData?.score || 1.0
-      });
-    } else if (obj.annotationType === 'line') {
-      // Aktuelle Punkte auslesen
-      const points = obj.points;
-      const all_points_x = points.map(p => p.x);
-      const all_points_y = points.map(p => p.y);
-      
-      // Länge neu berechnen
-      const length = calculateLineLength(points);
-      console.log(`Linie #${index}: Neue Länge ${length.toFixed(2)} m`);
-      
-      // Annotation erstellen
-      updatedAnnotations.push({
-        line: {
-          all_points_x,
-          all_points_y
-        },
-        type: 'line',
-        lineType: obj.lineType || 1,
-        length: length,
-        score: obj.originalData?.score || 1.0
-      });
-    }
+      if (obj.annotationType === 'rectangle') {
+          // Aktuelle Positionen und Dimensionen auslesen
+          const x1 = obj.left;
+          const y1 = obj.top;
+          const x2 = x1 + obj.width;
+          const y2 = y1 + obj.height;
+          
+          // Fläche neu berechnen
+          const area = calculateRectangleArea(obj.width, obj.height);
+          console.log(`Rechteck #${index}: Neue Fläche ${area.toFixed(2)} m²`);
+          
+          // Annotation erstellen
+          updatedAnnotations.push({
+              box: [x1, y1, x2, y2],
+              label: obj.labelId,
+              label_name: obj.labelName,
+              type: 'rectangle',
+              area: area,
+              score: obj.originalData?.score || 1.0
+          });
+      } else if (obj.annotationType === 'polygon') {
+          // Aktuelle Punkte auslesen
+          const points = obj.points;
+          const all_points_x = points.map(p => p.x);
+          const all_points_y = points.map(p => p.y);
+          
+          // Fläche neu berechnen
+          const area = calculatePolygonArea(points);
+          console.log(`Polygon #${index}: Neue Fläche ${area.toFixed(2)} m²`);
+          
+          // Annotation erstellen
+          updatedAnnotations.push({
+              polygon: {
+                  all_points_x,
+                  all_points_y
+              },
+              label: obj.labelId,
+              label_name: obj.labelName,
+              type: 'polygon',
+              area: area,
+              score: obj.originalData?.score || 1.0
+          });
+      } else if (obj.annotationType === 'line') {
+          // Aktuelle Punkte auslesen
+          const points = obj.points;
+          const all_points_x = points.map(p => p.x);
+          const all_points_y = points.map(p => p.y);
+          
+          // Länge neu berechnen
+          const length = calculateLineLength(points);
+          console.log(`Linie #${index}: Neue Länge ${length.toFixed(2)} m`);
+          
+          // Annotation erstellen
+          updatedAnnotations.push({
+              line: {
+                  all_points_x,
+                  all_points_y
+              },
+              type: 'line',
+              lineType: obj.lineType || 1,
+              length: length,
+              score: obj.originalData?.score || 1.0
+          });
+      }
   });
   
-  // KRITISCH: Window.data.predictions direkt ersetzen
-  if (window.data) {
-    console.log(`Ersetze ${window.data.predictions?.length || 0} alte Annotationen mit ${updatedAnnotations.length} neuen Annotationen`);
-    window.data.predictions = updatedAnnotations;
-    
-    // Zusammenfassung aktualisieren
-    updateDataSummary();
+    // KRITISCH: Window.data.predictions direkt ersetzen
+    if (window.data) {
+      console.log(`Ersetze ${window.data.predictions?.length || 0} alte Annotationen mit ${updatedAnnotations.length} neuen Annotationen`);
+      window.data.predictions = updatedAnnotations;
+      
+      // Zusammenfassung aktualisieren
+      updateDataSummary();
   }
   
   // Daten für PDF-Anzeige aktualisieren
   if (typeof window.updatePdfPageData === 'function') {
-    window.updatePdfPageData(window.data);
+      window.updatePdfPageData(window.data);
+  }
+  
+  // Nur aktualisieren, wenn der Editor nicht aktiv ist (wenn wir im normalen View sind)
+  if (typeof window.updateAnnotationsDisplay === 'function' && !window.isEditorActive) {
+      console.log("Aktualisiere die Annotationsanzeige in der Ansichtsview");
+      window.updateAnnotationsDisplay();
   }
   
   console.log("Annotationen erfolgreich gespeichert!");
@@ -2275,131 +2300,6 @@ export function setCanvasZoom(zoomLevel) {
 }
 
 /**
- * Initialisiere den Editor mit vorhandenen Annotationen
- * Diese Funktion sollte explizit aufgerufen werden, wenn der Editor geöffnet wird
- */
-export function initEditor() {
-  console.log("Initialisiere Editor mit bestehenden Annotationen");
-  
-  // Canvas zurücksetzen
-  if (canvas) {
-    canvas.dispose();
-    canvas = null;
-  }
-  
-  // Canvas-Element aus dem DOM entfernen, falls vorhanden
-  const oldCanvas = document.getElementById('annotationCanvas');
-  if (oldCanvas) {
-    oldCanvas.parentNode.removeChild(oldCanvas);
-  }
-  
-  // Editor-Container ermitteln
-  const editorContainer = document.querySelector('.editor-canvas-container');
-  if (!editorContainer) {
-    console.error("Editor-Container nicht gefunden");
-    return null;
-  }
-  
-  // WICHTIG: Scroll-Container erstellen, der Bild und Canvas enthält
-  let scrollContainer = editorContainer.querySelector('.scroll-container');
-  if (!scrollContainer) {
-    scrollContainer = document.createElement('div');
-    scrollContainer.className = 'scroll-container';
-    scrollContainer.style.position = 'absolute';
-    scrollContainer.style.top = '0';
-    scrollContainer.style.left = '0';
-    scrollContainer.style.width = '100%';
-    scrollContainer.style.height = '100%';
-    scrollContainer.style.overflow = 'auto';
-    scrollContainer.style.zIndex = '1';
-    editorContainer.appendChild(scrollContainer);
-  }
-  
-  // Bild-Element im Scroll-Container hinzufügen/aktualisieren
-  let editorImage = scrollContainer.querySelector('#editorImage');
-  if (!editorImage) {
-    editorImage = document.createElement('img');
-    editorImage.id = 'editorImage';
-    editorImage.style.position = 'absolute';
-    editorImage.style.top = '0';
-    editorImage.style.left = '0';
-    editorImage.style.maxWidth = 'none'; // WICHTIG: maxWidth entfernen
-    editorImage.style.zIndex = '1';
-    scrollContainer.appendChild(editorImage);
-  }
-  editorImage.src = uploadedImage.src;
-  
-  // Neues Canvas-Element erstellen
-  const canvasElement = document.createElement('canvas');
-  canvasElement.id = 'annotationCanvas';
-  canvasElement.style.position = 'absolute';
-  canvasElement.style.top = '0';
-  canvasElement.style.left = '0';
-  canvasElement.style.pointerEvents = 'all';
-  canvasElement.style.zIndex = '2';
-  
-  // Canvas zum Scroll-Container hinzufügen
-  scrollContainer.appendChild(canvasElement);
-  
-  // Bild-Dimensions aus uploadedImage holen
-  const naturalWidth = uploadedImage.naturalWidth;
-  const naturalHeight = uploadedImage.naturalHeight;
-  
-  // WICHTIG: Aktuellen Zoom-Wert aus dem Ansichtsbereich übernehmen
-  let zoomFactor = 1.0;
-  if (typeof window.getCurrentZoom === 'function') {
-    zoomFactor = window.getCurrentZoom();
-    console.log(`Übernahme des Zoom-Faktors aus der Ansicht: ${zoomFactor}`);
-  }
-  
-  // Setze Bildgröße basierend auf dem Zoom-Faktor
-  const scaledWidth = naturalWidth * zoomFactor;
-  const scaledHeight = naturalHeight * zoomFactor;
-  
-  editorImage.style.width = `${scaledWidth}px`;
-  editorImage.style.height = `${scaledHeight}px`;
-  
-  // Fabric.js Canvas initialisieren
-  canvas = new fabric.Canvas('annotationCanvas');
-  
-  // Canvas auf die natürliche Bildgröße setzen
-  canvas.setWidth(naturalWidth);
-  canvas.setHeight(naturalHeight);
-  
-  // WICHTIG: Zoom auf den Wert aus der Ansicht setzen
-  canvas.setZoom(zoomFactor);
-  
-  console.log(`Editor-Canvas erstellt mit Größe ${naturalWidth}x${naturalHeight}, Zoom=${zoomFactor.toFixed(4)}`);
-  
-  // Stelle sicher, dass der Canvas-Container genau die gleiche Größe wie das skalierte Bild hat
-  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-  if (canvasContainer) {
-    canvasContainer.style.position = 'absolute';
-    canvasContainer.style.top = '0';
-    canvasContainer.style.left = '0';
-    canvasContainer.style.width = `${scaledWidth}px`;
-    canvasContainer.style.height = `${scaledHeight}px`;
-    canvasContainer.style.overflow = 'hidden'; // Kein Overflow im Canvas-Container!
-  }
-  
-  // Event-Listener einrichten
-  setupEventListeners();
-  
-  // WICHTIG: Scroll-Position übernehmen
-  if (imageContainer && scrollContainer) {
-    setTimeout(function() {
-      scrollContainer.scrollLeft = imageContainer.scrollLeft;
-      scrollContainer.scrollTop = imageContainer.scrollTop;
-    }, 100);
-  }
-    
-  // Event-Listener für den Editor einrichten
-  setupEditorEventListeners();
-  
-  return canvas;
-}
-
-/**
  * Cancel editing and restore original annotations
  */
 export function cancelEditing() {
@@ -2407,16 +2307,17 @@ export function cancelEditing() {
   
   console.log("Bearbeitung abgebrochen, stelle Originalzustand wieder her");
   
-  // Wir sollten den Originalzustand wiederherstellen
+  // Restore original state if available
   if (window.data && window.data.original_predictions) {
-    // Wenn es eine Sicherung der Original-Annotationen gibt, diese wiederherstellen
-    window.data.predictions = window.data.original_predictions;
-    console.log("Original-Annotationen wiederhergestellt:", window.data.original_predictions.length);
-  } else if (window.data && window.data.predictions) {
-    console.log("Keine Original-Annotationen gefunden, lade aktuelle Annotationen");
+    window.data.predictions = JSON.parse(JSON.stringify(window.data.original_predictions));
+    delete window.data.original_predictions;
+    
+    // Redraw annotations from original state
+    clearAnnotations();
+    displayAnnotations(window.data.predictions);
   }
   
-  // Disable editing
+  // Switch to view mode
   disableEditing();
 }
 
@@ -2763,6 +2664,62 @@ export function refreshAnnotations() {
   }
 }
 
+export function debugAnnotationsTransfer() {
+  console.group("Annotation Transfer Debug");
+  
+  // 1. Überprüfe die in window.data gespeicherten Annotationen
+  console.log("window.data existiert:", !!window.data);
+  console.log("window.data.predictions Länge:", window.data?.predictions?.length || 0);
+  
+  if (window.data && window.data.predictions && window.data.predictions.length > 0) {
+      console.log("Beispiel-Annotation aus window.data.predictions:", window.data.predictions[0]);
+  }
+  
+  // 2. Überprüfe die aktuellen Canvas-Objekte
+  if (canvas) {
+      const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+      console.log("Anzahl der Annotations im Canvas:", annotations.length);
+      
+      if (annotations.length > 0) {
+          console.log("Beispiel-Annotation aus Canvas:", annotations[0]);
+      }
+  } else {
+      console.log("Canvas ist nicht initialisiert!");
+  }
+  
+  // 3. Vergleiche die Struktur der Daten
+  if (window.data && window.data.predictions && window.data.predictions.length > 0 && canvas) {
+      const canvasAnnotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+      
+      if (canvasAnnotations.length > 0) {
+          const dataAnnotation = window.data.predictions[0];
+          const canvasAnnotation = canvasAnnotations[0];
+          
+          console.log("Vergleich der ersten Annotation:");
+          console.log("window.data Format:", Object.keys(dataAnnotation));
+          console.log("Canvas Object Format:", Object.keys(canvasAnnotation));
+          
+          // Prüfe, ob wesentliche Attribute vorhanden sind
+          if (dataAnnotation.type === 'rectangle' || dataAnnotation.box) {
+              console.log("Rechteck - Box vorhanden:", !!dataAnnotation.box);
+              console.log("Rechteck - Area vorhanden:", !!dataAnnotation.area);
+          } else if (dataAnnotation.type === 'polygon') {
+              console.log("Polygon - Punkte vorhanden:", !!(dataAnnotation.polygon || dataAnnotation.points));
+              console.log("Polygon - Area vorhanden:", !!dataAnnotation.area);
+          } else if (dataAnnotation.type === 'line') {
+              console.log("Linie - Punkte vorhanden:", !!(dataAnnotation.line || dataAnnotation.points));
+              console.log("Linie - Länge vorhanden:", !!dataAnnotation.length);
+          }
+      }
+  }
+  
+  console.groupEnd();
+  
+  return "Debug-Informationen wurden in der Konsole ausgegeben";
+}
+
+
+
 // Expose functions through window.FabricHandler
 window.FabricHandler = {
   // Canvas management
@@ -2771,12 +2728,11 @@ window.FabricHandler = {
   clearAnnotations,
   resetView,
   
-  // Editor-Initialisierung
-  initEditor,
   
   // Drawing and editing
   enableDrawingMode,
   enableEditing,
+  saveOriginalState,
   disableEditing,
   saveAnnotations,
   cancelEditing,
@@ -2800,5 +2756,8 @@ window.FabricHandler = {
   setLineLabels,
   syncEditorZoom,
   setEditorZoom,
-  synchronizeZoom
+  synchronizeZoom,
+
+  // debug
+  debugAnnotationsTransfer
 };

@@ -1213,3 +1213,44 @@ tr:nth-child(even) {
   #imageContainer .canvas-container {
     z-index: 5;
   }
+
+  /* In styles.css - Anpassen der bestehenden Stile */
+
+/* Editor-Toggle-Button-Stil */
+.editor-toggle {
+    background: #f0ad4e;
+    transition: background 0.3s;
+  }
+  
+  .editor-toggle.active {
+    background: #ec971f;
+  }
+  
+  /* Editor-Werkzeuge */
+  .editor-controls {
+    padding: 10px 0;
+    margin-bottom: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    border-bottom: 1px solid #ddd;
+  }
+  
+  /* Stellen Sie sicher, dass der Canvas im Anzeigemodus richtig positioniert ist */
+  #annotationCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    pointer-events: all;
+    z-index: 2;
+  }
+  
+  /* Für den Bearbeitungsmodus */
+  .editing-mode .editor-button {
+    opacity: 1;
+  }
+  
+  .editing-mode #annotationCanvas {
+    border: 2px solid #ec971f; /* Visuelles Feedback, dass der Bearbeitungsmodus aktiv ist */
+  }
