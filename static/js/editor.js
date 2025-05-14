@@ -125,7 +125,6 @@ function setupEditorButtons() {
     document.addEventListener('keydown', handleKeyboardShortcuts);
 }
 
-// Toggle editor on/off
 // Editor einschalten und speichern oder abbrechen
 function toggleEditor() {
     console.log("Toggling editor, current state:", isEditorActive);
@@ -279,57 +278,27 @@ function toggleEditor() {
             editorToggle.classList.remove('active');
             editorSection.style.display = 'none';
             
-            // Änderungen speichern, wenn der Editor aktiv war
+            // WICHTIG: IMMER die Änderungen speichern, wenn der Editor geschlossen wird
             if (wasEditorActive && typeof window.FabricHandler.saveAnnotations === 'function') {
                 console.log("Speichere Änderungen aus dem Editor");
-                const savedAnnotations = window.FabricHandler.saveAnnotations();
+                window.FabricHandler.saveAnnotations();
                 
                 // Debug-Ausgabe
                 console.log("DEBUG - Editor wird geschlossen:");
                 console.log("window.data existiert:", !!window.data);
                 console.log("window.data.predictions:", window.data && window.data.predictions ? window.data.predictions.length : 0);
-                console.log("FabricHandler.initCanvas existiert:", typeof window.FabricHandler.initCanvas === 'function');
-                console.log("updateAnnotationsDisplay existiert:", typeof window.updateAnnotationsDisplay === 'function');
-                console.log("displayResults existiert:", typeof window.displayResults === 'function');
-                console.log("getCurrentZoom Wert:", typeof window.getCurrentZoom === 'function' ? window.getCurrentZoom() : "nicht verfügbar");
                 
                 // Normalen View wieder anzeigen
                 if (resultsSection) {
                     resultsSection.style.display = 'block';
                 }
                 
-                // NEUE METHODE: Verwende die robuste reloadAnnotations-Funktion
+                // KRITISCHE ÄNDERUNG: Die reloadAnnotations-Funktion verwenden, die alles
+                // von Grund auf neu initialisiert und die aktualisierten Daten anzeigt
                 if (window.FabricHandler && typeof window.FabricHandler.reloadAnnotations === 'function') {
                     setTimeout(function() {
                         window.FabricHandler.reloadAnnotations();
                     }, 300);
-                } 
-                // ALTE METHODEN ALS FALLBACK
-                else if (typeof window.FabricHandler.initCanvas === 'function' && window.data && window.data.predictions) {
-                    window.FabricHandler.clearAnnotations();
-                    const canvas = window.FabricHandler.initCanvas();
-                    
-                    setTimeout(function() {
-                        window.FabricHandler.displayAnnotations(window.data.predictions);
-                        
-                        // Aktuellen Zoom anwenden
-                        if (typeof window.getCurrentZoom === 'function') {
-                            const currentZoom = window.getCurrentZoom();
-                            window.FabricHandler.syncEditorZoom(currentZoom);
-                        }
-                        
-                        // Summary und Tabelle aktualisieren
-                        if (typeof window.updateSummary === 'function') {
-                            window.updateSummary();
-                        }
-                        if (typeof window.updateResultsTable === 'function') {
-                            window.updateResultsTable();
-                        }
-                    }, 100);
-                } else if (typeof window.updateAnnotationsDisplay === 'function') {
-                    window.updateAnnotationsDisplay();
-                } else {
-                    console.warn("Keine Funktion zum Aktualisieren der Ansicht gefunden");
                 }
             } else {
                 // Normale Ansicht ohne Speichern anzeigen

@@ -324,6 +324,138 @@ function setupEventListeners() {
       }
     }
   });
+
+  // Event-Listener für Objektmodifikationen
+  canvas.on('object:modified', function(opt) {
+    const modifiedObject = opt.target;
+    if (modifiedObject && modifiedObject.objectType === 'annotation') {
+      // Wenn ein Objekt modifiziert wurde, aktualisiere seine Fläche/Länge
+      if (modifiedObject.annotationType === 'rectangle') {
+        const area = calculateRectangleArea(modifiedObject.width, modifiedObject.height);
+        modifiedObject.area = area;
+        
+        // Label aktualisieren
+        updateObjectLabel(modifiedObject);
+      } else if (modifiedObject.annotationType === 'polygon') {
+        const area = calculatePolygonArea(modifiedObject.points);
+        modifiedObject.area = area;
+        
+        // Label aktualisieren
+        updateObjectLabel(modifiedObject);
+      } else if (modifiedObject.annotationType === 'line') {
+        const length = calculateLineLength(modifiedObject.points);
+        modifiedObject.length = length;
+        
+        // Label aktualisieren
+        updateObjectLabel(modifiedObject);
+      }
+    }
+  });
+
+  // Objekt-Änderungen verfolgen
+  canvas.on('object:modified', function(opt) {
+    const obj = opt.target;
+    if (obj && obj.objectType === 'annotation') {
+      console.log(`Objekt vom Typ ${obj.annotationType} wurde modifiziert`);
+      
+      if (obj.annotationType === 'rectangle') {
+        // Fläche neu berechnen
+        const area = calculateRectangleArea(obj.width, obj.height);
+        obj.area = area;
+        
+        // Label aktualisieren
+        const label = canvas.getObjects().find(l => l.objectType === 'label' && l.annotationIndex === obj.annotationIndex);
+        if (label) {
+          label.set({
+            text: `#${obj.annotationIndex + 1}: ${area.toFixed(2)} m²`,
+            left: obj.left,
+            top: obj.top - 20
+          });
+        }
+      } else if (obj.annotationType === 'polygon') {
+        // Fläche neu berechnen
+        const area = calculatePolygonArea(obj.points);
+        obj.area = area;
+        
+        // Zentrum berechnen für Label-Position
+        let centerX = 0, centerY = 0;
+        for (let i = 0; i < obj.points.length; i++) {
+          centerX += obj.points[i].x;
+          centerY += obj.points[i].y;
+        }
+        centerX /= obj.points.length;
+        centerY /= obj.points.length;
+        
+        // Label aktualisieren
+        const label = canvas.getObjects().find(l => l.objectType === 'label' && l.annotationIndex === obj.annotationIndex);
+        if (label) {
+          label.set({
+            text: `#${obj.annotationIndex + 1}: ${area.toFixed(2)} m²`,
+            left: centerX,
+            top: centerY - 20
+          });
+        }
+      } else if (obj.annotationType === 'line') {
+        // Länge neu berechnen
+        const length = calculateLineLength(obj.points);
+        obj.length = length;
+        
+        // Label aktualisieren
+        const label = canvas.getObjects().find(l => l.objectType === 'label' && l.annotationIndex === obj.annotationIndex);
+        if (label) {
+          const lastPoint = obj.points[obj.points.length - 1];
+          label.set({
+            text: `${length.toFixed(2)} m`,
+            left: lastPoint.x + 5,
+            top: lastPoint.y - 15
+          });
+        }
+      }
+      
+      canvas.renderAll();
+    }
+  });
+}
+
+// Hilfsfunktion um ein einzelnes Label zu aktualisieren
+function updateObjectLabel(obj) {
+  if (!canvas) return;
+  
+  const annotationIndex = obj.annotationIndex;
+  const label = canvas.getObjects().find(l => 
+    l.objectType === 'label' && l.annotationIndex === annotationIndex);
+  
+  if (label) {
+    if (obj.annotationType === 'line') {
+      label.set({
+        text: `${obj.length.toFixed(2)} m`
+      });
+    } else {
+      label.set({
+        text: `#${annotationIndex + 1}: ${obj.area.toFixed(2)} m²`
+      });
+    }
+    
+    // Positioniere das Label korrekt für Polygone
+    if (obj.annotationType === 'polygon') {
+      // Berechne Zentrum des Polygons
+      let centerX = 0, centerY = 0;
+      for (let i = 0; i < obj.points.length; i++) {
+        centerX += obj.points[i].x;
+        centerY += obj.points[i].y;
+      }
+      centerX /= obj.points.length;
+      centerY /= obj.points.length;
+      
+      // Aktualisiere Label-Position
+      label.set({
+        left: centerX,
+        top: centerY - 20
+      });
+    }
+    
+    canvas.renderAll();
+  }
 }
 
 /**
@@ -938,6 +1070,7 @@ function centerCanvas() {
  * Convert annotations from fabric.js objects back to prediction format
  * @returns {Array} Array of prediction objects
  */
+// In fabric-handler.js, Änderung in der getAnnotationsData() Funktion
 export function getAnnotationsData() {
   if (!canvas) return [];
   
@@ -955,12 +1088,15 @@ export function getAnnotationsData() {
       const x2 = obj.left + obj.width;
       const y2 = obj.top + obj.height;
       
+      // WICHTIG: Fläche neu berechnen basierend auf aktueller Größe
+      const area = calculateRectangleArea(obj.width, obj.height);
+      
       annotations.push({
         box: [x1, y1, x2, y2],
         label: obj.labelId,
         label_name: obj.labelName,
         type: 'rectangle',
-        area: calculateRectangleArea(obj.width, obj.height),
+        area: area, // Aktualisierte Fläche verwenden
         score: obj.originalData?.score || 1.0
       });
     } else if (obj.annotationType === 'polygon') {
@@ -968,6 +1104,9 @@ export function getAnnotationsData() {
       const points = obj.points;
       const all_points_x = points.map(p => p.x);
       const all_points_y = points.map(p => p.y);
+      
+      // WICHTIG: Fläche neu berechnen basierend auf aktuellen Punkten
+      const area = calculatePolygonArea(points);
       
       annotations.push({
         polygon: {
@@ -977,7 +1116,7 @@ export function getAnnotationsData() {
         label: obj.labelId,
         label_name: obj.labelName,
         type: 'polygon',
-        area: calculatePolygonArea(points),
+        area: area, // Aktualisierte Fläche verwenden
         score: obj.originalData?.score || 1.0
       });
     } else if (obj.annotationType === 'line') {
@@ -986,6 +1125,9 @@ export function getAnnotationsData() {
       const all_points_x = points.map(p => p.x);
       const all_points_y = points.map(p => p.y);
       
+      // WICHTIG: Länge neu berechnen
+      const length = calculateLineLength(points);
+      
       annotations.push({
         line: {
           all_points_x,
@@ -993,7 +1135,7 @@ export function getAnnotationsData() {
         },
         type: 'line',
         lineType: obj.lineType || 1,
-        length: calculateLineLength(points),
+        length: length, // Aktualisierte Länge verwenden
         score: obj.originalData?.score || 1.0
       });
     }
@@ -1003,8 +1145,9 @@ export function getAnnotationsData() {
 }
 
 // ompletten Neuaufbau der Anzeige nach dem schliessen des Editors. 
+// In fabric-handler.js, überarbeiten wir die reloadAnnotations-Funktion
 export function reloadAnnotations() {
-  console.log("=== NEUINITIALISIERUNG DER ANNOTATIONS-ANZEIGE ===");
+  console.log("=== KOMPLETTE NEUINITIALISIERUNG DER ANNOTATIONS-ANZEIGE ===");
   
   // 1. Canvas vollständig zurücksetzen
   if (canvas) {
@@ -1028,9 +1171,20 @@ export function reloadAnnotations() {
     
     // 5. Annotationen anzeigen, falls vorhanden
     if (window.data && window.data.predictions) {
-      console.log(`Zeige ${window.data.predictions.length} Annotationen an`);
+      console.log(`Zeichne ${window.data.predictions.length} Annotationen neu`);
       
-      // Warten, bis der Canvas fertig initialisiert ist
+      // KRITISCH: Ausgabe der ersten Annotation, um sicherzustellen,
+      // dass die richtigen Daten verwendet werden
+      if (window.data.predictions.length > 0) {
+        const firstPrediction = window.data.predictions[0];
+        console.log("Erste Annotation:", {
+          type: firstPrediction.type,
+          box: firstPrediction.box,
+          area: firstPrediction.area
+        });
+      }
+      
+      // 6. Warten, bis der Canvas fertig initialisiert ist
       setTimeout(function() {
         // Sicherstellen, dass Canvas existiert
         if (!canvas) {
@@ -1038,13 +1192,10 @@ export function reloadAnnotations() {
           initCanvas();
         }
         
-        // Sicherstellen, dass Canvas leer ist
-        clearAnnotations();
-        
-        // Annotationen zeichnen
+        // 7. Annotationen zeichnen
         displayAnnotations(window.data.predictions);
         
-        // Zoom anwenden
+        // 8. Zoom anwenden
         if (typeof window.getCurrentZoom === 'function') {
           const zoom = window.getCurrentZoom();
           console.log(`Zoom wird auf ${zoom} gesetzt`);
@@ -1872,30 +2023,160 @@ function enableLineDrawing(labelId) {
  * Save all annotations to the current data format
  */
 export function saveAnnotations() {
-  if (!canvas) return;
-  
-  // Get all annotations
-  const annotations = getAnnotationsData();
-  
-  // Debug-Ausgabe
-  console.log(`Speichere ${annotations.length} Annotationen vom Editor`);
-  
-  // Update window.data.predictions
-  if (window.data) {
-    window.data.predictions = annotations;
-    
-    // Update counts and totals
-    updateDataSummary();
-    
-    console.log(`${annotations.length} Annotationen gespeichert und in window.data aktualisiert`);
+  if (!canvas) {
+    console.error("Kein Canvas gefunden beim Speichern der Annotationen!");
+    return [];
   }
   
-  // If we have PDF page data
+  console.log("saveAnnotations: Speichere Änderungen aus dem Editor");
+  
+  // Zunächst alle Annotation-Objekte sammeln
+  const annotationObjects = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  console.log(`Gefunden: ${annotationObjects.length} Annotation-Objekte`);
+  
+  // Ein neues Array für die konvertierten Annotationen erstellen
+  const updatedAnnotations = [];
+  
+  // Jedes Objekt einzeln konvertieren und Fläche/Länge neu berechnen
+  annotationObjects.forEach((obj, index) => {
+    if (obj.annotationType === 'rectangle') {
+      // Aktuelle Positionen und Dimensionen auslesen
+      const x1 = obj.left;
+      const y1 = obj.top;
+      const x2 = x1 + obj.width;
+      const y2 = y1 + obj.height;
+      
+      // Fläche neu berechnen
+      const area = calculateRectangleArea(obj.width, obj.height);
+      console.log(`Rechteck #${index}: Neue Fläche ${area.toFixed(2)} m²`);
+      
+      // Annotation erstellen
+      updatedAnnotations.push({
+        box: [x1, y1, x2, y2],
+        label: obj.labelId,
+        label_name: obj.labelName,
+        type: 'rectangle',
+        area: area,
+        score: obj.originalData?.score || 1.0
+      });
+    } else if (obj.annotationType === 'polygon') {
+      // Aktuelle Punkte auslesen
+      const points = obj.points;
+      const all_points_x = points.map(p => p.x);
+      const all_points_y = points.map(p => p.y);
+      
+      // Fläche neu berechnen
+      const area = calculatePolygonArea(points);
+      console.log(`Polygon #${index}: Neue Fläche ${area.toFixed(2)} m²`);
+      
+      // Annotation erstellen
+      updatedAnnotations.push({
+        polygon: {
+          all_points_x,
+          all_points_y
+        },
+        label: obj.labelId,
+        label_name: obj.labelName,
+        type: 'polygon',
+        area: area,
+        score: obj.originalData?.score || 1.0
+      });
+    } else if (obj.annotationType === 'line') {
+      // Aktuelle Punkte auslesen
+      const points = obj.points;
+      const all_points_x = points.map(p => p.x);
+      const all_points_y = points.map(p => p.y);
+      
+      // Länge neu berechnen
+      const length = calculateLineLength(points);
+      console.log(`Linie #${index}: Neue Länge ${length.toFixed(2)} m`);
+      
+      // Annotation erstellen
+      updatedAnnotations.push({
+        line: {
+          all_points_x,
+          all_points_y
+        },
+        type: 'line',
+        lineType: obj.lineType || 1,
+        length: length,
+        score: obj.originalData?.score || 1.0
+      });
+    }
+  });
+  
+  // KRITISCH: Window.data.predictions direkt ersetzen
+  if (window.data) {
+    console.log(`Ersetze ${window.data.predictions?.length || 0} alte Annotationen mit ${updatedAnnotations.length} neuen Annotationen`);
+    window.data.predictions = updatedAnnotations;
+    
+    // Zusammenfassung aktualisieren
+    updateDataSummary();
+  }
+  
+  // Daten für PDF-Anzeige aktualisieren
   if (typeof window.updatePdfPageData === 'function') {
     window.updatePdfPageData(window.data);
   }
   
-  return annotations;
+  console.log("Annotationen erfolgreich gespeichert!");
+  return updatedAnnotations;
+}
+
+// Neue Hilfsfunktion, die alle Labels aktualisiert
+function updateAnnotationLabels() {
+  if (!canvas) return;
+  
+  // Alle Annotationsobjekte durchgehen
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  
+  annotations.forEach(obj => {
+    if (obj.annotationType === 'rectangle' || obj.annotationType === 'polygon') {
+      // Fläche neu berechnen
+      let area;
+      if (obj.annotationType === 'rectangle') {
+        area = calculateRectangleArea(obj.width, obj.height);
+      } else {
+        area = calculatePolygonArea(obj.points);
+      }
+      
+      // Fläche im Objekt aktualisieren
+      obj.area = area;
+      
+      // Zugehöriges Label suchen und aktualisieren
+      const annotationIndex = obj.annotationIndex;
+      const label = canvas.getObjects().find(l => 
+        l.objectType === 'label' && l.annotationIndex === annotationIndex);
+      
+      if (label) {
+        // Text aktualisieren
+        label.set({
+          text: `#${annotationIndex + 1}: ${area.toFixed(2)} m²`
+        });
+      }
+    } else if (obj.annotationType === 'line') {
+      // Länge neu berechnen
+      const length = calculateLineLength(obj.points);
+      
+      // Länge im Objekt aktualisieren
+      obj.length = length;
+      
+      // Zugehöriges Label suchen und aktualisieren
+      const annotationIndex = obj.annotationIndex;
+      const label = canvas.getObjects().find(l => 
+        l.objectType === 'label' && l.annotationIndex === annotationIndex);
+      
+      if (label) {
+        // Text aktualisieren
+        label.set({
+          text: `${length.toFixed(2)} m`
+        });
+      }
+    }
+  });
+  
+  // Canvas neu rendern
+  canvas.renderAll();
 }
 
 /**

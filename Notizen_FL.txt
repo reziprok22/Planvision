@@ -1,5 +1,6 @@
 Fehler:
 - Wenn Seite neu geladen wird ctrl+r und dann direkt ein Projekt geladen wird, wird nur die Seite 1 angezeigt und ich kann nicht hin und her wechseln.
+- Polygon wird beendet, indem man in die Nähe des Startpunkts klickt. Evtl Hinweis geben.
 
 train model
 - Zu grosse Images können nicht trainiert werden, reduzieren, wenn möglich.
