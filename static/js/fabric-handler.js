@@ -45,10 +45,6 @@ export function setupFabricHandler(elements) {
 /**
  * Initialize the Fabric.js canvas
  */
-/**
- * Initialize the Fabric.js canvas
- */
-// In static/js/fabric-handler.js, Funktion initCanvas() anpassen:
 export function initCanvas() {
   console.log("Initializing Fabric.js canvas");
   
@@ -401,6 +397,11 @@ export function syncEditorZoom(zoomLevel) {
   // Force canvas to recalculate its position and render
   canvas.calcOffset();
   canvas.renderAll();
+
+  // Debug Annotation-Position nach dem Ediotr schliessen:
+  console.log(`Nach canvas.renderAll(): Canvas hat ${canvas.getObjects().length} Objekte`);
+  console.log(`Canvas-Dimensionen: ${canvas.width}x${canvas.height}, Zoom: ${canvas.getZoom()}`);
+  console.log(`Canvas-Position: (${canvasContainer.style.left}, ${canvasContainer.style.top})`);
   
   // Debug-Ausgabe
   console.log(`Nach canvas.renderAll(): Canvas hat ${canvas.getObjects().length} Objekte`);
@@ -809,6 +810,7 @@ export function addAnnotation(prediction, index) {
  * Display annotations from prediction data
  * @param {Array} predictions - The predictions data
  */
+// displayAnnotations zeichnet die Annotations
 export function displayAnnotations(predictions) {
   if (!canvas) {
     // Initialize canvas if it doesn't exist
@@ -826,6 +828,7 @@ export function displayAnnotations(predictions) {
   clearAnnotations();
   
   // WICHTIG: Mit Zoom 1.0 arbeiten im Editor
+  // Braucht es den? Claude fragen.
   if (window.isEditorActive) {
     canvas.setZoom(1.0);
   }
@@ -997,6 +1000,63 @@ export function getAnnotationsData() {
   });
   
   return annotations;
+}
+
+// ompletten Neuaufbau der Anzeige nach dem schliessen des Editors. 
+export function reloadAnnotations() {
+  console.log("=== NEUINITIALISIERUNG DER ANNOTATIONS-ANZEIGE ===");
+  
+  // 1. Canvas vollständig zurücksetzen
+  if (canvas) {
+    console.log("Bestehenden Canvas zurücksetzen");
+    canvas.dispose();
+    canvas = null;
+  }
+  
+  // 2. Canvas-Element aus dem DOM entfernen
+  const oldCanvas = document.getElementById('annotationCanvas');
+  if (oldCanvas) {
+    console.log("Canvas-Element aus dem DOM entfernen");
+    oldCanvas.parentNode.removeChild(oldCanvas);
+  }
+  
+  // 3. Kurze Verzögerung für DOM-Updates
+  setTimeout(function() {
+    // 4. Canvas neu initialisieren
+    console.log("Canvas neu initialisieren");
+    initCanvas();
+    
+    // 5. Annotationen anzeigen, falls vorhanden
+    if (window.data && window.data.predictions) {
+      console.log(`Zeige ${window.data.predictions.length} Annotationen an`);
+      
+      // Warten, bis der Canvas fertig initialisiert ist
+      setTimeout(function() {
+        // Sicherstellen, dass Canvas existiert
+        if (!canvas) {
+          console.error("Canvas noch nicht initialisiert!");
+          initCanvas();
+        }
+        
+        // Sicherstellen, dass Canvas leer ist
+        clearAnnotations();
+        
+        // Annotationen zeichnen
+        displayAnnotations(window.data.predictions);
+        
+        // Zoom anwenden
+        if (typeof window.getCurrentZoom === 'function') {
+          const zoom = window.getCurrentZoom();
+          console.log(`Zoom wird auf ${zoom} gesetzt`);
+          syncEditorZoom(zoom);
+        }
+        
+        console.log("=== NEUINITIALISIERUNG ABGESCHLOSSEN ===");
+      }, 300);
+    } else {
+      console.warn("Keine Annotationen zum Anzeigen gefunden!");
+    }
+  }, 100);
 }
 
 /**
@@ -2207,7 +2267,7 @@ function handleEditorZoom(event) {
   
   // Zoom-Änderung ermitteln
   const delta = event.deltaY;
-  const zoomStep = 0.1;
+  const zoomStep = 0.25;
   
   // Neuen Zoom berechnen
   let newZoom = currentZoom;
@@ -2266,14 +2326,67 @@ function handleEditorZoom(event) {
   // Globalen Zoom-Wert aktualisieren
   window.currentZoom = newZoom;
   
-  // Zoom-Anzeige aktualisieren, falls vorhanden
-  const resetZoomBtn = document.getElementById('resetZoomBtn');
-  if (resetZoomBtn) {
-    resetZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
+  // WICHTIG: BEIDE Zoom-Buttons aktualisieren
+  // 1. Editor-Zoom-Button
+  const editorZoomBtn = document.getElementById('editorResetZoomBtn');
+  if (editorZoomBtn) {
+    editorZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
+  }
+  
+  // 2. Ansichtsview-Zoom-Button
+  const viewZoomBtn = document.getElementById('resetZoomBtn');
+  if (viewZoomBtn) {
+    viewZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
+  }
+  
+  // 3. Auch globalen Zoom-Wert aktualisieren, falls die Funktion existiert
+  if (typeof window.setZoomLevel === 'function') {
+    // Der Aufruf sollte nicht triggern, dass der Canvas neu gezeichnet wird
+    // Daher nur den internen Wert setzen
+    window.currentZoom = newZoom;
+    // Falls explizite Funktion zum stillen Update existiert
+    if (typeof window.updateZoomLevel === 'function') {
+      window.updateZoomLevel(newZoom);
+    }
   }
   
   console.log(`Editor-Zoom geändert: ${currentZoom.toFixed(2)} -> ${newZoom.toFixed(2)}`);
 }
+
+// In fabric-handler.js, neue Funktion zur Zoom-Synchronisierung
+export function synchronizeZoom(newZoom) {
+  // Aktuellen Zoom speichern
+  window.currentZoom = newZoom;
+  
+  // 1. Auf den Ansichtsview anwenden
+  if (typeof window.setZoomLevel === 'function') {
+      window.setZoomLevel(newZoom);
+  }
+  
+  // 2. Auf den Editor anwenden, falls aktiv
+  if (window.isEditorActive && canvas) {
+      setEditorZoom(newZoom);
+  }
+  
+  // 3. Zoom-Buttons aktualisieren
+  const viewZoomBtn = document.getElementById('resetZoomBtn');
+  if (viewZoomBtn) {
+      viewZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
+  }
+  
+  const editorZoomBtn = document.getElementById('editorResetZoomBtn');
+  if (editorZoomBtn) {
+      editorZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
+  }
+  
+  console.log(`Zoom synchronisiert: ${newZoom.toFixed(2)}`);
+}
+
+// Und füge diese Funktion zum FabricHandler-Objekt hinzu
+window.FabricHandler = {
+  // ... bestehende Funktionen
+  synchronizeZoom
+};
 
 /**
  * Editor-Zoom auf einen bestimmten Wert setzen
@@ -2281,6 +2394,8 @@ function handleEditorZoom(event) {
  */
 export function setEditorZoom(zoomLevel) {
   if (!canvas) return;
+  
+  console.log(`Setting editor zoom to ${zoomLevel}`);
   
   // Bild ermitteln
   const editorImage = document.getElementById('editorImage');
@@ -2306,16 +2421,23 @@ export function setEditorZoom(zoomLevel) {
   // Canvas-Container-Größe anpassen
   const canvasContainer = document.getElementsByClassName('canvas-container')[0];
   if (canvasContainer) {
-    canvasContainer.style.width = `${newWidth}px`;
-    canvasContainer.style.height = `${newHeight}px`;
+      canvasContainer.style.width = `${newWidth}px`;
+      canvasContainer.style.height = `${newHeight}px`;
   }
   
-  // Zum Zentrum des Bildes scrollen
-  const centerX = newWidth / 2 - scrollContainer.clientWidth / 2;
-  const centerY = newHeight / 2 - scrollContainer.clientHeight / 2;
-  
-  scrollContainer.scrollLeft = Math.max(0, centerX);
-  scrollContainer.scrollTop = Math.max(0, centerY);
+  // Zum Zentrum des Bildes scrollen ODER Position aus Ansichtsview übernehmen
+  if (imageContainer && scrollContainer) {
+      // Versuche, die Scroll-Position vom Ansichtsview zu übernehmen
+      scrollContainer.scrollLeft = imageContainer.scrollLeft;
+      scrollContainer.scrollTop = imageContainer.scrollTop;
+  } else {
+      // Fallback: Zum Zentrum scrollen
+      const centerX = newWidth / 2 - scrollContainer.clientWidth / 2;
+      const centerY = newHeight / 2 - scrollContainer.clientHeight / 2;
+      
+      scrollContainer.scrollLeft = Math.max(0, centerX);
+      scrollContainer.scrollTop = Math.max(0, centerY);
+  }
   
   // Canvas neu rendern
   canvas.renderAll();
@@ -2324,9 +2446,9 @@ export function setEditorZoom(zoomLevel) {
   window.currentZoom = zoomLevel;
   
   // Zoom-Anzeige aktualisieren, falls vorhanden
-  const resetZoomBtn = document.getElementById('resetZoomBtn');
-  if (resetZoomBtn) {
-    resetZoomBtn.textContent = `${Math.round(zoomLevel * 100)}%`;
+  const editorZoomBtn = document.getElementById('editorResetZoomBtn');
+  if (editorZoomBtn) {
+      editorZoomBtn.textContent = `${Math.round(zoomLevel * 100)}%`;
   }
   
   console.log(`Editor-Zoom gesetzt auf: ${zoomLevel.toFixed(2)}`);
@@ -2368,7 +2490,7 @@ window.FabricHandler = {
   clearAnnotations,
   resetView,
   
-  // Neu: Editor-Initialisierung
+  // Editor-Initialisierung
   initEditor,
   
   // Drawing and editing
@@ -2377,6 +2499,7 @@ window.FabricHandler = {
   disableEditing,
   saveAnnotations,
   cancelEditing,
+  reloadAnnotations,
   
   // Object manipulation
   deleteSelected,
@@ -2395,10 +2518,6 @@ window.FabricHandler = {
   setLabels,
   setLineLabels,
   syncEditorZoom,
-  
-  // Neu: Zoom-Funktionen für den Editor
   setEditorZoom,
-
-  // Aktualisiert die Anzeige der Annotationen nach Edior
-  refreshAnnotations
+  synchronizeZoom
 };

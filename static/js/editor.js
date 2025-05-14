@@ -11,7 +11,7 @@ window.isEditorActive = false;
 let uploadedImage, imageContainer, resultsSection;
 let editorSection, editorToggle;
 
-// Initialize the editor UI controller
+// // Zoom-Dropdown für den Editor
 function initEditor(elements) {
     console.log("Initializing editor UI controller");
     
@@ -126,6 +126,7 @@ function setupEditorButtons() {
 }
 
 // Toggle editor on/off
+// Editor einschalten und speichern oder abbrechen
 function toggleEditor() {
     console.log("Toggling editor, current state:", isEditorActive);
 
@@ -139,6 +140,10 @@ function toggleEditor() {
         // Enable editor
         editorToggle.textContent = 'Editor ausschalten';
         editorToggle.classList.add('active');
+
+        // Aktuelle Zoom-Level speichern zum Debugging
+        const currentGlobalZoom = typeof window.getCurrentZoom === 'function' ? window.getCurrentZoom() : 1.0;
+        console.log(`Aktiviere Editor mit aktuellem Zoom-Level: ${currentGlobalZoom}`);
         
         // Hide results section (the regular image view)
         if (resultsSection) {
@@ -190,7 +195,7 @@ function toggleEditor() {
                     zoomDropdown.className = 'zoom-dropdown';
                     
                     // Zoom-Optionen
-                    const zoomLevels = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
+                    const zoomLevels = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0];
                     
                     zoomLevels.forEach(level => {
                         const option = document.createElement('button');
@@ -199,8 +204,14 @@ function toggleEditor() {
                         option.textContent = `${Math.round(level * 100)}%`;
                         
                         option.addEventListener('click', function() {
-                            window.FabricHandler.setEditorZoom(level);
-                            editorZoomBtn.textContent = this.textContent;
+                            const zoomLevel = parseFloat(this.dataset.zoom);
+                            // Verwende die neue synchronizeZoom-Funktion
+                            if (typeof window.FabricHandler.synchronizeZoom === 'function') {
+                                window.FabricHandler.synchronizeZoom(zoomLevel);
+                            } else {
+                                // Fallback zur alten Methode
+                                window.FabricHandler.setEditorZoom(zoomLevel);
+                            }
                         });
                         
                         zoomDropdown.appendChild(option);
@@ -243,6 +254,13 @@ function toggleEditor() {
                             console.log(`Zeige ${window.data.predictions.length} Annotationen im Editor an...`);
                             window.FabricHandler.displayAnnotations(window.data.predictions);
                             window.FabricHandler.enableEditing();
+                            
+                            // WICHTIG: Explizit den Zoom vom Ansichtsview übernehmen
+                            if (typeof window.FabricHandler.setEditorZoom === 'function' && typeof window.getCurrentZoom === 'function') {
+                                const viewZoom = window.getCurrentZoom();
+                                console.log(`Setze Editor-Zoom auf ${viewZoom} (von Ansichtsview)`);
+                                window.FabricHandler.setEditorZoom(viewZoom);
+                            }
                         }, 300);
                     }
                 }
@@ -256,32 +274,42 @@ function toggleEditor() {
             editorSection.style.display = 'none';
         }
     } else {
-        // Vorheriger Zustand war aktiv, jetzt deaktivieren
-        editorToggle.textContent = 'Editor einschalten';
-        editorToggle.classList.remove('active');
-        editorSection.style.display = 'none';
-        
-        // Änderungen speichern, wenn der Editor aktiv war
-        if (wasEditorActive && typeof window.FabricHandler.saveAnnotations === 'function') {
-            console.log("Speichere Änderungen aus dem Editor");
-            const savedAnnotations = window.FabricHandler.saveAnnotations();
+            // Vorheriger Zustand war aktiv, jetzt deaktivieren
+            editorToggle.textContent = 'Editor einschalten';
+            editorToggle.classList.remove('active');
+            editorSection.style.display = 'none';
             
-            // Annotations im normalen View anzeigen
-            setTimeout(function() {
-                console.log("Zeige Ansicht wieder an mit", 
-                    (window.data && window.data.predictions) ? window.data.predictions.length : 0, "Annotationen");
+            // Änderungen speichern, wenn der Editor aktiv war
+            if (wasEditorActive && typeof window.FabricHandler.saveAnnotations === 'function') {
+                console.log("Speichere Änderungen aus dem Editor");
+                const savedAnnotations = window.FabricHandler.saveAnnotations();
+                
+                // Debug-Ausgabe
+                console.log("DEBUG - Editor wird geschlossen:");
+                console.log("window.data existiert:", !!window.data);
+                console.log("window.data.predictions:", window.data && window.data.predictions ? window.data.predictions.length : 0);
+                console.log("FabricHandler.initCanvas existiert:", typeof window.FabricHandler.initCanvas === 'function');
+                console.log("updateAnnotationsDisplay existiert:", typeof window.updateAnnotationsDisplay === 'function');
+                console.log("displayResults existiert:", typeof window.displayResults === 'function');
+                console.log("getCurrentZoom Wert:", typeof window.getCurrentZoom === 'function' ? window.getCurrentZoom() : "nicht verfügbar");
                 
                 // Normalen View wieder anzeigen
                 if (resultsSection) {
                     resultsSection.style.display = 'block';
                 }
                 
-                // WICHTIG: Canvas explizit neu initialisieren und Annotationen neu zeichnen
-                if (typeof window.FabricHandler.initCanvas === 'function' && window.data && window.data.predictions) {
+                // NEUE METHODE: Verwende die robuste reloadAnnotations-Funktion
+                if (window.FabricHandler && typeof window.FabricHandler.reloadAnnotations === 'function') {
+                    setTimeout(function() {
+                        window.FabricHandler.reloadAnnotations();
+                    }, 300);
+                } 
+                // ALTE METHODEN ALS FALLBACK
+                else if (typeof window.FabricHandler.initCanvas === 'function' && window.data && window.data.predictions) {
+                    window.FabricHandler.clearAnnotations();
                     const canvas = window.FabricHandler.initCanvas();
                     
                     setTimeout(function() {
-                        console.log("Zeichne Annotationen neu in normaler Ansicht");
                         window.FabricHandler.displayAnnotations(window.data.predictions);
                         
                         // Aktuellen Zoom anwenden
@@ -290,7 +318,7 @@ function toggleEditor() {
                             window.FabricHandler.syncEditorZoom(currentZoom);
                         }
                         
-                        // Zusätzlich noch Summary und Tabelle aktualisieren
+                        // Summary und Tabelle aktualisieren
                         if (typeof window.updateSummary === 'function') {
                             window.updateSummary();
                         }
@@ -300,29 +328,26 @@ function toggleEditor() {
                     }, 100);
                 } else if (typeof window.updateAnnotationsDisplay === 'function') {
                     window.updateAnnotationsDisplay();
-                } else if (typeof window.displayResults === 'function' && window.data) {
-                    window.displayResults(window.data);
                 } else {
                     console.warn("Keine Funktion zum Aktualisieren der Ansicht gefunden");
                 }
-            }, 100);
-        } else {
-            // Normale Ansicht ohne Speichern anzeigen
-            if (resultsSection) {
-                resultsSection.style.display = 'block';
-                
-                // Auch hier die Annotationen neu zeichnen
-                setTimeout(function() {
-                    if (window.FabricHandler && window.data && window.data.predictions) {
-                        window.FabricHandler.clearAnnotations();
-                        window.FabricHandler.initCanvas();
-                        window.FabricHandler.displayAnnotations(window.data.predictions);
-                    }
-                }, 100);
+            } else {
+                // Normale Ansicht ohne Speichern anzeigen
+                if (resultsSection) {
+                    resultsSection.style.display = 'block';
+
+                    // Positioniert Annotations nach kurzer Wartezeit an die richtige Position
+                    setTimeout(function() {
+                        if (window.FabricHandler && window.data && window.data.predictions) {
+                            window.FabricHandler.clearAnnotations();
+                            window.FabricHandler.initCanvas();
+                            window.FabricHandler.displayAnnotations(window.data.predictions);
+                        }
+                    }, 100);
+                }
             }
         }
     }
-}
 
 // Handle keyboard shortcuts
 function handleKeyboardShortcuts(e) {

@@ -4,9 +4,10 @@
  */
 
 // Global variables for zoom functionality
+// Achtugn: Für den Editor sind in handleEditorZoom definiert
 window.currentZoom = 1.0;
-window.minZoom = 0.25;
-window.maxZoom = 6.0;
+window.minZoom = 0.5;
+window.maxZoom = 4.0;
 window.zoomStep = 0.25;
 
 // DOM references - will be initialized when setupZoom is called
