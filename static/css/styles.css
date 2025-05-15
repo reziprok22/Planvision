@@ -1254,3 +1254,39 @@ tr:nth-child(even) {
   .editing-mode #annotationCanvas {
     border: 2px solid #ec971f; /* Visuelles Feedback, dass der Bearbeitungsmodus aktiv ist */
   }
+
+/* Sorge dafür, dass der Canvas im Bearbeitungsmodus interaktiv ist */
+.editing-mode .canvas-container {
+  z-index: 10 !important;
+  pointer-events: auto !important;
+}
+
+.editing-mode #annotationCanvas {
+  pointer-events: auto !important;
+}
+
+/* Stelle sicher, dass Canvas-Container keine Pointer-Events blockiert */
+#imageContainer .canvas-container {
+  pointer-events: auto !important; /* Immer aktiv */
+}
+
+/* WICHTIG: Überschreibe jegliche Styles, die Maus-Events blockieren könnten */
+.canvas-container {
+  pointer-events: auto !important;
+}
+
+/* Stile für den Editor-Modus */
+.editing-mode {
+  cursor: default;
+}
+
+/* Stile für aktive Kontrollelemente */
+.canvas-container .upper-canvas {
+  cursor: default !important;
+}
+
+/* Kontrollelemente besser sichtbar machen */
+.canvas-container .controls {
+  border-color: rgba(82, 82, 255, 0.8) !important;
+  background-color: rgba(82, 82, 255, 0.1) !important;
+}

@@ -72,7 +72,15 @@ export function initCanvas() {
   
   // Initialize Fabric.js canvas
   canvas = new fabric.Canvas('annotationCanvas');
-  
+
+  canvas.selection = true;
+  canvas.defaultCursor = 'default';
+  canvas.hoverCursor = 'move';
+  canvas.moveCursor = 'move';
+  canvas.rotationCursor = 'crosshair';
+  canvas.altActionKey = 'shift'; // Shift statt Alt für Multiselektion
+  canvas.preserveObjectStacking = true; // Stapelreihenfolge beibehalten
+    
   // Set canvas size to match the NATURAL size of the image
   const naturalWidth = uploadedImage.naturalWidth;
   const naturalHeight = uploadedImage.naturalHeight;
@@ -1029,43 +1037,6 @@ export function displayAnnotations(predictions) {
   console.log(`Canvas now has ${canvas.getObjects().length} objects`);
 }
 
-// Neue Funktion zum Zentrieren des Canvas auf die Annotationen
-function centerCanvas() {
-  if (!canvas) return;
-  
-  // Finde die Grenzen aller Objekte
-  const objects = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  if (objects.length === 0) return;
-  
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  
-  objects.forEach(obj => {
-    const bounds = obj.getBoundingRect();
-    minX = Math.min(minX, bounds.left);
-    minY = Math.min(minY, bounds.top);
-    maxX = Math.max(maxX, bounds.left + bounds.width);
-    maxY = Math.max(maxY, bounds.top + bounds.height);
-  });
-  
-  // Berechne Zentrum der Annotationen
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  
-  // Finde den Container
-  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-  if (!canvasContainer) return;
-  
-  // Berechne die Position zum Scrollen
-  const containerWidth = canvasContainer.clientWidth;
-  const containerHeight = canvasContainer.clientHeight;
-  
-  // Setze Scroll-Position, um Annotationen zu zentrieren
-  canvasContainer.scrollLeft = centerX * canvas.getZoom() - containerWidth / 2;
-  canvasContainer.scrollTop = centerY * canvas.getZoom() - containerHeight / 2;
-  
-  console.log(`Centered canvas at ${centerX},${centerY} with zoom ${canvas.getZoom()}`);
-}
-
 /**
  * Convert annotations from fabric.js objects back to prediction format
  * @returns {Array} Array of prediction objects
@@ -1368,27 +1339,129 @@ export function toggleObjectsByLabel(labelId, isVisible) {
 /**
  * Enable object selection and editing
  */
+// In fabric-handler.js
 export function enableEditing() {
-  if (!canvas) return;
+  if (!canvas) {
+    console.error("Canvas ist nicht initialisiert!");
+    return;
+  }
   
-  // Enable object selection
-  canvas.forEachObject(function(obj) {
-    if (obj.objectType === 'annotation') {
-      obj.selectable = true;
-      obj.evented = true;
-      obj.hasControls = true;
-      obj.hasBorders = true;
-    }
-  });
+  console.log("Aktiviere Bearbeitungsmodus");
   
-  // Allow selection, movement, scaling, rotation
+  // ENTSCHEIDEND: Interaktivität des Canvas aktivieren
   canvas.selection = true;
-  
-  // Update cursor
+  canvas.interactive = true;
   canvas.defaultCursor = 'default';
   canvas.hoverCursor = 'move';
   
+  // Alle Objekte bearbeitbar machen
+  canvas.forEachObject(function(obj) {
+    if (obj.objectType === 'annotation') {
+      obj.set({
+        selectable: true,
+        evented: true,
+        hasControls: true,
+        hasBorders: true,
+        lockMovementX: false,
+        lockMovementY: false,
+        lockScalingX: false,
+        lockScalingY: false,
+        lockRotation: false
+      });
+      console.log(`Objekt ${obj.annotationIndex} bearbeitbar gemacht`);
+    }
+  });
+  
+  // Canvas-Container konfigurieren
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    canvasContainer.style.pointerEvents = 'auto';
+    canvasContainer.style.zIndex = '10';
+    console.log("Canvas-Container konfiguriert");
+  } else {
+    console.warn("Canvas-Container nicht gefunden!");
+  }
+  
+  // Bild-Events deaktivieren
+  const uploadedImage = document.getElementById('uploadedImage');
+  if (uploadedImage) {
+    uploadedImage.style.pointerEvents = 'none';
+    console.log("Bild-Events deaktiviert");
+  }
+  
+  // KRITISCH: Stellen Sie sicher, dass Upper Canvas Maus-Events empfängt
+  const upperCanvas = document.querySelector('.upper-canvas');
+  if (upperCanvas) {
+    upperCanvas.style.pointerEvents = 'auto';
+    console.log("Upper Canvas Interaktionen aktiviert");
+  }
+  
+  // HINZUFÜGEN: Event-Listener explizit einstellen
+  setupEditingEventListeners();
+  
+  // Neu rendern
   canvas.renderAll();
+  
+  console.log("Bearbeitungsmodus aktiviert");
+}
+
+// Neue Hilfsfunktion für Event-Listener
+function setupEditingEventListeners() {
+  if (!canvas) return;
+  
+  // Bestehende Listener entfernen
+  canvas.off('mouse:down');
+  canvas.off('mouse:move');
+  canvas.off('mouse:up');
+  canvas.off('object:moving');
+  canvas.off('object:scaling');
+  
+  // Neue Listener hinzufügen
+  canvas.on('mouse:down', function(opt) {
+    console.log('Canvas mouse:down', opt);
+  });
+  
+  canvas.on('object:moving', function(opt) {
+    console.log('Object moving:', opt.target.annotationIndex);
+    
+    // Label mitbewegen
+    if (opt.target.objectType === 'annotation') {
+      const index = opt.target.annotationIndex;
+      
+      // Suche Label mit gleichem Index
+      canvas.forEachObject(function(obj) {
+        if (obj.objectType === 'label' && obj.annotationIndex === index) {
+          obj.set({
+            left: opt.target.left,
+            top: opt.target.top - 20
+          });
+        }
+      });
+    }
+  });
+  
+  canvas.on('object:scaling', function(opt) {
+    console.log('Object scaling:', opt.target.annotationIndex);
+    
+    // Area neu berechnen
+    if (opt.target.objectType === 'annotation' && opt.target.annotationType === 'rectangle') {
+      const area = calculateRectangleArea(opt.target.width * opt.target.scaleX, 
+                                         opt.target.height * opt.target.scaleY);
+      opt.target.area = area;
+      
+      // Label aktualisieren
+      const index = opt.target.annotationIndex;
+      canvas.forEachObject(function(obj) {
+        if (obj.objectType === 'label' && obj.annotationIndex === index) {
+          obj.set({
+            text: `#${index + 1}: ${area.toFixed(2)} m²`
+          });
+        }
+      });
+    }
+  });
+  
+  console.log("Bearbeitungs-Event-Listener eingerichtet");
 }
 
 /**
@@ -2321,89 +2394,25 @@ export function cancelEditing() {
   disableEditing();
 }
 
-/**
- * Debug-Funktion zur Überprüfung und Reparatur des Canvas-Zustands
- */
-export function debugEditor() {
-  console.log("=== EDITOR DEBUG ===");
+// In fabric-handler.js hinzufügen (NICHT in main.js)
+export function debugEditorState() {
+  console.group("Editor Zustand Debug");
   
-  // Canvas-Zustand überprüfen
+  // Hier auf die canvas-Variable des Moduls zugreifen
   if (!canvas) {
     console.error("Canvas ist nicht initialisiert!");
-    return false;
+    console.groupEnd();
+    return "Canvas nicht initialisiert";
   }
   
-  // Canvas-Dimensionen ausgeben
-  console.log(`Canvas Dimensionen: ${canvas.width} x ${canvas.height}`);
-  console.log(`Canvas Zoom: ${canvas.getZoom()}`);
+  console.log("Canvas:", canvas);
+  console.log("Canvas Zoom:", canvas.getZoom());
+  console.log("Anzahl Objekte:", canvas.getObjects().length);
   
-  // Objekte auf dem Canvas zählen
-  const objects = canvas.getObjects();
-  console.log(`Canvas hat ${objects.length} Objekte`);
+  // Weitere Debug-Ausgaben...
   
-  // Objekte nach Typ gruppieren
-  const annotations = objects.filter(obj => obj.objectType === 'annotation');
-  const labels = objects.filter(obj => obj.objectType === 'label');
-  
-  console.log(`Davon sind ${annotations.length} Annotationen und ${labels.length} Labels`);
-  
-  // Beispielhaft erstes Objekt ausgeben, falls vorhanden
-  if (annotations.length > 0) {
-    const firstAnnotation = annotations[0];
-    console.log("Erste Annotation:", {
-      type: firstAnnotation.annotationType,
-      position: `(${firstAnnotation.left}, ${firstAnnotation.top})`,
-      size: `${firstAnnotation.width} x ${firstAnnotation.height}`,
-      label: firstAnnotation.labelId,
-      visible: firstAnnotation.visible,
-      selectable: firstAnnotation.selectable
-    });
-  }
-  
-  // Versuchen, Zoom zu korrigieren und Annotationen zu zentrieren
-  try {
-    // Zoom auf vernünftigen Wert setzen
-    const newZoom = Math.min(Math.max(0.25, canvas.getZoom()), 1.0);
-    if (newZoom !== canvas.getZoom()) {
-      console.log(`Korrigiere Zoom von ${canvas.getZoom()} auf ${newZoom}`);
-      canvas.setZoom(newZoom);
-    }
-    
-    // Annotationen zentrieren
-    if (annotations.length > 0) {
-      // Grenzen aller Annotationen berechnen
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      
-      annotations.forEach(obj => {
-        minX = Math.min(minX, obj.left || 0);
-        minY = Math.min(minY, obj.top || 0);
-        maxX = Math.max(maxX, (obj.left || 0) + (obj.width || 0));
-        maxY = Math.max(maxY, (obj.top || 0) + (obj.height || 0));
-      });
-      
-      const centerX = (minX + maxX) / 2;
-      const centerY = (minY + maxY) / 2;
-      
-      // Zum Zentrum scrollen
-      const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-      if (canvasContainer) {
-        const scrollX = centerX * newZoom - canvasContainer.clientWidth / 2;
-        const scrollY = centerY * newZoom - canvasContainer.clientHeight / 2;
-        
-        console.log(`Scrolle zu (${centerX}, ${centerY}), Scroll-Position: (${scrollX}, ${scrollY})`);
-        canvasContainer.scrollLeft = scrollX;
-        canvasContainer.scrollTop = scrollY;
-      }
-    }
-    
-    // Canvas rendern
-    canvas.renderAll();
-    
-    return true;
-  } catch (err) {
-    console.error("Fehler beim Reparieren des Canvas:", err);
-    return false;
-  }
+  console.groupEnd();
+  return "Debug-Informationen in der Konsole ausgegeben";
 }
 
 /**
@@ -2570,6 +2579,38 @@ window.FabricHandler = {
   synchronizeZoom
 };
 
+export function fixCanvasEvents() {
+  if (!canvas) return;
+  
+  console.log("Fixing canvas events");
+  
+  // Event-Handler neu registrieren
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (canvasContainer) {
+    // Versuche, Event-Probleme zu beheben, indem du sicherstellst, dass
+    // die Pointer-Events nicht blockiert werden
+    canvasContainer.style.pointerEvents = 'auto';
+    
+    // Stelle sicher, dass Events nicht abgefangen werden
+    canvasContainer.addEventListener('mousedown', function(e) {
+      // Verhindern, dass der Event gestoppt wird
+      e.stopPropagation = function() { return false; };
+    }, true);
+  }
+  
+  // Stelle sicher, dass der Canvas selbst Maus-Events empfängt
+  const upperCanvas = document.getElementsByClassName('upper-canvas')[0];
+  if (upperCanvas) {
+    upperCanvas.style.pointerEvents = 'auto';
+  }
+  
+  // Canvas neu rendern
+  canvas.renderAll();
+  
+  return "Canvas events fixed";
+}
+
+
 /**
  * Editor-Zoom auf einen bestimmten Wert setzen
  * @param {number} zoomLevel - Der Zoom-Faktor
@@ -2664,62 +2705,6 @@ export function refreshAnnotations() {
   }
 }
 
-export function debugAnnotationsTransfer() {
-  console.group("Annotation Transfer Debug");
-  
-  // 1. Überprüfe die in window.data gespeicherten Annotationen
-  console.log("window.data existiert:", !!window.data);
-  console.log("window.data.predictions Länge:", window.data?.predictions?.length || 0);
-  
-  if (window.data && window.data.predictions && window.data.predictions.length > 0) {
-      console.log("Beispiel-Annotation aus window.data.predictions:", window.data.predictions[0]);
-  }
-  
-  // 2. Überprüfe die aktuellen Canvas-Objekte
-  if (canvas) {
-      const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-      console.log("Anzahl der Annotations im Canvas:", annotations.length);
-      
-      if (annotations.length > 0) {
-          console.log("Beispiel-Annotation aus Canvas:", annotations[0]);
-      }
-  } else {
-      console.log("Canvas ist nicht initialisiert!");
-  }
-  
-  // 3. Vergleiche die Struktur der Daten
-  if (window.data && window.data.predictions && window.data.predictions.length > 0 && canvas) {
-      const canvasAnnotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-      
-      if (canvasAnnotations.length > 0) {
-          const dataAnnotation = window.data.predictions[0];
-          const canvasAnnotation = canvasAnnotations[0];
-          
-          console.log("Vergleich der ersten Annotation:");
-          console.log("window.data Format:", Object.keys(dataAnnotation));
-          console.log("Canvas Object Format:", Object.keys(canvasAnnotation));
-          
-          // Prüfe, ob wesentliche Attribute vorhanden sind
-          if (dataAnnotation.type === 'rectangle' || dataAnnotation.box) {
-              console.log("Rechteck - Box vorhanden:", !!dataAnnotation.box);
-              console.log("Rechteck - Area vorhanden:", !!dataAnnotation.area);
-          } else if (dataAnnotation.type === 'polygon') {
-              console.log("Polygon - Punkte vorhanden:", !!(dataAnnotation.polygon || dataAnnotation.points));
-              console.log("Polygon - Area vorhanden:", !!dataAnnotation.area);
-          } else if (dataAnnotation.type === 'line') {
-              console.log("Linie - Punkte vorhanden:", !!(dataAnnotation.line || dataAnnotation.points));
-              console.log("Linie - Länge vorhanden:", !!dataAnnotation.length);
-          }
-      }
-  }
-  
-  console.groupEnd();
-  
-  return "Debug-Informationen wurden in der Konsole ausgegeben";
-}
-
-
-
 // Expose functions through window.FabricHandler
 window.FabricHandler = {
   // Canvas management
@@ -2727,7 +2712,6 @@ window.FabricHandler = {
   getCanvas,
   clearAnnotations,
   resetView,
-  
   
   // Drawing and editing
   enableDrawingMode,
@@ -2759,5 +2743,6 @@ window.FabricHandler = {
   synchronizeZoom,
 
   // debug
-  debugAnnotationsTransfer
+  fixCanvasEvents, // Prüfen ist evtl. nicht nur debug.
+  debugEditorState
 };
