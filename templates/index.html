@@ -5,52 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fenster-Erkennungstool</title>
     <link rel="stylesheet" href="static/css/styles.css">
-    <style>
-        /* Editor-spezifische Styles */
-        .annotation-controls {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 10px;
-        }
-        
-        .editor-tools {
-            display: flex;
-            gap: 5px;
-            align-items: center;
-        }
-        
-        .tool-group {
-            display: flex;
-            gap: 2px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            overflow: hidden;
-        }
-        
-        .tool-button {
-            padding: 8px 12px;
-            background: white;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background 0.2s;
-        }
-        
-        .tool-button:hover {
-            background: #f0f0f0;
-        }
-        
-        .tool-button.active {
-            background: #007bff;
-            color: white;
-        }
-        
-        .toggle-button.active {
-            background: #28a745;
-            color: white;
-        }
-    </style>
 </head>
 <body>
     
@@ -109,6 +63,73 @@
                     <button type="submit" id="analyzeBtn">Plan analysieren</button>
                 </form>
 
+                <!-- Label Management Section -->
+                <div class="project-section">
+                    <h2 class="project-title">Label-Verwaltung</h2>
+                    <div class="project-buttons">
+                        <div class="tooltip">
+                            <button id="manageLabelBtn" class="project-button">Labels verwalten</button>
+                            <span class="tooltiptext">Label-Kategorien hinzufügen, bearbeiten oder löschen</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal für Label-Verwaltung -->
+                <div id="labelManagerModal" class="modal">
+                    <div class="modal-content">
+                        <span class="close">&times;</span>
+                        <h3>Labels verwalten</h3>
+
+                        <div class="label-tabs">
+                            <button id="areaLabelsTab" class="label-tab active">Flächen-Labels</button>
+                            <button id="lineLabelsTab" class="label-tab">Linien-Labels</button>
+                        </div>
+                        
+                        <div class="label-manager-container">
+                            <div class="label-list">
+                                <table id="labelTable">
+                                    <thead>
+                                        <tr>
+                                            <th>ID</th>
+                                            <th>Name</th>
+                                            <th>Farbe</th>
+                                            <th>Aktionen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="labelTableBody">
+                                        <!-- Hier werden die Labels dynamisch eingefügt -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="label-actions">
+                                <button id="addLabelBtn" class="editor-button">Neues Label</button>
+                                <button id="importLabelsBtn" class="editor-button">Labels importieren</button>
+                                <button id="exportLabelsBtn" class="editor-button">Labels exportieren</button>
+                                <button id="resetLabelsBtn" class="editor-button">Auf Standard zurücksetzen</button>
+                            </div>
+                            
+                            <!-- Formular für neues/zu bearbeitendes Label -->
+                            <div id="labelForm" class="label-form" style="display:none;">
+                                <h4 id="labelFormTitle">Label hinzufügen</h4>
+                                <input type="hidden" id="labelId">
+                                <div class="form-group">
+                                    <label for="labelName">Name:</label>
+                                    <input type="text" id="labelName" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="labelColor">Farbe:</label>
+                                    <input type="color" id="labelColor" required>
+                                </div>
+                                <div class="form-actions">
+                                    <button id="saveLabelBtn" class="save-button">Speichern</button>
+                                    <button id="cancelLabelBtn" class="cancel-button">Abbrechen</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="loader" id="loader"></div>
                 <div id="errorMessage"></div>
             </div>
@@ -145,7 +166,7 @@
                 <!-- Editor und Zoom-Kontrollen -->
                 <div class="annotation-controls">
                   <!-- Editor-Toggle -->
-                  <div class="editor-toggle">
+                  <div>
                     <button id="toggleEditorBtn" class="toggle-button">📝 Editor aktivieren</button>
                   </div>
                   
@@ -159,6 +180,17 @@
                     <div class="tool-group">
                       <button id="selectTool" class="tool-button" data-tool="select" title="Auswählen">👆</button>
                       <button id="deleteTool" class="tool-button" data-tool="delete" title="Löschen">🗑️</button>
+                    </div>
+                    
+                    <!-- Universelles Label-Dropdown -->
+                    <div class="label-selection-group">
+                      <select id="universalLabelSelect" class="universal-label-select">
+                        <option value="1">Fenster</option>
+                        <option value="2">Tür</option>
+                        <option value="3">Wand</option>
+                        <option value="4">Lukarne</option>
+                        <option value="5">Dach</option>
+                      </select>
                     </div>
                   </div>
                   
@@ -176,6 +208,11 @@
                   </div>
                 </div>
                 
+                <!-- Legende für Labels -->
+                <div class="legend">
+                  <!-- Labels werden hier dynamisch eingefügt -->
+                </div>
+                
                 <!-- Vereinfachter Container für Bild und Canvas -->
                 <div id="imageContainer">
                   <img id="uploadedImage" src="" alt="Hochgeladener Plan">
@@ -188,7 +225,7 @@
     <!-- Fabric.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
     
-    <!-- Main application script -->
-    <script src="static/js/main.js"></script>
+    <!-- Main application script with ES6 modules -->
+    <script type="module" src="static/js/main.js"></script>
 </body>
 </html>

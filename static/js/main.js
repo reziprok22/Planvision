@@ -3,6 +3,10 @@
  * Core functionality: Upload, Predict, Annotation Display, Drawing Tools, Zoom
  */
 
+// Import modules
+import * as ZoomManager from './zoom-manager.js';
+import { setupLabels, updateUIForLabels, getAreaLabels, getLabelById, getLabelName, getLabelColor } from './labels.js';
+
 // Fabric.js text baseline patch
 if (typeof fabric !== 'undefined') {
   const originalInitialize = fabric.Text.prototype.initialize;
@@ -20,7 +24,6 @@ window.data = null;
 let canvas = null;
 let imageContainer = null;
 let uploadedImage = null;
-let currentZoom = 1.0;
 
 // Editor state
 let isEditorActive = false;
@@ -35,15 +38,25 @@ let currentLine = null;
 // Event timing control
 let isProcessingClick = false;
 
-// Standard Labels (fest codiert)
-const LABELS = {
-  0: { name: "Andere", color: "#808080" },
-  1: { name: "Fenster", color: "#0000FF" },
-  2: { name: "Tür", color: "#FF0000" },
-  3: { name: "Wand", color: "#D4D638" },
-  4: { name: "Lukarne", color: "#FFA500" },
-  5: { name: "Dach", color: "#800080" }
-};
+// Dynamic Labels (replaced by labels.js functionality)
+function getLabel(labelId) {
+  // Try to get from dynamic labels first
+  const dynamicLabel = getLabelById(labelId, 'area');
+  if (dynamicLabel) {
+    return { name: dynamicLabel.name, color: dynamicLabel.color };
+  }
+  
+  // Fallback to hardcoded labels if dynamic labels not available
+  const FALLBACK_LABELS = {
+    0: { name: "Andere", color: "#808080" },
+    1: { name: "Fenster", color: "#0000FF" },
+    2: { name: "Tür", color: "#FF0000" },
+    3: { name: "Wand", color: "#D4D638" },
+    4: { name: "Lukarne", color: "#FFA500" },
+    5: { name: "Dach", color: "#800080" }
+  };
+  return FALLBACK_LABELS[labelId] || FALLBACK_LABELS[0];
+}
 
 
 /**
@@ -104,7 +117,8 @@ function initCanvas() {
   canvas.setWidth(displayedWidth);
   canvas.setHeight(displayedHeight);
   
-  // Kein Canvas-Zoom mehr nötig - Canvas ist 1:1 mit angezeigtem Bild
+  // Canvas zoom wird vom ZoomManager gehandhabt
+  const currentZoom = window.getCurrentZoom ? window.getCurrentZoom() : 1.0;
   canvas.setZoom(currentZoom);
   console.log(`Canvas zoom set to: ${currentZoom}`);
   
@@ -116,12 +130,15 @@ function initCanvas() {
     setupCanvasEvents();
   }
   
+  // Inform zoom manager about new canvas
+  ZoomManager.setCanvas(canvas);
+  
   console.log("Canvas initialized successfully");
   return canvas;
 }
 
 /**
- * Update canvas position to match image - Simplified for Fabric.js
+ * Update canvas position to match image - Compatible with zoom-manager
  */
 function updateCanvasPosition() {
   if (!canvas || !imageContainer || !uploadedImage) return;
@@ -146,6 +163,9 @@ function updateCanvasPosition() {
   
   // Always enable pointer events
   canvasWrapper.style.pointerEvents = 'auto';
+  
+  // Make compatible with zoom-manager by adding canvas-container class
+  canvasWrapper.classList.add('canvas-container');
   
   console.log(`Canvas positioned: ${relLeft}, ${relTop}, ${imageRect.width}x${imageRect.height}`);
 }
@@ -222,7 +242,7 @@ function displayAnnotations(predictions) {
       
       // Get label info
       const labelId = pred.label || 0;
-      const label = LABELS[labelId] || LABELS[0];
+      const label = getLabel(labelId);
       
       console.log(`Creating rectangle: natural(${x1},${y1} ${x2-x1}x${y2-y1}) -> canvas(${canvasX1.toFixed(1)},${canvasY1.toFixed(1)} ${canvasWidth.toFixed(1)}x${canvasHeight.toFixed(1)}), label: ${label.name}`);
       
@@ -238,6 +258,8 @@ function displayAnnotations(predictions) {
         objectType: 'annotation',
         annotationType: 'rectangle',
         annotationIndex: index,
+        labelId: labelId,
+        objectLabel: labelId,
         selectable: isEditorActive && currentTool === 'select',
         evented: isEditorActive && currentTool === 'select'
       });
@@ -280,33 +302,6 @@ function displayAnnotations(predictions) {
   }
 }
 
-/**
- * Simple zoom functionality
- */
-function setZoom(zoomLevel) {
-  console.log(`=== SETTING ZOOM TO ${zoomLevel} ===`);
-  
-  currentZoom = Math.max(0.1, Math.min(5.0, zoomLevel));
-  
-  // Zoom image
-  uploadedImage.style.transform = `scale(${currentZoom})`;
-  uploadedImage.style.transformOrigin = 'top left';
-  
-  // Zoom canvas - einfach da Canvas = angezeigte Bildgröße
-  if (canvas) {
-    console.log(`Updating canvas zoom to: ${currentZoom}`);
-    canvas.setZoom(currentZoom);
-    updateCanvasPosition();
-  }
-  
-  // Update zoom button text
-  const zoomBtn = document.getElementById('resetZoomBtn');
-  if (zoomBtn) {
-    zoomBtn.textContent = `${Math.round(currentZoom * 100)}%`;
-  }
-  
-  console.log(`Zoom set to ${currentZoom}`);
-}
 
 /**
  * Update results table (simplified)
@@ -318,7 +313,7 @@ function updateResultsTable() {
   resultsBody.innerHTML = '';
   
   window.data.predictions.forEach((pred, index) => {
-    const label = LABELS[pred.label || 0] || LABELS[0];
+    const label = getLabel(pred.label || 0);
     // Use the correctly calculated area, fallback to original API area if not available
     const area = pred.calculatedArea ? `${pred.calculatedArea.toFixed(2)} m²` : 
                  pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
@@ -347,28 +342,27 @@ function updateSummary() {
   
   window.data.predictions.forEach(pred => {
     const labelId = pred.label || 0;
+    const label = getLabel(labelId);
     // Use the correctly calculated area, fallback to original API area if not available
     const area = pred.calculatedArea || pred.area || 0;
     
-    switch (labelId) {
-      case 1: counts.fenster++; areas.fenster += area; break;
-      case 2: counts.tuer++; areas.tuer += area; break;
-      case 3: counts.wand++; areas.wand += area; break;
-      case 4: counts.lukarne++; areas.lukarne += area; break;
-      case 5: counts.dach++; areas.dach += area; break;
-      default: counts.other++; areas.other += area; break;
+    // Create dynamic counting based on label names
+    const labelKey = label.name.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/\s+/g, '_');
+    if (!counts[labelKey]) {
+      counts[labelKey] = 0;
+      areas[labelKey] = 0;
     }
+    counts[labelKey]++;
+    areas[labelKey] += area;
   });
   
   let summaryHtml = '';
   Object.entries(counts).forEach(([key, count]) => {
     if (count > 0) {
-      const labelName = key === 'fenster' ? 'Fenster' : 
-                       key === 'tuer' ? 'Türen' :
-                       key === 'wand' ? 'Wände' :
-                       key === 'lukarne' ? 'Lukarnen' :
-                       key === 'dach' ? 'Dächer' : 'Andere';
-      summaryHtml += `<p>${labelName}: <strong>${count}</strong> (${areas[key].toFixed(2)} m²)</p>`;
+      // Convert key back to readable name
+      const labelName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      const pluralName = count > 1 ? (labelName.endsWith('e') ? labelName + 'n' : labelName) : labelName;
+      summaryHtml += `<p>${pluralName}: <strong>${count}</strong> (${areas[key].toFixed(2)} m²)</p>`;
     }
   });
   
@@ -405,8 +399,10 @@ function clearResults() {
     canvas.clear();
   }
   
-  // Reset zoom
-  setZoom(1.0);
+  // Reset zoom (if zoom manager available)
+  if (window.resetZoom) {
+    window.resetZoom();
+  }
   
   console.log("Results cleared");
 }
@@ -540,18 +536,27 @@ function setupCanvasEvents() {
     if (!isEditorActive) return;
     selectedObjects = e.selected || [];
     console.log('Objects selected:', selectedObjects.length);
+    if (currentTool === 'select' && selectedObjects.length > 0) {
+      updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
+    }
   });
   
   canvas.on('selection:updated', function(e) {
     if (!isEditorActive) return;
     selectedObjects = e.selected || [];
     console.log('Selection updated:', selectedObjects.length);
+    if (currentTool === 'select' && selectedObjects.length > 0) {
+      updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
+    }
   });
   
   canvas.on('selection:cleared', function(e) {
     if (!isEditorActive) return;
     selectedObjects = [];
     console.log('Selection cleared');
+    if (currentTool === 'select') {
+      updateUniversalLabelDropdown(currentTool);
+    }
   });
   
   console.log('Fabric.js canvas events setup complete');
@@ -579,6 +584,9 @@ function setTool(toolName) {
   // Reset all drawing states
   resetAllDrawingStates();
   
+  // Update universal label dropdown based on tool
+  updateUniversalLabelDropdown(toolName);
+  
   // Update canvas selection mode
   if (canvas) {
     if (toolName === 'select') {
@@ -600,9 +608,65 @@ function setTool(toolName) {
         obj.selectable = false;
         obj.evented = false;
       });
+      // Clear selection when switching away from select tool
     }
     canvas.renderAll();
   }
+}
+
+/**
+ * Update universal label dropdown based on current tool and selection
+ */
+function updateUniversalLabelDropdown(toolName, selectedObject = null) {
+  const universalLabelSelect = document.getElementById('universalLabelSelect');
+  if (!universalLabelSelect) return;
+  
+  // Determine if we're dealing with line or area labels
+  const isLineTool = toolName === 'line';
+  const isLineObject = selectedObject && selectedObject.annotationType === 'line';
+  const useLineLabels = isLineTool || isLineObject;
+  
+  // Get appropriate labels
+  const labels = useLineLabels ? 
+    (typeof window.currentLineLabels !== 'undefined' ? window.currentLineLabels : [
+      { id: 1, name: "Strecke" },
+      { id: 2, name: "Höhe" },
+      { id: 3, name: "Breite" },
+      { id: 4, name: "Abstand" }
+    ]) :
+    (typeof window.currentLabels !== 'undefined' ? window.currentLabels : [
+      { id: 1, name: "Fenster" },
+      { id: 2, name: "Tür" },
+      { id: 3, name: "Wand" },
+      { id: 4, name: "Lukarne" },
+      { id: 5, name: "Dach" }
+    ]);
+  
+  // Remember current selection
+  const currentValue = universalLabelSelect.value;
+  
+  // Clear and repopulate dropdown
+  universalLabelSelect.innerHTML = '';
+  labels.forEach(label => {
+    const option = document.createElement('option');
+    option.value = label.id;
+    option.textContent = label.name;
+    universalLabelSelect.appendChild(option);
+  });
+  
+  // Set selection based on context
+  if (selectedObject && selectedObject.labelId) {
+    // Use object's current label
+    universalLabelSelect.value = selectedObject.labelId;
+  } else if (universalLabelSelect.querySelector(`option[value="${currentValue}"]`)) {
+    // Restore previous selection if still valid
+    universalLabelSelect.value = currentValue;
+  } else {
+    // Default to first option
+    universalLabelSelect.value = labels[0].id;
+  }
+  
+  console.log(`Updated universal dropdown for ${useLineLabels ? 'line' : 'area'} labels, selected: ${universalLabelSelect.value}`);
 }
 
 /**
@@ -707,15 +771,23 @@ function finishDrawingRectangle() {
   if (currentPath.width < 10 || currentPath.height < 10) {
     canvas.remove(currentPath);
   } else {
-    // Make rectangle selectable
+    // Get selected label
+    const selectedLabelId = getCurrentSelectedLabel('area');
+    const label = getLabel(selectedLabelId);
+    
+    // Update rectangle with correct label and colors
     currentPath.set({
       selectable: true,
-      evented: true
+      evented: true,
+      labelId: selectedLabelId,
+      objectLabel: selectedLabelId,
+      fill: label.color + '20', // 20% opacity
+      stroke: label.color
     });
     
-    // Calculate area (example)
+    // Calculate area
     const area = calculateRectangleArea(currentPath);
-    console.log(`Rectangle created with area: ${area.toFixed(2)} m²`);
+    console.log(`Rectangle created with area: ${area.toFixed(2)} m², Label: ${label.name}`);
   }
   
   drawingMode = false;
@@ -796,6 +868,59 @@ function deleteSelectedObjects() {
   selectedObjects = [];
   canvas.renderAll();
   console.log('Selected objects deleted');
+}
+
+/**
+ * Get currently selected label ID from universal dropdown
+ */
+function getCurrentSelectedLabel(type = 'area') {
+  const universalLabelSelect = document.getElementById('universalLabelSelect');
+  return universalLabelSelect ? parseInt(universalLabelSelect.value) : 1;
+}
+
+/**
+ * Apply label change to currently selected object
+ */
+function applyLabelChangeToSelectedObject() {
+  if (!canvas || selectedObjects.length === 0) return;
+  
+  const universalLabelSelect = document.getElementById('universalLabelSelect');
+  if (!universalLabelSelect) return;
+  
+  const newLabelId = parseInt(universalLabelSelect.value);
+  const selectedObject = selectedObjects[0];
+  
+  // Update object properties
+  selectedObject.labelId = newLabelId;
+  selectedObject.objectLabel = newLabelId;
+  
+  // Determine label type based on object
+  const isLineObject = selectedObject.annotationType === 'line';
+  
+  // Get new label info
+  let label;
+  if (isLineObject && typeof getLabelById !== 'undefined') {
+    const lineLabel = getLabelById(newLabelId, 'line');
+    label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
+  } else {
+    label = getLabel(newLabelId);
+  }
+  
+  // Update visual appearance
+  if (isLineObject) {
+    selectedObject.set({
+      stroke: label.color
+    });
+  } else {
+    selectedObject.set({
+      fill: label.color + '20', // 20% opacity
+      stroke: label.color
+    });
+  }
+  
+  canvas.renderAll();
+  
+  console.log(`Label changed to: ${label.name} (ID: ${newLabelId}) for ${isLineObject ? 'line' : 'area'} object`);
 }
 
 /**
@@ -893,15 +1018,23 @@ function finishPolygonDrawing() {
   
   console.log(`Polygon finished with ${currentPoints.length} points`);
   
-  // Make polygon selectable
+  // Get selected label
+  const selectedLabelId = getCurrentSelectedLabel('area');
+  const label = getLabel(selectedLabelId);
+  
+  // Make polygon selectable and apply label
   currentPolygon.set({
     selectable: true,
-    evented: true
+    evented: true,
+    labelId: selectedLabelId,
+    objectLabel: selectedLabelId,
+    fill: label.color + '20', // 20% opacity
+    stroke: label.color
   });
   
   // Calculate area
   const area = calculatePolygonArea(currentPoints);
-  console.log(`Polygon created with area: ${area.toFixed(2)} m²`);
+  console.log(`Polygon created with area: ${area.toFixed(2)} m², Label: ${label.name}`);
   
   resetPolygonDrawing();
 }
@@ -1002,15 +1135,24 @@ function finishLineDrawing() {
   
   console.log('Line finished');
   
-  // Make line selectable
+  // Get selected label
+  const selectedLabelId = getCurrentSelectedLabel('line');
+  const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
+  const labelColor = lineLabel ? lineLabel.color : '#FF0000';
+  const labelName = lineLabel ? lineLabel.name : 'Strecke';
+  
+  // Make line selectable and apply label
   currentLine.set({
     selectable: true,
-    evented: true
+    evented: true,
+    labelId: selectedLabelId,
+    objectLabel: selectedLabelId,
+    stroke: labelColor
   });
   
   // Calculate length
   const length = calculateLineLength(currentPoints[0], currentPoints[1]);
-  console.log(`Line created with length: ${length.toFixed(2)} m`);
+  console.log(`Line created with length: ${length.toFixed(2)} m, Label: ${labelName}`);
   
   resetLineDrawing();
 }
@@ -1220,19 +1362,6 @@ function initApp() {
     });
   }
   
-  // Setup zoom buttons
-  const zoomButtons = document.querySelectorAll('.zoom-option');
-  zoomButtons.forEach(button => {
-    button.addEventListener('click', function() {
-      const zoom = parseFloat(this.dataset.zoom);
-      setZoom(zoom);
-    });
-  });
-  
-  const resetZoomBtn = document.getElementById('resetZoomBtn');
-  if (resetZoomBtn) {
-    resetZoomBtn.addEventListener('click', () => setZoom(1.0));
-  }
   
   // Setup scroll listener for canvas positioning
   if (imageContainer) {
@@ -1257,7 +1386,54 @@ function initApp() {
     });
   });
   
-  console.log("✅ Application with editor initialized");
+  // Setup universal label dropdown change listener
+  const universalLabelSelect = document.getElementById('universalLabelSelect');
+  if (universalLabelSelect) {
+    universalLabelSelect.addEventListener('change', function() {
+      // If there's a selected object, apply the label change immediately
+      if (currentTool === 'select' && selectedObjects.length > 0) {
+        applyLabelChangeToSelectedObject();
+      }
+    });
+  }
+  
+  // Initialize zoom manager
+  ZoomManager.init({
+    imageContainer: imageContainer,
+    uploadedImage: uploadedImage,
+    resetZoomBtn: document.getElementById('resetZoomBtn')
+  });
+  
+  // Set canvas in zoom manager when available
+  if (canvas) {
+    ZoomManager.setCanvas(canvas);
+  }
+  
+  // Make ZoomManager globally available
+  window.ZoomManager = ZoomManager;
+  
+  // Initialize labels module
+  setupLabels({
+    labelManagerModal: document.getElementById('labelManagerModal'),
+    manageLabelBtn: document.getElementById('manageLabelBtn'),
+    closeModalBtn: document.querySelector('#labelManagerModal .close'),
+    labelTableBody: document.getElementById('labelTableBody'),
+    addLabelBtn: document.getElementById('addLabelBtn'),
+    importLabelsBtn: document.getElementById('importLabelsBtn'),
+    exportLabelsBtn: document.getElementById('exportLabelsBtn'),
+    resetLabelsBtn: document.getElementById('resetLabelsBtn'),
+    labelForm: document.getElementById('labelForm'),
+    labelFormTitle: document.getElementById('labelFormTitle'),
+    labelIdInput: document.getElementById('labelId'),
+    labelNameInput: document.getElementById('labelName'),
+    labelColorInput: document.getElementById('labelColor'),
+    saveLabelBtn: document.getElementById('saveLabelBtn'),
+    cancelLabelBtn: document.getElementById('cancelLabelBtn'),
+    areaLabelsTab: document.getElementById('areaLabelsTab'),
+    lineLabelsTab: document.getElementById('lineLabelsTab')
+  });
+  
+  console.log("✅ Application with editor, zoom manager, and labels initialized");
 }
 
 // Initialize when DOM is ready

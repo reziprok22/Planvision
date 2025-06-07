@@ -56,3 +56,13 @@ Projektname: bison (buildingvision), sparrow (weil er immer gegen scheiben flieg
     - Veränderungen Treshold werden gespeichert.
 - Das Formatauswahlform in der webapp ist nur für den Export der Annotationen auf das Original-PDF. Ansonsten hat es keine Funktion.
 
+
+
+# Hinweise Koordinaten
+- Es gibt die Natural-Koordinaten (Originalgrösse des Bildes) und die Canvas-Koordinaten (Angezeigte Grösse).
+- Natural-Koordinaten: API Kommunikation mit dem Backend, Speichern von Annotations in der Datenbank
+- Canvas Koordinanten: fabric.js Drawing und Events, User-Interaktionen (Mausklick, Zeichnen), Canvas-Rendering
+- const sind canvasX und canvasY (Umrechnen Natural zu Canvas) und const naturalx und naturaly (Canvas -> Natural). 
+- Speichern von User-zeichnungen über const naturalCoord. 
+- Die Api/Datenbank arbeitet immer mit der Original-Auflösung (unabhägig vom Browser wird das Bild immer richtig angezeigt). 
+

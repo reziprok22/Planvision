@@ -438,7 +438,28 @@ export function updateUIForLabels(type = 'both') {
       });
     }
     
-    // Update object type selection in the editor
+    // Update universal label select for area labels
+    const universalLabelSelect = document.getElementById('universalLabelSelect');
+    if (universalLabelSelect) {
+      // Remember current selection
+      const selectedValue = universalLabelSelect.value;
+      
+      // Recreate options with current labels
+      universalLabelSelect.innerHTML = '';
+      currentLabels.forEach(label => {
+        const option = document.createElement('option');
+        option.value = label.id;
+        option.textContent = label.name;
+        universalLabelSelect.appendChild(option);
+      });
+      
+      // Restore previous selection if possible
+      if (selectedValue && universalLabelSelect.querySelector(`option[value="${selectedValue}"]`)) {
+        universalLabelSelect.value = selectedValue;
+      }
+    }
+    
+    // Legacy support: Update object type selection in the editor (if it exists)
     const objectTypeSelect = document.getElementById('objectTypeSelect');
     if (objectTypeSelect) {
       // Remember current selection
@@ -466,9 +487,6 @@ export function updateUIForLabels(type = 'both') {
         objectTypeSelect.value = selectedValue;
       }
     }
-    
-    // Update toggle buttons based on labels
-    updateToggleButtons();
   }
   
   // Update line type dropdown for line labels
@@ -494,79 +512,6 @@ export function updateUIForLabels(type = 'both') {
         lineTypeSelect.value = selectedLineValue;
       }
     }
-  }
-}
-
-/**
- * Update annotation toggle buttons based on current labels
- */
-function updateToggleButtons() {
-  const toggleButtonsContainer = document.querySelector('.annotation-controls');
-  if (!toggleButtonsContainer) return;
-  
-  // Clear existing toggle buttons
-  const existingButtons = toggleButtonsContainer.querySelectorAll('.toggle-button:not(#resetZoomBtn)');
-  existingButtons.forEach(button => {
-    if (!button.id || button.id !== 'resetZoomBtn') {
-      button.remove();
-    }
-  });
-  
-  // Add new toggle buttons based on current labels
-  currentLabels.forEach(label => {
-    const buttonId = `toggle${label.name.replace(/\s+/g, '')}`;
-    
-    // Check if button already exists
-    if (!document.getElementById(buttonId)) {
-      const button = document.createElement('button');
-      button.id = buttonId;
-      button.className = 'toggle-button active';
-      button.textContent = label.name;
-      button.dataset.labelId = label.id;
-      
-      // Add to container before resetZoomBtn if it exists
-      const resetZoomBtn = document.getElementById('resetZoomBtn');
-      if (resetZoomBtn && resetZoomBtn.parentNode === toggleButtonsContainer) {
-        toggleButtonsContainer.insertBefore(button, resetZoomBtn);
-      } else {
-        toggleButtonsContainer.appendChild(button);
-      }
-      
-      // Add event listener
-      button.addEventListener('click', function() {
-        this.classList.toggle('active');
-        const labelId = parseInt(this.dataset.labelId);
-        toggleLabelVisibility(labelId, this.classList.contains('active'));
-      });
-    }
-  });
-}
-
-/**
- * Toggle visibility of annotations with a specific label
- * @param {number} labelId - The label ID to toggle
- * @param {boolean} isVisible - Whether annotations should be visible
- */
-function toggleLabelVisibility(labelId, isVisible) {
-  const label = currentLabels.find(l => l.id === labelId);
-  if (!label) return;
-
-  // Class name for this label's annotations (convert spaces to underscores, handle umlauts)
-  const className = label.name.toLowerCase()
-    .replace(/ä/g, 'ae')
-    .replace(/ö/g, 'oe')
-    .replace(/ü/g, 'ue')
-    .replace(/\s+/g, '_');
-  
-  // Legacy SVG elements
-  const elements = document.querySelectorAll(`.${className}-annotation, .${className}-box, .${className}-label`);
-  elements.forEach(el => {
-    el.style.display = isVisible ? 'block' : 'none';
-  });
-  
-  // Use Fabric.js API if available
-  if (typeof window.FabricHandler !== 'undefined' && typeof window.FabricHandler.toggleObjectsByLabel === 'function') {
-    window.FabricHandler.toggleObjectsByLabel(labelId, isVisible);
   }
 }
 
