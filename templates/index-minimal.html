@@ -3,9 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fenster-Erkennungstool</title>
+    <title>Fenster-Erkennungstool - MINIMAL DEBUG VERSION</title>
     <link rel="stylesheet" href="static/css/styles.css">
     <style>
+        /* Debug-spezifische Styles */
+        .debug-panel {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .debug-panel button {
+            display: block;
+            margin: 2px 0;
+            padding: 5px;
+            background: #333;
+            color: white;
+            border: 1px solid #555;
+            cursor: pointer;
+            width: 100%;
+        }
+        .debug-panel button:hover {
+            background: #555;
+        }
+        .minimal-notice {
+            background: #ff9800;
+            color: white;
+            padding: 10px;
+            text-align: center;
+            font-weight: bold;
+        }
+        
         /* Editor-spezifische Styles */
         .annotation-controls {
             display: flex;
@@ -53,9 +87,27 @@
     </style>
 </head>
 <body>
+    <!-- Debug Notice -->
+    <div class="minimal-notice">
+        🔧 MINIMAL DEBUG VERSION - Nur Upload, Rechtecke anzeigen, Basis-Zoom
+    </div>
+    
+    <!-- Debug Panel -->
+    <div class="debug-panel">
+        <div><strong>DEBUG TOOLS</strong></div>
+        <button onclick="DEBUG.showCanvasInfo()">Canvas Info</button>
+        <button onclick="DEBUG.showEditorState()">Editor State</button>
+        <button onclick="DEBUG.listAnnotations()">List Annotations</button>
+        <button onclick="DEBUG.testAnnotation()">Test Rectangle</button>
+        <button onclick="DEBUG.testDrawing()">Test Drawing</button>
+        <button onclick="DEBUG.checkCanvasEvents()">Check Events</button>
+        <button onclick="DEBUG.testCanvasClick()">Test Click</button>
+        <button onclick="DEBUG.clearCanvas()">Clear Canvas</button>
+        <button onclick="console.clear()">Clear Console</button>
+    </div>
     
     <header>
-        <h1>Fenster-Erkennungstool</h1>
+        <h1>Fenster-Erkennungstool (Minimal)</h1>
     </header>
     
     <div class="main-container">
@@ -139,7 +191,7 @@
         <div class="right-column">
             <div class="results-section" id="resultsSection">
                 <div class="results-header">
-                  <h2>Erkennungsergebnisse</h2>
+                  <h2>Erkennungsergebnisse (Nur Anzeige)</h2>
                 </div>
                 
                 <!-- Editor und Zoom-Kontrollen -->
@@ -188,7 +240,7 @@
     <!-- Fabric.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
     
-    <!-- Main application script -->
-    <script src="static/js/main.js"></script>
+    <!-- Minimal version script -->
+    <script src="static/js/main-minimal.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 /**
- * main.js - Fenster-Erkennungstool Main Application
- * Core functionality: Upload, Predict, Annotation Display, Drawing Tools, Zoom
+ * main-minimal.js - Reduzierte Version für Debugging
+ * Nur Kern-Funktionalität: Upload, Predict, Rechteck-Anzeige, Basis-Zoom
  */
 
 // Fabric.js text baseline patch
@@ -15,7 +15,7 @@ if (typeof fabric !== 'undefined') {
   };
 }
 
-// Global app state
+// Global app state - MINIMAL + EDITOR
 window.data = null;
 let canvas = null;
 let imageContainer = null;
@@ -45,12 +45,168 @@ const LABELS = {
   5: { name: "Dach", color: "#800080" }
 };
 
+/**
+ * Debug-Funktionen für Troubleshooting
+ */
+window.DEBUG = {
+  showEditorState: () => {
+    console.log('=== EDITOR DEBUG INFO ===');
+    console.log('isEditorActive:', isEditorActive);
+    console.log('currentTool:', currentTool);
+    console.log('drawingMode:', drawingMode);
+    console.log('isProcessingClick:', isProcessingClick);
+    console.log('currentPoints:', currentPoints.length);
+    console.log('currentPath:', !!currentPath);
+    console.log('currentPolygon:', !!currentPolygon);
+    console.log('currentLine:', !!currentLine);
+    console.log('Canvas events bound:', canvas?.__eventListeners ? Object.keys(canvas.__eventListeners) : 'none');
+    console.log('Canvas selection enabled:', canvas?.selection);
+    console.log('Canvas pointer events:', document.getElementById('annotationCanvas')?.style.pointerEvents);
+  },
+  showCanvasInfo: () => {
+    console.log('=== CANVAS DEBUG INFO ===');
+    console.log('Canvas object:', canvas);
+    console.log('Canvas size:', canvas?.width, 'x', canvas?.height);
+    console.log('Canvas zoom:', canvas?.getZoom());
+    console.log('Canvas objects count:', canvas?.getObjects()?.length);
+    console.log('Image natural size:', uploadedImage?.naturalWidth, 'x', uploadedImage?.naturalHeight);
+    console.log('Image displayed size:', uploadedImage?.offsetWidth, 'x', uploadedImage?.offsetHeight);
+    console.log('Current zoom:', currentZoom);
+    console.log('Window data:', window.data);
+  },
+  
+  listAnnotations: () => {
+    console.log('=== ANNOTATIONS DEBUG ===');
+    console.log('Predictions from API:', window.data?.predictions);
+    
+    // DETAILIERTE Analyse der ersten Prediction
+    if (window.data?.predictions?.length > 0) {
+      console.log('First prediction structure:', window.data.predictions[0]);
+      console.log('First prediction keys:', Object.keys(window.data.predictions[0]));
+      console.log('Has box?', !!window.data.predictions[0].box);
+      console.log('Has bbox?', !!window.data.predictions[0].bbox);
+      console.log('Box value:', window.data.predictions[0].box);
+      console.log('BBox value:', window.data.predictions[0].bbox);
+    }
+    
+    console.log('Canvas objects:', canvas?.getObjects()?.map(obj => ({
+      type: obj.objectType,
+      index: obj.annotationIndex,
+      position: `${obj.left},${obj.top}`,
+      size: `${obj.width}x${obj.height}`
+    })));
+  },
+  
+  testAnnotation: () => {
+    console.log('=== CREATING TEST ANNOTATION ===');
+    if (!canvas) {
+      console.error('No canvas available!');
+      return;
+    }
+    
+    // Test-Rechteck erstellen
+    const testRect = new fabric.Rect({
+      left: 100,
+      top: 100,
+      width: 200,
+      height: 150,
+      fill: 'rgba(0, 0, 255, 0.2)',
+      stroke: '#0000FF',
+      strokeWidth: 2,
+      objectType: 'annotation',
+      annotationType: 'rectangle'
+    });
+    
+    canvas.add(testRect);
+    canvas.renderAll();
+    console.log('Test rectangle added');
+  },
+  
+  testDrawing: () => {
+    console.log('=== TESTING DRAWING FUNCTIONALITY ===');
+    if (!canvas) {
+      console.error('No canvas available!');
+      return;
+    }
+    
+    // Simuliere eine Rechteck-Zeichnung
+    const rect = new fabric.Rect({
+      left: 500,
+      top: 500,
+      width: 150,
+      height: 100,
+      fill: 'rgba(255, 0, 0, 0.3)',
+      stroke: '#FF0000',
+      strokeWidth: 3,
+      objectType: 'userDrawn',
+      annotationType: 'rectangle'
+    });
+    
+    canvas.add(rect);
+    canvas.renderAll();
+    console.log('Test drawing rectangle added at 500,500');
+  },
+  
+  clearCanvas: () => {
+    if (canvas) {
+      canvas.clear();
+      console.log('Canvas cleared');
+    }
+  },
+  
+  checkCanvasEvents: () => {
+    console.log('=== CANVAS EVENT CHECK ===');
+    const canvasElement = document.getElementById('annotationCanvas');
+    const canvasWrapper = canvas?.wrapperEl;
+    const lowerCanvas = canvas?.lowerCanvasEl;
+    
+    console.log('Canvas element pointer events:', canvasElement?.style.pointerEvents);
+    console.log('Canvas wrapper pointer events:', canvasWrapper?.style.pointerEvents);
+    console.log('Lower canvas pointer events:', lowerCanvas?.style.pointerEvents);
+    console.log('Canvas wrapper z-index:', canvasWrapper?.style.zIndex);
+    console.log('Canvas wrapper position:', canvasWrapper?.style.position);
+    console.log('Canvas wrapper bounds:', canvasWrapper?.getBoundingClientRect());
+    
+    // Test if the canvas element receives mouse events
+    if (lowerCanvas) {
+      lowerCanvas.addEventListener('mousedown', (e) => {
+        console.log('DIRECT canvas mousedown event!', e);
+      }, { once: true });
+      console.log('Added direct mousedown listener to lower canvas');
+    }
+    
+    // Test Fabric.js event too
+    canvas.on('mouse:down', (e) => {
+      console.log('FABRIC.JS mouse:down event!', e);
+    });
+    console.log('Added Fabric.js test listener');
+  },
+  
+  testCanvasClick: () => {
+    console.log('=== TESTING CANVAS CLICK ===');
+    if (!canvas || !canvas.lowerCanvasEl) {
+      console.error('No canvas available');
+      return;
+    }
+    
+    // Simulate a click on the canvas
+    const rect = canvas.lowerCanvasEl.getBoundingClientRect();
+    const event = new MouseEvent('mousedown', {
+      clientX: rect.left + 100,
+      clientY: rect.top + 100,
+      bubbles: true
+    });
+    
+    console.log('Simulating click at:', rect.left + 100, rect.top + 100);
+    canvas.lowerCanvasEl.dispatchEvent(event);
+  }
+};
 
 /**
- * Initialize canvas
+ * Initialize minimal canvas
  */
 function initCanvas() {
-  console.log("=== INITIALIZING CANVAS ===");
+  console.log("=== INITIALIZING MINIMAL CANVAS ===");
   
   if (!uploadedImage || !uploadedImage.complete || uploadedImage.naturalWidth === 0) {
     console.warn("Image not loaded yet, retrying...");
@@ -151,32 +307,7 @@ function updateCanvasPosition() {
 }
 
 /**
- * Calculate correct area for API prediction based on coordinates
- */
-function calculatePredictionArea(coords) {
-  const [x1, y1, x2, y2] = coords;
-  const pixelToMeter = getPixelToMeterFactor();
-  
-  // Calculate width and height in natural pixels
-  const widthPixels = Math.abs(x2 - x1);
-  const heightPixels = Math.abs(y2 - y1);
-  
-  // Convert to real world dimensions
-  const widthM = widthPixels * pixelToMeter;
-  const heightM = heightPixels * pixelToMeter;
-  const area = widthM * heightM;
-  
-  console.log(`Prediction area calculation:
-    - Coordinates: (${x1},${y1}) to (${x2},${y2})
-    - Size: ${widthPixels} x ${heightPixels}px
-    - Real world: ${widthM.toFixed(3)} x ${heightM.toFixed(3)}m
-    - Area: ${area.toFixed(4)}m²`);
-  
-  return area;
-}
-
-/**
- * Display annotations
+ * Display annotations (ONLY rectangles in minimal version)
  */
 function displayAnnotations(predictions) {
   console.log("=== DISPLAYING ANNOTATIONS ===");
@@ -203,15 +334,12 @@ function displayAnnotations(predictions) {
     console.log(`  - Box value:`, pred.box);
     console.log(`  - BBox value:`, pred.bbox);
     
-    // Process rectangles
+    // Only process rectangles in minimal version
     if (pred.box || pred.bbox) {
       const coords = pred.box || pred.bbox;
       const [x1, y1, x2, y2] = coords;
       
-      // Calculate correct area for this prediction and store it
-      pred.calculatedArea = calculatePredictionArea(coords);
-      
-      // Convert coordinates from natural size to canvas size
+      // WICHTIG: Koordinaten von Natural-Size auf Canvas-Size umrechnen
       const scaleFactor = window.coordinateScaleFactor;
       const canvasX1 = x1 / scaleFactor.x;
       const canvasY1 = y1 / scaleFactor.y;
@@ -319,9 +447,7 @@ function updateResultsTable() {
   
   window.data.predictions.forEach((pred, index) => {
     const label = LABELS[pred.label || 0] || LABELS[0];
-    // Use the correctly calculated area, fallback to original API area if not available
-    const area = pred.calculatedArea ? `${pred.calculatedArea.toFixed(2)} m²` : 
-                 pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
+    const area = pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
     
     const row = document.createElement('tr');
     row.innerHTML = `
@@ -347,8 +473,7 @@ function updateSummary() {
   
   window.data.predictions.forEach(pred => {
     const labelId = pred.label || 0;
-    // Use the correctly calculated area, fallback to original API area if not available
-    const area = pred.calculatedArea || pred.area || 0;
+    const area = pred.area || 0;
     
     switch (labelId) {
       case 1: counts.fenster++; areas.fenster += area; break;
@@ -724,63 +849,14 @@ function finishDrawingRectangle() {
 }
 
 /**
- * Get pixel to meter conversion factor based on current settings
- */
-function getPixelToMeterFactor() {
-  // Get form values
-  const dpi = parseFloat(document.getElementById('dpi')?.value || 300);
-  const formatWidth = parseFloat(document.getElementById('formatWidth')?.value || 210); // mm
-  const planScale = parseFloat(document.getElementById('planScale')?.value || 100); // 1:X
-  
-  if (!uploadedImage || !uploadedImage.naturalWidth) {
-    console.warn('Image not available for scale calculation');
-    return 0.001; // fallback
-  }
-  
-  // Real world width in meters (taking plan scale into account)
-  const realWorldWidthMm = formatWidth * planScale; // mm in real world
-  const realWorldWidthM = realWorldWidthMm / 1000; // convert to meters
-  
-  // Image width in pixels
-  const imageWidthPixels = uploadedImage.naturalWidth;
-  
-  // Calculate pixel to meter conversion
-  const pixelToMeter = realWorldWidthM / imageWidthPixels;
-  
-  console.log(`Scale calculation:
-    - Format width: ${formatWidth}mm
-    - Plan scale: 1:${planScale}
-    - Real world width: ${realWorldWidthMm}mm = ${realWorldWidthM}m
-    - Image width: ${imageWidthPixels}px
-    - Pixel to meter factor: ${pixelToMeter}`);
-  
-  return pixelToMeter;
-}
-
-/**
  * Calculate rectangle area
  */
 function calculateRectangleArea(rect) {
-  const pixelToMeter = getPixelToMeterFactor();
-  
-  // Convert canvas coordinates back to natural image coordinates first
-  const scaleFactor = window.coordinateScaleFactor;
-  const naturalWidth = rect.width * scaleFactor.x;
-  const naturalHeight = rect.height * scaleFactor.y;
-  
-  // Convert to real world dimensions
-  const widthM = naturalWidth * pixelToMeter;
-  const heightM = naturalHeight * pixelToMeter;
-  
-  const area = widthM * heightM;
-  
-  console.log(`Rectangle area calculation:
-    - Canvas size: ${rect.width.toFixed(1)} x ${rect.height.toFixed(1)}px
-    - Natural size: ${naturalWidth.toFixed(1)} x ${naturalHeight.toFixed(1)}px  
-    - Real world: ${widthM.toFixed(3)} x ${heightM.toFixed(3)}m
-    - Area: ${area.toFixed(4)}m²`);
-  
-  return area;
+  // This is a simplified calculation - you'd need actual scale factors
+  const pixelToMeter = 0.001; // Example conversion factor
+  const widthM = rect.width * pixelToMeter;
+  const heightM = rect.height * pixelToMeter;
+  return widthM * heightM;
 }
 
 /**
@@ -1027,70 +1103,39 @@ function resetLineDrawing() {
 function calculatePolygonArea(points) {
   if (points.length < 3) return 0;
   
-  const pixelToMeter = getPixelToMeterFactor();
-  const scaleFactor = window.coordinateScaleFactor;
+  // Simple conversion factor (this should be based on actual plan scale)
+  const pixelToMeter = 0.001;
   
-  // Convert canvas coordinates to natural image coordinates
-  const naturalPoints = points.map(p => ({
-    x: p.x * scaleFactor.x,
-    y: p.y * scaleFactor.y
-  }));
-  
-  // Shoelace formula for polygon area in natural pixels
-  let areaPixels = 0;
-  for (let i = 0; i < naturalPoints.length; i++) {
-    const j = (i + 1) % naturalPoints.length;
-    areaPixels += naturalPoints[i].x * naturalPoints[j].y;
-    areaPixels -= naturalPoints[j].x * naturalPoints[i].y;
+  // Shoelace formula for polygon area
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i].x * points[j].y;
+    area -= points[j].x * points[i].y;
   }
-  areaPixels = Math.abs(areaPixels) / 2;
+  area = Math.abs(area) / 2;
   
   // Convert to square meters
-  const area = areaPixels * pixelToMeter * pixelToMeter;
-  
-  console.log(`Polygon area calculation:
-    - Canvas points: ${points.length}
-    - Natural area: ${areaPixels.toFixed(1)}px²
-    - Real world area: ${area.toFixed(4)}m²`);
-  
-  return area;
+  return area * pixelToMeter * pixelToMeter;
 }
 
 function calculateLineLength(point1, point2) {
-  const pixelToMeter = getPixelToMeterFactor();
-  const scaleFactor = window.coordinateScaleFactor;
+  // Simple conversion factor (this should be based on actual plan scale)
+  const pixelToMeter = 0.001;
   
-  // Convert canvas coordinates to natural image coordinates
-  const naturalPoint1 = {
-    x: point1.x * scaleFactor.x,
-    y: point1.y * scaleFactor.y
-  };
-  const naturalPoint2 = {
-    x: point2.x * scaleFactor.x,
-    y: point2.y * scaleFactor.y
-  };
-  
-  // Calculate length in natural pixels
-  const dx = naturalPoint2.x - naturalPoint1.x;
-  const dy = naturalPoint2.y - naturalPoint1.y;
+  const dx = point2.x - point1.x;
+  const dy = point2.y - point1.y;
   const lengthInPixels = Math.sqrt(dx * dx + dy * dy);
   
   // Convert to meters
-  const length = lengthInPixels * pixelToMeter;
-  
-  console.log(`Line length calculation:
-    - Canvas length: ${Math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2).toFixed(1)}px
-    - Natural length: ${lengthInPixels.toFixed(1)}px
-    - Real world length: ${length.toFixed(4)}m`);
-  
-  return length;
+  return lengthInPixels * pixelToMeter;
 }
 
 /**
- * Initialize application
+ * Initialize app
  */
 function initApp() {
-  console.log("=== INITIALIZING APPLICATION ===");
+  console.log("=== INITIALIZING MINIMAL APP ===");
   
   // Get DOM elements
   imageContainer = document.getElementById('imageContainer');
@@ -1257,7 +1302,7 @@ function initApp() {
     });
   });
   
-  console.log("✅ Application with editor initialized");
+  console.log("✅ Minimal app with editor initialized");
 }
 
 // Initialize when DOM is ready

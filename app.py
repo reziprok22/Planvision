@@ -91,6 +91,10 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
+@app.route('/minimal')
+def minimal():
+    return render_template('index-minimal.html')
+
 @app.route('/predict', methods=['POST'])
 def predict():
     try:

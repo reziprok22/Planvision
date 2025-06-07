@@ -3,14 +3,14 @@
  * Part of the Fenster-Erkennungstool project
  */
 
+import * as ZoomManager from './zoom-manager.js';
+
 // Module state
 let canvas = null;
 let imageContainer;
 let uploadedImage;
-let currentZoom = 1.0;
 let isDragging = false;
 let lastPosX, lastPosY;
-let labelFont = '12px Arial';
 let currentLabels = [];
 let currentLineLabels = [];
 
@@ -35,8 +35,22 @@ export function setupFabricHandler(elements) {
     clearTimeout(window.resizeTimeout);
     window.resizeTimeout = setTimeout(function() {
       console.log("Window resized, adjusting canvas");
-      if (canvas) resizeCanvas();
+      if (canvas) {
+        resizeCanvas();
+        updateCanvasContainer();
+      }
     }, 200);
+  });
+  
+  // Add zoom change listener
+  document.addEventListener('zoomchanged', function(e) {
+    console.log('Zoom changed event received:', e.detail.zoom);
+    if (canvas) {
+      // Delay to ensure image has been updated
+      setTimeout(function() {
+        updateCanvasContainer();
+      }, 50);
+    }
   });
   
   console.log('Fabric.js handler initialized');
@@ -73,6 +87,9 @@ export function initCanvas() {
   // Initialize Fabric.js canvas
   canvas = new fabric.Canvas('annotationCanvas');
 
+  // Canvas im ZoomManager setzen
+  ZoomManager.setCanvas(canvas);
+
   canvas.selection = true;
   canvas.defaultCursor = 'default';
   canvas.hoverCursor = 'move';
@@ -89,38 +106,29 @@ export function initCanvas() {
   canvas.setWidth(naturalWidth);
   canvas.setHeight(naturalHeight);
   
-  // Set the canvas container to match the DISPLAYED size of the image
-  const displayWidth = uploadedImage.offsetWidth;
-  const displayHeight = uploadedImage.offsetHeight;
-  
-  // WICHTIG: Berechne einen vernünftigen Zoom-Faktor
-  const containerWidth = imageContainer.clientWidth;
-  const containerHeight = imageContainer.clientHeight;
-  
-  // Berechne Zoom-Faktoren, um das Bild in den Container zu passen
-  const zoomX = containerWidth / naturalWidth;
-  const zoomY = containerHeight / naturalHeight;
-  let zoom = Math.min(zoomX, zoomY) * 0.95; // 95% der verfügbaren Größe nutzen
-  
-  // Stelle sicher, dass der Zoom vernünftig ist
-  if (zoom < 0.05) zoom = 0.05; // Mindest-Zoom
-  if (zoom > 1.0) zoom = 1.0;  // Maximal-Zoom
-  
-  console.log(`Calculated initial zoom: ${zoom.toFixed(4)}`);
-  canvas.setZoom(zoom);
+  // Hole aktuellen Zoom vom ZoomManager
+  const currentZoom = window.getCurrentZoom ? window.getCurrentZoom() : 1.0;
+  console.log(`Setting initial canvas zoom to: ${currentZoom}`);
+  canvas.setZoom(currentZoom);
   
   // Get canvas container
   const canvasContainer = document.getElementsByClassName('canvas-container')[0];
   if (canvasContainer) {
-    // WICHTIG: Setze die Canvas-Container-Größe
+    // WICHTIG: Setze die Canvas-Container-Größe basierend auf dem aktuell angezeigten Bild
     canvasContainer.style.position = 'absolute';
     canvasContainer.style.top = '0';
     canvasContainer.style.left = '0';
-    canvasContainer.style.width = `${containerWidth}px`;
-    canvasContainer.style.height = `${containerHeight}px`;
+    
+    // Verwende die AKTUELL ANGEZEIGTE Bildgröße (mit Zoom)
+    const displayedWidth = uploadedImage.offsetWidth;
+    const displayedHeight = uploadedImage.offsetHeight;
+    
+    console.log(`Canvas container size: ${displayedWidth}x${displayedHeight} (displayed image size)`);
+    canvasContainer.style.width = `${displayedWidth}px`;
+    canvasContainer.style.height = `${displayedHeight}px`;
     
     // Setze Overflow für Scrolling
-    canvasContainer.style.overflow = 'auto';
+    canvasContainer.style.overflow = 'hidden'; // Wichtig: hidden statt auto
     canvasContainer.style.display = 'block';
   }
   
@@ -130,13 +138,10 @@ export function initCanvas() {
   // Set up event listeners
   setupEventListeners();
   
-  // Sync with global zoom if needed
-  if (typeof window.getCurrentZoom === 'function') {
-    const globalZoom = window.getCurrentZoom();
-    if (globalZoom !== 1.0) {
-      syncEditorZoom(globalZoom);
-    }
-  }
+  // KRITISCH: Canvas-Container sofort nach Initialisierung positionieren
+  setTimeout(function() {
+    updateCanvasContainer();
+  }, 50);
   
   console.log("Canvas initialized, size:", canvas.width, "x", canvas.height, "zoom:", canvas.getZoom());
   
@@ -254,46 +259,19 @@ function setupEventListeners() {
   // Füge einen Scroll-Event-Listener hinzu
   if (imageContainer) {
     imageContainer.addEventListener('scroll', function() {
-      // Aktualisiere Canvas-Position beim Scrollen
-      const imageRect = uploadedImage.getBoundingClientRect();
-      const containerRect = imageContainer.getBoundingClientRect();
-      
-      // Berechne relative Position unter Berücksichtigung der Scroll-Position
-      const relLeft = imageRect.left - containerRect.left + imageContainer.scrollLeft;
-      const relTop = imageRect.top - containerRect.top + imageContainer.scrollTop;
-      
-      // Aktualisiere Canvas-Container-Position
-      const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-      if (canvasContainer) {
-        canvasContainer.style.top = `${relTop}px`;
-        canvasContainer.style.left = `${relLeft}px`;
-      }
+      updateCanvasContainer();
     });
   }
   
-  // Zoom with mouse wheel
+  // Zoom mit Mausrad - delegiere an ZoomManager
   canvas.on('mouse:wheel', function(opt) {
-    // If we're using global zoom functionality, don't apply canvas zoom
-    if (typeof window.setZoomLevel === 'function') {
-      return; // Let the global zoom handler take care of it
+    // Rufe den ZoomManager über den Wrapper auf
+    if (typeof ZoomManager.handleWheelZoom === 'function') {
+      ZoomManager.handleWheelZoom(opt.e);
     }
-    
-    const delta = opt.e.deltaY;
-    let zoom = canvas.getZoom();
-    zoom *= 0.999 ** delta;
-    
-    // Set zoom limits
-    if (zoom > 10) zoom = 10;
-    if (zoom < 0.1) zoom = 0.1;
-    
-    // Zoom to point where mouse is
-    canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
-    
-    opt.e.preventDefault();
-    opt.e.stopPropagation();
   });
   
-  // Pan with Alt + Mouse drag
+  // Pan mit Alt + Mausziehen
   canvas.on('mouse:down', function(opt) {
     const evt = opt.e;
     if (evt.altKey === true) {
@@ -321,108 +299,132 @@ function setupEventListeners() {
     canvas.selection = true;
   });
   
-  // Object selection event
+  // Objekt-Auswahl
   canvas.on('selection:created', function(opt) {
     const selectedObject = opt.selected[0];
     if (selectedObject && selectedObject.objectType === 'annotation') {
-      // Update object type selector if available
-      const objectTypeSelect = document.getElementById('objectTypeSelect');
-      if (objectTypeSelect && selectedObject.labelId !== undefined) {
-        objectTypeSelect.value = selectedObject.labelId;
-      }
+      updateUIForSelectedObject(selectedObject);
     }
   });
-
-  // Event-Listener für Objektmodifikationen
+  
+  // Objekt-Änderung - kombinierte Funktion für alle Modifikationen
   canvas.on('object:modified', function(opt) {
     const modifiedObject = opt.target;
     if (modifiedObject && modifiedObject.objectType === 'annotation') {
-      // Wenn ein Objekt modifiziert wurde, aktualisiere seine Fläche/Länge
-      if (modifiedObject.annotationType === 'rectangle') {
-        const area = calculateRectangleArea(modifiedObject.width, modifiedObject.height);
-        modifiedObject.area = area;
-        
-        // Label aktualisieren
-        updateObjectLabel(modifiedObject);
-      } else if (modifiedObject.annotationType === 'polygon') {
-        const area = calculatePolygonArea(modifiedObject.points);
-        modifiedObject.area = area;
-        
-        // Label aktualisieren
-        updateObjectLabel(modifiedObject);
-      } else if (modifiedObject.annotationType === 'line') {
-        const length = calculateLineLength(modifiedObject.points);
-        modifiedObject.length = length;
-        
-        // Label aktualisieren
-        updateObjectLabel(modifiedObject);
-      }
+      updateModifiedObject(modifiedObject);
     }
   });
+}
 
-  // Objekt-Änderungen verfolgen
-  canvas.on('object:modified', function(opt) {
-    const obj = opt.target;
-    if (obj && obj.objectType === 'annotation') {
-      console.log(`Objekt vom Typ ${obj.annotationType} wurde modifiziert`);
-      
-      if (obj.annotationType === 'rectangle') {
-        // Fläche neu berechnen
-        const area = calculateRectangleArea(obj.width, obj.height);
-        obj.area = area;
-        
-        // Label aktualisieren
-        const label = canvas.getObjects().find(l => l.objectType === 'label' && l.annotationIndex === obj.annotationIndex);
-        if (label) {
-          label.set({
-            text: `#${obj.annotationIndex + 1}: ${area.toFixed(2)} m²`,
-            left: obj.left,
-            top: obj.top - 20
-          });
-        }
-      } else if (obj.annotationType === 'polygon') {
-        // Fläche neu berechnen
-        const area = calculatePolygonArea(obj.points);
-        obj.area = area;
-        
-        // Zentrum berechnen für Label-Position
-        let centerX = 0, centerY = 0;
-        for (let i = 0; i < obj.points.length; i++) {
-          centerX += obj.points[i].x;
-          centerY += obj.points[i].y;
-        }
-        centerX /= obj.points.length;
-        centerY /= obj.points.length;
-        
-        // Label aktualisieren
-        const label = canvas.getObjects().find(l => l.objectType === 'label' && l.annotationIndex === obj.annotationIndex);
-        if (label) {
-          label.set({
-            text: `#${obj.annotationIndex + 1}: ${area.toFixed(2)} m²`,
-            left: centerX,
-            top: centerY - 20
-          });
-        }
-      } else if (obj.annotationType === 'line') {
-        // Länge neu berechnen
-        const length = calculateLineLength(obj.points);
-        obj.length = length;
-        
-        // Label aktualisieren
-        const label = canvas.getObjects().find(l => l.objectType === 'label' && l.annotationIndex === obj.annotationIndex);
-        if (label) {
-          const lastPoint = obj.points[obj.points.length - 1];
-          label.set({
-            text: `${length.toFixed(2)} m`,
-            left: lastPoint.x + 5,
-            top: lastPoint.y - 15
-          });
-        }
-      }
-      
-      canvas.renderAll();
+/**
+ * Update UI when an object is selected
+ */
+function updateUIForSelectedObject(obj) {
+  if (!obj || obj.objectType !== 'annotation') return;
+  
+  // Update type selectors based on object type
+  if (obj.annotationType === 'line') {
+    // Show line type selector and set value
+    const lineTypeSelect = document.getElementById('lineTypeSelect');
+    const objectTypeSelect = document.getElementById('objectTypeSelect');
+    
+    if (lineTypeSelect && objectTypeSelect) {
+      lineTypeSelect.style.display = 'inline-block';
+      objectTypeSelect.style.display = 'none';
+      lineTypeSelect.value = obj.lineType || 1;
     }
-  });
+  } else {
+    // Show area type selector and set value
+    const lineTypeSelect = document.getElementById('lineTypeSelect');
+    const objectTypeSelect = document.getElementById('objectTypeSelect');
+    
+    if (lineTypeSelect && objectTypeSelect) {
+      lineTypeSelect.style.display = 'none';
+      objectTypeSelect.style.display = 'inline-block';
+      objectTypeSelect.value = obj.labelId || 0;
+    }
+  }
+  
+  console.log(`Selected object: ${obj.annotationType} with label ${obj.labelId || obj.lineType}`);
+}
+
+/**
+ * Update canvas container position based on scroll and image position
+ */
+function updateCanvasContainer() {
+  if (!canvas || !imageContainer || !uploadedImage) {
+    console.warn('updateCanvasContainer: Missing required elements');
+    return;
+  }
+  
+  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
+  if (!canvasContainer) {
+    console.warn('updateCanvasContainer: Canvas container not found');
+    return;
+  }
+  
+  // Get current zoom level
+  const currentZoom = window.getCurrentZoom ? window.getCurrentZoom() : 1.0;
+  
+  // Get image dimensions and position
+  const imageRect = uploadedImage.getBoundingClientRect();
+  const containerRect = imageContainer.getBoundingClientRect();
+  
+  // Account for scroll offsets
+  const scrollLeft = imageContainer.scrollLeft;
+  const scrollTop = imageContainer.scrollTop;
+  
+  // Calculate exact position
+  const relLeft = imageRect.left - containerRect.left + scrollLeft;
+  const relTop = imageRect.top - containerRect.top + scrollTop;
+  
+  // Position and size the canvas container to match the displayed image exactly
+  canvasContainer.style.position = 'absolute';
+  canvasContainer.style.top = `${relTop}px`;
+  canvasContainer.style.left = `${relLeft}px`;
+  canvasContainer.style.width = `${imageRect.width}px`;
+  canvasContainer.style.height = `${imageRect.height}px`;
+  canvasContainer.style.zIndex = '10';
+  canvasContainer.style.pointerEvents = 'auto'; // Ensure interactions work
+  
+  // Update canvas zoom to match current zoom
+  if (canvas.getZoom() !== currentZoom) {
+    console.log(`Updating canvas zoom from ${canvas.getZoom()} to ${currentZoom}`);
+    canvas.setZoom(currentZoom);
+    canvas.renderAll();
+  }
+  
+  console.log(`Canvas container updated: pos(${relLeft}, ${relTop}), size(${imageRect.width}x${imageRect.height}), zoom: ${currentZoom}`);
+}
+
+/**
+ * Update a modified object (recalculate area/length and update labels)
+ */
+function updateModifiedObject(obj) {
+  if (!obj || obj.objectType !== 'annotation') return;
+  
+  if (obj.annotationType === 'rectangle') {
+    // Recalculate area for rectangle
+    const area = calculateRectangleArea(obj.width * (obj.scaleX || 1), obj.height * (obj.scaleY || 1));
+    obj.area = area;
+    
+    // Update label
+    updateObjectLabel(obj);
+  } else if (obj.annotationType === 'polygon') {
+    // Recalculate area for polygon
+    const area = calculatePolygonArea(obj.points);
+    obj.area = area;
+    
+    // Update label
+    updateObjectLabel(obj);
+  } else if (obj.annotationType === 'line') {
+    // Recalculate length for line
+    const length = calculateLineLength(obj.points);
+    obj.length = length;
+    
+    // Update label
+    updateObjectLabel(obj);
+  }
 }
 
 // Hilfsfunktion um ein einzelnes Label zu aktualisieren
@@ -466,90 +468,6 @@ function updateObjectLabel(obj) {
   }
 }
 
-/**
- * Sync with global zoom functionality
- * @param {number} zoomLevel - Current global zoom level
- */
-// In static/js/fabric-handler.js, Funktion syncEditorZoom
-export function syncEditorZoom(zoomLevel) {
-  if (!canvas) return;
-  
-  console.log(`Syncing fabric canvas zoom to ${zoomLevel}`);
-  
-  // Store current zoom for debugging
-  currentZoom = zoomLevel;
-  
-  // WICHTIG: We need accurate image and container positions
-  const imageRect = uploadedImage.getBoundingClientRect();
-  const containerRect = imageContainer.getBoundingClientRect();
-  
-  // Calculate the scroll offsets
-  const scrollLeft = imageContainer.scrollLeft;
-  const scrollTop = imageContainer.scrollTop;
-  
-  // WICHTIG: HIER IST DAS PROBLEM - Keine negativen Position-Werte verwenden
-  // Calculate precise relative position - aber verhindere negative Werte
-  const relLeft = Math.max(0, imageRect.left - containerRect.left + scrollLeft);
-  const relTop = Math.max(0, imageRect.top - containerRect.top + scrollTop);
-  
-  // Get canvas container
-  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-  if (canvasContainer) {
-    // Update position to exactly match the image - Keine negativen Werte
-    canvasContainer.style.position = 'absolute';
-    canvasContainer.style.top = `${relTop}px`;
-    canvasContainer.style.left = `${relLeft}px`;
-    
-    // Match the exact displayed size of the image
-    canvasContainer.style.width = `${imageRect.width}px`;
-    canvasContainer.style.height = `${imageRect.height}px`;
-    canvasContainer.style.overflow = 'hidden';
-    
-    // WICHTIG: Stelle sicher, dass der Canvas-Container sichtbar ist
-    canvasContainer.style.display = 'block';
-    canvasContainer.style.zIndex = '10'; // Höherer z-index, um über anderen Elementen zu sein
-    
-    console.log(`Canvas container positioned at: ${relLeft}x${relTop}, Size: ${imageRect.width}x${imageRect.height}`);
-  }
-  
-  // Get the base scale - this is critical for correct annotation positioning
-  // How much is the displayed image scaled compared to its natural size?
-  const scaleX = imageRect.width / uploadedImage.naturalWidth;
-  const scaleY = imageRect.height / uploadedImage.naturalHeight;
-  
-  console.log(`Image scale factors: X=${scaleX.toFixed(4)}, Y=${scaleY.toFixed(4)}`);
-  
-  // WICHTIG: Verwende einen vernünftigen Zoom-Wert, um zu verhindern, dass Annotationen zu klein sind
-  let finalZoom = scaleX;
-  if (finalZoom < 0.1) {
-    console.warn(`Scale factor ${scaleX.toFixed(6)} is too small, using minimum 0.1`);
-    finalZoom = 0.1;
-  }
-  
-  // Set fabric canvas zoom to match this scale
-  console.log(`Setting canvas zoom to ${finalZoom.toFixed(4)}`);
-  canvas.setZoom(finalZoom);
-  
-  // Make sure canvas dimensions match image natural dimensions
-  canvas.setWidth(uploadedImage.naturalWidth);
-  canvas.setHeight(uploadedImage.naturalHeight);
-  
-  // Force canvas to recalculate its position and render
-  canvas.calcOffset();
-  canvas.renderAll();
-
-  // Debug Annotation-Position nach dem Ediotr schliessen:
-  console.log(`Nach canvas.renderAll(): Canvas hat ${canvas.getObjects().length} Objekte`);
-  console.log(`Canvas-Dimensionen: ${canvas.width}x${canvas.height}, Zoom: ${canvas.getZoom()}`);
-  console.log(`Canvas-Position: (${canvasContainer.style.left}, ${canvasContainer.style.top})`);
-  
-  // Debug-Ausgabe
-  console.log(`Nach canvas.renderAll(): Canvas hat ${canvas.getObjects().length} Objekte`);
-  console.log(`Canvas-Dimensionen: ${canvas.width}x${canvas.height}, Zoom: ${canvas.getZoom()}`);
-  console.log(`Canvas-Position: (${canvasContainer.style.left}, ${canvasContainer.style.top})`);
-  
-  console.log(`Canvas synced - Natural: ${canvas.width}x${canvas.height}, Display: ${imageRect.width}x${imageRect.height}, Zoom: ${canvas.getZoom()}`);
-}
 
 /**
  * Get the current Fabric.js canvas instance
@@ -557,14 +475,6 @@ export function syncEditorZoom(zoomLevel) {
  */
 export function getCanvas() {
   return canvas;
-}
-
-/**
- * Get the current zoom level
- * @returns {number} The current zoom level
- */
-export function getCurrentZoom() {
-  return currentZoom;
 }
 
 /**
@@ -988,6 +898,11 @@ export function displayAnnotations(predictions) {
   
   // Render canvas 
   canvas.renderAll();
+  
+  // WICHTIG: Canvas-Container nach dem Anzeigen der Annotationen aktualisieren
+  setTimeout(function() {
+    updateCanvasContainer();
+  }, 100);
   
   // WICHTIG: Versuche zum Zentrum der Objekte zu scrollen (nur im Editor)
   if (window.isEditorActive) {
@@ -2350,28 +2265,6 @@ function updateDataSummary() {
   }
 }
 
-// In static/js/fabric-handler.js, neue Funktion hinzufügen
-export function setCanvasZoom(zoomLevel) {
-  if (!canvas) return;
-  
-  console.log(`Setting canvas zoom to ${zoomLevel}`);
-  
-  // Minimalen Zoom-Wert sicherstellen
-  if (zoomLevel < 0.05) zoomLevel = 0.05;
-  
-  // Aktuellen Zoom speichern
-  currentZoom = zoomLevel;
-  
-  // Zoom auf die Mitte des Canvas setzen
-  const center = canvas.getCenter();
-  canvas.zoomToPoint(new fabric.Point(center.left, center.top), zoomLevel);
-  
-  // Canvas rendern
-  canvas.renderAll();
-  
-  return zoomLevel;
-}
-
 /**
  * Cancel editing and restore original annotations
  */
@@ -2415,170 +2308,6 @@ export function debugEditorState() {
   return "Debug-Informationen in der Konsole ausgegeben";
 }
 
-/**
- * Event-Listener für den Editor einrichten
- */
-function setupEditorEventListeners() {
-  if (!canvas) return;
-  
-  // Finde den scroll-container für das Zoomen im Editor
-  const scrollContainer = document.querySelector('.scroll-container');
-  if (!scrollContainer) return;
-  
-  // Entferne bisherige Event-Listener
-  scrollContainer.removeEventListener('wheel', handleEditorZoom);
-  
-  // Füge neuen Event-Listener für das Mausrad hinzu
-  scrollContainer.addEventListener('wheel', handleEditorZoom, { passive: false });
-  
-  console.log("Editor-Zoom-Event-Listener hinzugefügt");
-}
-
-/**
- * Zoom-Event im Editor verarbeiten
- * @param {Event} event - Das Wheel-Event
- */
-function handleEditorZoom(event) {
-  // Nur zoomen, wenn Strg gedrückt ist
-  if (!event.ctrlKey) return;
-  
-  // Standardverhalten verhindern
-  event.preventDefault();
-  
-  // Scroll-Container ermitteln
-  const scrollContainer = document.querySelector('.scroll-container');
-  if (!scrollContainer || !canvas) return;
-  
-  // Bild ermitteln
-  const editorImage = document.getElementById('editorImage');
-  if (!editorImage) return;
-  
-  // Aktuellen Zoom ermitteln
-  let currentZoom = canvas.getZoom();
-  
-  // Zoom-Änderung ermitteln
-  const delta = event.deltaY;
-  const zoomStep = 0.25;
-  
-  // Neuen Zoom berechnen
-  let newZoom = currentZoom;
-  if (delta < 0) {
-    // Vergrößern
-    newZoom = Math.min(currentZoom + zoomStep, 5.0);
-  } else {
-    // Verkleinern
-    newZoom = Math.max(currentZoom - zoomStep, 0.1);
-  }
-  
-  // Wenn der Zoom sich nicht geändert hat, nichts tun
-  if (newZoom === currentZoom) return;
-  
-  // Position des Mauszeigers relativ zum Scroll-Container
-  const containerRect = scrollContainer.getBoundingClientRect();
-  const mouseX = event.clientX - containerRect.left + scrollContainer.scrollLeft;
-  const mouseY = event.clientY - containerRect.top + scrollContainer.scrollTop;
-  
-  // Bildgröße anpassen
-  const naturalWidth = uploadedImage.naturalWidth;
-  const naturalHeight = uploadedImage.naturalHeight;
-  
-  const oldWidth = parseFloat(editorImage.style.width);
-  const oldHeight = parseFloat(editorImage.style.height);
-  
-  const newWidth = naturalWidth * newZoom;
-  const newHeight = naturalHeight * newZoom;
-  
-  editorImage.style.width = `${newWidth}px`;
-  editorImage.style.height = `${newHeight}px`;
-  
-  // Canvas-Zoom aktualisieren
-  canvas.setZoom(newZoom);
-  
-  // Canvas-Container-Größe anpassen
-  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-  if (canvasContainer) {
-    canvasContainer.style.width = `${newWidth}px`;
-    canvasContainer.style.height = `${newHeight}px`;
-  }
-  
-  // Scroll-Position anpassen, um Zoom zum Mauszeiger zu ermöglichen
-  const scaleChange = newZoom / currentZoom;
-  
-  // Berechne neue Scroll-Position
-  const newScrollX = mouseX * scaleChange - (event.clientX - containerRect.left);
-  const newScrollY = mouseY * scaleChange - (event.clientY - containerRect.top);
-  
-  scrollContainer.scrollLeft = newScrollX;
-  scrollContainer.scrollTop = newScrollY;
-  
-  // Canvas neu rendern
-  canvas.renderAll();
-  
-  // Globalen Zoom-Wert aktualisieren
-  window.currentZoom = newZoom;
-  
-  // WICHTIG: BEIDE Zoom-Buttons aktualisieren
-  // 1. Editor-Zoom-Button
-  const editorZoomBtn = document.getElementById('editorResetZoomBtn');
-  if (editorZoomBtn) {
-    editorZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
-  }
-  
-  // 2. Ansichtsview-Zoom-Button
-  const viewZoomBtn = document.getElementById('resetZoomBtn');
-  if (viewZoomBtn) {
-    viewZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
-  }
-  
-  // 3. Auch globalen Zoom-Wert aktualisieren, falls die Funktion existiert
-  if (typeof window.setZoomLevel === 'function') {
-    // Der Aufruf sollte nicht triggern, dass der Canvas neu gezeichnet wird
-    // Daher nur den internen Wert setzen
-    window.currentZoom = newZoom;
-    // Falls explizite Funktion zum stillen Update existiert
-    if (typeof window.updateZoomLevel === 'function') {
-      window.updateZoomLevel(newZoom);
-    }
-  }
-  
-  console.log(`Editor-Zoom geändert: ${currentZoom.toFixed(2)} -> ${newZoom.toFixed(2)}`);
-}
-
-// In fabric-handler.js, neue Funktion zur Zoom-Synchronisierung
-export function synchronizeZoom(newZoom) {
-  // Aktuellen Zoom speichern
-  window.currentZoom = newZoom;
-  
-  // 1. Auf den Ansichtsview anwenden
-  if (typeof window.setZoomLevel === 'function') {
-      window.setZoomLevel(newZoom);
-  }
-  
-  // 2. Auf den Editor anwenden, falls aktiv
-  if (window.isEditorActive && canvas) {
-      setEditorZoom(newZoom);
-  }
-  
-  // 3. Zoom-Buttons aktualisieren
-  const viewZoomBtn = document.getElementById('resetZoomBtn');
-  if (viewZoomBtn) {
-      viewZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
-  }
-  
-  const editorZoomBtn = document.getElementById('editorResetZoomBtn');
-  if (editorZoomBtn) {
-      editorZoomBtn.textContent = `${Math.round(newZoom * 100)}%`;
-  }
-  
-  console.log(`Zoom synchronisiert: ${newZoom.toFixed(2)}`);
-}
-
-// Und füge diese Funktion zum FabricHandler-Objekt hinzu
-window.FabricHandler = {
-  // ... bestehende Funktionen
-  synchronizeZoom
-};
-
 export function fixCanvasEvents() {
   if (!canvas) return;
   
@@ -2611,72 +2340,6 @@ export function fixCanvasEvents() {
 }
 
 
-/**
- * Editor-Zoom auf einen bestimmten Wert setzen
- * @param {number} zoomLevel - Der Zoom-Faktor
- */
-export function setEditorZoom(zoomLevel) {
-  if (!canvas) return;
-  
-  console.log(`Setting editor zoom to ${zoomLevel}`);
-  
-  // Bild ermitteln
-  const editorImage = document.getElementById('editorImage');
-  if (!editorImage) return;
-  
-  // Scroll-Container ermitteln
-  const scrollContainer = document.querySelector('.scroll-container');
-  if (!scrollContainer) return;
-  
-  // Bildgröße anpassen
-  const naturalWidth = uploadedImage.naturalWidth;
-  const naturalHeight = uploadedImage.naturalHeight;
-  
-  const newWidth = naturalWidth * zoomLevel;
-  const newHeight = naturalHeight * zoomLevel;
-  
-  editorImage.style.width = `${newWidth}px`;
-  editorImage.style.height = `${newHeight}px`;
-  
-  // Canvas-Zoom aktualisieren
-  canvas.setZoom(zoomLevel);
-  
-  // Canvas-Container-Größe anpassen
-  const canvasContainer = document.getElementsByClassName('canvas-container')[0];
-  if (canvasContainer) {
-      canvasContainer.style.width = `${newWidth}px`;
-      canvasContainer.style.height = `${newHeight}px`;
-  }
-  
-  // Zum Zentrum des Bildes scrollen ODER Position aus Ansichtsview übernehmen
-  if (imageContainer && scrollContainer) {
-      // Versuche, die Scroll-Position vom Ansichtsview zu übernehmen
-      scrollContainer.scrollLeft = imageContainer.scrollLeft;
-      scrollContainer.scrollTop = imageContainer.scrollTop;
-  } else {
-      // Fallback: Zum Zentrum scrollen
-      const centerX = newWidth / 2 - scrollContainer.clientWidth / 2;
-      const centerY = newHeight / 2 - scrollContainer.clientHeight / 2;
-      
-      scrollContainer.scrollLeft = Math.max(0, centerX);
-      scrollContainer.scrollTop = Math.max(0, centerY);
-  }
-  
-  // Canvas neu rendern
-  canvas.renderAll();
-  
-  // Globalen Zoom-Wert aktualisieren
-  window.currentZoom = zoomLevel;
-  
-  // Zoom-Anzeige aktualisieren, falls vorhanden
-  const editorZoomBtn = document.getElementById('editorResetZoomBtn');
-  if (editorZoomBtn) {
-      editorZoomBtn.textContent = `${Math.round(zoomLevel * 100)}%`;
-  }
-  
-  console.log(`Editor-Zoom gesetzt auf: ${zoomLevel.toFixed(2)}`);
-}
-
 // In fabric-handler.js, als neue exportierte Funktion:
 /**
  * Aktualisiert die Anzeige der Annotationen, indem der Canvas neu initialisiert und die Annotationen neu gezeichnet werden
@@ -2703,6 +2366,15 @@ export function refreshAnnotations() {
     const currentZoom = window.getCurrentZoom();
     syncEditorZoom(currentZoom);
   }
+}
+
+//Einfache Wrapper, für Zoom-Funktionalität:
+export function syncEditorZoom(zoomLevel) {
+  ZoomManager.setZoomLevel(zoomLevel);
+}
+
+export function getCurrentZoom() {
+  return ZoomManager.getCurrentZoom();
 }
 
 // Expose functions through window.FabricHandler
@@ -2735,12 +2407,9 @@ window.FabricHandler = {
   toggleObjectsByLabel,
   
   // Utilities
-  getCurrentZoom,
   setLabels,
   setLineLabels,
-  syncEditorZoom,
-  setEditorZoom,
-  synchronizeZoom,
+  updateCanvasContainer,
 
   // debug
   fixCanvasEvents, // Prüfen ist evtl. nicht nur debug.
