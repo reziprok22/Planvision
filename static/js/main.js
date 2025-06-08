@@ -218,6 +218,7 @@ function calculatePredictionArea(coords) {
 function displayAnnotations(predictions) {
   console.log("=== DISPLAYING ANNOTATIONS ===");
   console.log(`Processing ${predictions?.length || 0} predictions`);
+  console.log(`Current format settings: ${document.getElementById('formatWidth')?.value || 'N/A'}x${document.getElementById('formatHeight')?.value || 'N/A'}mm`);
   
   if (!canvas) {
     console.log("No canvas, initializing...");
@@ -276,27 +277,18 @@ function displayAnnotations(predictions) {
         annotationIndex: index,
         labelId: labelId,
         objectLabel: labelId,
-        selectable: isEditorActive && currentTool === 'select',
-        evented: isEditorActive && currentTool === 'select'
+        selectable: true,
+        hasControls: true,
+        hasBorders: true,
+        evented: true
       });
       
       canvas.add(rect);
       
-      // Create label text with canvas coordinates
-      const labelText = `#${index + 1}: ${label.name}`;
-      const text = new fabric.Text(labelText, {
-        left: canvasX1,
-        top: canvasY1 - 20,
-        fontSize: 12,
-        fill: 'white',
-        backgroundColor: label.color,
-        padding: 3,
-        objectType: 'label',
-        selectable: isEditorActive && currentTool === 'select',
-        evented: isEditorActive && currentTool === 'select'
-      });
-      
-      canvas.add(text);
+      // Create label text with standardized format matching table
+      const area = pred.calculatedArea || pred.area || 0;
+      const labelText = `#${index + 1}: ${label.name} (${area.toFixed(2)}m²)`;
+      createAnnotationLabel({ x: canvasX1, y: canvasY1 }, labelText, label.color);
       rectangleCount++;
     } else {
       console.log(`Skipping non-rectangle annotation ${index}:`, pred.type || 'unknown');
@@ -326,19 +318,48 @@ function updateResultsTable() {
   resultsBody.innerHTML = '';
   
   window.data.predictions.forEach((pred, index) => {
-    const label = getLabel(pred.label || 0);
-    // Use the correctly calculated area, fallback to original API area if not available
-    const area = pred.calculatedArea ? `${pred.calculatedArea.toFixed(2)} m²` : 
-                 pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
+    // Get appropriate label based on annotation type
+    let label;
+    if (pred.annotationType === 'line') {
+      // Use line labels for line annotations
+      const lineLabel = getLabelById ? getLabelById(pred.label || 1, 'line') : null;
+      label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
+    } else {
+      // Use area labels for rectangles and polygons
+      label = getLabel(pred.label || 0);
+    }
+    
+    // Determine annotation type and measurement
+    let annotationType = 'Rechteck';
+    let measurement = 'N/A';
+    
+    if (pred.annotationType === 'rectangle' || pred.box) {
+      annotationType = 'Rechteck';
+      measurement = pred.calculatedArea ? `${pred.calculatedArea.toFixed(2)} m²` : 
+                   pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
+    } else if (pred.annotationType === 'polygon') {
+      annotationType = 'Polygon';
+      measurement = pred.calculatedArea ? `${pred.calculatedArea.toFixed(2)} m²` : 'N/A';
+    } else if (pred.annotationType === 'line') {
+      annotationType = 'Linie';
+      measurement = pred.calculatedLength ? `${pred.calculatedLength.toFixed(2)} m` : 'N/A';
+    }
     
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${index + 1}</td>
       <td>${label.name}</td>
-      <td>Rechteck</td>
+      <td>${annotationType}</td>
       <td>${((pred.score || 0) * 100).toFixed(1)}%</td>
-      <td>${area}</td>
+      <td>${measurement}</td>
     `;
+    
+    // Add visual indicator for user-created annotations
+    if (pred.userCreated) {
+      row.style.fontStyle = 'italic';
+      row.title = 'Benutzer-erstellt';
+    }
+    
     resultsBody.appendChild(row);
   });
 }
@@ -601,16 +622,23 @@ function setTool(toolName) {
   // Update universal label dropdown based on tool
   updateUniversalLabelDropdown(toolName);
   
-  // Update canvas selection mode
+  // Update canvas selection mode (Auswahl-Modul)
   if (canvas) {
     if (toolName === 'select') {
       console.log('Switching to selection mode');
       canvas.selection = true; // Es können mehrere Objekte gleichzeitig mit Auswahlrahmen ausgewählt werden
       canvas.defaultCursor = 'default';
       canvas.hoverCursor = 'move';
+      console.log('Canvas objects:', canvas.getObjects().length);
       canvas.forEachObject(obj => {
-        obj.selectable = true;
-        obj.evented = true;
+        // Nur Annotation-Objekte selektierbar machen, nicht Text-Labels
+        if (obj.objectType === 'annotation') {
+          obj.selectable = true;
+          obj.evented = true;
+        } else {
+          obj.selectable = false;
+          obj.evented = false;
+        }
       });
     } else {
       console.log('Switching to drawing mode:', toolName);
@@ -792,6 +820,14 @@ function finishDrawingRectangle() {
     // Calculate area
     const area = calculateRectangleArea(currentPath);
     console.log(`Rectangle created with area: ${area.toFixed(2)} m², Label: ${label.name}`);
+    
+    // Add to results data
+    addAnnotationToResults(currentPath, 'rectangle', area);
+    
+    // Add text label like other annotations
+    const annotationNumber = window.data ? window.data.predictions.length : 1;
+    const labelText = `#${annotationNumber}: ${label.name} (${area.toFixed(2)}m²)`;
+    createAnnotationLabel({ x: currentPath.left, y: currentPath.top }, labelText, label.color);
   }
   
   drawingMode = false;
@@ -826,9 +862,11 @@ function getPixelToMeterFactor() {
   
   console.log(`Scale calculation:
     - Format width: ${formatWidth}mm
+    - Format height: ${parseFloat(document.getElementById('formatHeight')?.value || 297)}mm
     - Plan scale: 1:${planScale}
     - Real world width: ${realWorldWidthMm}mm = ${realWorldWidthM}m
     - Image width: ${imageWidthPixels}px
+    - Image height: ${uploadedImage.naturalHeight}px
     - Pixel to meter factor: ${pixelToMeter}`);
   
   return pixelToMeter;
@@ -875,11 +913,76 @@ function deleteSelectedObjects() {
 }
 
 /**
+ * Create annotation text label
+ */
+function createAnnotationLabel(position, labelText, backgroundColor) {
+  const text = new fabric.Text(labelText, {
+    left: position.x,
+    top: position.y - 20,
+    fontSize: 12,
+    fill: 'white',
+    backgroundColor: backgroundColor,
+    padding: 3,
+    objectType: 'label',
+    textBaseline: 'alphabetic',
+    selectable: false
+  });
+  canvas.add(text);
+  return text;
+}
+
+/**
  * Get currently selected label ID from universal dropdown
  */
 function getCurrentSelectedLabel(type = 'area') {
   const universalLabelSelect = document.getElementById('universalLabelSelect');
   return universalLabelSelect ? parseInt(universalLabelSelect.value) : 1;
+}
+
+/**
+ * Add annotation to results data structure
+ */
+function addAnnotationToResults(annotationObject, type, area = null, length = null) {
+  if (!window.data) {
+    window.data = { predictions: [] };
+  }
+  if (!window.data.predictions) {
+    window.data.predictions = [];
+  }
+  
+  const newPrediction = {
+    label: annotationObject.labelId || 1,
+    score: 1.0, // User-created annotations have 100% confidence
+    objectType: annotationObject.objectType,
+    annotationType: type,
+    userCreated: true
+  };
+  
+  if (type === 'rectangle') {
+    // Add bounding box coordinates
+    newPrediction.box = [
+      annotationObject.left,
+      annotationObject.top,
+      annotationObject.left + annotationObject.width,
+      annotationObject.top + annotationObject.height
+    ];
+    newPrediction.calculatedArea = area;
+  } else if (type === 'polygon') {
+    // Store polygon points
+    newPrediction.points = annotationObject.points;
+    newPrediction.calculatedArea = area;
+  } else if (type === 'line') {
+    // Store line points
+    newPrediction.points = annotationObject.points;
+    newPrediction.calculatedLength = length;
+  }
+  
+  window.data.predictions.push(newPrediction);
+  console.log(`Added ${type} annotation to results:`, newPrediction);
+  
+  // Update UI
+  updateResultsTable();
+  updateSummary();
 }
 
 /**
@@ -975,13 +1078,11 @@ function startPolygonDrawing() {
     strokeWidth: 2,
     objectType: 'annotation',
     annotationType: 'polygon',
-    selectable: isEditorActive && currentTool === 'select',
-    evented: isEditorActive && currentTool === 'select',
-    objectCaching: false, // true = verbessert performance und objekte werden schneller gerendert
-    absolutePositioned: true, // Wichtig, dass Objekt anhand der canvas-Koordinaten positioniert wird
-    clipPath: null, // null = keine Einschränkung bei der Grösse des Polygons. 
-    width: canvas.width,
-    height: canvas.height
+    selectable: isEditorActive,
+    evented: isEditorActive,
+    hasControls: true,
+    hasBorders: true,
+    objectCaching: false
   });
   
   canvas.add(currentPolygon);
@@ -999,8 +1100,8 @@ function updatePolygonFromPoints() {
   // Update polygon points
   currentPolygon.set({
     points: fabricPoints,
-    hasBorders: false,
-    hasControls: false,
+    hasBorders: true,
+    hasControls: true,
   });
   
   canvas.renderAll();
@@ -1050,6 +1151,15 @@ function finishPolygonDrawing() {
   // Calculate area
   const area = calculatePolygonArea(currentPoints);
   console.log(`Polygon created with area: ${area.toFixed(2)} m², Label: ${label.name}`);
+  
+  // Add to results data
+  addAnnotationToResults(currentPolygon, 'polygon', area);
+  
+  // Add text label positioned near the first point for predictable placement
+  const firstPoint = currentPoints[0];
+  const annotationNumber = window.data ? window.data.predictions.length : 1;
+  const labelText = `#${annotationNumber}: ${label.name} (${area.toFixed(2)}m²)`;
+  createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, label.color);
   
   resetPolygonDrawing();
 }
@@ -1186,6 +1296,16 @@ function finishLineDrawing() {
   const totalLength = calculatePolylineLength(currentPoints);
   console.log(`Line sequence created with total length: ${totalLength.toFixed(2)} m, Label: ${labelName}`);
   
+  // Add to results data
+  addAnnotationToResults(currentLine, 'line', null, totalLength);
+  
+  // Add text label positioned at the midpoint of the line with same format as table
+  const midIndex = Math.floor(currentPoints.length / 2);
+  const labelPosition = currentPoints[midIndex];
+  const annotationNumber = window.data ? window.data.predictions.length : 1;
+  const labelText = `#${annotationNumber}: ${labelName} (${totalLength.toFixed(2)}m)`;
+  createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor);
+  
   resetLineDrawing();
 }
 
@@ -1321,6 +1441,7 @@ function initApp() {
         if (size) {
           document.getElementById('formatWidth').value = size[0];
           document.getElementById('formatHeight').value = size[1];
+          console.log(`Format changed to ${this.value}: ${size[0]}x${size[1]}mm`);
         }
       }
     });
@@ -1343,6 +1464,21 @@ function initApp() {
       if (errorMessage) errorMessage.style.display = 'none';
       
       const formData = new FormData(uploadForm);
+      
+      // Handle format detection: only send values if NOT auto-detection
+      const formatSelect = document.getElementById('formatSelect');
+      
+      if (formatSelect?.value === 'auto') {
+        // For automatic detection, don't send format dimensions - let backend use PDF metadata
+        console.log('Auto-detection: Backend will use PDF metadata for format detection');
+      } else {
+        // For manual selection, send the specified format dimensions
+        const formatWidthValue = document.getElementById('formatWidth')?.value || '210';
+        const formatHeightValue = document.getElementById('formatHeight')?.value || '297';
+        formData.set('format_width', formatWidthValue);
+        formData.set('format_height', formatHeightValue);
+        console.log(`Form submission with manual format: ${formatWidthValue}x${formatHeightValue}mm`);
+      }
       
       // API call
       fetch('/predict', {
@@ -1377,6 +1513,16 @@ function initApp() {
           const uploadedFile = document.getElementById('file').files[0];
           if (uploadedFile) {
             uploadedImage.src = URL.createObjectURL(uploadedFile);
+          }
+        }
+        
+        // Update format fields with backend-detected PDF dimensions (if available)
+        if (data.is_pdf && data.page_sizes && data.page_sizes.length > 0) {
+          const currentPageSize = data.page_sizes[data.current_page - 1];
+          if (currentPageSize) {
+            document.getElementById('formatWidth').value = Math.round(currentPageSize[0]);
+            document.getElementById('formatHeight').value = Math.round(currentPageSize[1]);
+            console.log(`✅ Updated format fields with PDF dimensions: ${Math.round(currentPageSize[0])}x${Math.round(currentPageSize[1])}mm`);
           }
         }
         
@@ -1467,7 +1613,7 @@ function initApp() {
     lineLabelsTab: document.getElementById('lineLabelsTab')
   });
   
-  console.log("✅ Application with editor, zoom manager, and labels initialized");
+  console.log("✅ Application with editor and labels initialized");
 }
 
 // Initialize when DOM is ready
