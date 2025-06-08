@@ -30,7 +30,7 @@ h2 {
     display: flex;
     width: 100%;
     max-width: 100%;
-    min-height: calc(100vh - 80px);
+    height: calc(100vh - 80px); /* Feste Höhe für bessere Platznutzung */
     padding: 20px;
     box-sizing: border-box;
     gap: 20px;
@@ -125,22 +125,15 @@ button:hover {
     border: 1px solid #ddd;
     background: #f9f9f9;
     min-height: 400px; /* Minimum für kleine Bildschirme */
-    max-height: calc(100vh - 150px); /* Maximum für große Bildschirme */
+    height: calc(100vh - 250px); /* Angepasst für Header + Controls + Padding */
+    max-height: none; /* Kein Maximum - nutze verfügbaren Platz */
     display: flex;
     justify-content: flex-start; /* Bild startet links-oben statt zentriert */
     align-items: flex-start; /* Bild startet oben */
     padding: 0;
 }
 
-#uploadedImage {
-    display: block;
-    max-width: none; /* Verhindert automatische Größenanpassung beim Zoomen */
-    width: auto;
-    height: auto;
-    /* Keine max-height - Bild behält natürliche Größe */
-    max-height: none; /* Entfernt responsive Skalierung */
-    transform-origin: top left; /* Wichtig für Zooming */
-}
+/* #uploadedImage - not needed, using Fabric.js background image */
 
 /* Tabellenstile */
 table {
@@ -311,57 +304,6 @@ tr:nth-child(even) {
 
 .object-type-select {
     flex: 0 0 120px;
-}
-
-
-/* Zoom-Kontrollen - Basis-Styling (zoom-manager.js übernimmt Funktionalität) */
-.zoom-control {
-    position: relative;
-    display: inline-block;
-}
-
-.zoom-dropdown {
-    display: none;
-    position: absolute;
-    background-color: white;
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
-    z-index: 1000;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-    min-width: 80px;
-    top: 100%;
-    left: 0;
-}
-
-.zoom-control:hover .zoom-dropdown {
-    display: block;
-}
-
-.zoom-dropdown .zoom-option {
-    color: #333;
-    background: white;
-    padding: 8px 12px;
-    text-decoration: none;
-    display: block;
-    border: none;
-    width: 100%;
-    text-align: left;
-    border-radius: 0;
-    cursor: pointer;
-}
-
-.zoom-dropdown .zoom-option:hover {
-    background-color: #f1f1f1;
-}
-
-.zoom-dropdown .zoom-option:first-child {
-    border-top-left-radius: 4px;
-    border-top-right-radius: 4px;
-}
-
-.zoom-dropdown .zoom-option:last-child {
-    border-bottom-left-radius: 4px;
-    border-bottom-right-radius: 4px;
 }
 
 /* Responsives Design */

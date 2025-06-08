@@ -4,7 +4,6 @@
  */
 
 // Import modules
-import * as ZoomManager from './zoom-manager.js';
 import { setupLabels, updateUIForLabels, getAreaLabels, getLabelById, getLabelName, getLabelColor } from './labels.js';
 
 // Fabric.js text baseline patch
@@ -34,6 +33,7 @@ let currentPoints = [];
 let selectedObjects = [];
 let currentPolygon = null;
 let currentLine = null;
+let rectangleStartPoint = null;
 
 // Event timing control
 let isProcessingClick = false;
@@ -97,77 +97,94 @@ function initCanvas() {
   canvas.hoverCursor = 'default';
   canvas.moveCursor = 'default';
   
-  // NEUE STRATEGIE: Canvas-Größe = angezeigte Bildgröße (nicht natural size!)
-  const displayedWidth = uploadedImage.offsetWidth;
-  const displayedHeight = uploadedImage.offsetHeight;
+  // FABRIC.JS NATURAL-SIZE STRATEGY: Canvas = image size, 1:1 coordinates
   const naturalWidth = uploadedImage.naturalWidth;
   const naturalHeight = uploadedImage.naturalHeight;
   
-  // Skalierungsfaktor für Koordinaten-Umrechnung
-  window.coordinateScaleFactor = {
-    x: naturalWidth / displayedWidth,
-    y: naturalHeight / displayedHeight
-  };
+  console.log(`Canvas size set to natural size: ${naturalWidth}x${naturalHeight}`);
   
-  console.log(`Canvas size set to displayed size: ${displayedWidth}x${displayedHeight}`);
-  console.log(`Natural image size: ${naturalWidth}x${naturalHeight}`);
-  console.log(`Coordinate scale factor:`, window.coordinateScaleFactor);
+  // Canvas-Größe = Natural Image Size (für 1:1 Koordinaten)
+  canvas.setWidth(naturalWidth);
+  canvas.setHeight(naturalHeight);
   
-  // Canvas-Größe = angezeigte Größe (macht Events einfacher)
-  canvas.setWidth(displayedWidth);
-  canvas.setHeight(displayedHeight);
+  // Add image as Fabric.js background at 1:1 scale
+  fabric.Image.fromURL(uploadedImage.src, function(img) {
+    img.set({
+      left: 0,
+      top: 0,
+      scaleX: 1.0,  // No scaling - natural size
+      scaleY: 1.0,  // No scaling - natural size
+      selectable: false,
+      evented: false,
+      excludeFromExport: true
+    });
+    
+    // Add as background (lowest layer)
+    canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+    console.log('Image added as Fabric.js background at natural size');
+  });
   
-  // Canvas zoom wird vom ZoomManager gehandhabt
-  const currentZoom = window.getCurrentZoom ? window.getCurrentZoom() : 1.0;
-  canvas.setZoom(currentZoom);
-  console.log(`Canvas zoom set to: ${currentZoom}`);
+  // Hide the HTML image since we're using Fabric.js background
+  uploadedImage.style.display = 'none';
   
-  // Position canvas container
-  updateCanvasPosition();
+  // Enable Fabric.js zoom functionality with Ctrl+Wheel, allow normal scrolling
+  canvas.on('mouse:wheel', function(opt) {
+    // Only zoom with Ctrl key, otherwise allow normal scrolling
+    if (opt.e.ctrlKey) {
+      const delta = opt.e.deltaY;
+      let zoom = canvas.getZoom();
+      zoom *= 0.999 ** delta;
+      if (zoom > 5) zoom = 5;    // Lower max zoom for natural size
+      if (zoom < 0.1) zoom = 0.1; // Higher min zoom for natural size
+      canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+    } else {
+      // Allow normal scrolling - don't prevent default
+      // The container will handle scrolling naturally
+    }
+  });
+  
+  // Position canvas at natural size (scrollable in container)
+  const canvasWrapper = canvas.wrapperEl;
+  if (canvasWrapper) {
+    canvasWrapper.style.position = 'absolute';
+    canvasWrapper.style.top = '0';
+    canvasWrapper.style.left = '0';
+    canvasWrapper.style.width = `${naturalWidth}px`;
+    canvasWrapper.style.height = `${naturalHeight}px`;
+  }
+  
+  // Setup enhanced scrolling for container
+  setupContainerScrolling();
   
   // Setup editor event handlers if editor is active
   if (isEditorActive) {
     setupCanvasEvents();
   }
-  
-  // Inform zoom manager about new canvas
-  ZoomManager.setCanvas(canvas);
-  
+    
   console.log("Canvas initialized successfully");
+
   return canvas;
 }
 
 /**
- * Update canvas position to match image - Compatible with zoom-manager
+ * Setup enhanced scrolling for the image container. shift+mousewheel = horizonal scroll
  */
-function updateCanvasPosition() {
-  if (!canvas || !imageContainer || !uploadedImage) return;
+function setupContainerScrolling() {
+  if (!imageContainer) return;
   
-  const canvasWrapper = canvas.wrapperEl;
-  if (!canvasWrapper) return;
+  imageContainer.addEventListener('wheel', function(e) {
+    // If Shift key is held, convert vertical scroll to horizontal
+    if (e.shiftKey && !e.ctrlKey) {
+      e.preventDefault();
+      imageContainer.scrollLeft += e.deltaY;
+    }
+    // Normal vertical scrolling happens automatically if no modifiers
+    // Ctrl+Wheel is handled by Fabric.js for zooming
+  }, { passive: false });
   
-  // Get image position and size
-  const imageRect = uploadedImage.getBoundingClientRect();
-  const containerRect = imageContainer.getBoundingClientRect();
-  
-  const relLeft = imageRect.left - containerRect.left + imageContainer.scrollLeft;
-  const relTop = imageRect.top - containerRect.top + imageContainer.scrollTop;
-  
-  // Position the canvas wrapper to exactly overlay the image
-  canvasWrapper.style.position = 'absolute';
-  canvasWrapper.style.left = `${relLeft}px`;
-  canvasWrapper.style.top = `${relTop}px`;
-  canvasWrapper.style.width = `${imageRect.width}px`;
-  canvasWrapper.style.height = `${imageRect.height}px`;
-  canvasWrapper.style.zIndex = '100'; // High z-index
-  
-  // Always enable pointer events
-  canvasWrapper.style.pointerEvents = 'auto';
-  
-  // Make compatible with zoom-manager by adding canvas-container class
-  canvasWrapper.classList.add('canvas-container');
-  
-  console.log(`Canvas positioned: ${relLeft}, ${relTop}, ${imageRect.width}x${imageRect.height}`);
+  console.log('Enhanced container scrolling setup complete');
 }
 
 /**
@@ -231,12 +248,11 @@ function displayAnnotations(predictions) {
       // Calculate correct area for this prediction and store it
       pred.calculatedArea = calculatePredictionArea(coords);
       
-      // Convert coordinates from natural size to canvas size
-      const scaleFactor = window.coordinateScaleFactor;
-      const canvasX1 = x1 / scaleFactor.x;
-      const canvasY1 = y1 / scaleFactor.y;
-      const canvasX2 = x2 / scaleFactor.x;
-      const canvasY2 = y2 / scaleFactor.y;
+      // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
+      const canvasX1 = x1;
+      const canvasY1 = y1;
+      const canvasX2 = x2;
+      const canvasY2 = y2;
       const canvasWidth = canvasX2 - canvasX1;
       const canvasHeight = canvasY2 - canvasY1;
       
@@ -289,9 +305,6 @@ function displayAnnotations(predictions) {
   
   canvas.renderAll();
   console.log(`✅ Displayed ${rectangleCount} rectangles on canvas`);
-  
-  // Update canvas position after rendering
-  setTimeout(updateCanvasPosition, 50);
   
   // Re-setup canvas events if editor is active
   if (isEditorActive) {
@@ -399,9 +412,9 @@ function clearResults() {
     canvas.clear();
   }
   
-  // Reset zoom (if zoom manager available)
-  if (window.resetZoom) {
-    window.resetZoom();
+  // Reset canvas zoom to 1.0
+  if (canvas) {
+    canvas.setZoom(1.0);
   }
   
   console.log("Results cleared");
@@ -428,7 +441,6 @@ function toggleEditor() {
     // Setup canvas events
     if (canvas) {
       setupCanvasEvents();
-      updateCanvasPosition(); // Update positioning when editor is activated
     }
   } else {
     // Deaktiviere Editor
@@ -441,7 +453,6 @@ function toggleEditor() {
     if (canvas) {
       canvas.discardActiveObject();
       canvas.renderAll();
-      updateCanvasPosition(); // Update positioning when editor is deactivated
     }
     selectedObjects = [];
   }
@@ -519,15 +530,18 @@ function setupCanvasEvents() {
     }
   });
   
-  // Double-click event - for polygon finishing
+  // Double-click event - for polygon and line finishing
   canvas.on('mouse:dblclick', function(options) {
-    console.log('Fabric.js double-click event', { currentTool, polygonPoints: currentPoints.length });
+    console.log('Fabric.js double-click event', { currentTool, currentPoints: currentPoints.length });
     
     if (!isEditorActive) return;
     
     if (currentTool === 'polygon' && currentPoints.length >= 3) {
       console.log('Double-click detected, finishing polygon');
       finishPolygonDrawing();
+    } else if (currentTool === 'line' && currentPoints.length >= 2) {
+      console.log('Double-click detected, finishing line sequence');
+      finishLineDrawing();
     }
   });
   
@@ -591,7 +605,7 @@ function setTool(toolName) {
   if (canvas) {
     if (toolName === 'select') {
       console.log('Switching to selection mode');
-      canvas.selection = true;
+      canvas.selection = true; // Es können mehrere Objekte gleichzeitig mit Auswahlrahmen ausgewählt werden
       canvas.defaultCursor = 'default';
       canvas.hoverCursor = 'move';
       canvas.forEachObject(obj => {
@@ -699,26 +713,8 @@ function resetAllDrawingStates() {
   currentPoints = [];
   currentPolygon = null;
   currentLine = null;
+  rectangleStartPoint = null;
   isProcessingClick = false;
-}
-
-/**
- * Coordinate Conversion Helpers
- */
-function canvasToNaturalCoords(canvasCoords) {
-  const scaleFactor = window.coordinateScaleFactor;
-  return {
-    x: canvasCoords.x * scaleFactor.x,
-    y: canvasCoords.y * scaleFactor.y
-  };
-}
-
-function naturalToCanvasCoords(naturalCoords) {
-  const scaleFactor = window.coordinateScaleFactor;
-  return {
-    x: naturalCoords.x / scaleFactor.x,
-    y: naturalCoords.y / scaleFactor.y
-  };
 }
 
 /**
@@ -728,18 +724,26 @@ function startDrawingRectangle(pointer) {
   if (!canvas) return;
   
   drawingMode = true;
+  
+  // Store the original start point
+  rectangleStartPoint = { x: pointer.x, y: pointer.y };
+  
+  // Get current selected label and its color
+  const selectedLabelId = getCurrentSelectedLabel('area');
+  const label = getLabel(selectedLabelId);
+  
   const rect = new fabric.Rect({
     left: pointer.x,
     top: pointer.y,
     width: 0,
     height: 0,
-    fill: 'rgba(0, 0, 255, 0.2)',
-    stroke: '#0000FF',
+    fill: label.color + '20', // 20% opacity
+    stroke: label.color,
     strokeWidth: 2,
     objectType: 'annotation',
     annotationType: 'rectangle',
-    selectable: false,
-    evented: false
+    selectable: isEditorActive && currentTool === 'select',
+    evented: isEditorActive && currentTool === 'select'
   });
   
   canvas.add(rect);
@@ -747,20 +751,20 @@ function startDrawingRectangle(pointer) {
 }
 
 function updateDrawingRectangle(pointer) {
-  if (!currentPath) return;
+  if (!currentPath || !rectangleStartPoint) return;
   
-  const startX = currentPath.left;
-  const startY = currentPath.top;
+  const startX = rectangleStartPoint.x;
+  const startY = rectangleStartPoint.y;
   const width = pointer.x - startX;
   const height = pointer.y - startY;
-  
+    
   currentPath.set({
     width: Math.abs(width),
     height: Math.abs(height),
     left: width < 0 ? pointer.x : startX,
     top: height < 0 ? pointer.y : startY
   });
-  
+    
   canvas.renderAll();
 }
 
@@ -792,6 +796,7 @@ function finishDrawingRectangle() {
   
   drawingMode = false;
   currentPath = null;
+  rectangleStartPoint = null;
   canvas.renderAll();
 }
 
@@ -835,10 +840,9 @@ function getPixelToMeterFactor() {
 function calculateRectangleArea(rect) {
   const pixelToMeter = getPixelToMeterFactor();
   
-  // Convert canvas coordinates back to natural image coordinates first
-  const scaleFactor = window.coordinateScaleFactor;
-  const naturalWidth = rect.width * scaleFactor.x;
-  const naturalHeight = rect.height * scaleFactor.y;
+  // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
+  const naturalWidth = rect.width;
+  const naturalHeight = rect.height;
   
   // Convert to real world dimensions
   const widthM = naturalWidth * pixelToMeter;
@@ -954,6 +958,10 @@ function startPolygonDrawing() {
   console.log('Starting polygon drawing');
   drawingMode = true;
   
+  // Get current selected label and its color
+  const selectedLabelId = getCurrentSelectedLabel('area');
+  const label = getLabel(selectedLabelId);
+  
   // Create initial polygon with first point duplicated to make it visible
   const firstPoint = currentPoints[0];
   const points = [
@@ -962,13 +970,18 @@ function startPolygonDrawing() {
   ];
   
   currentPolygon = new fabric.Polygon(points, {
-    fill: 'rgba(0, 255, 0, 0.2)',
-    stroke: '#00FF00',
+    fill: label.color + '20', // 20% opacity
+    stroke: label.color,
     strokeWidth: 2,
     objectType: 'annotation',
     annotationType: 'polygon',
-    selectable: false,
-    evented: false
+    selectable: isEditorActive && currentTool === 'select',
+    evented: isEditorActive && currentTool === 'select',
+    objectCaching: false, // true = verbessert performance und objekte werden schneller gerendert
+    absolutePositioned: true, // Wichtig, dass Objekt anhand der canvas-Koordinaten positioniert wird
+    clipPath: null, // null = keine Einschränkung bei der Grösse des Polygons. 
+    width: canvas.width,
+    height: canvas.height
   });
   
   canvas.add(currentPolygon);
@@ -985,7 +998,9 @@ function updatePolygonFromPoints() {
   
   // Update polygon points
   currentPolygon.set({
-    points: fabricPoints
+    points: fabricPoints,
+    hasBorders: false,
+    hasControls: false,
   });
   
   canvas.renderAll();
@@ -1046,7 +1061,7 @@ function resetPolygonDrawing() {
 }
 
 /**
- * Line Drawing Functions
+ * Line Drawing Functions - Multi-segment perimeter tool
  */
 function addLinePoint(pointer, e) {
   console.log('Line tool - point added at:', pointer);
@@ -1055,69 +1070,86 @@ function addLinePoint(pointer, e) {
   
   isProcessingClick = true;
   
-  if (currentPoints.length === 0) {
-    // First point - start line
-    currentPoints.push(pointer);
-    startLineDrawing(pointer);
+  // Add point to current line sequence
+  currentPoints.push(pointer);
+  console.log(`Added point ${currentPoints.length}:`, pointer);
+  
+  if (currentPoints.length === 1) {
+    // First point - start line sequence
+    startLineDrawing();
     drawingMode = true; // Enable mouse move for preview
-    console.log('Line started, waiting for second point');
-  } else if (currentPoints.length === 1) {
-    // Second point - finish line
-    currentPoints.push(pointer);
-    updateLineFromPoints();
-    finishLineDrawing(); // Finish immediately on second click
-    console.log('Line completed with 2 points');
+    console.log('Line sequence started');
   } else {
-    // Already have a complete line, ignore additional clicks
-    console.log('Line already complete, ignoring click');
+    // Additional point - extend the line sequence
+    updateLineFromPoints();
+    console.log(`Line sequence extended to ${currentPoints.length} points`);
   }
   
   setTimeout(() => { isProcessingClick = false; }, 50);
 }
 
-function startLineDrawing(startPoint) {
-  if (!canvas) return;
+function startLineDrawing() {
+  if (!canvas || currentPoints.length === 0) return;
   
-  console.log('Starting line drawing');
+  console.log('Starting line sequence drawing');
   
-  // Create initial line
-  currentLine = new fabric.Line([startPoint.x, startPoint.y, startPoint.x, startPoint.y], {
-    stroke: '#FF0000',
+  // Get current selected label and its color
+  const selectedLabelId = getCurrentSelectedLabel('line');
+  const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
+  const labelColor = lineLabel ? lineLabel.color : '#FF0000';
+  
+  // Create initial polyline with first point duplicated to make it visible
+  const firstPoint = currentPoints[0];
+  const points = [
+    { x: firstPoint.x, y: firstPoint.y },
+    { x: firstPoint.x + 1, y: firstPoint.y + 1 } // Slightly offset to make it visible
+  ];
+  
+  currentLine = new fabric.Polyline(points, {
+    fill: '',
+    stroke: labelColor,
     strokeWidth: 3,
     objectType: 'annotation',
     annotationType: 'line',
-    selectable: false,
-    evented: false
+    selectable: isEditorActive && currentTool === 'select',
+    evented: isEditorActive && currentTool === 'select',
+    objectCaching: false, // true = verbessert performance und objekte werden schneller gerendert
+    absolutePositioned: true, // Wichtig, dass Objekt anhand der canvas-Koordinaten positioniert wird
+    clipPath: null, // null = keine Einschränkung bei der Grösse des Polygons. 
+    width: canvas.width,
+    height: canvas.height
   });
   
   canvas.add(currentLine);
   canvas.renderAll();
-  console.log('Line added to canvas');
+  console.log('Line sequence added to canvas');
 }
 
 function updateLineFromPoints() {
   if (!currentLine || currentPoints.length < 2) return;
   
-  const [start, end] = currentPoints;
+  // Convert points to Fabric.js format
+  const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
+  console.log('Updating line sequence with points:', fabricPoints);
+  
+  // Update polyline points
   currentLine.set({
-    x1: start.x,
-    y1: start.y,
-    x2: end.x,
-    y2: end.y
+    points: fabricPoints
   });
   
   canvas.renderAll();
+  console.log('Line sequence updated');
 }
 
 function updateLinePreview(pointer) {
   if (!currentLine || currentPoints.length === 0) return;
   
-  const startPoint = currentPoints[0];
+  // Add current mouse position as preview point
+  const previewPoints = [...currentPoints, pointer];
+  const fabricPoints = previewPoints.map(p => ({ x: p.x, y: p.y }));
+  
   currentLine.set({
-    x1: startPoint.x,
-    y1: startPoint.y,
-    x2: pointer.x,
-    y2: pointer.y
+    points: fabricPoints
   });
   
   canvas.renderAll();
@@ -1125,7 +1157,7 @@ function updateLinePreview(pointer) {
 
 function finishLineDrawing() {
   if (!currentLine || currentPoints.length < 2) {
-    console.warn('Need 2 points to create line');
+    console.warn('Need at least 2 points to create line sequence');
     if (currentLine) {
       canvas.remove(currentLine);
     }
@@ -1133,7 +1165,7 @@ function finishLineDrawing() {
     return;
   }
   
-  console.log('Line finished');
+  console.log(`Line sequence finished with ${currentPoints.length} points`);
   
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel('line');
@@ -1141,7 +1173,7 @@ function finishLineDrawing() {
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
   const labelName = lineLabel ? lineLabel.name : 'Strecke';
   
-  // Make line selectable and apply label
+  // Make line sequence selectable and apply label
   currentLine.set({
     selectable: true,
     evented: true,
@@ -1150,9 +1182,9 @@ function finishLineDrawing() {
     stroke: labelColor
   });
   
-  // Calculate length
-  const length = calculateLineLength(currentPoints[0], currentPoints[1]);
-  console.log(`Line created with length: ${length.toFixed(2)} m, Label: ${labelName}`);
+  // Calculate total length of all segments
+  const totalLength = calculatePolylineLength(currentPoints);
+  console.log(`Line sequence created with total length: ${totalLength.toFixed(2)} m, Label: ${labelName}`);
   
   resetLineDrawing();
 }
@@ -1170,13 +1202,9 @@ function calculatePolygonArea(points) {
   if (points.length < 3) return 0;
   
   const pixelToMeter = getPixelToMeterFactor();
-  const scaleFactor = window.coordinateScaleFactor;
   
-  // Convert canvas coordinates to natural image coordinates
-  const naturalPoints = points.map(p => ({
-    x: p.x * scaleFactor.x,
-    y: p.y * scaleFactor.y
-  }));
+  // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
+  const naturalPoints = points;
   
   // Shoelace formula for polygon area in natural pixels
   let areaPixels = 0;
@@ -1200,17 +1228,10 @@ function calculatePolygonArea(points) {
 
 function calculateLineLength(point1, point2) {
   const pixelToMeter = getPixelToMeterFactor();
-  const scaleFactor = window.coordinateScaleFactor;
   
-  // Convert canvas coordinates to natural image coordinates
-  const naturalPoint1 = {
-    x: point1.x * scaleFactor.x,
-    y: point1.y * scaleFactor.y
-  };
-  const naturalPoint2 = {
-    x: point2.x * scaleFactor.x,
-    y: point2.y * scaleFactor.y
-  };
+  // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
+  const naturalPoint1 = point1;
+  const naturalPoint2 = point2;
   
   // Calculate length in natural pixels
   const dx = naturalPoint2.x - naturalPoint1.x;
@@ -1226,6 +1247,40 @@ function calculateLineLength(point1, point2) {
     - Real world length: ${length.toFixed(4)}m`);
   
   return length;
+}
+
+/**
+ * Calculate total length of a polyline (multiple connected segments)
+ * @param {Array} points - Array of {x,y} points
+ * @returns {number} Total length in meters
+ */
+function calculatePolylineLength(points) {
+  if (points.length < 2) return 0;
+  
+  const pixelToMeter = getPixelToMeterFactor();
+  
+  // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
+  const naturalPoints = points;
+  
+  // Calculate total length by summing all segments
+  let totalLength = 0;
+  
+  for (let i = 0; i < naturalPoints.length - 1; i++) {
+    const dx = naturalPoints[i+1].x - naturalPoints[i].x;
+    const dy = naturalPoints[i+1].y - naturalPoints[i].y;
+    const segmentLength = Math.sqrt(dx * dx + dy * dy);
+    totalLength += segmentLength;
+  }
+  
+  // Convert to meters
+  const lengthInMeters = totalLength * pixelToMeter;
+  
+  console.log(`Polyline length calculation:
+    - Number of segments: ${points.length - 1}
+    - Total natural length: ${totalLength.toFixed(1)}px
+    - Real world length: ${lengthInMeters.toFixed(4)}m`);
+  
+  return lengthInMeters;
 }
 
 /**
@@ -1362,12 +1417,6 @@ function initApp() {
     });
   }
   
-  
-  // Setup scroll listener for canvas positioning
-  if (imageContainer) {
-    imageContainer.addEventListener('scroll', updateCanvasPosition);
-  }
-  
   // Setup editor event listeners
   const toggleEditorBtn = document.getElementById('toggleEditorBtn');
   if (toggleEditorBtn) {
@@ -1396,22 +1445,7 @@ function initApp() {
       }
     });
   }
-  
-  // Initialize zoom manager
-  ZoomManager.init({
-    imageContainer: imageContainer,
-    uploadedImage: uploadedImage,
-    resetZoomBtn: document.getElementById('resetZoomBtn')
-  });
-  
-  // Set canvas in zoom manager when available
-  if (canvas) {
-    ZoomManager.setCanvas(canvas);
-  }
-  
-  // Make ZoomManager globally available
-  window.ZoomManager = ZoomManager;
-  
+    
   // Initialize labels module
   setupLabels({
     labelManagerModal: document.getElementById('labelManagerModal'),
