@@ -155,37 +155,40 @@ def generate_annotated_pdf(project_id, output_path=None):
             print(f"Maximale Pixelgröße: {max_pixel_width} x {max_pixel_height}")
             
             for idx, pred in enumerate(predictions):
-                if 'box' in pred:
-                    try:
-                        # Koordinaten extrahieren
+                try:
+                    # Dynamische Berechnung basierend auf DPI und Papierformat
+                    scale = min(page_width / max_pixel_width, page_height / max_pixel_height)
+                    
+                    label = pred.get('label', 0)
+                    annotation_type = pred.get('annotationType', 'rectangle')
+                    
+                    # Farbe basierend auf dem Label
+                    if label == 1:
+                        color = (0, 0, 1)  # Fenster - Blau
+                    elif label == 2:
+                        color = (1, 0, 0)  # Tür - Rot
+                    elif label == 3:
+                        color = (0.8, 0.8, 0)  # Wand - Gelb
+                    elif label == 4:
+                        color = (1, 0.6, 0)  # Lukarne - Orange
+                    elif label == 5:
+                        color = (0.5, 0, 0.5)  # Dach - Lila
+                    else:
+                        color = (0.5, 0.5, 0.5)  # Andere - Grau
+                    
+                    if 'box' in pred:
+                        # Rectangle annotations
                         x1, y1, x2, y2 = pred['box']
-                        label = pred.get('label', 0)
-                        area = pred.get('area', 0)
+                        area = pred.get('calculatedArea', pred.get('area', 0))
                         
                         print(f"  Box #{idx}: Klasse {label}, Koordinaten: [{x1}, {y1}, {x2}, {y2}]")
                         
-                        # Dynamische Berechnung basierend auf DPI und Papierformat
-                        scale = min(page_width / max_pixel_width, page_height / max_pixel_height)
                         scaled_x1 = x1 * scale
                         scaled_y1 = y1 * scale
                         scaled_x2 = x2 * scale
                         scaled_y2 = y2 * scale
                         
                         print(f"  Skalierte Koordinaten: [{scaled_x1}, {scaled_y1}, {scaled_x2}, {scaled_y2}]")
-                        
-                        # Farbe basierend auf dem Label
-                        if label == 1:
-                            color = (0, 0, 1)  # Fenster - Blau
-                        elif label == 2:
-                            color = (1, 0, 0)  # Tür - Rot
-                        elif label == 3:
-                            color = (0.8, 0.8, 0)  # Wand - Gelb
-                        elif label == 4:
-                            color = (1, 0.6, 0)  # Lukarne - Orange
-                        elif label == 5:
-                            color = (0.5, 0, 0.5)  # Dach - Lila
-                        else:
-                            color = (0.5, 0.5, 0.5)  # Andere - Grau
                         
                         # Rechteck zeichnen mit skalierten Koordinaten
                         rect = fitz.Rect(scaled_x1, scaled_y1, scaled_x2, scaled_y2)
@@ -195,8 +198,47 @@ def generate_annotated_pdf(project_id, output_path=None):
                         label_text = f"#{idx+1}: {area:.2f} m²"
                         page.insert_text((scaled_x1, scaled_y1 - 5), label_text, color=color, fontsize=8)
                         
-                    except Exception as e:
-                        print(f"Fehler beim Zeichnen von Annotation {idx} auf Seite {page_num+1}: {e}")
+                    elif annotation_type == 'polygon' and 'points' in pred:
+                        # Polygon annotations
+                        points = pred['points']
+                        area = pred.get('calculatedArea', pred.get('area', 0))
+                        
+                        print(f"  Polygon #{idx}: Klasse {label}, {len(points)} Punkte")
+                        
+                        if len(points) >= 3:
+                            # Scale points
+                            scaled_points = [(p['x'] * scale, p['y'] * scale) for p in points]
+                            
+                            # Draw polygon
+                            page.draw_polyline(scaled_points, color=color, width=2, closePath=True, fill=None)
+                            
+                            # Label hinzufügen am ersten Punkt
+                            label_text = f"#{idx+1}: {area:.2f} m²"
+                            first_point = scaled_points[0]
+                            page.insert_text((first_point[0], first_point[1] - 5), label_text, color=color, fontsize=8)
+                    
+                    elif annotation_type == 'line' and 'points' in pred:
+                        # Line annotations
+                        points = pred['points']
+                        length = pred.get('calculatedLength', 0)
+                        
+                        print(f"  Line #{idx}: Klasse {label}, {len(points)} Punkte")
+                        
+                        if len(points) >= 2:
+                            # Scale points
+                            scaled_points = [(p['x'] * scale, p['y'] * scale) for p in points]
+                            
+                            # Draw polyline (open path)
+                            page.draw_polyline(scaled_points, color=color, width=3, closePath=False)
+                            
+                            # Label hinzufügen am mittleren Punkt
+                            label_text = f"#{idx+1}: {length:.2f} m"
+                            mid_index = len(scaled_points) // 2
+                            mid_point = scaled_points[mid_index]
+                            page.insert_text((mid_point[0], mid_point[1] - 5), label_text, color=color, fontsize=8)
+                        
+                except Exception as e:
+                    print(f"Fehler beim Zeichnen von Annotation {idx} auf Seite {page_num+1}: {e}")
         
        # Detaillierte Zusammenfassung auf letzter Seite hinzufügen
         print("Füge Zusammenfassungsseite hinzu...")
@@ -226,17 +268,19 @@ def generate_annotated_pdf(project_id, output_path=None):
             color=(0, 0, 0)
         )
 
-        # Zusammenfassung aller Seiten berechnen
-        total_fenster = 0
-        total_tuer = 0
-        total_wand = 0
-        total_lukarne = 0
-        total_dach = 0
-        total_fenster_area = 0
-        total_tuer_area = 0
-        total_wand_area = 0
-        total_lukarne_area = 0
-        total_dach_area = 0
+        # Dynamische Zusammenfassung aller Seiten berechnen
+        summary_counts = {}
+        summary_areas = {}
+        
+        # Label-Namen-Mapping für die Zusammenfassung
+        label_names = {
+            0: "Andere",
+            1: "Fenster", 
+            2: "Türen",
+            3: "Wände",
+            4: "Lukarnen",
+            5: "Dächer"
+        }
 
         # Seiten-Daten laden und Zusammenfassung berechnen
         for page_num in range(1, page_count + 1):
@@ -245,19 +289,22 @@ def generate_annotated_pdf(project_id, output_path=None):
                 with open(analysis_path, 'r') as f:
                     page_data = json.load(f)
                 
-                # Zählen und Flächen summieren
-                if 'count' in page_data and 'total_area' in page_data:
-                    total_fenster += page_data['count'].get('fenster', 0)
-                    total_tuer += page_data['count'].get('tuer', 0)
-                    total_wand += page_data['count'].get('wand', 0)
-                    total_lukarne += page_data['count'].get('lukarne', 0)
-                    total_dach += page_data['count'].get('dach', 0)
+                # Predictions durchgehen und zählen/summieren
+                predictions = page_data.get('predictions', [])
+                for pred in predictions:
+                    label = pred.get('label', 0)
+                    annotation_type = pred.get('annotationType', 'rectangle')
                     
-                    total_fenster_area += page_data['total_area'].get('fenster', 0)
-                    total_tuer_area += page_data['total_area'].get('tuer', 0)
-                    total_wand_area += page_data['total_area'].get('wand', 0)
-                    total_lukarne_area += page_data['total_area'].get('lukarne', 0)
-                    total_dach_area += page_data['total_area'].get('dach', 0)
+                    # Only count area-based annotations (rectangles and polygons) for summary
+                    if annotation_type in ['rectangle', 'polygon'] or 'box' in pred:
+                        area = pred.get('calculatedArea', pred.get('area', 0))
+                        
+                        # Dynamisches Zählen nach Label
+                        if label not in summary_counts:
+                            summary_counts[label] = 0
+                            summary_areas[label] = 0
+                        summary_counts[label] += 1
+                        summary_areas[label] += area
 
         # Überschrift für Tabelle
         summary_page.insert_text(
@@ -281,16 +328,24 @@ def generate_annotated_pdf(project_id, output_path=None):
         summary_page.insert_text((60 + col_widths[0], table_y + 15), "Anzahl", fontsize=10, color=(0, 0, 0))
         summary_page.insert_text((60 + col_widths[0] + col_widths[1], table_y + 15), "Gesamtfläche (m²)", fontsize=10, color=(0, 0, 0))
 
-        # Zeilen mit Daten
-        data_rows = [
-            ["Fenster", total_fenster, f"{total_fenster_area:.2f}"],
-            ["Türen", total_tuer, f"{total_tuer_area:.2f}"],
-            ["Wände", total_wand, f"{total_wand_area:.2f}"],
-            ["Lukarnen", total_lukarne, f"{total_lukarne_area:.2f}"],
-            ["Dächer", total_dach, f"{total_dach_area:.2f}"],
-            ["Gesamt", total_fenster + total_tuer + total_wand + total_lukarne + total_dach, 
-            f"{(total_fenster_area + total_tuer_area + total_wand_area + total_lukarne_area + total_dach_area):.2f}"]
-        ]
+        # Dynamische Zeilen basierend auf tatsächlich vorhandenen Labels
+        data_rows = []
+        total_count = 0
+        total_area = 0
+        
+        # Sortiere Labels für konsistente Anzeige
+        for label in sorted(summary_counts.keys()):
+            if summary_counts[label] > 0:  # Nur Labels mit Elementen anzeigen
+                label_name = label_names.get(label, f"Label {label}")
+                count = summary_counts[label]
+                area = summary_areas[label]
+                data_rows.append([label_name, count, f"{area:.2f}"])
+                total_count += count
+                total_area += area
+        
+        # Gesamtzeile hinzufügen, wenn es Daten gibt
+        if total_count > 0:
+            data_rows.append(["Gesamt", total_count, f"{total_area:.2f}"])
 
         for i, row in enumerate(data_rows):
             row_y = table_y + (i + 1) * row_height
@@ -316,13 +371,13 @@ def generate_annotated_pdf(project_id, output_path=None):
             area_width = fitz.Font("helv").text_length(area_text, fontsize=10)
             area_x = 60 + col_widths[0] + col_widths[1] + col_widths[2] - area_width - 10
             summary_page.insert_text((area_x, row_y + 15), area_text, fontsize=10, color=(0, 0, 0))
-                
-            # Speichern der PDF
-            print(f"Speichere annotierte PDF unter: {output_path}")
-            doc.save(output_path)
-            print(f"PDF erfolgreich gespeichert: {output_path}")
-            
-            return output_path
+        
+        # Speichern der PDF (außerhalb der Schleife)
+        print(f"Speichere annotierte PDF unter: {output_path}")
+        doc.save(output_path)
+        print(f"PDF erfolgreich gespeichert: {output_path}")
+        
+        return output_path
         
     except Exception as e:
         import traceback
@@ -431,17 +486,19 @@ def generate_report_pdf(project_id, output_path=None):
     elements.append(Paragraph(f"Anzahl Seiten: {page_count}", normal_style))
     elements.append(Spacer(1, 20*mm))
     
-    # Zusammenfassung aller Seiten
-    total_fenster = 0
-    total_tuer = 0
-    total_wand = 0
-    total_lukarne = 0
-    total_dach = 0
-    total_fenster_area = 0
-    total_tuer_area = 0
-    total_wand_area = 0
-    total_lukarne_area = 0
-    total_dach_area = 0
+    # Dynamische Zusammenfassung aller Seiten
+    summary_counts = {}
+    summary_areas = {}
+    
+    # Label-Namen-Mapping für die Zusammenfassung
+    label_names = {
+        0: "Andere",
+        1: "Fenster", 
+        2: "Türen",
+        3: "Wände",
+        4: "Lukarnen",
+        5: "Dächer"
+    }
     
     # Seiten-Daten laden und Zusammenfassung berechnen
     for page_num in range(1, page_count + 1):
@@ -450,33 +507,44 @@ def generate_report_pdf(project_id, output_path=None):
             with open(analysis_path, 'r') as f:
                 page_data = json.load(f)
             
-            # Zählen und Flächen summieren
-            if 'count' in page_data and 'total_area' in page_data:
-                total_fenster += page_data['count'].get('fenster', 0)
-                total_tuer += page_data['count'].get('tuer', 0)
-                total_wand += page_data['count'].get('wand', 0)
-                total_lukarne += page_data['count'].get('lukarne', 0)
-                total_dach += page_data['count'].get('dach', 0)
+            # Predictions durchgehen und zählen/summieren
+            predictions = page_data.get('predictions', [])
+            for pred in predictions:
+                label = pred.get('label', 0)
+                annotation_type = pred.get('annotationType', 'rectangle')
                 
-                total_fenster_area += page_data['total_area'].get('fenster', 0)
-                total_tuer_area += page_data['total_area'].get('tuer', 0)
-                total_wand_area += page_data['total_area'].get('wand', 0)
-                total_lukarne_area += page_data['total_area'].get('lukarne', 0)
-                total_dach_area += page_data['total_area'].get('dach', 0)
+                # Only count area-based annotations (rectangles and polygons) for summary
+                if annotation_type in ['rectangle', 'polygon'] or 'box' in pred:
+                    area = pred.get('calculatedArea', pred.get('area', 0))
+                    
+                    # Dynamisches Zählen nach Label
+                    if label not in summary_counts:
+                        summary_counts[label] = 0
+                        summary_areas[label] = 0
+                    summary_counts[label] += 1
+                    summary_areas[label] += area
     
     # Zusammenfassungstabelle
     elements.append(Paragraph("Zusammenfassung", subtitle_style))
     
-    data = [
-        ["Typ", "Anzahl", "Gesamtfläche (m²)"],
-        ["Fenster", total_fenster, f"{total_fenster_area:.2f}"],
-        ["Türen", total_tuer, f"{total_tuer_area:.2f}"],
-        ["Wände", total_wand, f"{total_wand_area:.2f}"],
-        ["Lukarnen", total_lukarne, f"{total_lukarne_area:.2f}"],
-        ["Dächer", total_dach, f"{total_dach_area:.2f}"],
-        ["Gesamt", total_fenster + total_tuer + total_wand + total_lukarne + total_dach, 
-         f"{(total_fenster_area + total_tuer_area + total_wand_area + total_lukarne_area + total_dach_area):.2f}"]
-    ]
+    # Dynamische Tabelle basierend auf tatsächlich vorhandenen Labels
+    data = [["Typ", "Anzahl", "Gesamtfläche (m²)"]]
+    total_count = 0
+    total_area = 0
+    
+    # Sortiere Labels für konsistente Anzeige
+    for label in sorted(summary_counts.keys()):
+        if summary_counts[label] > 0:  # Nur Labels mit Elementen anzeigen
+            label_name = label_names.get(label, f"Label {label}")
+            count = summary_counts[label]
+            area = summary_areas[label]
+            data.append([label_name, count, f"{area:.2f}"])
+            total_count += count
+            total_area += area
+    
+    # Gesamtzeile hinzufügen, wenn es Daten gibt
+    if total_count > 0:
+        data.append(["Gesamt", total_count, f"{total_area:.2f}"])
     
     summary_table = Table(data, colWidths=[75*mm, 35*mm, 50*mm])
     summary_table.setStyle(TableStyle([
@@ -562,22 +630,25 @@ def generate_report_pdf(project_id, output_path=None):
         
         # Alle Annotationen auf das Bild zeichnen
         for idx, pred in enumerate(page_data.get('predictions', [])):
+            label = pred.get('label', 0)
+            annotation_type = pred.get('annotationType', 'rectangle')
+            
+            # Farbe basierend auf dem Label
+            color_map = {
+                1: (0, 0, 255),      # Fenster - Blau
+                2: (255, 0, 0),      # Tür - Rot
+                3: (212, 214, 56),   # Wand - Gelb
+                4: (255, 165, 0),    # Lukarne - Orange
+                5: (128, 0, 128),    # Dach - Lila
+                0: (128, 128, 128)   # Andere - Grau
+            }
+            
+            color = color_map.get(label, (0, 0, 0))
+            
             if 'box' in pred:
+                # Rectangle annotations
                 x1, y1, x2, y2 = pred['box']
-                label = pred.get('label', 0)
-                area = pred.get('area', 0)
-                
-                # Farbe basierend auf dem Label
-                color_map = {
-                    1: (0, 0, 255),      # Fenster - Blau
-                    2: (255, 0, 0),      # Tür - Rot
-                    3: (212, 214, 56),   # Wand - Gelb
-                    4: (255, 165, 0),    # Lukarne - Orange
-                    5: (128, 0, 128),    # Dach - Lila
-                    0: (128, 128, 128)   # Andere - Grau
-                }
-                
-                color = color_map.get(label, (0, 0, 0))
+                area = pred.get('calculatedArea', pred.get('area', 0))
                 
                 # Box zeichnen
                 draw.rectangle([x1, y1, x2, y2], outline=color, width=3)
@@ -593,6 +664,54 @@ def generate_report_pdf(project_id, output_path=None):
                     # Fallback ohne Schriftart
                     draw.rectangle([x1, y1-15, x1 + len(label_text)*7, y1], fill=color)
                     draw.text((x1+2, y1-14), label_text, fill=(255,255,255))
+                    
+            elif annotation_type == 'polygon' and 'points' in pred:
+                # Polygon annotations
+                points = pred['points']
+                area = pred.get('calculatedArea', pred.get('area', 0))
+                
+                if len(points) >= 3:
+                    # Convert points to PIL format
+                    pil_points = [(p['x'], p['y']) for p in points]
+                    
+                    # Draw polygon
+                    draw.polygon(pil_points, outline=color, width=3)
+                    
+                    # Beschriftung hinzufügen am ersten Punkt
+                    label_text = f"#{idx+1}: {area:.2f} m²"
+                    first_point = pil_points[0]
+                    try:
+                        font = ImageFont.load_default()
+                        draw.rectangle([first_point[0], first_point[1]-20, first_point[0] + len(label_text)*7, first_point[1]], fill=color)
+                        draw.text((first_point[0]+2, first_point[1]-18), label_text, fill=(255,255,255), font=font)
+                    except:
+                        draw.rectangle([first_point[0], first_point[1]-15, first_point[0] + len(label_text)*7, first_point[1]], fill=color)
+                        draw.text((first_point[0]+2, first_point[1]-14), label_text, fill=(255,255,255))
+                        
+            elif annotation_type == 'line' and 'points' in pred:
+                # Line annotations
+                points = pred['points']
+                length = pred.get('calculatedLength', 0)
+                
+                if len(points) >= 2:
+                    # Convert points to PIL format
+                    pil_points = [(p['x'], p['y']) for p in points]
+                    
+                    # Draw polyline
+                    for i in range(len(pil_points) - 1):
+                        draw.line([pil_points[i], pil_points[i+1]], fill=color, width=4)
+                    
+                    # Beschriftung hinzufügen am mittleren Punkt
+                    label_text = f"#{idx+1}: {length:.2f} m"
+                    mid_index = len(pil_points) // 2
+                    mid_point = pil_points[mid_index]
+                    try:
+                        font = ImageFont.load_default()
+                        draw.rectangle([mid_point[0], mid_point[1]-20, mid_point[0] + len(label_text)*7, mid_point[1]], fill=color)
+                        draw.text((mid_point[0]+2, mid_point[1]-18), label_text, fill=(255,255,255), font=font)
+                    except:
+                        draw.rectangle([mid_point[0], mid_point[1]-15, mid_point[0] + len(label_text)*7, mid_point[1]], fill=color)
+                        draw.text((mid_point[0]+2, mid_point[1]-14), label_text, fill=(255,255,255))
         
         # Temporären Pfad für das annotierte Bild erstellen
         annotated_path = os.path.join('static', 'temp', f"annotated_page_{page_num}_{timestamp}.jpg")
@@ -605,23 +724,51 @@ def generate_report_pdf(project_id, output_path=None):
         elements.append(Image(annotated_path, width=img_width*scale_factor, height=img_height*scale_factor))
         elements.append(Spacer(1, 5*mm))
         
-        # Zusammenfassung für diese Seite
-        if 'count' in page_data and 'total_area' in page_data:
+        # Zusammenfassung für diese Seite berechnen
+        page_fenster = page_tuer = page_wand = page_lukarne = page_dach = 0
+        page_fenster_area = page_tuer_area = page_wand_area = page_lukarne_area = page_dach_area = 0
+        
+        predictions = page_data.get('predictions', [])
+        for pred in predictions:
+            label = pred.get('label', 0)
+            annotation_type = pred.get('annotationType', 'rectangle')
+            
+            # Only count area-based annotations (rectangles and polygons) for summary
+            if annotation_type in ['rectangle', 'polygon'] or 'box' in pred:
+                area = pred.get('calculatedArea', pred.get('area', 0))
+                
+                if label == 1:  # Fenster
+                    page_fenster += 1
+                    page_fenster_area += area
+                elif label == 2:  # Tür
+                    page_tuer += 1
+                    page_tuer_area += area
+                elif label == 3:  # Wand
+                    page_wand += 1
+                    page_wand_area += area
+                elif label == 4:  # Lukarne
+                    page_lukarne += 1
+                    page_lukarne_area += area
+                elif label == 5:  # Dach
+                    page_dach += 1
+                    page_dach_area += area
+        
+        # Seiten-Zusammenfassungstabelle erstellen
+        if predictions:  # Nur wenn es Predictions gibt
             elements.append(Paragraph(f"Ergebnisse für Seite {page_num}", normal_style))
             
             page_summary = [
                 ["Typ", "Anzahl", "Gesamtfläche (m²)"]
             ]
             
-            for obj_type, count in [
-                ("Fenster", page_data['count'].get('fenster', 0)),
-                ("Türen", page_data['count'].get('tuer', 0)),
-                ("Wände", page_data['count'].get('wand', 0)),
-                ("Lukarnen", page_data['count'].get('lukarne', 0)),
-                ("Dächer", page_data['count'].get('dach', 0))
+            for obj_type, count, area in [
+                ("Fenster", page_fenster, page_fenster_area),
+                ("Türen", page_tuer, page_tuer_area),
+                ("Wände", page_wand, page_wand_area),
+                ("Lukarnen", page_lukarne, page_lukarne_area),
+                ("Dächer", page_dach, page_dach_area)
             ]:
                 if count > 0:
-                    area = page_data['total_area'].get(obj_type.lower().replace('ä', 'a').replace('ü', 'u'), 0)
                     page_summary.append([obj_type, count, f"{area:.2f}"])
             
             if len(page_summary) > 1:  # Nur hinzufügen, wenn es tatsächlich Ergebnisse gibt
@@ -641,19 +788,43 @@ def generate_report_pdf(project_id, output_path=None):
         if 'predictions' in page_data and page_data['predictions']:
             elements.append(Paragraph("Detailergebnisse", normal_style))
             
-            detail_data = [["Nr.", "Klasse", "Typ", "Wahrsch.", "Fläche (m²)"]]
+            # Label-Namen-Mapping
+            label_names = {
+                0: "Andere",
+                1: "Fenster", 
+                2: "Tür",
+                3: "Wand",
+                4: "Lukarne",
+                5: "Dach"
+            }
+            
+            detail_data = [["Nr.", "Klasse", "Typ", "Wahrsch.", "Messung"]]
             for idx, pred in enumerate(page_data['predictions']):
-                label_name = pred.get('label_name', "Andere")
-                pred_type = pred.get('type', "Rechteck")
-                score = pred.get('score', 0) * 100
-                area = pred.get('area', 0)
+                label = pred.get('label', 0)
+                label_name = label_names.get(label, "Andere")
+                
+                # Bestimme Typ und Messung basierend auf Annotationstyp
+                if pred.get('annotationType') == 'line':
+                    pred_type = "Linie"
+                    measurement = pred.get('calculatedLength', 0)
+                    measurement_text = f"{measurement:.2f} m"
+                elif pred.get('annotationType') == 'polygon':
+                    pred_type = "Polygon"
+                    measurement = pred.get('calculatedArea', pred.get('area', 0))
+                    measurement_text = f"{measurement:.2f} m²"
+                else:
+                    pred_type = "Rechteck"
+                    measurement = pred.get('calculatedArea', pred.get('area', 0))
+                    measurement_text = f"{measurement:.2f} m²"
+                
+                score = pred.get('score', 1.0) * 100  # Default 100% für user-created
                 
                 detail_data.append([
                     idx+1, 
                     label_name, 
                     pred_type, 
                     f"{score:.1f}%",
-                    f"{area:.2f}"
+                    measurement_text
                 ])
             
             detail_table = Table(detail_data, colWidths=[20*mm, 40*mm, 40*mm, 30*mm, 30*mm])

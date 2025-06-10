@@ -5,6 +5,29 @@
 
 // Import modules
 import { setupLabels, updateUIForLabels, getAreaLabels, getLabelById, getLabelName, getLabelColor } from './labels.js';
+import { 
+  setupPdfHandler, 
+  setDisplayPageCallback, 
+  processPdfData, 
+  navigateToPdfPage, 
+  resetPdfState,
+  getPdfSessionId,
+  getPdfPageData,
+  getPageSettings,
+  getCurrentPdfPage,
+  getTotalPdfPages,
+  setPdfSessionId,
+  setPdfPageData,
+  setPageSettings
+} from './pdf-handler.js';
+import { 
+  setupProject, 
+  saveProject, 
+  loadProject, 
+  loadProjectList, 
+  exportPdf, 
+  exportAnnotatedPdf 
+} from './project.js';
 
 // Fabric.js text baseline patch
 if (typeof fabric !== 'undefined') {
@@ -234,12 +257,27 @@ function displayAnnotations(predictions) {
   canvas.clear();
   
   let rectangleCount = 0;
+  let polygonCount = 0;
+  let lineCount = 0;
   
   predictions.forEach((pred, index) => {
     console.log(`Processing prediction ${index}:`, pred);
-    console.log(`  - Has box: ${!!pred.box}, Has bbox: ${!!pred.bbox}`);
-    console.log(`  - Box value:`, pred.box);
-    console.log(`  - BBox value:`, pred.bbox);
+    console.log(`  - Type: ${pred.annotationType}, Has box: ${!!pred.box}, Has points: ${!!pred.points}`);
+    
+    // Get label info
+    const labelId = pred.label || 0;
+    let label, labelColor;
+    
+    if (pred.annotationType === 'line') {
+      // Use line labels for line annotations
+      const lineLabel = getLabelById ? getLabelById(labelId, 'line') : null;
+      label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
+      labelColor = label.color;
+    } else {
+      // Use area labels for rectangles and polygons
+      label = getLabel(labelId);
+      labelColor = label.color;
+    }
     
     // Process rectangles
     if (pred.box || pred.bbox) {
@@ -257,10 +295,6 @@ function displayAnnotations(predictions) {
       const canvasWidth = canvasX2 - canvasX1;
       const canvasHeight = canvasY2 - canvasY1;
       
-      // Get label info
-      const labelId = pred.label || 0;
-      const label = getLabel(labelId);
-      
       console.log(`Creating rectangle: natural(${x1},${y1} ${x2-x1}x${y2-y1}) -> canvas(${canvasX1.toFixed(1)},${canvasY1.toFixed(1)} ${canvasWidth.toFixed(1)}x${canvasHeight.toFixed(1)}), label: ${label.name}`);
       
       // Create rectangle with canvas coordinates
@@ -269,8 +303,8 @@ function displayAnnotations(predictions) {
         top: canvasY1,
         width: canvasWidth,
         height: canvasHeight,
-        fill: label.color + '20', // 20% opacity
-        stroke: label.color,
+        fill: labelColor + '20', // 20% opacity
+        stroke: labelColor,
         strokeWidth: 2,
         objectType: 'annotation',
         annotationType: 'rectangle',
@@ -288,15 +322,80 @@ function displayAnnotations(predictions) {
       // Create label text with standardized format matching table
       const area = pred.calculatedArea || pred.area || 0;
       const labelText = `#${index + 1}: ${label.name} (${area.toFixed(2)}m²)`;
-      createAnnotationLabel({ x: canvasX1, y: canvasY1 }, labelText, label.color);
+      createAnnotationLabel({ x: canvasX1, y: canvasY1 }, labelText, labelColor);
       rectangleCount++;
+      
+    } else if (pred.annotationType === 'polygon' && pred.points) {
+      // Process polygons
+      console.log(`Creating polygon with ${pred.points.length} points, label: ${label.name}`);
+      
+      // Convert points to Fabric.js format
+      const fabricPoints = pred.points.map(p => ({ x: p.x, y: p.y }));
+      
+      const polygon = new fabric.Polygon(fabricPoints, {
+        fill: labelColor + '20', // 20% opacity
+        stroke: labelColor,
+        strokeWidth: 2,
+        objectType: 'annotation',
+        annotationType: 'polygon',
+        annotationIndex: index,
+        labelId: labelId,
+        objectLabel: labelId,
+        selectable: true,
+        hasControls: true,
+        hasBorders: true,
+        evented: true,
+        objectCaching: false
+      });
+      
+      canvas.add(polygon);
+      
+      // Create label text
+      const area = pred.calculatedArea || pred.area || 0;
+      const labelText = `#${index + 1}: ${label.name} (${area.toFixed(2)}m²)`;
+      const firstPoint = pred.points[0];
+      createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, labelColor);
+      polygonCount++;
+      
+    } else if (pred.annotationType === 'line' && pred.points) {
+      // Process lines
+      console.log(`Creating line with ${pred.points.length} points, label: ${label.name}`);
+      
+      // Convert points to Fabric.js format
+      const fabricPoints = pred.points.map(p => ({ x: p.x, y: p.y }));
+      
+      const line = new fabric.Polyline(fabricPoints, {
+        fill: '',
+        stroke: labelColor,
+        strokeWidth: 3,
+        objectType: 'annotation',
+        annotationType: 'line',
+        annotationIndex: index,
+        labelId: labelId,
+        objectLabel: labelId,
+        selectable: true,
+        evented: true,
+        objectCaching: false,
+        absolutePositioned: true
+      });
+      
+      canvas.add(line);
+      
+      // Create label text
+      const length = pred.calculatedLength || 0;
+      const labelText = `#${index + 1}: ${label.name} (${length.toFixed(2)}m)`;
+      const midIndex = Math.floor(pred.points.length / 2);
+      const labelPosition = pred.points[midIndex];
+      createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor);
+      lineCount++;
+      
     } else {
-      console.log(`Skipping non-rectangle annotation ${index}:`, pred.type || 'unknown');
+      console.log(`Skipping annotation ${index}: type=${pred.annotationType}, hasBox=${!!pred.box}, hasPoints=${!!pred.points}`);
     }
   });
   
   canvas.renderAll();
-  console.log(`✅ Displayed ${rectangleCount} rectangles on canvas`);
+  console.log(`✅ Displayed ${rectangleCount} rectangles, ${polygonCount} polygons, ${lineCount} lines on canvas`);
   
   // Re-setup canvas events if editor is active
   if (isEditorActive) {
@@ -410,6 +509,9 @@ function clearResults() {
   console.log("=== CLEARING ALL RESULTS ===");
   
   window.data = null;
+  
+  // Reset PDF state
+  resetPdfState();
   
   // Clear image
   if (uploadedImage) {
@@ -1404,6 +1506,64 @@ function calculatePolylineLength(points) {
 }
 
 /**
+ * Display PDF page callback function for pdf-handler
+ * @param {number} pageNumber - The page number being displayed
+ * @param {Object} pageData - The page data to display
+ */
+function displayPdfPage(pageNumber, pageData) {
+  console.log(`=== DISPLAYING PDF PAGE ${pageNumber} ===`);
+  
+  // Store the data globally
+  window.data = pageData;
+  
+  // Update form fields with page-specific settings if available
+  if (pageData.page_sizes && pageData.page_sizes.length >= pageNumber) {
+    const currentPageSize = pageData.page_sizes[pageNumber - 1];
+    if (currentPageSize) {
+      document.getElementById('formatWidth').value = Math.round(currentPageSize[0]);
+      document.getElementById('formatHeight').value = Math.round(currentPageSize[1]);
+    }
+  }
+  
+  // Set image source
+  if (pageData.pdf_image_url) {
+    console.log("Setting PDF image URL:", pageData.pdf_image_url);
+    uploadedImage.src = pageData.pdf_image_url + '?t=' + new Date().getTime();
+  }
+  
+  // Wait for image to load and then display annotations
+  uploadedImage.onload = function() {
+    console.log(`=== PDF PAGE ${pageNumber} IMAGE LOADED ===`);
+    console.log(`Image size: ${uploadedImage.width}x${uploadedImage.height}`);
+    console.log(`Natural size: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight}`);
+    
+    // Clear existing canvas content
+    if (canvas) {
+      canvas.clear();
+    }
+    
+    // Reinitialize canvas for the new image
+    initCanvas();
+    
+    // Display annotations if any
+    if (pageData.predictions && pageData.predictions.length > 0) {
+      console.log(`⚡ DISPLAYING ${pageData.predictions.length} annotations for page ${pageNumber}`);
+      displayAnnotations(pageData.predictions);
+    } else {
+      console.log(`📄 Page ${pageNumber} has no annotations to display`);
+    }
+    
+    // Update UI
+    updateSummary();
+    updateResultsTable();
+  };
+  
+  uploadedImage.onerror = function() {
+    console.error(`Failed to load image for page ${pageNumber}:`, pageData.pdf_image_url);
+  };
+}
+
+/**
  * Initialize application
  */
 function initApp() {
@@ -1505,50 +1665,47 @@ function initApp() {
         if (resultsSection) resultsSection.style.display = 'block';
         if (resultsTableSection) resultsTableSection.style.display = 'block';
         
-        // Set image source
-        if (data.is_pdf && data.pdf_image_url) {
-          console.log("PDF detected, using image URL:", data.pdf_image_url);
-          uploadedImage.src = data.pdf_image_url + '?t=' + new Date().getTime();
+        // Handle PDF vs regular image
+        if (data.is_pdf) {
+          console.log("PDF detected, processing with PDF handler");
+          // Process PDF data with the PDF handler
+          processPdfData(data);
+          
+          // The PDF handler will handle navigation and display
+          // Initial page display is handled automatically
+          displayPdfPage(data.current_page || 1, data);
         } else {
+          console.log("Regular image file detected");
+          // Handle regular image files as before
           const uploadedFile = document.getElementById('file').files[0];
           if (uploadedFile) {
             uploadedImage.src = URL.createObjectURL(uploadedFile);
           }
+          
+          // Wait for image to load
+          uploadedImage.onload = function() {
+            console.log("=== IMAGE LOADED ===");
+            console.log(`Image size: ${uploadedImage.width}x${uploadedImage.height}`);
+            console.log(`Natural size: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight}`);
+            
+            console.log("=== CHECKING PREDICTIONS ===");
+            console.log(`Predictions array:`, data.predictions);
+            console.log(`Predictions count:`, data.predictions?.length);
+            
+            // Display annotations
+            if (data.predictions && data.predictions.length > 0) {
+              console.log("⚡ CALLING displayAnnotations() with", data.predictions.length, "predictions");
+              displayAnnotations(data.predictions);
+            } else {
+              console.warn("❌ No predictions to display - skipping displayAnnotations()");
+              console.log("Data structure:", data);
+            }
+            
+            // Update UI
+            updateSummary();
+            updateResultsTable();
+          };
         }
-        
-        // Update format fields with backend-detected PDF dimensions (if available)
-        if (data.is_pdf && data.page_sizes && data.page_sizes.length > 0) {
-          const currentPageSize = data.page_sizes[data.current_page - 1];
-          if (currentPageSize) {
-            document.getElementById('formatWidth').value = Math.round(currentPageSize[0]);
-            document.getElementById('formatHeight').value = Math.round(currentPageSize[1]);
-            console.log(`✅ Updated format fields with PDF dimensions: ${Math.round(currentPageSize[0])}x${Math.round(currentPageSize[1])}mm`);
-          }
-        }
-        
-        // Wait for image to load
-        uploadedImage.onload = function() {
-          console.log("=== IMAGE LOADED ===");
-          console.log(`Image size: ${uploadedImage.width}x${uploadedImage.height}`);
-          console.log(`Natural size: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight}`);
-          
-          console.log("=== CHECKING PREDICTIONS ===");
-          console.log(`Predictions array:`, data.predictions);
-          console.log(`Predictions count:`, data.predictions?.length);
-          
-          // Display annotations
-          if (data.predictions && data.predictions.length > 0) {
-            console.log("⚡ CALLING displayAnnotations() with", data.predictions.length, "predictions");
-            displayAnnotations(data.predictions);
-          } else {
-            console.warn("❌ No predictions to display - skipping displayAnnotations()");
-            console.log("Data structure:", data);
-          }
-          
-          // Update UI
-          updateSummary();
-          updateResultsTable();
-        };
       })
       .catch(error => {
         console.error('=== API ERROR ===', error);
@@ -1613,7 +1770,45 @@ function initApp() {
     lineLabelsTab: document.getElementById('lineLabelsTab')
   });
   
-  console.log("✅ Application with editor and labels initialized");
+  // Initialize PDF handler module
+  setupPdfHandler({
+    pdfNavigation: document.getElementById('pdfNavigation'),
+    currentPageSpan: document.getElementById('currentPageSpan'),
+    totalPagesSpan: document.getElementById('totalPagesSpan'),
+    prevPageBtn: document.getElementById('prevPageBtn'),
+    nextPageBtn: document.getElementById('nextPageBtn'),
+    reprocessBtn: document.getElementById('reprocessBtn'),
+    loader: document.getElementById('loader'),
+    errorMessage: document.getElementById('errorMessage')
+  });
+  
+  // Set PDF page display callback
+  setDisplayPageCallback(displayPdfPage);
+  
+  // Initialize project management module
+  setupProject({
+    projectList: document.getElementById('projectList'),
+    saveProjectBtn: document.getElementById('saveProjectBtn'),
+    loadProjectBtn: document.getElementById('loadProjectBtn'),
+    exportPdfBtn: document.getElementById('exportPdfBtn'),
+    exportAnnotatedPdfBtn: document.getElementById('exportAnnotatedPdfBtn')
+  }, {
+    pdfModule: {
+      getPdfSessionId,
+      getPdfPageData,
+      getPageSettings,
+      setPdfSessionId,
+      setPdfPageData,
+      setPageSettings
+    }
+  });
+  
+  // Make project functions globally available for compatibility
+  window.saveProject = saveProject;
+  window.loadProject = loadProject;
+  window.displayPdfPage = displayPdfPage;
+  
+  console.log("✅ Application with editor, labels, PDF navigation, and project management initialized");
 }
 
 // Initialize when DOM is ready

@@ -48,8 +48,25 @@ h2 {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 20px;
     min-width: 0; /* Verhindert Überlauf bei großen Bildern */
+    height: calc(100vh - 120px); /* Feste Höhe für bessere Kontrolle */
+}
+
+.image-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* Wichtig für Flex-Verhalten */
+    margin-bottom: 20px;
+}
+
+.results-container {
+    flex: 0 0 auto; /* Nimmt nur benötigten Platz */
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-height: 40vh; /* Begrenzt die Höhe der Ergebnisse */
+    overflow-y: auto;
 }
 
 /* Abschnitte */
@@ -124,9 +141,8 @@ button:hover {
     margin-top: 10px;
     border: 1px solid #ddd;
     background: #f9f9f9;
+    flex: 1; /* Nimmt den verfügbaren Platz in image-section */
     min-height: 400px; /* Minimum für kleine Bildschirme */
-    height: calc(100vh - 250px); /* Angepasst für Header + Controls + Padding */
-    max-height: none; /* Kein Maximum - nutze verfügbaren Platz */
     display: flex;
     justify-content: flex-start; /* Bild startet links-oben statt zentriert */
     align-items: flex-start; /* Bild startet oben */
@@ -325,41 +341,6 @@ tr:nth-child(even) {
     }
 }
 
-/* PDF-Navigation */
-.pdf-navigation {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 10px;
-    margin-top: 10px;
-    background-color: #f0f0f0;
-    border-radius: 4px;
-}
-
-.nav-button {
-    background-color: #4a90e2;
-    color: white;
-    border: none;
-    padding: 8px 15px;
-    border-radius: 4px;
-    cursor: pointer;
-    margin: 0 10px;
-}
-
-.nav-button:hover {
-    background-color: #357abd;
-}
-
-.nav-button:disabled {
-    background-color: #cccccc;
-    cursor: not-allowed;
-}
-
-#pageInfo {
-    font-size: 16px;
-    font-weight: bold;
-}
-
 /* CSS für Projektbereich */
 .project-section {
     background: white;
@@ -454,59 +435,6 @@ tr:nth-child(even) {
 .tooltip:hover .tooltiptext {
     visibility: visible;
     opacity: 1;
-}
-
-/* Projektliste-Styling anpassen */
-.project-list {
-    background-color: white;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    margin-top: 10px;
-    padding: 15px;
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.project-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.project-table th, .project-table td {
-    padding: 8px;
-    text-align: left;
-    border-bottom: 1px solid #ddd;
-}
-
-.project-table th {
-    background-color: #f2f2f2;
-}
-
-.load-project-btn {
-    background-color: #4a90e2;
-    color: white;
-    border: none;
-    padding: 5px 10px;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.load-project-btn:hover {
-    background-color: #357abd;
-}
-
-.save-status {
-    position: fixed;
-    top: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 15px 20px;
-    background-color: #333;
-    color: white;
-    border-radius: 4px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-    z-index: 1000;
-    transition: opacity 0.5s;
 }
 
 /* Modal für Label-Manager */
@@ -740,3 +668,207 @@ background-color: #2a70c2;
     align-items: center;
     border-bottom: 1px solid #ddd;
   }
+
+/* PDF Navigation */
+.pdf-navigation {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    font-size: 0.9rem;
+    flex-shrink: 0; /* Verhindert Schrumpfen */
+    margin-top: 10px; /* Abstand vom Bild-Container */
+}
+
+.pdf-nav-btn {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background-color 0.2s;
+}
+
+.pdf-nav-btn:hover:not(:disabled) {
+    background: #0056b3;
+}
+
+.pdf-nav-btn:disabled {
+    background: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.pdf-reprocess-btn {
+    background: #28a745;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: background-color 0.2s;
+    margin-left: 0.5rem;
+}
+
+.pdf-reprocess-btn:hover {
+    background: #1e7e34;
+}
+
+.pdf-page-info {
+    font-weight: 500;
+    color: #495057;
+    white-space: nowrap;
+}
+
+/* Background Processing Indicator - Compact bottom-right version */
+.background-processing {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0, 0, 0, 0.85);
+    color: white;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.3s ease;
+    max-width: 350px;
+    font-size: 0.85rem;
+}
+
+.processing-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid #333;
+    border-top: 2px solid #fff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.background-processing button {
+    background: #dc3545;
+    color: white;
+    border: none;
+    padding: 0.3rem 0.6rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.75rem;
+    margin-left: 0.5rem;
+    flex-shrink: 0;
+}
+
+.background-processing button:hover {
+    background: #c82333;
+}
+
+/* Project Management Styles */
+.project-list {
+    margin-top: 1rem;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 5px;
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.project-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.project-table th,
+.project-table td {
+    padding: 0.5rem;
+    text-align: left;
+    border-bottom: 1px solid #dee2e6;
+}
+
+.project-table th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #495057;
+}
+
+.project-table tr:hover {
+    background-color: #f8f9fa;
+}
+
+.load-project-btn {
+    background: #007bff;
+    color: white;
+    border: none;
+    padding: 0.3rem 0.8rem;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: background-color 0.2s;
+}
+
+.load-project-btn:hover {
+    background: #0056b3;
+}
+
+/* Save Status Indicator */
+.save-status {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #28a745;
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 5px;
+    z-index: 10000;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.3s ease;
+}
+
+/* Project buttons styling enhancement */
+.project-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.project-button {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    font-size: 0.9rem;
+    padding: 0.75rem 1rem;
+}
+
+.project-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Ensure processing indicator text doesn't overflow */
+.background-processing > div {
+    flex: 1;
+    min-width: 0;
+}
+
+.background-processing > div > div {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

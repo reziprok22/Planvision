@@ -1,6 +1,6 @@
 /**
  * pdf-handler.js - Module for handling PDF files, navigation and analysis
- * Part of the Fenster-Erkennungstool project
+ * ES6 Module for integration with main.js
  */
 
 // Module state
@@ -13,7 +13,7 @@ let pageSettings = {};
 
 // Background processing state
 let activeRequests = 0;
-let maxConcurrentRequests = 2; // Maximum number of concurrent API calls
+let maxConcurrentRequests = 2;
 let processingQueue = [];
 let processingCancelled = false;
 
@@ -34,11 +34,10 @@ let displayPdfPageCallback = null;
  * Initialize the PDF handler with required DOM elements
  * @param {Object} elements - Object containing DOM references
  */
-// In pdf-handler.js
 export function setupPdfHandler(elements) {
   console.log("Setting up PDF handler with elements:", elements);
 
-  // Store DOM references - mit Null-Prüfung
+  // Store DOM references
   pdfNavigation = elements.pdfNavigation || null;
   currentPageSpan = elements.currentPageSpan || null;
   totalPagesSpan = elements.totalPagesSpan || null;
@@ -48,7 +47,7 @@ export function setupPdfHandler(elements) {
   loader = elements.loader || null;
   errorMessage = elements.errorMessage || null;
   
-  // Set up event listeners - nur wenn die Elemente existieren
+  // Set up event listeners
   if (prevPageBtn) {
     prevPageBtn.addEventListener('click', function() {
       if (currentPdfPage > 1) {
@@ -67,7 +66,6 @@ export function setupPdfHandler(elements) {
   
   if (reprocessBtn) {
     reprocessBtn.addEventListener('click', function() {
-      // Process current page with current form values
       navigateToPdfPage(currentPdfPage, true);
     });
   }
@@ -101,13 +99,11 @@ export function processPdfData(responseData) {
     // Initialize settings for each page
     for (let i = 1; i <= totalPdfPages; i++) {
       if (!pageSettings[i]) {
-        // Take values from the form as a base
         let formWidth = document.getElementById('formatWidth').value;
         let formHeight = document.getElementById('formatHeight').value;
         
         // If recognized page sizes are available, use them
         if (responseData.page_sizes && responseData.page_sizes.length >= i) {
-          // Round the values and convert them to strings
           formWidth = String(Math.round(responseData.page_sizes[i-1][0]));
           formHeight = String(Math.round(responseData.page_sizes[i-1][1]));
           console.log(`Using detected page size for page ${i}: ${formWidth} × ${formHeight} mm`);
@@ -139,7 +135,7 @@ export function processPdfData(responseData) {
     });
     
     // Show navigation if multiple pages
-    if (totalPdfPages > 1 && pdfSessionId) {
+    if (totalPdfPages > 1 && pdfSessionId && pdfNavigation) {
       updatePdfNavigation();
       pdfNavigation.style.display = 'flex';
 
@@ -150,10 +146,10 @@ export function processPdfData(responseData) {
       setTimeout(() => {
         processRemainingPagesInBackground();
       }, 1000);
-    } else {
+    } else if (pdfNavigation) {
       pdfNavigation.style.display = 'none';
     }
-  } else {
+  } else if (pdfNavigation) {
     pdfNavigation.style.display = 'none';
   }
   
@@ -186,13 +182,14 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
     
     // Update current page
     currentPdfPage = pageNumber;
+    updatePdfNavigation();
     
     // Use stored data
     if (displayPdfPageCallback) {
       displayPdfPageCallback(pageNumber, pdfPageData[pageNumber]);
     }
     
-    // After navigating to a page, restart background processing with adjusted priorities
+    // After navigating to a page, restart background processing
     setTimeout(() => {
       processRemainingPagesInBackground();
     }, 500);
@@ -204,13 +201,11 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
   if (forceReprocess) {
     const pageSizes = window.data.page_sizes || [];
     
-    // Only use form values if no detected page sizes
     let formatWidth = document.getElementById('formatWidth').value;
     let formatHeight = document.getElementById('formatHeight').value;
     
     // If page sizes for this specific page exist, use them
     if (pageSizes.length >= pageNumber) {
-      // Use detected page sizes (as string)
       formatWidth = String(Math.round(pageSizes[pageNumber-1][0]));
       formatHeight = String(Math.round(pageSizes[pageNumber-1][1]));
       console.log(`Using detected size for reprocessing page ${pageNumber}: ${formatWidth} × ${formatHeight} mm`);
@@ -223,8 +218,6 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
       plan_scale: document.getElementById('planScale').value,
       threshold: document.getElementById('threshold').value
     };
-    
-    console.log(`Settings for page ${pageNumber} updated:`, pageSettings[pageNumber]);
   }
   
   // Prepare form data
@@ -239,15 +232,7 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
   formData.append('plan_scale', pageSettings[pageNumber].plan_scale);
   formData.append('threshold', pageSettings[pageNumber].threshold);
   
-  console.log(`API call for page ${pageNumber} with settings:`, {
-    width: pageSettings[pageNumber].format_width,
-    height: pageSettings[pageNumber].format_height,
-    dpi: pageSettings[pageNumber].dpi,
-    scale: pageSettings[pageNumber].plan_scale,
-    threshold: pageSettings[pageNumber].threshold
-  });
-  
-  // Show the main loader in the upload section
+  // Show the main loader
   if (loader) {
     loader.style.display = 'block';
   }
@@ -262,7 +247,7 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
   })
   .then(response => response.json())
   .then(data => {
-    // Process the response data to include needed fields
+    // Process the response data
     const processedData = window.processApiResponse ? 
       window.processApiResponse(data) : data;
     
@@ -284,6 +269,9 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
     // Store data for this page
     pdfPageData[pageNumber] = processedData;
     
+    // Update navigation
+    updatePdfNavigation();
+    
     // Display results
     if (displayPdfPageCallback) {
       displayPdfPageCallback(pageNumber, processedData);
@@ -302,7 +290,6 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
     }
   })
   .finally(() => {
-    // Hide the main loader in the upload section when finished
     if (loader) {
       loader.style.display = 'none';
     }
@@ -313,7 +300,6 @@ export function navigateToPdfPage(pageNumber, forceReprocess = false) {
  * Update PDF navigation UI
  */
 export function updatePdfNavigation() {
-  // Update navigation UI
   if (currentPageSpan && totalPagesSpan) {
     currentPageSpan.textContent = currentPdfPage;
     totalPagesSpan.textContent = totalPdfPages;
@@ -325,10 +311,9 @@ export function updatePdfNavigation() {
 }
 
 /**
- * Show background processing indicator with cancel button
+ * Show background processing indicator
  */
 function showBackgroundProcessingIndicator() {
-  // Remove any existing indicator
   const existingIndicator = document.getElementById('backgroundProcessingIndicator');
   if (existingIndicator) {
     existingIndicator.remove();
@@ -355,33 +340,30 @@ function showBackgroundProcessingIndicator() {
 }
 
 /**
- * Process remaining PDF pages in background with throttling
+ * Process remaining PDF pages in background
  */
 function processRemainingPagesInBackground() {
-  // Reset state
   processingCancelled = false;
   processingQueue = [];
   activeRequests = 0;
   
-  // Build the queue of pages to process (skip current page which is already loaded)
+  // Build the queue of pages to process
   for (let i = 1; i <= totalPdfPages; i++) {
     if (i !== currentPdfPage && !pdfPageData[i]) {
       processingQueue.push(i);
     }
   }
   
-  // Start processing if there are pages in the queue
   if (processingQueue.length > 0) {
     updateProcessingIndicator();
     processNextBatch();
   } else {
-    // All pages already processed
     showProcessingComplete();
   }
 }
 
 /**
- * Process the next batch of pages (up to maxConcurrentRequests)
+ * Process the next batch of pages
  */
 function processNextBatch() {
   if (processingCancelled || processingQueue.length === 0) {
@@ -391,7 +373,6 @@ function processNextBatch() {
     return;
   }
   
-  // Process up to maxConcurrentRequests pages at once
   const availableSlots = maxConcurrentRequests - activeRequests;
   
   for (let i = 0; i < availableSlots && processingQueue.length > 0; i++) {
@@ -402,10 +383,8 @@ function processNextBatch() {
 
 /**
  * Process a single PDF page
- * @param {number} pageNumber - The page number to process
  */
 function processPdfPage(pageNumber) {
-  // Skip already processed pages or if processing is cancelled
   if (pdfPageData[pageNumber] || processingCancelled) {
     return;
   }
@@ -413,15 +392,12 @@ function processPdfPage(pageNumber) {
   console.log(`Processing page ${pageNumber} in background`);
   activeRequests++;
   
-  // Update the indicator to show which page is being processed
   updateProcessingIndicator(pageNumber);
   
-  // Prepare form data
   const formData = new FormData();
   formData.append('session_id', pdfSessionId);
   formData.append('page', pageNumber);
   
-  // Use settings for this page
   const currentPageSettings = pageSettings[pageNumber] || createDefaultPageSettings(pageNumber);
   
   formData.append('format_width', currentPageSettings.format_width);
@@ -436,11 +412,9 @@ function processPdfPage(pageNumber) {
   })
   .then(response => response.json())
   .then(data => {
-    // Process data and store
     const processedData = window.processApiResponse ? 
       window.processApiResponse(data) : data;
     
-    // Add PDF info back
     processedData.is_pdf = data.is_pdf || false;
     processedData.pdf_image_url = data.pdf_image_url || null;
     processedData.session_id = data.session_id;
@@ -449,7 +423,6 @@ function processPdfPage(pageNumber) {
     processedData.all_pages = data.all_pages;
     processedData.page_sizes = data.page_sizes || [];
     
-    // Store in pdfPageData
     pdfPageData[pageNumber] = processedData;
     
     console.log(`Page ${pageNumber} analyzed in background`);
@@ -459,29 +432,22 @@ function processPdfPage(pageNumber) {
   })
   .finally(() => {
     activeRequests--;
-    updateProcessingIndicator(0); // Update with no specific page
+    updateProcessingIndicator(0);
     
-    // Process more pages if available
     setTimeout(processNextBatch, 300);
   });
 }
 
 /**
- * Create default page settings based on current form values
- * @param {number} pageNumber - The page number
- * @returns {Object} The default settings
+ * Create default page settings
  */
 function createDefaultPageSettings(pageNumber) {
-  // Take values from the form as a base
   let formWidth = document.getElementById('formatWidth').value;
   let formHeight = document.getElementById('formatHeight').value;
   
-  // If detected page sizes are available, use them
   if (window.data && window.data.page_sizes && window.data.page_sizes.length >= pageNumber) {
-    // Round the values and convert them to strings
     formWidth = String(Math.round(window.data.page_sizes[pageNumber-1][0]));
     formHeight = String(Math.round(window.data.page_sizes[pageNumber-1][1]));
-    console.log(`Using detected page size for page ${pageNumber}: ${formWidth} × ${formHeight} mm`);
   }
   
   return {
@@ -494,30 +460,23 @@ function createDefaultPageSettings(pageNumber) {
 }
 
 /**
- * Update processing indicator to show progress
- * @param {number} processingPage - The page currently being processed (0 if none)
+ * Update processing indicator
  */
 function updateProcessingIndicator(processingPage = 0) {
   const indicator = document.getElementById('backgroundProcessingIndicator');
   const counter = document.getElementById('processedPagesCount');
   const currentProcessingText = document.getElementById('currentProcessingText');
-  const spinner = document.getElementById('processingSpinner');
   
   if (!indicator || !counter || !currentProcessingText) return;
   
-  // Count processed pages (excluding the current page which is always processed)
   const totalProcessed = Object.keys(pdfPageData).length;
   const remainingCount = processingQueue.length;
   
-  // Update the counter
   counter.textContent = totalProcessed;
   
-  // Update processing text
   if (processingPage > 0) {
     currentProcessingText.textContent = `Currently analyzing page ${processingPage}...`;
   } else if (activeRequests > 0) {
-    const pages = Array.from({ length: activeRequests }).map((_, i) => 
-      processingQueue[i] || '?').join(', ');
     currentProcessingText.textContent = `Processing ${activeRequests} page(s) in parallel...`;
   } else if (processingQueue.length > 0) {
     currentProcessingText.textContent = `Queued: ${processingQueue.length} pages remaining...`;
@@ -525,11 +484,8 @@ function updateProcessingIndicator(processingPage = 0) {
     currentProcessingText.textContent = `Complete!`;
   }
   
-  // Update text based on processing state
   if (processingCancelled) {
     currentProcessingText.textContent = 'Processing cancelled';
-    if (spinner) spinner.style.display = 'none';  // Hide spinner
-    
     setTimeout(() => {
       indicator.style.opacity = '0';
       setTimeout(() => indicator.remove(), 500);
@@ -549,16 +505,13 @@ function showProcessingComplete() {
   
   const totalProcessed = Object.keys(pdfPageData).length;
   
-  // Stop the spinner animation
   if (spinner) {
     spinner.style.animation = 'none';
     spinner.style.display = 'none';
   }
   
-  // Update text
   indicator.innerHTML = `<span>All ${totalProcessed} pages analyzed successfully!</span>`;
   
-  // Hide indicator after a short delay
   setTimeout(() => {
     indicator.style.opacity = '0';
     setTimeout(() => indicator.remove(), 500);
@@ -596,10 +549,8 @@ export function cancelBackgroundProcessing() {
  * Reset PDF state
  */
 export function resetPdfState() {
-  // Cancel any ongoing processing
   cancelBackgroundProcessing();
   
-  // Reset all state variables
   pdfSessionId = null;
   currentPdfPage = 1;
   totalPdfPages = 1;
@@ -610,71 +561,20 @@ export function resetPdfState() {
   activeRequests = 0;
   processingCancelled = true;
 
-  // Add a check to ensure pdfNavigation exists before accessing its style
   if (pdfNavigation) {
     pdfNavigation.style.display = 'none';
-  } else {
-    console.warn('pdfNavigation element is undefined in resetPdfState');
   }
 }
 
-/**
- * Get current PDF session ID
- * @returns {string} The PDF session ID
- */
-export function getPdfSessionId() {
-  return pdfSessionId;
-}
+// Getters for external access
+export function getPdfSessionId() { return pdfSessionId; }
+export function getPdfPageData() { return pdfPageData; }
+export function getPageSettings() { return pageSettings; }
+export function getAllPdfPages() { return allPdfPages; }
+export function getCurrentPdfPage() { return currentPdfPage; }
+export function getTotalPdfPages() { return totalPdfPages; }
 
-/**
- * Set PDF session ID
- * @param {string} sessionId - The PDF session ID
- */
-export function setPdfSessionId(sessionId) {
-  pdfSessionId = sessionId;
-}
-
-/**
- * Get PDF page data for all pages
- * @returns {Object} The PDF page data
- */
-export function getPdfPageData() {
-  return pdfPageData;
-}
-
-/**
- * Set PDF page data
- * @param {Object} data - The PDF page data
- */
-export function setPdfPageData(data) {
-  pdfPageData = data;
-}
-
-/**
- * Get page settings for all pages
- * @returns {Object} The page settings
- */
-export function getPageSettings() {
-  return pageSettings;
-}
-
-/**
- * Set page settings
- * @param {Object} settings - The page settings
- */
-export function setPageSettings(settings) {
-  pageSettings = settings;
-}
-
-/**
- * Get all PDF pages URLs
- * @returns {Array} Array of page URLs
- */
-export function getAllPdfPages() {
-  return allPdfPages;
-}
-
-// Make key functions available globally
-window.resetPdfState = resetPdfState;
-window.processPdfData = processPdfData;
-window.pdfPageData = pdfPageData;
+// Setters for external access
+export function setPdfSessionId(sessionId) { pdfSessionId = sessionId; }
+export function setPdfPageData(data) { pdfPageData = data; }
+export function setPageSettings(settings) { pageSettings = settings; }

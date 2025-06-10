@@ -63,6 +63,34 @@
                     <button type="submit" id="analyzeBtn">Plan analysieren</button>
                 </form>
 
+                <!-- Project Management Section -->
+                <div class="project-section">
+                    <h2 class="project-title">Projekt-Verwaltung</h2>
+                    <div class="project-buttons">
+                        <div class="tooltip">
+                            <button id="saveProjectBtn" class="project-button">💾 Projekt speichern</button>
+                            <span class="tooltiptext">Aktuelles Projekt mit allen Seiten und Annotationen speichern</span>
+                        </div>
+                        <div class="tooltip">
+                            <button id="loadProjectBtn" class="project-button">📂 Projekt öffnen</button>
+                            <span class="tooltiptext">Gespeichertes Projekt laden</span>
+                        </div>
+                        <div class="tooltip">
+                            <button id="exportPdfBtn" class="project-button">📄 PDF-Report</button>
+                            <span class="tooltiptext">Analyse-Ergebnisse als PDF-Report exportieren</span>
+                        </div>
+                        <div class="tooltip">
+                            <button id="exportAnnotatedPdfBtn" class="project-button">📑 Annotierte PDF</button>
+                            <span class="tooltiptext">Original-PDF mit eingezeichneten Erkennungen exportieren</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Project List Container -->
+                    <div id="projectList" class="project-list" style="display: none;">
+                        <!-- Project list will be populated here -->
+                    </div>
+                </div>
+
                 <!-- Label Management Section -->
                 <div class="project-section">
                     <h2 class="project-title">Label-Verwaltung</h2>
@@ -158,46 +186,49 @@
         
         <!-- Rechte Spalte -->
         <div class="right-column">
-            <div class="results-section" id="resultsSection">
-                <div class="results-header">
-                  <h2>Erkennungsergebnisse</h2>
-                </div>
-                
-                <!-- Editor-Kontrolle -->
-                <div class="annotation-controls">
-                  <!-- Editor-Toggle -->
-                  <div>
-                    <button id="toggleEditorBtn" class="toggle-button">📝 Editor aktivieren</button>
-                  </div>
-                  
-                  <!-- Editor-Tools (zunächst versteckt) -->
-                  <div id="editorTools" class="editor-tools" style="display: none;">
-                    <div class="tool-group">
-                      <button id="rectangleTool" class="tool-button active" data-tool="rectangle" title="Rechteck zeichnen">⬜</button>
-                      <button id="polygonTool" class="tool-button" data-tool="polygon" title="Polygon zeichnen">⬟</button>
-                      <button id="lineTool" class="tool-button" data-tool="line" title="Linie zeichnen">📏</button>
-                    </div>
-                    <div class="tool-group">
-                      <button id="selectTool" class="tool-button" data-tool="select" title="Auswählen">👆</button>
-                      <button id="deleteTool" class="tool-button" data-tool="delete" title="Löschen">🗑️</button>
+            <!-- Oberer Bereich für Bild und Steuerung -->
+            <div class="image-section">
+                <div class="results-section" id="resultsSection">
+                    <div class="results-header">
+                      <h2>Erkennungsergebnisse</h2>
                     </div>
                     
-                    <!-- Universelles Label-Dropdown -->
-                    <div class="label-selection-group">
-                      <select id="universalLabelSelect" class="universal-label-select">
-                        <option value="1">Fenster</option>
-                        <option value="2">Tür</option>
-                        <option value="3">Wand</option>
-                        <option value="4">Lukarne</option>
-                        <option value="5">Dach</option>
-                      </select>
+                    <!-- Editor-Kontrolle -->
+                    <div class="annotation-controls">
+                      <!-- Editor-Toggle -->
+                      <div>
+                        <button id="toggleEditorBtn" class="toggle-button">📝 Editor aktivieren</button>
+                      </div>
+                      
+                      <!-- Editor-Tools (zunächst versteckt) -->
+                      <div id="editorTools" class="editor-tools" style="display: none;">
+                        <div class="tool-group">
+                          <button id="rectangleTool" class="tool-button active" data-tool="rectangle" title="Rechteck zeichnen">⬜</button>
+                          <button id="polygonTool" class="tool-button" data-tool="polygon" title="Polygon zeichnen">⬟</button>
+                          <button id="lineTool" class="tool-button" data-tool="line" title="Linie zeichnen">📏</button>
+                        </div>
+                        <div class="tool-group">
+                          <button id="selectTool" class="tool-button" data-tool="select" title="Auswählen">👆</button>
+                          <button id="deleteTool" class="tool-button" data-tool="delete" title="Löschen">🗑️</button>
+                        </div>
+                        
+                        <!-- Universelles Label-Dropdown -->
+                        <div class="label-selection-group">
+                          <select id="universalLabelSelect" class="universal-label-select">
+                            <option value="1">Fenster</option>
+                            <option value="2">Tür</option>
+                            <option value="3">Wand</option>
+                            <option value="4">Lukarne</option>
+                            <option value="5">Dach</option>
+                          </select>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-                
-                <!-- Legende für Labels -->
-                <div class="legend">
-                  <!-- Labels werden hier dynamisch eingefügt -->
+                    
+                    <!-- Legende für Labels -->
+                    <div class="legend">
+                      <!-- Labels werden hier dynamisch eingefügt -->
+                    </div>
                 </div>
                 
                 <!-- Vereinfachter Container für Bild und Canvas -->
@@ -205,7 +236,18 @@
                   <img id="uploadedImage" src="" alt="Hochgeladener Plan">
                   <!-- Canvas wird dynamisch eingefügt -->
                 </div>
-              </div>         
+            </div>
+            
+            <!-- PDF Navigation - fest am unteren Rand -->
+            <div id="pdfNavigation" class="pdf-navigation" style="display: none;">
+              <button id="prevPageBtn" class="pdf-nav-btn">◀ Vorherige</button>
+              <span class="pdf-page-info">
+                Seite <span id="currentPageSpan">1</span> von <span id="totalPagesSpan">1</span>
+              </span>
+              <button id="nextPageBtn" class="pdf-nav-btn">Nächste ▶</button>
+              <button id="reprocessBtn" class="pdf-reprocess-btn" title="Aktuelle Seite mit aktuellen Einstellungen neu verarbeiten">🔄 Seite neu analyiseren</button>
+            </div>
+        </div>         
         </div>
     </div>
     
