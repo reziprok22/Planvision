@@ -16,9 +16,12 @@ import {
   getPageSettings,
   getCurrentPdfPage,
   getTotalPdfPages,
+  getAllPdfPages,
   setPdfSessionId,
   setPdfPageData,
-  setPageSettings
+  setPageSettings,
+  setPdfNavigationState,
+  processRemainingPagesInBackground
 } from './pdf-handler.js';
 import { 
   setupProject, 
@@ -61,6 +64,75 @@ let rectangleStartPoint = null;
 // Event timing control
 let isProcessingClick = false;
 
+// Utility Functions
+/**
+ * Convert hex color to color with opacity
+ */
+function getLabelColorWithOpacity(color, opacity = '20') {
+  return color + opacity;
+}
+
+/**
+ * Convert points array to Fabric.js format
+ */
+function convertPointsToFabric(points) {
+  return points.map(p => ({ x: p.x, y: p.y }));
+}
+
+/**
+ * Generate annotation label text
+ */
+function generateLabelText(index, labelName, measurement, unit) {
+  return `#${index + 1}: ${labelName} (${measurement.toFixed(2)}${unit})`;
+}
+
+/**
+ * Convert bbox coordinates to canvas coordinates
+ */
+function convertToCanvasCoordinates(bbox) {
+  const [x1, y1, x2, y2] = bbox;
+  return {
+    x1: x1,
+    y1: y1,
+    x2: x2,
+    y2: y2,
+    width: x2 - x1,
+    height: y2 - y1
+  };
+}
+
+/**
+ * Create standardized Fabric.js object configuration
+ */
+function createFabricObjectConfig(type, labelColor, objectType = 'annotation') {
+  const baseConfig = {
+    objectType: objectType,
+    annotationType: type,
+    selectable: true,
+    hasControls: true,
+    hasBorders: true,
+    evented: true
+  };
+
+  if (type === 'line') {
+    return {
+      ...baseConfig,
+      fill: '',
+      stroke: labelColor,
+      strokeWidth: 3,
+      objectCaching: false,
+      absolutePositioned: true
+    };
+  } else {
+    return {
+      ...baseConfig,
+      fill: getLabelColorWithOpacity(labelColor),
+      stroke: labelColor,
+      strokeWidth: 2
+    };
+  }
+}
+
 // Dynamic Labels (replaced by labels.js functionality)
 function getLabel(labelId) {
   // Try to get from dynamic labels first
@@ -86,8 +158,6 @@ function getLabel(labelId) {
  * Initialize canvas
  */
 function initCanvas() {
-  console.log("=== INITIALIZING CANVAS ===");
-  
   if (!uploadedImage || !uploadedImage.complete || uploadedImage.naturalWidth === 0) {
     console.warn("Image not loaded yet, retrying...");
     setTimeout(initCanvas, 100);
@@ -123,9 +193,7 @@ function initCanvas() {
   // FABRIC.JS NATURAL-SIZE STRATEGY: Canvas = image size, 1:1 coordinates
   const naturalWidth = uploadedImage.naturalWidth;
   const naturalHeight = uploadedImage.naturalHeight;
- 
-  console.log(`Canvas size set to natural size: ${naturalWidth}x${naturalHeight}`);
-  
+   
   // Canvas-Größe = Natural Image Size (für 1:1 Koordinaten)
   canvas.setWidth(naturalWidth);
   canvas.setHeight(naturalHeight);
@@ -144,7 +212,6 @@ function initCanvas() {
     
     // Add as background (lowest layer)
     canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
-    console.log('Image added as Fabric.js background at natural size');
   });
   
   // Hide the HTML image since we're using Fabric.js background
@@ -185,9 +252,6 @@ function initCanvas() {
   if (isEditorActive) {
     setupCanvasEvents();
   }
-    
-  console.log("Canvas initialized successfully");
-
   return canvas;
 }
 
@@ -206,8 +270,6 @@ function setupContainerScrolling() {
     // Normal vertical scrolling happens automatically if no modifiers
     // Ctrl+Wheel is handled by Fabric.js for zooming
   }, { passive: false });
-  
-  console.log('Enhanced container scrolling setup complete');
 }
 
 /**
@@ -226,12 +288,6 @@ function calculatePredictionArea(coords) {
   const heightM = heightPixels * pixelToMeter;
   const area = widthM * heightM;
   
-  console.log(`Prediction area calculation:
-    - Coordinates: (${x1},${y1}) to (${x2},${y2})
-    - Size: ${widthPixels} x ${heightPixels}px
-    - Real world: ${widthM.toFixed(3)} x ${heightM.toFixed(3)}m
-    - Area: ${area.toFixed(4)}m²`);
-  
   return area;
 }
 
@@ -239,12 +295,12 @@ function calculatePredictionArea(coords) {
  * Display annotations
  */
 function displayAnnotations(predictions) {
-  console.log("=== DISPLAYING ANNOTATIONS ===");
-  console.log(`Processing ${predictions?.length || 0} predictions`);
-  console.log(`Current format settings: ${document.getElementById('formatWidth')?.value || 'N/A'}x${document.getElementById('formatHeight')?.value || 'N/A'}mm`);
+  // Displaying annotations
+  // Processing predictions
+  // Current format settings applied
   
   if (!canvas) {
-    console.log("No canvas, initializing...");
+    // No canvas, initializing...
     initCanvas();
   }
   
@@ -261,8 +317,7 @@ function displayAnnotations(predictions) {
   let lineCount = 0;
   
   predictions.forEach((pred, index) => {
-    console.log(`Processing prediction ${index}:`, pred);
-    console.log(`  - Type: ${pred.annotationType}, Has box: ${!!pred.box}, Has points: ${!!pred.points}`);
+    // Processing prediction
     
     // Get label info
     const labelId = pred.label || 0;
@@ -282,69 +337,46 @@ function displayAnnotations(predictions) {
     // Process rectangles
     if (pred.box || pred.bbox) {
       const coords = pred.box || pred.bbox;
-      const [x1, y1, x2, y2] = coords;
       
       // Calculate correct area for this prediction and store it
       pred.calculatedArea = calculatePredictionArea(coords);
       
-      // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
-      const canvasX1 = x1;
-      const canvasY1 = y1;
-      const canvasX2 = x2;
-      const canvasY2 = y2;
-      const canvasWidth = canvasX2 - canvasX1;
-      const canvasHeight = canvasY2 - canvasY1;
-      
-      console.log(`Creating rectangle: natural(${x1},${y1} ${x2-x1}x${y2-y1}) -> canvas(${canvasX1.toFixed(1)},${canvasY1.toFixed(1)} ${canvasWidth.toFixed(1)}x${canvasHeight.toFixed(1)}), label: ${label.name}`);
-      
-      // Create rectangle with canvas coordinates
+      // Convert coordinates using utility function
+      const canvasCoords = convertToCanvasCoordinates(coords);
+            
+      // Create rectangle with canvas coordinates using utility function
+      const rectConfig = createFabricObjectConfig('rectangle', labelColor);
       const rect = new fabric.Rect({
-        left: canvasX1,
-        top: canvasY1,
-        width: canvasWidth,
-        height: canvasHeight,
-        fill: labelColor + '20', // 20% opacity
-        stroke: labelColor,
-        strokeWidth: 2,
-        objectType: 'annotation',
-        annotationType: 'rectangle',
+        left: canvasCoords.x1,
+        top: canvasCoords.y1,
+        width: canvasCoords.width,
+        height: canvasCoords.height,
+        ...rectConfig,
         annotationIndex: index,
         labelId: labelId,
-        objectLabel: labelId,
-        selectable: true,
-        hasControls: true,
-        hasBorders: true,
-        evented: true
+        objectLabel: labelId
       });
       
       canvas.add(rect);
       
       // Create label text with standardized format matching table
       const area = pred.calculatedArea || pred.area || 0;
-      const labelText = `#${index + 1}: ${label.name} (${area.toFixed(2)}m²)`;
-      createAnnotationLabel({ x: canvasX1, y: canvasY1 }, labelText, labelColor, pred.label);
+      const labelText = generateLabelText(index, label.name, area, 'm²');
+      createAnnotationLabel({ x: canvasCoords.x1, y: canvasCoords.y1 }, labelText, labelColor, pred.label);
       rectangleCount++;
       
     } else if (pred.annotationType === 'polygon' && pred.points) {
       // Process polygons
-      console.log(`Creating polygon with ${pred.points.length} points, label: ${label.name}`);
       
-      // Convert points to Fabric.js format
-      const fabricPoints = pred.points.map(p => ({ x: p.x, y: p.y }));
+      // Convert points to Fabric.js format using utility function
+      const fabricPoints = convertPointsToFabric(pred.points);
       
+      const polygonConfig = createFabricObjectConfig('polygon', labelColor);
       const polygon = new fabric.Polygon(fabricPoints, {
-        fill: labelColor + '20', // 20% opacity
-        stroke: labelColor,
-        strokeWidth: 2,
-        objectType: 'annotation',
-        annotationType: 'polygon',
+        ...polygonConfig,
         annotationIndex: index,
         labelId: labelId,
         objectLabel: labelId,
-        selectable: true,
-        hasControls: true,
-        hasBorders: true,
-        evented: true,
         objectCaching: false
       });
       
@@ -352,56 +384,48 @@ function displayAnnotations(predictions) {
       
       // Create label text
       const area = pred.calculatedArea || pred.area || 0;
-      const labelText = `#${index + 1}: ${label.name} (${area.toFixed(2)}m²)`;
+      const labelText = generateLabelText(index, label.name, area, 'm²');
       const firstPoint = pred.points[0];
       createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, labelColor, pred.label);
       polygonCount++;
       
     } else if (pred.annotationType === 'line' && pred.points) {
       // Process lines
-      console.log(`Creating line with ${pred.points.length} points, label: ${label.name}`);
       
-      // Convert points to Fabric.js format
-      const fabricPoints = pred.points.map(p => ({ x: p.x, y: p.y }));
+      // Convert points to Fabric.js format using utility function
+      const fabricPoints = convertPointsToFabric(pred.points);
       
+      const lineConfig = createFabricObjectConfig('line', labelColor);
       const line = new fabric.Polyline(fabricPoints, {
-        fill: '',
-        stroke: labelColor,
-        strokeWidth: 3,
-        objectType: 'annotation',
-        annotationType: 'line',
+        ...lineConfig,
         annotationIndex: index,
         labelId: labelId,
-        objectLabel: labelId,
-        selectable: true,
-        evented: true,
-        objectCaching: false,
-        absolutePositioned: true
+        objectLabel: labelId
       });
       
       canvas.add(line);
       
       // Create label text
       const length = pred.calculatedLength || 0;
-      const labelText = `#${index + 1}: ${label.name} (${length.toFixed(2)}m)`;
+      const labelText = generateLabelText(index, label.name, length, 'm');
       const midIndex = Math.floor(pred.points.length / 2);
       const labelPosition = pred.points[midIndex];
       createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor, pred.label);
       lineCount++;
       
     } else {
-      console.log(`Skipping annotation ${index}: type=${pred.annotationType}, hasBox=${!!pred.box}, hasPoints=${!!pred.points}`);
+      // Skipping annotation
     }
   });
   
   canvas.renderAll();
-  console.log(`✅ Displayed ${rectangleCount} rectangles, ${polygonCount} polygons, ${lineCount} lines on canvas`);
+  // Annotations displayed on canvas
   
   // Re-setup canvas events if editor is active
   if (isEditorActive) {
     setTimeout(() => {
       setupCanvasEvents();
-      console.log('Canvas events re-established after annotation display');
+      // Canvas events re-established
     }, 100);
   }
 }
@@ -459,8 +483,64 @@ function updateResultsTable() {
       row.title = 'Benutzer-erstellt';
     }
     
+    // Add hover functionality to highlight annotation on canvas
+    row.addEventListener('mouseenter', () => highlightAnnotation(index));
+    row.addEventListener('mouseleave', () => removeHighlight(index));
+    
     resultsBody.appendChild(row);
   });
+}
+
+/**
+ * Highlight annotation on canvas when hovering over table row
+ */
+function highlightAnnotation(index) {
+  if (!canvas) return;
+  
+  const canvasObjects = canvas.getObjects();
+  const targetObject = canvasObjects.find(obj => obj.annotationIndex === index);
+  
+  if (targetObject) {
+    // Store original stroke width
+    if (!targetObject.originalStrokeWidth) {
+      targetObject.originalStrokeWidth = targetObject.strokeWidth;
+    }
+    
+    // Make annotation bold
+    targetObject.set({
+      strokeWidth: targetObject.originalStrokeWidth * 2,
+      shadow: new fabric.Shadow({
+        color: targetObject.stroke,
+        blur: 5,
+        offsetX: 0,
+        offsetY: 0
+      })
+    });
+    
+    // Bring to front
+    canvas.bringToFront(targetObject);
+    canvas.renderAll();
+  }
+}
+
+/**
+ * Remove highlight from annotation
+ */
+function removeHighlight(index) {
+  if (!canvas) return;
+  
+  const canvasObjects = canvas.getObjects();
+  const targetObject = canvasObjects.find(obj => obj.annotationIndex === index);
+  
+  if (targetObject && targetObject.originalStrokeWidth) {
+    // Restore original stroke width
+    targetObject.set({
+      strokeWidth: targetObject.originalStrokeWidth,
+      shadow: null
+    });
+    
+    canvas.renderAll();
+  }
 }
 
 /**
@@ -505,9 +585,7 @@ function updateSummary() {
 /**
  * Clear all results
  */
-function clearResults() {
-  console.log("=== CLEARING ALL RESULTS ===");
-  
+function clearResults() {  
   window.data = null;
   
   // Reset PDF state
@@ -540,7 +618,7 @@ function clearResults() {
     canvas.setZoom(1.0);
   }
   
-  console.log("Results cleared");
+  // Results cleared
 }
 
 /**
@@ -548,7 +626,6 @@ function clearResults() {
  */
 function toggleEditor() {
   isEditorActive = !isEditorActive;
-  console.log(`Editor ${isEditorActive ? 'aktiviert' : 'deaktiviert'}`);
   
   const toggleBtn = document.getElementById('toggleEditorBtn');
   const editorTools = document.getElementById('editorTools');
@@ -589,9 +666,7 @@ function setupCanvasEvents() {
     console.warn('Cannot setup canvas events - canvas not available');
     return;
   }
-  
-  console.log('Setting up Fabric.js canvas events for editor');
-  
+    
   // Clear all existing events first
   canvas.off('mouse:down');
   canvas.off('mouse:move');
@@ -602,25 +677,19 @@ function setupCanvasEvents() {
   canvas.off('selection:cleared');
   
   // Mouse down event - handles all drawing tools
-  canvas.on('mouse:down', function(options) {
-    console.log('Fabric.js mouse:down event', { isEditorActive, currentTool });
-    
+  canvas.on('mouse:down', function(options) {    
     if (!isEditorActive || isProcessingClick) return;
     
     const pointer = canvas.getPointer(options.e);
-    console.log('Fabric pointer position:', pointer);
     
     // Handle different tools
     if (currentTool === 'rectangle') {
-      console.log('Starting rectangle drawing');
       isProcessingClick = true;
       startDrawingRectangle(pointer);
       setTimeout(() => { isProcessingClick = false; }, 50);
     } else if (currentTool === 'polygon') {
-      console.log('Adding polygon point');
       addPolygonPoint(pointer, options.e);
     } else if (currentTool === 'line') {
-      console.log('Adding line point');
       addLinePoint(pointer, options.e);
     }
     // For 'select' tool, let Fabric.js handle selection naturally
@@ -643,27 +712,22 @@ function setupCanvasEvents() {
   
   // Mouse up event - finish drawing operations
   canvas.on('mouse:up', function(options) {
-    console.log('Fabric.js mouse:up event', { isEditorActive, drawingMode, currentTool });
     
     if (!isEditorActive) return;
     
     if (currentTool === 'rectangle' && drawingMode) {
-      console.log('Finishing rectangle drawing');
       finishDrawingRectangle();
     }
   });
   
   // Double-click event - for polygon and line finishing
   canvas.on('mouse:dblclick', function(options) {
-    console.log('Fabric.js double-click event', { currentTool, currentPoints: currentPoints.length });
     
     if (!isEditorActive) return;
     
     if (currentTool === 'polygon' && currentPoints.length >= 3) {
-      console.log('Double-click detected, finishing polygon');
       finishPolygonDrawing();
     } else if (currentTool === 'line' && currentPoints.length >= 2) {
-      console.log('Double-click detected, finishing line sequence');
       finishLineDrawing();
     }
   });
@@ -672,7 +736,6 @@ function setupCanvasEvents() {
   canvas.on('selection:created', function(e) {
     if (!isEditorActive) return;
     selectedObjects = e.selected || [];
-    console.log('Objects selected:', selectedObjects.length);
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
     }
@@ -681,7 +744,6 @@ function setupCanvasEvents() {
   canvas.on('selection:updated', function(e) {
     if (!isEditorActive) return;
     selectedObjects = e.selected || [];
-    console.log('Selection updated:', selectedObjects.length);
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
     }
@@ -690,13 +752,10 @@ function setupCanvasEvents() {
   canvas.on('selection:cleared', function(e) {
     if (!isEditorActive) return;
     selectedObjects = [];
-    console.log('Selection cleared');
     if (currentTool === 'select') {
       updateUniversalLabelDropdown(currentTool);
     }
   });
-  
-  console.log('Fabric.js canvas events setup complete');
 }
 
 
@@ -704,13 +763,11 @@ function setupCanvasEvents() {
  * Set Current Tool
  */
 function setTool(toolName) {
-  console.log(`Tool switching from ${currentTool} to ${toolName}`);
-  
+
   // Clean up current tool state first
   cleanupCurrentTool();
   
   currentTool = toolName;
-  console.log(`Tool switched to: ${toolName}`);
   
   // Update button states
   document.querySelectorAll('.tool-button').forEach(btn => {
@@ -727,11 +784,9 @@ function setTool(toolName) {
   // Update canvas selection mode (Auswahl-Modul)
   if (canvas) {
     if (toolName === 'select') {
-      console.log('Switching to selection mode');
       canvas.selection = true; // Es können mehrere Objekte gleichzeitig mit Auswahlrahmen ausgewählt werden
       canvas.defaultCursor = 'default';
       canvas.hoverCursor = 'move';
-      console.log('Canvas objects:', canvas.getObjects().length);
       canvas.forEachObject(obj => {
         // Nur Annotation-Objekte selektierbar machen, nicht Text-Labels
         if (obj.objectType === 'annotation') {
@@ -743,7 +798,6 @@ function setTool(toolName) {
         }
       });
     } else {
-      console.log('Switching to drawing mode:', toolName);
       canvas.selection = false;
       canvas.defaultCursor = 'crosshair';
       canvas.hoverCursor = 'crosshair';
@@ -809,16 +863,12 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
     // Default to first option
     universalLabelSelect.value = labels[0].id;
   }
-  
-  console.log(`Updated universal dropdown for ${useLineLabels ? 'line' : 'area'} labels, selected: ${universalLabelSelect.value}`);
 }
 
 /**
  * Tool State Management
  */
 function cleanupCurrentTool() {
-  console.log(`Cleaning up ${currentTool} tool`);
-  
   if (currentTool === 'rectangle' && currentPath) {
     canvas.remove(currentPath);
     currentPath = null;
@@ -836,7 +886,6 @@ function cleanupCurrentTool() {
 }
 
 function resetAllDrawingStates() {
-  console.log('Resetting all drawing states');
   
   drawingMode = false;
   currentPath = null;
@@ -915,20 +964,22 @@ function finishDrawingRectangle() {
       evented: true,
       labelId: selectedLabelId,
       objectLabel: selectedLabelId,
-      fill: label.color + '20', // 20% opacity
+      fill: getLabelColorWithOpacity(label.color),
       stroke: label.color
     });
     
     // Calculate area
     const area = calculateRectangleArea(currentPath);
-    console.log(`Rectangle created with area: ${area.toFixed(2)} m², Label: ${label.name}`);
     
     // Add to results data
     addAnnotationToResults(currentPath, 'rectangle', area);
     
+    // Set annotation index for hover functionality
+    const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
+    currentPath.set('annotationIndex', annotationIndex);
+    
     // Add text label like other annotations
-    const annotationNumber = window.data ? window.data.predictions.length : 1;
-    const labelText = `#${annotationNumber}: ${label.name} (${area.toFixed(2)}m²)`;
+    const labelText = generateLabelText(annotationIndex, label.name, area, 'm²');
     createAnnotationLabel({ x: currentPath.left, y: currentPath.top }, labelText, label.color, label.id);
   }
   
@@ -948,7 +999,6 @@ function getPixelToMeterFactor() {
   const planScale = parseFloat(document.getElementById('planScale')?.value || 100); // 1:X
   
   if (!uploadedImage || !uploadedImage.naturalWidth) {
-    console.warn('Image not available for scale calculation');
     return 0.001; // fallback
   }
   
@@ -961,15 +1011,6 @@ function getPixelToMeterFactor() {
   
   // Calculate pixel to meter conversion
   const pixelToMeter = realWorldWidthM / imageWidthPixels;
-  
-  console.log(`Scale calculation:
-    - Format width: ${formatWidth}mm
-    - Format height: ${parseFloat(document.getElementById('formatHeight')?.value || 297)}mm
-    - Plan scale: 1:${planScale}
-    - Real world width: ${realWorldWidthMm}mm = ${realWorldWidthM}m
-    - Image width: ${imageWidthPixels}px
-    - Image height: ${uploadedImage.naturalHeight}px
-    - Pixel to meter factor: ${pixelToMeter}`);
   
   return pixelToMeter;
 }
@@ -990,12 +1031,6 @@ function calculateRectangleArea(rect) {
   
   const area = widthM * heightM;
   
-  console.log(`Rectangle area calculation:
-    - Canvas size: ${rect.width.toFixed(1)} x ${rect.height.toFixed(1)}px
-    - Natural size: ${naturalWidth.toFixed(1)} x ${naturalHeight.toFixed(1)}px  
-    - Real world: ${widthM.toFixed(3)} x ${heightM.toFixed(3)}m
-    - Area: ${area.toFixed(4)}m²`);
-  
   return area;
 }
 
@@ -1011,7 +1046,7 @@ function deleteSelectedObjects() {
   
   selectedObjects = [];
   canvas.renderAll();
-  console.log('Selected objects deleted');
+  // Selected objects deleted
 }
 
 /**
@@ -1081,7 +1116,7 @@ function addAnnotationToResults(annotationObject, type, area = null, length = nu
   }
   
   window.data.predictions.push(newPrediction);
-  console.log(`Added ${type} annotation to results:`, newPrediction);
+  // Added annotation to results
   
   // Update UI
   updateResultsTable();
@@ -1129,8 +1164,6 @@ function applyLabelChangeToSelectedObject() {
   }
   
   canvas.renderAll();
-  
-  console.log(`Label changed to: ${label.name} (ID: ${newLabelId}) for ${isLineObject ? 'line' : 'area'} object`);
 }
 
 /**
@@ -1165,11 +1198,10 @@ function isCorrectTextLabelType(obj, labelType) {
  */
 function updateExistingAnnotationsWithLabel(labelId, newLabelData, labelType = 'area') {
   if (!canvas) {
-    console.log('Canvas not available for label update');
+    // Canvas not available for label update
     return;
   }
   
-  console.log(`Updating all annotations with label ID: ${labelId} to new data:`, newLabelData);
   
   let updatedCount = 0;
   
@@ -1177,7 +1209,6 @@ function updateExistingAnnotationsWithLabel(labelId, newLabelData, labelType = '
   canvas.forEachObject(obj => {
     if ((obj.labelId === labelId || obj.objectLabel === labelId) && 
         isCorrectObjectType(obj, labelType)) {
-      console.log(`Updating canvas object with label ID: ${labelId} and type: ${labelType}`);
       
       // Update visual appearance based on object type
       if (obj.type === 'rect' || obj.type === 'polygon') {
@@ -1207,7 +1238,6 @@ function updateExistingAnnotationsWithLabel(labelId, newLabelData, labelType = '
   canvas.forEachObject(obj => {
     if (obj.type === 'text' && obj.associatedLabelId === labelId && 
         isCorrectTextLabelType(obj, labelType)) {
-      console.log(`Updating text label for label ID: ${labelId}`);
       
       // Update the text content if it contains the old label name
       const currentText = obj.text;
@@ -1240,7 +1270,6 @@ function updateExistingAnnotationsWithLabel(labelId, newLabelData, labelType = '
   if (window.data && window.data.predictions) {
     window.data.predictions.forEach(pred => {
       if (pred.label === labelId) {
-        console.log(`Updating prediction data for label ID: ${labelId}`);
         // The prediction data structure doesn't store label details directly,
         // so we mainly need to ensure consistency
       }
@@ -1249,8 +1278,6 @@ function updateExistingAnnotationsWithLabel(labelId, newLabelData, labelType = '
   
   // Re-render canvas to show changes
   canvas.renderAll();
-  
-  console.log(`Updated ${updatedCount} objects with label ID: ${labelId}`);
 }
 
 // Make functions globally available
@@ -1260,16 +1287,13 @@ window.updateResultsTable = updateResultsTable;
 /**
  * Polygon Drawing Functions
  */
-function addPolygonPoint(pointer, e) {
-  console.log('Polygon tool - point added at:', pointer);
-  
+function addPolygonPoint(pointer, e) {  
   if (!canvas || isProcessingClick) return;
   
   isProcessingClick = true;
   
   // Add point to current polygon
   currentPoints.push(pointer);
-  console.log(`Added point ${currentPoints.length}:`, pointer);
   
   if (currentPoints.length === 1) {
     // First point - start polygon
@@ -1285,7 +1309,6 @@ function addPolygonPoint(pointer, e) {
 function startPolygonDrawing() {
   if (!canvas || currentPoints.length === 0) return;
   
-  console.log('Starting polygon drawing');
   drawingMode = true;
   
   // Get current selected label and its color
@@ -1314,7 +1337,6 @@ function startPolygonDrawing() {
   
   canvas.add(currentPolygon);
   canvas.renderAll();
-  console.log('Polygon added to canvas');
 }
 
 function updatePolygonFromPoints() {
@@ -1322,7 +1344,6 @@ function updatePolygonFromPoints() {
   
   // Convert points to Fabric.js format
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
-  console.log('Updating polygon with points:', fabricPoints);
   
   // Update polygon points
   currentPolygon.set({
@@ -1330,9 +1351,8 @@ function updatePolygonFromPoints() {
     hasBorders: true,
     hasControls: true,
   });
-  
+
   canvas.renderAll();
-  console.log('Polygon updated');
 }
 
 function updatePolygonPreview(pointer) {
@@ -1359,8 +1379,6 @@ function finishPolygonDrawing() {
     return;
   }
   
-  console.log(`Polygon finished with ${currentPoints.length} points`);
-  
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel('area');
   const label = getLabel(selectedLabelId);
@@ -1377,15 +1395,17 @@ function finishPolygonDrawing() {
   
   // Calculate area
   const area = calculatePolygonArea(currentPoints);
-  console.log(`Polygon created with area: ${area.toFixed(2)} m², Label: ${label.name}`);
   
   // Add to results data
   addAnnotationToResults(currentPolygon, 'polygon', area);
   
+  // Set annotation index for hover functionality
+  const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
+  currentPolygon.set('annotationIndex', annotationIndex);
+  
   // Add text label positioned near the first point for predictable placement
   const firstPoint = currentPoints[0];
-  const annotationNumber = window.data ? window.data.predictions.length : 1;
-  const labelText = `#${annotationNumber}: ${label.name} (${area.toFixed(2)}m²)`;
+  const labelText = generateLabelText(annotationIndex, label.name, area, 'm²');
   createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, label.color, label.id);
   
   resetPolygonDrawing();
@@ -1400,26 +1420,21 @@ function resetPolygonDrawing() {
 /**
  * Line Drawing Functions - Multi-segment perimeter tool
  */
-function addLinePoint(pointer, e) {
-  console.log('Line tool - point added at:', pointer);
-  
+function addLinePoint(pointer, e) {  
   if (!canvas || isProcessingClick) return;
   
   isProcessingClick = true;
   
   // Add point to current line sequence
   currentPoints.push(pointer);
-  console.log(`Added point ${currentPoints.length}:`, pointer);
   
   if (currentPoints.length === 1) {
     // First point - start line sequence
     startLineDrawing();
     drawingMode = true; // Enable mouse move for preview
-    console.log('Line sequence started');
   } else {
     // Additional point - extend the line sequence
     updateLineFromPoints();
-    console.log(`Line sequence extended to ${currentPoints.length} points`);
   }
   
   setTimeout(() => { isProcessingClick = false; }, 50);
@@ -1427,9 +1442,7 @@ function addLinePoint(pointer, e) {
 
 function startLineDrawing() {
   if (!canvas || currentPoints.length === 0) return;
-  
-  console.log('Starting line sequence drawing');
-  
+    
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel('line');
   const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
@@ -1459,7 +1472,6 @@ function startLineDrawing() {
   
   canvas.add(currentLine);
   canvas.renderAll();
-  console.log('Line sequence added to canvas');
 }
 
 function updateLineFromPoints() {
@@ -1467,7 +1479,6 @@ function updateLineFromPoints() {
   
   // Convert points to Fabric.js format
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
-  console.log('Updating line sequence with points:', fabricPoints);
   
   // Update polyline points
   currentLine.set({
@@ -1475,7 +1486,6 @@ function updateLineFromPoints() {
   });
   
   canvas.renderAll();
-  console.log('Line sequence updated');
 }
 
 function updateLinePreview(pointer) {
@@ -1501,9 +1511,7 @@ function finishLineDrawing() {
     resetLineDrawing();
     return;
   }
-  
-  console.log(`Line sequence finished with ${currentPoints.length} points`);
-  
+    
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel('line');
   const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
@@ -1521,16 +1529,18 @@ function finishLineDrawing() {
   
   // Calculate total length of all segments
   const totalLength = calculatePolylineLength(currentPoints);
-  console.log(`Line sequence created with total length: ${totalLength.toFixed(2)} m, Label: ${labelName}`);
   
   // Add to results data
   addAnnotationToResults(currentLine, 'line', null, totalLength);
   
+  // Set annotation index for hover functionality
+  const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
+  currentLine.set('annotationIndex', annotationIndex);
+  
   // Add text label positioned at the midpoint of the line with same format as table
   const midIndex = Math.floor(currentPoints.length / 2);
   const labelPosition = currentPoints[midIndex];
-  const annotationNumber = window.data ? window.data.predictions.length : 1;
-  const labelText = `#${annotationNumber}: ${labelName} (${totalLength.toFixed(2)}m)`;
+  const labelText = generateLabelText(annotationIndex, labelName, totalLength, 'm');
   createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor, selectedLabelId);
   
   resetLineDrawing();
@@ -1565,11 +1575,6 @@ function calculatePolygonArea(points) {
   // Convert to square meters
   const area = areaPixels * pixelToMeter * pixelToMeter;
   
-  console.log(`Polygon area calculation:
-    - Canvas points: ${points.length}
-    - Natural area: ${areaPixels.toFixed(1)}px²
-    - Real world area: ${area.toFixed(4)}m²`);
-  
   return area;
 }
 
@@ -1587,11 +1592,6 @@ function calculateLineLength(point1, point2) {
   
   // Convert to meters
   const length = lengthInPixels * pixelToMeter;
-  
-  console.log(`Line length calculation:
-    - Canvas length: ${Math.sqrt((point2.x - point1.x)**2 + (point2.y - point1.y)**2).toFixed(1)}px
-    - Natural length: ${lengthInPixels.toFixed(1)}px
-    - Real world length: ${length.toFixed(4)}m`);
   
   return length;
 }
@@ -1622,11 +1622,6 @@ function calculatePolylineLength(points) {
   // Convert to meters
   const lengthInMeters = totalLength * pixelToMeter;
   
-  console.log(`Polyline length calculation:
-    - Number of segments: ${points.length - 1}
-    - Total natural length: ${totalLength.toFixed(1)}px
-    - Real world length: ${lengthInMeters.toFixed(4)}m`);
-  
   return lengthInMeters;
 }
 
@@ -1636,7 +1631,7 @@ function calculatePolylineLength(points) {
  * @param {Object} pageData - The page data to display
  */
 function displayPdfPage(pageNumber, pageData) {
-  console.log(`=== DISPLAYING PDF PAGE ${pageNumber} ===`);
+  // Displaying PDF page
   
   // Store the data globally
   window.data = pageData;
@@ -1650,17 +1645,24 @@ function displayPdfPage(pageNumber, pageData) {
     }
   }
   
-  // Set image source
-  if (pageData.pdf_image_url) {
-    console.log("Setting PDF image URL:", pageData.pdf_image_url);
-    uploadedImage.src = pageData.pdf_image_url + '?t=' + new Date().getTime();
+  // Set image source - use correct URL for current page
+  let imageUrl = pageData.pdf_image_url;
+  
+  // If we have allPdfPages array, use the correct URL for the current page
+  const allPages = getAllPdfPages();
+  if (allPages && allPages.length > 0 && pageNumber <= allPages.length) {
+    imageUrl = allPages[pageNumber - 1];
+  } else if (pageData.pdf_image_url) {
+  }
+  
+  if (imageUrl) {
+    uploadedImage.src = imageUrl + '?t=' + new Date().getTime();
   }
   
   // Wait for image to load and then display annotations
   uploadedImage.onload = function() {
-    console.log(`=== PDF PAGE ${pageNumber} IMAGE LOADED ===`);
-    console.log(`Image size: ${uploadedImage.width}x${uploadedImage.height}`);
-    console.log(`Natural size: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight}`);
+    // PDF page image loaded
+
     
     // Clear existing canvas content
     if (canvas) {
@@ -1672,10 +1674,10 @@ function displayPdfPage(pageNumber, pageData) {
     
     // Display annotations if any
     if (pageData.predictions && pageData.predictions.length > 0) {
-      console.log(`⚡ DISPLAYING ${pageData.predictions.length} annotations for page ${pageNumber}`);
+      // Displaying annotations for page
       displayAnnotations(pageData.predictions);
     } else {
-      console.log(`📄 Page ${pageNumber} has no annotations to display`);
+      // Page has no annotations to display
     }
     
     // Update UI
@@ -1692,7 +1694,6 @@ function displayPdfPage(pageNumber, pageData) {
  * Initialize application
  */
 function initApp() {
-  console.log("=== INITIALIZING APPLICATION ===");
   
   // Get DOM elements
   imageContainer = document.getElementById('imageContainer');
@@ -1726,7 +1727,7 @@ function initApp() {
         if (size) {
           document.getElementById('formatWidth').value = size[0];
           document.getElementById('formatHeight').value = size[1];
-          console.log(`Format changed to ${this.value}: ${size[0]}x${size[1]}mm`);
+          // Format changed
         }
       }
     });
@@ -1737,7 +1738,7 @@ function initApp() {
     uploadForm.addEventListener('submit', function(e) {
       e.preventDefault();
       
-      console.log("=== FORM SUBMITTED ===");
+      // Form submitted
       
       // Clear previous results
       clearResults();
@@ -1755,14 +1756,14 @@ function initApp() {
       
       if (formatSelect?.value === 'auto') {
         // For automatic detection, don't send format dimensions - let backend use PDF metadata
-        console.log('Auto-detection: Backend will use PDF metadata for format detection');
+        // Auto-detection: Backend will use PDF metadata
       } else {
         // For manual selection, send the specified format dimensions
         const formatWidthValue = document.getElementById('formatWidth')?.value || '210';
         const formatHeightValue = document.getElementById('formatHeight')?.value || '297';
         formData.set('format_width', formatWidthValue);
         formData.set('format_height', formatHeightValue);
-        console.log(`Form submission with manual format: ${formatWidthValue}x${formatHeightValue}mm`);
+        // Form submission with manual format
       }
       
       // API call
@@ -1779,7 +1780,7 @@ function initApp() {
         return response.json();
       })
       .then(data => {
-        console.log("=== API RESPONSE RECEIVED ===", data);
+        // API response received
         
         // Store data
         window.data = data;
@@ -1792,7 +1793,6 @@ function initApp() {
         
         // Handle PDF vs regular image
         if (data.is_pdf) {
-          console.log("PDF detected, processing with PDF handler");
           // Process PDF data with the PDF handler
           processPdfData(data);
           
@@ -1800,7 +1800,6 @@ function initApp() {
           // Initial page display is handled automatically
           displayPdfPage(data.current_page || 1, data);
         } else {
-          console.log("Regular image file detected");
           // Handle regular image files as before
           const uploadedFile = document.getElementById('file').files[0];
           if (uploadedFile) {
@@ -1809,21 +1808,17 @@ function initApp() {
           
           // Wait for image to load
           uploadedImage.onload = function() {
-            console.log("=== IMAGE LOADED ===");
-            console.log(`Image size: ${uploadedImage.width}x${uploadedImage.height}`);
-            console.log(`Natural size: ${uploadedImage.naturalWidth}x${uploadedImage.naturalHeight}`);
+            // Image loaded
+            // Image size logged
+            // Natural size logged
             
-            console.log("=== CHECKING PREDICTIONS ===");
-            console.log(`Predictions array:`, data.predictions);
-            console.log(`Predictions count:`, data.predictions?.length);
+            // Checking predictions data
             
             // Display annotations
             if (data.predictions && data.predictions.length > 0) {
-              console.log("⚡ CALLING displayAnnotations() with", data.predictions.length, "predictions");
               displayAnnotations(data.predictions);
             } else {
               console.warn("❌ No predictions to display - skipping displayAnnotations()");
-              console.log("Data structure:", data);
             }
             
             // Update UI
@@ -1924,7 +1919,9 @@ function initApp() {
       getPageSettings,
       setPdfSessionId,
       setPdfPageData,
-      setPageSettings
+      setPageSettings,
+      setPdfNavigationState,
+      processRemainingPagesInBackground
     }
   });
   
@@ -1932,8 +1929,7 @@ function initApp() {
   window.saveProject = saveProject;
   window.loadProject = loadProject;
   window.displayPdfPage = displayPdfPage;
-  
-  console.log("✅ Application with editor, labels, PDF navigation, and project management initialized");
+
 }
 
 // Initialize when DOM is ready

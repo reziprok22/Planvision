@@ -12,6 +12,86 @@ import json
 import datetime
 import fitz  # PyMuPDF
 
+def hex_to_rgb(hex_color):
+    """Konvertiert eine Hex-Farbe (#RRGGBB) zu RGB-Tupel"""
+    if hex_color.startswith('#'):
+        hex_color = hex_color[1:]
+    return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+
+def hex_to_fitz_color(hex_color):
+    """Konvertiert eine Hex-Farbe (#RRGGBB) zu fitz-Farbe (0-1 Bereich)"""
+    if hex_color.startswith('#'):
+        hex_color = hex_color[1:]
+    return tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+
+def validate_project_directory(project_dir):
+    """Validiert ein Projektverzeichnis und wirft Fehler bei Problemen"""
+    if not os.path.exists(project_dir):
+        raise FileNotFoundError(f"Projektverzeichnis nicht gefunden: {project_dir}")
+
+def load_project_metadata(project_dir):
+    """Lädt die Metadaten eines Projekts mit Fallback"""
+    metadata_path = os.path.join(project_dir, 'metadata.json')
+    try:
+        with open(metadata_path, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"Metadatendatei nicht gefunden: {metadata_path}")
+        # Fallback-Metadaten
+        return {
+            "project_name": f"Projekt_{os.path.basename(project_dir)}",
+            "created_at": datetime.datetime.now().isoformat(),
+            "page_count": 0
+        }
+
+def sanitize_project_name(name):
+    """Bereinigt einen Projektnamen für Dateinamen"""
+    if not name or name.strip() == "":
+        return "Unbenanntes_Projekt"
+    return name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+
+def load_labels(project_dir, label_type='area'):
+    """Lädt Label-Definitionen für ein Projekt"""
+    if label_type == 'area':
+        labels_path = os.path.join(project_dir, 'analysis', 'labels.json')
+        fallback_labels = {
+            1: {"id": 1, "name": "Fenster", "color": "#0000FF"},
+            2: {"id": 2, "name": "Tür", "color": "#FF0000"},
+            3: {"id": 3, "name": "Wand", "color": "#D4D638"},
+            4: {"id": 4, "name": "Lukarne", "color": "#FFA500"},
+            5: {"id": 5, "name": "Dach", "color": "#800080"}
+        }
+    else:  # line_type
+        labels_path = os.path.join(project_dir, 'analysis', 'line_labels.json')
+        fallback_labels = {
+            1: {"id": 1, "name": "Strecke", "color": "#FF9500"},
+            2: {"id": 2, "name": "Höhe", "color": "#00AAFF"},
+            3: {"id": 3, "name": "Breite", "color": "#4CAF50"},
+            4: {"id": 4, "name": "Abstand", "color": "#9C27B0"}
+        }
+    
+    labels = {}
+    try:
+        with open(labels_path, 'r') as f:
+            labels_data = json.load(f)
+            # Konvertiere zu einem Dictionary mit ID als Schlüssel
+            for label in labels_data:
+                labels[label['id']] = label
+    except FileNotFoundError:
+        print(f"{label_type.title()}-Labels-Datei nicht gefunden: {labels_path}")
+        # Fallback-Labels
+        labels = fallback_labels
+    
+    return labels
+
+def find_file_path(base_dir, filename_patterns):
+    """Sucht nach einer Datei mit verschiedenen Namensmustern"""
+    for pattern in filename_patterns:
+        full_path = os.path.join(base_dir, pattern)
+        if os.path.exists(full_path):
+            return full_path
+    return None
+
 def generate_annotated_pdf(project_id, output_path=None):
     """
     Generiert eine annotierte PDF-Datei, indem Bounding Boxes direkt auf die Original-PDF gezeichnet werden.
@@ -25,44 +105,35 @@ def generate_annotated_pdf(project_id, output_path=None):
     """
     # Projektverzeichnisse
     project_dir = os.path.join('projects', project_id)
-    metadata_path = os.path.join(project_dir, 'metadata.json')
     original_pdf_path = os.path.join(project_dir, 'original.pdf')
     
     print(f"Generiere PDF mit Originalbezug für Projekt: {project_id}")
     print(f"Projektpfad: {project_dir}")
     print(f"Original-PDF: {original_pdf_path}")
     
-    # Prüfen, ob Projektverzeichnis existiert
-    if not os.path.exists(project_dir):
-        raise FileNotFoundError(f"Projektverzeichnis nicht gefunden: {project_dir}")
+    # Projektverzeichnis validieren
+    validate_project_directory(project_dir)
     
     # Prüfen, ob Original-PDF existiert
     if not os.path.exists(original_pdf_path):
         raise FileNotFoundError(f"Original-PDF nicht gefunden: {original_pdf_path}")
     
     # Metadaten laden
-    try:
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
-    except FileNotFoundError:
-        print(f"Metadatendatei nicht gefunden: {metadata_path}")
-        # Fallback-Metadaten
-        metadata = {
-            "project_name": f"Projekt_{project_id}",
-            "created_at": datetime.datetime.now().isoformat(),
-            "page_count": 0  # Wird später aus dem PDF bestimmt
-        }
+    metadata = load_project_metadata(project_dir)
+    project_name = metadata.get('project_name', 'Unbenanntes Projekt') or 'Unbenanntes Projekt'
     
-    project_name = metadata.get('project_name', 'Unbenanntes Projekt')
+    # Labels laden
+    labels = load_labels(project_dir, 'area')
+    line_labels = load_labels(project_dir, 'line')
     
     # PDF-Dateinamen erstellen
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     if output_path is None:
-        # Speichern im static/reports-Verzeichnis
-        reports_dir = os.path.join('static', 'reports')
+        # Speichern im projektspezifischen reports-Verzeichnis
+        reports_dir = os.path.join('projects', project_id, 'reports')
         os.makedirs(reports_dir, exist_ok=True)
         
-        safe_name = project_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        safe_name = sanitize_project_name(project_name)
         output_path = os.path.join(reports_dir, f"{safe_name}_annotiert_{timestamp}.pdf")
     
     print(f"Annotierte PDF wird erstellt unter: {output_path}")
@@ -77,18 +148,14 @@ def generate_annotated_pdf(project_id, output_path=None):
         # Für jede Seite die Annotationen hinzufügen
         for page_num in range(page_count):
             # Verschiedene mögliche Dateimuster überprüfen für die Analysedateien
-            possible_analysis_paths = [
-                os.path.join(project_dir, 'analysis', f"page_{page_num+1}_results.json"),
-                os.path.join(project_dir, 'analysis', f"page_{page_num+1:02d}_results.json"),
-                os.path.join(project_dir, 'analysis', f"{page_num+1}_results.json")
+            possible_analysis_patterns = [
+                f"page_{page_num+1}_results.json",
+                f"page_{page_num+1:02d}_results.json",
+                f"{page_num+1}_results.json"
             ]
             
             # Suche nach dem ersten existierenden Pfad
-            analysis_path = None
-            for path in possible_analysis_paths:
-                if os.path.exists(path):
-                    analysis_path = path
-                    break
+            analysis_path = find_file_path(os.path.join(project_dir, 'analysis'), possible_analysis_patterns)
             
             if not analysis_path:
                 print(f"Keine Analysedaten für Seite {page_num+1} gefunden, überspringe...")
@@ -162,19 +229,19 @@ def generate_annotated_pdf(project_id, output_path=None):
                     label = pred.get('label', 0)
                     annotation_type = pred.get('annotationType', 'rectangle')
                     
-                    # Farbe basierend auf dem Label
-                    if label == 1:
-                        color = (0, 0, 1)  # Fenster - Blau
-                    elif label == 2:
-                        color = (1, 0, 0)  # Tür - Rot
-                    elif label == 3:
-                        color = (0.8, 0.8, 0)  # Wand - Gelb
-                    elif label == 4:
-                        color = (1, 0.6, 0)  # Lukarne - Orange
-                    elif label == 5:
-                        color = (0.5, 0, 0.5)  # Dach - Lila
+                    # Farbe basierend auf dem Label und Annotationstyp
+                    if annotation_type == 'line':
+                        # Für Line-Annotationen verwende Line-Labels
+                        if label in line_labels:
+                            color = hex_to_fitz_color(line_labels[label]['color'])
+                        else:
+                            color = (1.0, 0.5843137254901961, 0.0)  # Fallback Orange für Lines (#FF9500)
                     else:
-                        color = (0.5, 0.5, 0.5)  # Andere - Grau
+                        # Für Area-Annotationen verwende normale Labels
+                        if label in labels:
+                            color = hex_to_fitz_color(labels[label]['color'])
+                        else:
+                            color = (0.5, 0.5, 0.5)  # Andere - Grau
                     
                     if 'box' in pred:
                         # Rectangle annotations
@@ -272,15 +339,10 @@ def generate_annotated_pdf(project_id, output_path=None):
         summary_counts = {}
         summary_areas = {}
         
-        # Label-Namen-Mapping für die Zusammenfassung
-        label_names = {
-            0: "Andere",
-            1: "Fenster", 
-            2: "Türen",
-            3: "Wände",
-            4: "Lukarnen",
-            5: "Dächer"
-        }
+        # Label-Namen-Mapping für die Zusammenfassung aus geladenen Labels
+        label_names = {0: "Andere"}
+        for label_id, label_info in labels.items():
+            label_names[label_id] = label_info.get('name', f"Label {label_id}")
 
         # Seiten-Daten laden und Zusammenfassung berechnen
         for page_num in range(1, page_count + 1):
@@ -399,32 +461,22 @@ def generate_report_pdf(project_id, output_path=None):
     """
     # Projektverzeichnisse
     project_dir = os.path.join('projects', project_id)
-    metadata_path = os.path.join(project_dir, 'metadata.json')
     
     print(f"Generiere PDF für Projekt: {project_id}")
     print(f"Projektpfad: {project_dir}")
     
-    # Prüfen, ob Projektverzeichnis existiert
-    if not os.path.exists(project_dir):
-        raise FileNotFoundError(f"Projektverzeichnis nicht gefunden: {project_dir}")
+    # Projektverzeichnis validieren
+    validate_project_directory(project_dir)
     
     # Metadaten laden
-    try:
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
-    except FileNotFoundError:
-        print(f"Metadatendatei nicht gefunden: {metadata_path}")
-        # Fallback-Metadaten
-        metadata = {
-            "project_name": f"Projekt_{project_id}",
-            "created_at": datetime.datetime.now().isoformat(),
-            "page_count": len([f for f in os.listdir(os.path.join(project_dir, 'pages')) 
-                                if f.endswith('.jpg') and f.startswith('page_')])
-        }
-    
-    project_name = metadata.get('project_name', 'Unbenanntes Projekt')
+    metadata = load_project_metadata(project_dir)
+    project_name = metadata.get('project_name', 'Unbenanntes Projekt') or 'Unbenanntes Projekt'
     date_created = metadata.get('created_at', datetime.datetime.now().isoformat())
     page_count = metadata.get('page_count', 0)
+    
+    # Labels laden
+    labels = load_labels(project_dir, 'area')
+    line_labels = load_labels(project_dir, 'line')
 
     # Nach dem Laden der Metadaten:
     print(f"Prüfe Verzeichnisstruktur für Projekt {project_id}:")
@@ -445,11 +497,11 @@ def generate_report_pdf(project_id, output_path=None):
     # PDF-Dateinamen erstellen
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
     if output_path is None:
-        # Speichern im static/reports-Verzeichnis
-        reports_dir = os.path.join('static', 'reports')
+        # Speichern im projektspezifischen reports-Verzeichnis
+        reports_dir = os.path.join('projects', project_id, 'reports')
         os.makedirs(reports_dir, exist_ok=True)
         
-        safe_name = project_name.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        safe_name = sanitize_project_name(project_name)
         output_path = os.path.join(reports_dir, f"{safe_name}_{timestamp}.pdf")
     
     print(f"PDF wird erstellt unter: {output_path}")
@@ -490,15 +542,10 @@ def generate_report_pdf(project_id, output_path=None):
     summary_counts = {}
     summary_areas = {}
     
-    # Label-Namen-Mapping für die Zusammenfassung
-    label_names = {
-        0: "Andere",
-        1: "Fenster", 
-        2: "Türen",
-        3: "Wände",
-        4: "Lukarnen",
-        5: "Dächer"
-    }
+    # Label-Namen-Mapping für die Zusammenfassung aus geladenen Labels
+    label_names = {0: "Andere"}
+    for label_id, label_info in labels.items():
+        label_names[label_id] = label_info.get('name', f"Label {label_id}")
     
     # Seiten-Daten laden und Zusammenfassung berechnen
     for page_num in range(1, page_count + 1):
@@ -570,31 +617,23 @@ def generate_report_pdf(project_id, output_path=None):
     # Für jede Seite ein eigenes Kapitel
     for page_num in range(1, page_count + 1):
         # Verschiedene mögliche Dateimuster überprüfen
-        possible_page_paths = [
-            os.path.join(project_dir, 'pages', f"page_{page_num}.jpg"),
-            os.path.join(project_dir, 'pages', f"page_{page_num:02d}.jpg"),  # Mit führender Null
-            os.path.join(project_dir, 'pages', f"{page_num}.jpg")
+        possible_page_patterns = [
+            f"page_{page_num}.jpg",
+            f"page_{page_num:02d}.jpg",  # Mit führender Null
+            f"{page_num}.jpg"
         ]
         
         # Suche nach dem ersten existierenden Pfad
-        page_path = None
-        for path in possible_page_paths:
-            if os.path.exists(path):
-                page_path = path
-                break
+        page_path = find_file_path(os.path.join(project_dir, 'pages'), possible_page_patterns)
                 
         # Ähnlich für Analysedateien
-        possible_analysis_paths = [
-            os.path.join(project_dir, 'analysis', f"page_{page_num}_results.json"),
-            os.path.join(project_dir, 'analysis', f"page_{page_num:02d}_results.json"),
-            os.path.join(project_dir, 'analysis', f"{page_num}_results.json")
+        possible_analysis_patterns = [
+            f"page_{page_num}_results.json",
+            f"page_{page_num:02d}_results.json",
+            f"{page_num}_results.json"
         ]
         
-        analysis_path = None
-        for path in possible_analysis_paths:
-            if os.path.exists(path):
-                analysis_path = path
-                break
+        analysis_path = find_file_path(os.path.join(project_dir, 'analysis'), possible_analysis_patterns)
         
         # print(f"Seite {page_num}: Bild gefunden: {page_path is not None}, Analyse gefunden: {analysis_path is not None}")
         
@@ -633,17 +672,19 @@ def generate_report_pdf(project_id, output_path=None):
             label = pred.get('label', 0)
             annotation_type = pred.get('annotationType', 'rectangle')
             
-            # Farbe basierend auf dem Label
-            color_map = {
-                1: (0, 0, 255),      # Fenster - Blau
-                2: (255, 0, 0),      # Tür - Rot
-                3: (212, 214, 56),   # Wand - Gelb
-                4: (255, 165, 0),    # Lukarne - Orange
-                5: (128, 0, 128),    # Dach - Lila
-                0: (128, 128, 128)   # Andere - Grau
-            }
-            
-            color = color_map.get(label, (0, 0, 0))
+            # Farbe basierend auf dem Label und Annotationstyp
+            if annotation_type == 'line':
+                # Für Line-Annotationen verwende Line-Labels
+                if label in line_labels:
+                    color = hex_to_rgb(line_labels[label]['color'])
+                else:
+                    color = (255, 149, 0)  # Fallback Orange für Lines (#FF9500)
+            else:
+                # Für Area-Annotationen verwende normale Labels
+                if label in labels:
+                    color = hex_to_rgb(labels[label]['color'])
+                else:
+                    color = (128, 128, 128)  # Andere - Grau
             
             if 'box' in pred:
                 # Rectangle annotations
@@ -788,20 +829,15 @@ def generate_report_pdf(project_id, output_path=None):
         if 'predictions' in page_data and page_data['predictions']:
             elements.append(Paragraph("Detailergebnisse", normal_style))
             
-            # Label-Namen-Mapping
-            label_names = {
-                0: "Andere",
-                1: "Fenster", 
-                2: "Tür",
-                3: "Wand",
-                4: "Lukarne",
-                5: "Dach"
-            }
+            # Label-Namen-Mapping aus geladenen Labels
+            local_label_names = {0: "Andere"}
+            for label_id, label_info in labels.items():
+                local_label_names[label_id] = label_info.get('name', f"Label {label_id}")
             
             detail_data = [["Nr.", "Klasse", "Typ", "Wahrsch.", "Messung"]]
             for idx, pred in enumerate(page_data['predictions']):
                 label = pred.get('label', 0)
-                label_name = label_names.get(label, "Andere")
+                label_name = local_label_names.get(label, "Andere")
                 
                 # Bestimme Typ und Messung basierend auf Annotationstyp
                 if pred.get('annotationType') == 'line':
@@ -853,18 +889,5 @@ def generate_report_pdf(project_id, output_path=None):
         annotated_path = os.path.join('static', 'temp', f"annotated_page_{page_num}_{timestamp}.jpg")
         if os.path.exists(annotated_path):
             os.remove(annotated_path)
-    
-    # Debug
-    print(f"Generiere PDF für Projekt: {project_id}")
-    print(f"Projektpfad: {project_dir}")
-    print(f"Prüfe Metadatendatei: {metadata_path}")
-    
-    if not os.path.exists(project_dir):
-        print(f"FEHLER: Projektverzeichnis existiert nicht: {project_dir}")
-        raise FileNotFoundError(f"Projektverzeichnis nicht gefunden: {project_dir}")
-    
-    if not os.path.exists(metadata_path):
-        print(f"FEHLER: Metadatendatei existiert nicht: {metadata_path}")
-        raise FileNotFoundError(f"Metadatendatei nicht gefunden: {metadata_path}")
     
     return output_path

@@ -73,11 +73,31 @@ export function setupProject(elements, modules) {
  * Save the current project
  */
 export function saveProject() {
-  // Ask for project name
-  const projectName = prompt("Enter a name for this project:", 
-    `Window Project ${new Date().toLocaleDateString()}`);
+  const sessionId = pdfModule.getPdfSessionId();
+  
+  // Check if this is an existing project (UUID format) or new project
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const isExistingProject = uuidPattern.test(sessionId);
+  
+  let projectName;
+  if (isExistingProject) {
+    // For existing projects, ask if user wants to update or create new
+    const choice = confirm("This appears to be an existing project. Click OK to update the existing project, or Cancel to create a new project.");
+    if (choice) {
+      // Update existing project - don't ask for name change
+      projectName = null; // Will be handled by server
+    } else {
+      // Create new project
+      projectName = prompt("Enter a name for the new project:", 
+        `Window Project ${new Date().toLocaleDateString()}`);
+    }
+  } else {
+    // New project
+    projectName = prompt("Enter a name for this project:", 
+      `Window Project ${new Date().toLocaleDateString()}`);
+  }
 
-  if (!projectName) return; // Cancel if no name entered
+  if (projectName === null && !isExistingProject) return; // Cancel if no name entered for new project
 
   // Show status
   const saveStatus = document.createElement('div');
@@ -102,7 +122,8 @@ export function saveProject() {
   // Prepare data for the server (including labels)
   const projectData = {
     project_name: projectName,
-    session_id: pdfModule.getPdfSessionId(),
+    session_id: sessionId,
+    is_update: isExistingProject && projectName === null,
     analysis_data: analysisData,
     settings: pageSettings,
     labels: window.currentLabels,
@@ -291,28 +312,19 @@ export function loadProject(projectId) {
         pdfModule.setPageSettings(data.settings);
         pdfModule.setPdfSessionId(projectId); // Use project ID as session ID
         
-        // Set current page and totals
+        // Set PDF navigation state
         const currentPdfPage = 1;
         const totalPdfPages = data.metadata.page_count;
         const allPdfPages = data.image_urls;
+        
+        // Update PDF navigation state in the module
+        pdfModule.setPdfNavigationState(currentPdfPage, totalPdfPages, allPdfPages);
         
         // Show PDF navigation if there are multiple pages
         if (totalPdfPages > 1) {
           const pdfNavigation = document.getElementById('pdfNavigation');
           if (pdfNavigation) {
             pdfNavigation.style.display = 'flex';
-            
-            // Update page display
-            const currentPageSpan = document.getElementById('currentPage');
-            const totalPagesSpan = document.getElementById('totalPages');
-            if (currentPageSpan) currentPageSpan.textContent = '1';
-            if (totalPagesSpan) totalPagesSpan.textContent = totalPdfPages;
-            
-            // Enable/disable navigation buttons
-            const prevPageBtn = document.getElementById('prevPageBtn');
-            const nextPageBtn = document.getElementById('nextPageBtn');
-            if (prevPageBtn) prevPageBtn.disabled = true; // First page
-            if (nextPageBtn) nextPageBtn.disabled = totalPdfPages <= 1;
           }
         }
         
@@ -323,6 +335,24 @@ export function loadProject(projectId) {
         // Display first page
         if (typeof window.displayPdfPage === 'function') {
           window.displayPdfPage(1, pdfPageData["1"]);
+        }
+        
+        // For loaded projects, we already have all the data
+        // Only start background processing if some pages are missing data
+        const missingPages = [];
+        for (let i = 1; i <= totalPdfPages; i++) {
+          if (!pdfPageData[i] || !pdfPageData[i].predictions) {
+            missingPages.push(i);
+          }
+        }
+        
+        if (missingPages.length > 0) {
+          console.log("Starting background processing for missing pages:", missingPages);
+          setTimeout(() => {
+            pdfModule.processRemainingPagesInBackground();
+          }, 1000);
+        } else {
+          console.log("Project loaded with all page data:", Object.keys(pdfPageData));
         }
         
         // Update page title

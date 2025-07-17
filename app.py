@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, url_for
+from flask import Flask, render_template, request, jsonify, url_for, send_from_directory
 import os
 from model_handler import load_model, predict_image
 import shutil
@@ -16,7 +16,7 @@ import datetime
 
 from PyPDF2 import PdfReader
 
-os.makedirs('static/reports', exist_ok=True)
+os.makedirs('projects', exist_ok=True)
 
 
 # Logging einrichten
@@ -24,20 +24,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # 2. Aktualisierte convert_pdf_to_images-Funktion
-def convert_pdf_to_images(pdf_file_object):
+def convert_pdf_to_images(pdf_file_object, project_id=None):
     """
     Konvertiert eine PDF-Datei in mehrere JPG-Bilder (alle Seiten) und liest die Seitengrößen aus.
     
     Args:
         pdf_file_object: Das File-Objekt der hochgeladenen PDF-Datei
+        project_id: Optional project ID for direct storage in projects folder
         
     Returns:
         dict: Ein Dictionary mit Informationen über die konvertierten Bilder
     """
-    # Erstelle ein eindeutiges Verzeichnis für diese PDF
-    timestamp = int(time.time())
-    session_id = f"pdf_{timestamp}"
-    output_dir = os.path.join('static', 'uploads', session_id)
+    # Generiere immer eine UUID für neue Uploads
+    if not project_id:
+        project_id = str(uuid.uuid4())
+    
+    # Speichere direkt im Projektordner
+    output_dir = os.path.join('projects', project_id, 'uploads')
+    session_id = project_id
+    
     os.makedirs(output_dir, exist_ok=True)
     
     # Speichere die PDF-Datei
@@ -64,18 +69,22 @@ def convert_pdf_to_images(pdf_file_object):
     image_paths = []
     
     # Speichere jede Seite als JPG
+    local_image_paths = []  # Lokale Pfade für Backend-Zugriff
     for i, image in enumerate(images):
         image_path = os.path.join(output_dir, f"page_{i+1}.jpg")
         image.save(image_path, "JPEG")
-        # Relativen Pfad für das Frontend speichern
-        rel_path = f"/static/uploads/{session_id}/page_{i+1}.jpg"
+        # Lokalen Pfad für Backend-Zugriff speichern
+        local_image_paths.append(image_path)
+        # URL-Pfad für Frontend-Anzeige
+        rel_path = f"/project_files/{session_id}/uploads/page_{i+1}.jpg"
         image_paths.append(rel_path)
     
     # Informationen über die Konvertierung
     pdf_info = {
         "session_id": session_id,
         "pdf_path": pdf_path,
-        "image_paths": image_paths,
+        "image_paths": image_paths,  # URLs für Frontend
+        "local_image_paths": local_image_paths,  # Lokale Pfade für Backend
         "page_count": len(images),
         "page_sizes": page_sizes  # Seitengrößen hinzufügen
     }
@@ -90,6 +99,14 @@ app = Flask(__name__)
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route('/project_files/<project_id>/<path:filename>')
+def serve_project_file(project_id, filename):
+    """Serve files from project directories"""
+    project_dir = os.path.join('projects', project_id)
+    if not os.path.exists(project_dir):
+        return "Project not found", 404
+    return send_from_directory(project_dir, filename)
 
 @app.route('/minimal')
 def minimal():
@@ -134,12 +151,11 @@ def predict():
                         format_size = pdf_info["page_sizes"][page-1]
                         print(f"Verwende ausgelesene Seitengröße für Seite {page}: {format_size[0]:.2f} x {format_size[1]:.2f} mm")
 
-                    # Pfad zum Bild der aktuellen Seite
-                    current_image_path = pdf_info["image_paths"][page-1]
+                    # Pfad zum Bild der aktuellen Seite (lokaler Pfad für Backend)
+                    current_image_path = pdf_info["local_image_paths"][page-1]
                     
                     # Bilddaten der aktuellen Seite für die Vorhersage lesen
-                    full_image_path = os.path.join(os.getcwd(), current_image_path.lstrip('/'))
-                    with open(full_image_path, 'rb') as f:
+                    with open(current_image_path, 'rb') as f:
                         image_bytes = f.read()
                     
                     is_pdf = True
@@ -234,8 +250,8 @@ def analyze_page():
         plan_scale = float(request.form.get('plan_scale', 100))
         threshold = float(request.form.get('threshold', 0.5))
         
-        # Überprüfe, ob die Session existiert
-        session_dir = os.path.join('static', 'uploads', session_id)
+        # Überprüfe, ob die Session existiert (neue Struktur: projects/session_id/uploads/)
+        session_dir = os.path.join('projects', session_id, 'uploads')
         if not os.path.exists(session_dir):
             print(f"Session-Verzeichnis nicht gefunden: {session_dir}")
             return jsonify({'error': 'PDF-Session nicht gefunden'}), 404
@@ -252,7 +268,7 @@ def analyze_page():
         
         # Pfad zum Bild der aktuellen Seite
         image_path = os.path.join(session_dir, f"page_{page}.jpg")
-        rel_image_path = f"/static/uploads/{session_id}/page_{page}.jpg"
+        rel_image_path = f"/project_files/{session_id}/uploads/page_{page}.jpg"
         
         print(f"Bildpfad: {image_path}")
         
@@ -293,7 +309,7 @@ def analyze_page():
             })
         
         # Alle Bildpfade für die Navigation
-        all_image_paths = [f"/static/uploads/{session_id}/page_{i+1}.jpg" for i in range(page_count)]
+        all_image_paths = [f"/project_files/{session_id}/uploads/page_{i+1}.jpg" for i in range(page_count)]
         
         # Gesamtfläche berechnen
         total_area = sum(area for area in areas)
@@ -440,35 +456,64 @@ def save_project():
         if not data:
             return jsonify({'error': 'Keine Daten erhalten'}), 400
             
-        # Projekt-ID generieren
-        project_id = str(uuid.uuid4())
-        
         # Projektname und Session-ID extrahieren
         project_name = data.get('project_name', f"Projekt_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}")
         session_id = data.get('session_id')
+        is_update = data.get('is_update', False)
         
         if not session_id:
             return jsonify({'error': 'Keine Session-ID angegeben'}), 400
         
-        # Projektverzeichnis erstellen
+        if is_update:
+            # Update existing project
+            project_id = session_id
+            # Keep existing project name if not provided
+            if not project_name:
+                metadata_path = os.path.join('projects', project_id, 'metadata.json')
+                if os.path.exists(metadata_path):
+                    with open(metadata_path, 'r') as f:
+                        existing_metadata = json.load(f)
+                        project_name = existing_metadata.get('project_name', f"Projekt_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}")
+        else:
+            # Create new project with new UUID
+            project_id = str(uuid.uuid4())
+        
+        # Projektverzeichnis behandeln
         project_dir = os.path.join('projects', project_id)
-        os.makedirs(project_dir, exist_ok=True)
-        os.makedirs(os.path.join(project_dir, 'pages'), exist_ok=True)
+        
+        if is_update:
+            # For updates, project directory should already exist
+            if not os.path.exists(project_dir):
+                return jsonify({'error': 'Projekt-Session nicht gefunden'}), 404
+        else:
+            # For new projects, we might need to copy from session directory
+            if session_id != project_id:
+                # Copy from session directory to new project directory
+                session_dir = os.path.join('projects', session_id)
+                if os.path.exists(session_dir):
+                    shutil.copytree(session_dir, project_dir)
+                else:
+                    return jsonify({'error': 'Session-Daten nicht gefunden'}), 404
+        
+        # Erstelle fehlende Unterverzeichnisse
         os.makedirs(os.path.join(project_dir, 'analysis'), exist_ok=True)
         
-        # Original PDF-Datei kopieren (falls vorhanden)
-        pdf_path = os.path.join('static', 'uploads', session_id, 'document.pdf')
+        # Original PDF-Datei sollte bereits im uploads-Ordner sein
+        pdf_path = os.path.join(project_dir, 'uploads', 'document.pdf')
         if os.path.exists(pdf_path):
             shutil.copy(pdf_path, os.path.join(project_dir, 'original.pdf'))
         
-        # Bildseiten kopieren
-        session_dir = os.path.join('static', 'uploads', session_id)
-        if os.path.exists(session_dir):
-            for filename in os.listdir(session_dir):
+        # Bildseiten von uploads nach pages kopieren
+        uploads_dir = os.path.join(project_dir, 'uploads')
+        pages_dir = os.path.join(project_dir, 'pages')
+        os.makedirs(pages_dir, exist_ok=True)
+        
+        if os.path.exists(uploads_dir):
+            for filename in os.listdir(uploads_dir):
                 if filename.startswith('page_') and filename.endswith('.jpg'):
                     shutil.copy(
-                        os.path.join(session_dir, filename),
-                        os.path.join(project_dir, 'pages', filename)
+                        os.path.join(uploads_dir, filename),
+                        os.path.join(pages_dir, filename)
                     )
         
         # Speichere Analyse-Daten vom Client
@@ -480,6 +525,7 @@ def save_project():
         
         # Labels vom Client holen
         labels = data.get('labels', [])
+        line_labels = data.get('lineLabels', [])
         
         # Speichere globale Einstellungen
         with open(os.path.join(project_dir, 'analysis', 'analysis_settings.json'), 'w') as f:
@@ -488,6 +534,10 @@ def save_project():
         # Speichere Labels
         with open(os.path.join(project_dir, 'analysis', 'labels.json'), 'w') as f:
             json.dump(labels, f, indent=2)
+        
+        # Speichere Line-Labels
+        with open(os.path.join(project_dir, 'analysis', 'line_labels.json'), 'w') as f:
+            json.dump(line_labels, f, indent=2)
         
         # Speichere Analyse-Ergebnisse pro Seite
         saved_pages = 0
@@ -505,28 +555,57 @@ def save_project():
                 print(f"Fehler beim Speichern von Seite {page_num}: {e}")
         
         # Speichere Metadaten
-        page_count = len([f for f in os.listdir(os.path.join(project_dir, 'pages')) 
-                         if f.endswith('.jpg') and f.startswith('page_')])
+        pages_dir = os.path.join(project_dir, 'pages')
+        if os.path.exists(pages_dir):
+            page_count = len([f for f in os.listdir(pages_dir) 
+                             if f.endswith('.jpg') and f.startswith('page_')])
+        else:
+            page_count = 0
         
-        metadata = {
-            'project_name': project_name,
-            'created_at': datetime.datetime.now().isoformat(),
-            'page_count': page_count,
-            'project_id': project_id,
-            'saved_pages': saved_pages
-        }
+        # Handle metadata for updates vs new projects
+        if is_update:
+            # Load existing metadata and update it
+            metadata_path = os.path.join(project_dir, 'metadata.json')
+            if os.path.exists(metadata_path):
+                with open(metadata_path, 'r') as f:
+                    metadata = json.load(f)
+                # Update fields
+                metadata['project_name'] = project_name
+                metadata['updated_at'] = datetime.datetime.now().isoformat()
+                metadata['page_count'] = page_count
+                metadata['saved_pages'] = saved_pages
+            else:
+                # Fallback if metadata doesn't exist
+                metadata = {
+                    'project_name': project_name,
+                    'created_at': datetime.datetime.now().isoformat(),
+                    'page_count': page_count,
+                    'project_id': project_id,
+                    'saved_pages': saved_pages
+                }
+        else:
+            # New project metadata
+            metadata = {
+                'project_name': project_name,
+                'created_at': datetime.datetime.now().isoformat(),
+                'page_count': page_count,
+                'project_id': project_id,
+                'saved_pages': saved_pages
+            }
         
         with open(os.path.join(project_dir, 'metadata.json'), 'w') as f:
             json.dump(metadata, f, indent=2)
         
-        print(f"Projekt {project_name} erfolgreich gespeichert. {saved_pages} Seiten-Ergebnisse gespeichert.")
+        action = "aktualisiert" if is_update else "gespeichert"
+        print(f"Projekt {project_name} erfolgreich {action}. {saved_pages} Seiten-Ergebnisse gespeichert.")
         
         return jsonify({
             'success': True,
-            'message': 'Projekt erfolgreich gespeichert',
+            'message': f'Projekt erfolgreich {action}',
             'project_id': project_id,
             'project_name': project_name,
-            'saved_pages': saved_pages
+            'saved_pages': saved_pages,
+            'is_update': is_update
         })
         
     except Exception as e:
@@ -632,24 +711,27 @@ def load_project(project_id):
                 {"id": 5, "name": "Dach", "color": "#800080"}
             ]
         
+        # Line-Labels laden
+        line_labels_path = os.path.join(analysis_dir, 'line_labels.json')
+        if os.path.exists(line_labels_path):
+            with open(line_labels_path, 'r') as f:
+                line_labels = json.load(f)
+        else:
+            # Standard-Line-Labels als Fallback
+            line_labels = [
+                {"id": 1, "name": "Strecke", "color": "#FF9500"},
+                {"id": 2, "name": "Höhe", "color": "#00AAFF"},
+                {"id": 3, "name": "Breite", "color": "#4CAF50"},
+                {"id": 4, "name": "Abstand", "color": "#9C27B0"}
+            ]
+        
         # URLs für die Bildseiten erstellen
         image_urls = []
         pages_dir = os.path.join(project_dir, 'pages')
         for filename in sorted(os.listdir(pages_dir)):
             if filename.startswith('page_') and filename.endswith('.jpg'):
-                # Kopiere das Bild in den static/uploads Ordner für den Zugriff
-                target_dir = os.path.join('static', 'uploads', project_id)
-                os.makedirs(target_dir, exist_ok=True)
-                
-                # Kopiere die Datei, wenn sie noch nicht existiert
-                if not os.path.exists(os.path.join(target_dir, filename)):
-                    shutil.copy(
-                        os.path.join(pages_dir, filename),
-                        os.path.join(target_dir, filename)
-                    )
-                
-                # URL zum Bild erstellen
-                image_url = f"/static/uploads/{project_id}/{filename}"
+                # URL zum Bild erstellen (direkt aus dem Projektordner)
+                image_url = f"/project_files/{project_id}/pages/{filename}"
                 image_urls.append(image_url)
         
         return jsonify({
@@ -658,6 +740,7 @@ def load_project(project_id):
             'analysis_data': analysis_data,
             'settings': settings,
             'labels': labels,
+            'lineLabels': line_labels,
             'image_urls': image_urls
         })
         
@@ -700,12 +783,15 @@ def export_pdf(project_id):
             print(f"Generierte PDF-Datei nicht gefunden: {pdf_path}")
             return jsonify({'success': False, 'error': 'Generierte PDF-Datei wurde nicht gefunden'}), 500
         
-        # Extrahiere den relativen Pfad für die URL
-        if 'static/' in pdf_path:
-            rel_path = '/static/' + pdf_path.split('static/')[1]
+        # Extrahiere den relativen Pfad für die URL (neue Struktur)
+        if 'projects/' in pdf_path:
+            # Neuer Pfad: projects/project_id/reports/filename.pdf
+            path_parts = pdf_path.split('projects/')[1]  # project_id/reports/filename.pdf
+            rel_path = '/project_files/' + path_parts
         else:
-            rel_path = '/' + pdf_path  # Führender Slash hinzufügen
-            print(f"Warnung: PDF-Pfad enthält nicht 'static/': {pdf_path}")
+            # Fallback
+            rel_path = '/' + pdf_path
+            print(f"Warnung: PDF-Pfad enthält nicht 'projects/': {pdf_path}")
         
         print(f"Relativer Pfad für URL: {rel_path}")
         
@@ -760,12 +846,15 @@ def export_annotated_pdf(project_id):
             print(f"Generierte PDF-Datei nicht gefunden: {pdf_path}")
             return jsonify({'success': False, 'error': 'Generierte PDF-Datei wurde nicht gefunden'}), 500
         
-        # Extrahiere den relativen Pfad für die URL
-        if 'static/' in pdf_path:
-            rel_path = '/static/' + pdf_path.split('static/')[1]
+        # Extrahiere den relativen Pfad für die URL (neue Struktur)
+        if 'projects/' in pdf_path:
+            # Neuer Pfad: projects/project_id/reports/filename.pdf
+            path_parts = pdf_path.split('projects/')[1]  # project_id/reports/filename.pdf
+            rel_path = '/project_files/' + path_parts
         else:
-            rel_path = '/' + pdf_path  # Führender Slash hinzufügen
-            print(f"Warnung: PDF-Pfad enthält nicht 'static/': {pdf_path}")
+            # Fallback
+            rel_path = '/' + pdf_path
+            print(f"Warnung: PDF-Pfad enthält nicht 'projects/': {pdf_path}")
         
         print(f"Relativer Pfad für URL: {rel_path}")
         

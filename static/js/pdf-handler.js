@@ -342,22 +342,33 @@ function showBackgroundProcessingIndicator() {
 /**
  * Process remaining PDF pages in background
  */
-function processRemainingPagesInBackground() {
+export function processRemainingPagesInBackground() {
   processingCancelled = false;
   processingQueue = [];
   activeRequests = 0;
+  
+  console.log("=== STARTING BACKGROUND PROCESSING ===");
+  console.log("Current PDF Page:", currentPdfPage);
+  console.log("Total PDF Pages:", totalPdfPages);
+  console.log("Current pdfPageData keys:", Object.keys(pdfPageData));
   
   // Build the queue of pages to process
   for (let i = 1; i <= totalPdfPages; i++) {
     if (i !== currentPdfPage && !pdfPageData[i]) {
       processingQueue.push(i);
+      console.log(`Adding page ${i} to processing queue`);
+    } else if (i !== currentPdfPage && pdfPageData[i]) {
+      console.log(`Page ${i} already has data, skipping`);
     }
   }
+  
+  console.log("Processing queue:", processingQueue);
   
   if (processingQueue.length > 0) {
     updateProcessingIndicator();
     processNextBatch();
   } else {
+    console.log("No pages to process");
     showProcessingComplete();
   }
 }
@@ -412,6 +423,9 @@ function processPdfPage(pageNumber) {
   })
   .then(response => response.json())
   .then(data => {
+    console.log(`=== BACKGROUND ANALYSIS RESPONSE FOR PAGE ${pageNumber} ===`);
+    console.log("Raw response data:", data);
+    
     const processedData = window.processApiResponse ? 
       window.processApiResponse(data) : data;
     
@@ -425,7 +439,8 @@ function processPdfPage(pageNumber) {
     
     pdfPageData[pageNumber] = processedData;
     
-    console.log(`Page ${pageNumber} analyzed in background`);
+    console.log(`Page ${pageNumber} analyzed in background. Predictions: ${processedData.predictions?.length || 0}`);
+    console.log("Updated pdfPageData keys:", Object.keys(pdfPageData));
   })
   .catch(error => {
     console.error(`Error analyzing page ${pageNumber}:`, error);
@@ -578,3 +593,9 @@ export function getTotalPdfPages() { return totalPdfPages; }
 export function setPdfSessionId(sessionId) { pdfSessionId = sessionId; }
 export function setPdfPageData(data) { pdfPageData = data; }
 export function setPageSettings(settings) { pageSettings = settings; }
+export function setPdfNavigationState(currentPage, totalPages, allPages) {
+  currentPdfPage = currentPage;
+  totalPdfPages = totalPages;
+  allPdfPages = allPages;
+  updatePdfNavigation();
+}
