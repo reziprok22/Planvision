@@ -123,7 +123,7 @@ function initCanvas() {
   // FABRIC.JS NATURAL-SIZE STRATEGY: Canvas = image size, 1:1 coordinates
   const naturalWidth = uploadedImage.naturalWidth;
   const naturalHeight = uploadedImage.naturalHeight;
-  
+ 
   console.log(`Canvas size set to natural size: ${naturalWidth}x${naturalHeight}`);
   
   // Canvas-Größe = Natural Image Size (für 1:1 Koordinaten)
@@ -322,7 +322,7 @@ function displayAnnotations(predictions) {
       // Create label text with standardized format matching table
       const area = pred.calculatedArea || pred.area || 0;
       const labelText = `#${index + 1}: ${label.name} (${area.toFixed(2)}m²)`;
-      createAnnotationLabel({ x: canvasX1, y: canvasY1 }, labelText, labelColor);
+      createAnnotationLabel({ x: canvasX1, y: canvasY1 }, labelText, labelColor, pred.label);
       rectangleCount++;
       
     } else if (pred.annotationType === 'polygon' && pred.points) {
@@ -354,7 +354,7 @@ function displayAnnotations(predictions) {
       const area = pred.calculatedArea || pred.area || 0;
       const labelText = `#${index + 1}: ${label.name} (${area.toFixed(2)}m²)`;
       const firstPoint = pred.points[0];
-      createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, labelColor);
+      createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, labelColor, pred.label);
       polygonCount++;
       
     } else if (pred.annotationType === 'line' && pred.points) {
@@ -386,7 +386,7 @@ function displayAnnotations(predictions) {
       const labelText = `#${index + 1}: ${label.name} (${length.toFixed(2)}m)`;
       const midIndex = Math.floor(pred.points.length / 2);
       const labelPosition = pred.points[midIndex];
-      createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor);
+      createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor, pred.label);
       lineCount++;
       
     } else {
@@ -929,7 +929,7 @@ function finishDrawingRectangle() {
     // Add text label like other annotations
     const annotationNumber = window.data ? window.data.predictions.length : 1;
     const labelText = `#${annotationNumber}: ${label.name} (${area.toFixed(2)}m²)`;
-    createAnnotationLabel({ x: currentPath.left, y: currentPath.top }, labelText, label.color);
+    createAnnotationLabel({ x: currentPath.left, y: currentPath.top }, labelText, label.color, label.id);
   }
   
   drawingMode = false;
@@ -1017,7 +1017,7 @@ function deleteSelectedObjects() {
 /**
  * Create annotation text label
  */
-function createAnnotationLabel(position, labelText, backgroundColor) {
+function createAnnotationLabel(position, labelText, backgroundColor, labelId = null) {
   const text = new fabric.Text(labelText, {
     left: position.x,
     top: position.y - 20,
@@ -1027,7 +1027,8 @@ function createAnnotationLabel(position, labelText, backgroundColor) {
     padding: 3,
     objectType: 'label',
     textBaseline: 'alphabetic',
-    selectable: false
+    selectable: false,
+    associatedLabelId: labelId // Add this property for label updates
   });
   canvas.add(text);
   return text;
@@ -1131,6 +1132,130 @@ function applyLabelChangeToSelectedObject() {
   
   console.log(`Label changed to: ${label.name} (ID: ${newLabelId}) for ${isLineObject ? 'line' : 'area'} object`);
 }
+
+/**
+ * Check if a canvas object matches the specified label type
+ */
+function isCorrectObjectType(obj, labelType) {
+  if (labelType === 'area') {
+    return obj.type === 'rect' || obj.type === 'polygon';
+  } else if (labelType === 'line') {
+    return obj.type === 'polyline' || obj.annotationType === 'line';
+  }
+  return false;
+}
+
+/**
+ * Check if a text label matches the specified label type based on its content
+ */
+function isCorrectTextLabelType(obj, labelType) {
+  if (!obj.text) return false;
+  
+  // Check if text contains measurements that indicate the type
+  if (labelType === 'area') {
+    return obj.text.includes('m²'); // Area measurements
+  } else if (labelType === 'line') {
+    return obj.text.includes('m)') && !obj.text.includes('m²'); // Line measurements (but not area)
+  }
+  return false;
+}
+
+/**
+ * Update all existing annotations with a specific label ID when label properties change
+ */
+function updateExistingAnnotationsWithLabel(labelId, newLabelData, labelType = 'area') {
+  if (!canvas) {
+    console.log('Canvas not available for label update');
+    return;
+  }
+  
+  console.log(`Updating all annotations with label ID: ${labelId} to new data:`, newLabelData);
+  
+  let updatedCount = 0;
+  
+  // Update all canvas objects with this label ID and matching type
+  canvas.forEachObject(obj => {
+    if ((obj.labelId === labelId || obj.objectLabel === labelId) && 
+        isCorrectObjectType(obj, labelType)) {
+      console.log(`Updating canvas object with label ID: ${labelId} and type: ${labelType}`);
+      
+      // Update visual appearance based on object type
+      if (obj.type === 'rect' || obj.type === 'polygon') {
+        // Area objects (rectangles and polygons)
+        obj.set({
+          fill: newLabelData.color + '20', // Semi-transparent fill
+          stroke: newLabelData.color,
+          strokeWidth: 2
+        });
+      } else if (obj.type === 'polyline' || obj.annotationType === 'line') {
+        // Line objects (Fabric.js polylines)
+        obj.set({
+          stroke: newLabelData.color,
+          strokeWidth: 3
+        });
+      }
+      
+      // Update label references
+      obj.labelId = labelId;
+      obj.objectLabel = labelId;
+      
+      updatedCount++;
+    }
+  });
+  
+  // Update text labels associated with annotations (with type filtering)
+  canvas.forEachObject(obj => {
+    if (obj.type === 'text' && obj.associatedLabelId === labelId && 
+        isCorrectTextLabelType(obj, labelType)) {
+      console.log(`Updating text label for label ID: ${labelId}`);
+      
+      // Update the text content if it contains the old label name
+      const currentText = obj.text;
+      if (currentText && currentText.includes(':')) {
+        // Extract the annotation number and measurements, update label name
+        const parts = currentText.split(':');
+        if (parts.length >= 2) {
+          const annotationNumber = parts[0]; // e.g., "#1"
+          const measurementPart = parts[1].trim(); // e.g., "OldName (5.2m²)"
+          
+          // Find the measurement part (everything in parentheses)
+          const measurementMatch = measurementPart.match(/\(([^)]+)\)$/);
+          if (measurementMatch) {
+            const measurement = measurementMatch[1]; // e.g., "5.2m²"
+            const newText = `${annotationNumber}: ${newLabelData.name} (${measurement})`;
+            obj.set('text', newText);
+          }
+        }
+      }
+      
+      obj.set({
+        fill: 'white',
+        backgroundColor: newLabelData.color
+      });
+      updatedCount++;
+    }
+  });
+  
+  // Update predictions data if available
+  if (window.data && window.data.predictions) {
+    window.data.predictions.forEach(pred => {
+      if (pred.label === labelId) {
+        console.log(`Updating prediction data for label ID: ${labelId}`);
+        // The prediction data structure doesn't store label details directly,
+        // so we mainly need to ensure consistency
+      }
+    });
+  }
+  
+  // Re-render canvas to show changes
+  canvas.renderAll();
+  
+  console.log(`Updated ${updatedCount} objects with label ID: ${labelId}`);
+}
+
+// Make functions globally available
+window.updateExistingAnnotationsWithLabel = updateExistingAnnotationsWithLabel;
+window.updateResultsTable = updateResultsTable;
 
 /**
  * Polygon Drawing Functions
@@ -1261,7 +1386,7 @@ function finishPolygonDrawing() {
   const firstPoint = currentPoints[0];
   const annotationNumber = window.data ? window.data.predictions.length : 1;
   const labelText = `#${annotationNumber}: ${label.name} (${area.toFixed(2)}m²)`;
-  createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, label.color);
+  createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, label.color, label.id);
   
   resetPolygonDrawing();
 }
@@ -1406,7 +1531,7 @@ function finishLineDrawing() {
   const labelPosition = currentPoints[midIndex];
   const annotationNumber = window.data ? window.data.predictions.length : 1;
   const labelText = `#${annotationNumber}: ${labelName} (${totalLength.toFixed(2)}m)`;
-  createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor);
+  createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor, selectedLabelId);
   
   resetLineDrawing();
 }
