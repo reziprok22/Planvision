@@ -16,7 +16,11 @@ import datetime
 
 from PyPDF2 import PdfReader
 
-os.makedirs('projects', exist_ok=True)
+# Base directory für alle Pfade
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECTS_DIR = os.path.join(BASE_DIR, 'projects')
+
+os.makedirs(PROJECTS_DIR, exist_ok=True)
 
 
 # Logging einrichten
@@ -40,7 +44,7 @@ def convert_pdf_to_images(pdf_file_object, project_id=None):
         project_id = str(uuid.uuid4())
     
     # Speichere direkt im Projektordner
-    output_dir = os.path.join('projects', project_id, 'uploads')
+    output_dir = os.path.join(PROJECTS_DIR, project_id, 'uploads')
     session_id = project_id
     
     os.makedirs(output_dir, exist_ok=True)
@@ -103,7 +107,7 @@ def index():
 @app.route('/project_files/<project_id>/<path:filename>')
 def serve_project_file(project_id, filename):
     """Serve files from project directories"""
-    project_dir = os.path.join('projects', project_id)
+    project_dir = os.path.join(PROJECTS_DIR, project_id)
     if not os.path.exists(project_dir):
         return "Project not found", 404
     return send_from_directory(project_dir, filename)
@@ -251,7 +255,7 @@ def analyze_page():
         threshold = float(request.form.get('threshold', 0.5))
         
         # Überprüfe, ob die Session existiert (neue Struktur: projects/session_id/uploads/)
-        session_dir = os.path.join('projects', session_id, 'uploads')
+        session_dir = os.path.join(PROJECTS_DIR, session_id, 'uploads')
         if not os.path.exists(session_dir):
             print(f"Session-Verzeichnis nicht gefunden: {session_dir}")
             return jsonify({'error': 'PDF-Session nicht gefunden'}), 404
@@ -469,7 +473,7 @@ def save_project():
             project_id = session_id
             # Keep existing project name if not provided
             if not project_name:
-                metadata_path = os.path.join('projects', project_id, 'metadata.json')
+                metadata_path = os.path.join(PROJECTS_DIR, project_id, 'metadata.json')
                 if os.path.exists(metadata_path):
                     with open(metadata_path, 'r') as f:
                         existing_metadata = json.load(f)
@@ -479,7 +483,7 @@ def save_project():
             project_id = str(uuid.uuid4())
         
         # Projektverzeichnis behandeln
-        project_dir = os.path.join('projects', project_id)
+        project_dir = os.path.join(PROJECTS_DIR, project_id)
         
         if is_update:
             # For updates, project directory should already exist
@@ -489,7 +493,7 @@ def save_project():
             # For new projects, we might need to copy from session directory
             if session_id != project_id:
                 # Copy from session directory to new project directory
-                session_dir = os.path.join('projects', session_id)
+                session_dir = os.path.join(PROJECTS_DIR, session_id)
                 if os.path.exists(session_dir):
                     shutil.copytree(session_dir, project_dir)
                 else:
@@ -619,7 +623,7 @@ def list_projects():
     try:
         print("list_projects wurde aufgerufen")
         projects = []
-        projects_dir = 'projects'
+        projects_dir = PROJECTS_DIR
         
         print(f"Suche nach Projekten in: {projects_dir}")
         if not os.path.exists(projects_dir):
@@ -661,7 +665,7 @@ def load_project(project_id):
         print(f"load_project aufgerufen mit ID: {project_id}")
         
         # Projektverzeichnis überprüfen
-        project_dir = os.path.join('projects', project_id)
+        project_dir = os.path.join(PROJECTS_DIR, project_id)
         print(f"Suche Projekt in: {project_dir}")
         if not os.path.exists(project_dir):
             print(f"Projektordner nicht gefunden: {project_dir}")
@@ -755,7 +759,7 @@ def load_project(project_id):
 @app.route('/export_pdf/<project_id>', methods=['GET'])
 def export_pdf(project_id):
     try:
-        project_dir = os.path.join('projects', project_id)
+        project_dir = os.path.join(PROJECTS_DIR, project_id)
         print(f"Suche Projekt in: {project_dir}")
         
         if not os.path.exists(project_dir):
@@ -809,7 +813,7 @@ def export_pdf(project_id):
 @app.route('/export_annotated_pdf/<project_id>', methods=['GET'])
 def export_annotated_pdf(project_id):
     try:
-        project_dir = os.path.join('projects', project_id)
+        project_dir = os.path.join(PROJECTS_DIR, project_id)
         print(f"Suche Projekt in: {project_dir}")
         
         if not os.path.exists(project_dir):
