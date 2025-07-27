@@ -43,16 +43,12 @@ export function setupProject(elements, modules) {
   
   if (loadProjectBtn) {
     loadProjectBtn.addEventListener('click', function() {
-      if (projectList.style.display === 'none') {
-        loadProjectList();
-        projectList.style.display = 'block';
-        loadProjectBtn.textContent = 'Close Project List';
-      } else {
-        projectList.style.display = 'none';
-        loadProjectBtn.textContent = 'Open Project';
-      }
+      openProjectModal();
     });
   }
+  
+  // Setup modal event listeners
+  setupProjectModal();
   
   if (exportPdfBtn) {
     exportPdfBtn.addEventListener('click', function() {
@@ -67,6 +63,66 @@ export function setupProject(elements, modules) {
   }
   
   console.log('Project module initialized');
+  
+  // Make loadSpecificProject globally available for onclick handlers
+  window.loadSpecificProject = loadSpecificProject;
+}
+
+/**
+ * Setup project modal functionality
+ */
+function setupProjectModal() {
+  const modal = document.getElementById('projectManagerModal');
+  const closeBtn = document.getElementById('closeProjectModal');
+  const closeBtn2 = document.getElementById('closeProjectManagerBtn');
+  const refreshBtn = document.getElementById('refreshProjectsBtn');
+  
+  // Close modal when clicking X or Close button
+  if (closeBtn) {
+    closeBtn.addEventListener('click', closeProjectModal);
+  }
+  if (closeBtn2) {
+    closeBtn2.addEventListener('click', closeProjectModal);
+  }
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', loadProjectListModal);
+  }
+  
+  // Close modal when clicking outside
+  window.addEventListener('click', function(event) {
+    if (event.target === modal) {
+      closeProjectModal();
+    }
+  });
+}
+
+/**
+ * Open the project modal
+ */
+function openProjectModal() {
+  const modal = document.getElementById('projectManagerModal');
+  if (modal) {
+    modal.style.display = 'block';
+    loadProjectListModal();
+  }
+}
+
+/**
+ * Close the project modal
+ */
+function closeProjectModal() {
+  const modal = document.getElementById('projectManagerModal');
+  if (modal) {
+    modal.style.display = 'none';
+  }
+}
+
+/**
+ * Load a specific project and close the modal
+ */
+function loadSpecificProject(projectId) {
+  loadProject(projectId);
+  closeProjectModal();
 }
 
 /**
@@ -189,7 +245,66 @@ export function saveProject() {
 }
 
 /**
- * Load the project list
+ * Load projects into the modal table
+ */
+function loadProjectListModal() {
+  const tableBody = document.getElementById('projectTableBody');
+  if (!tableBody) {
+    console.error("Project table body not found!");
+    return;
+  }
+  
+  tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Loading projects...</td></tr>';
+  
+  fetch('/list_projects')
+    .then(response => response.json())
+    .then(data => {
+      if (data.success) {
+        if (data.projects.length === 0) {
+          tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #666; font-style: italic;">Keine Projekte gefunden.</td></tr>';
+        } else {
+          tableBody.innerHTML = '';
+          
+          data.projects.forEach(project => {
+            const row = document.createElement('tr');
+            
+            // Format date
+            const date = new Date(project.created_at);
+            const formattedDate = date.toLocaleString('de-DE', {
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+            
+            row.innerHTML = `
+              <td><strong>${project.project_name}</strong></td>
+              <td>${formattedDate}</td>
+              <td>${project.page_count || 'N/A'}</td>
+              <td>${project.detection_count || 0}</td>
+              <td>
+                <button class="load-project-btn" onclick="loadSpecificProject('${project.project_id}')">
+                  📂 Laden
+                </button>
+              </td>
+            `;
+            
+            tableBody.appendChild(row);
+          });
+        }
+      } else {
+        tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Fehler beim Laden der Projekte</td></tr>';
+      }
+    })
+    .catch(error => {
+      console.error('Error loading projects:', error);
+      tableBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">Fehler beim Laden der Projekte</td></tr>';
+    });
+}
+
+/**
+ * Load the project list (legacy function - keep for compatibility)
  */
 export function loadProjectList() {
   console.log("loadProjectList called");

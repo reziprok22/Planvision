@@ -25,31 +25,51 @@ h2 {
     font-size: 1.3rem;
 }
 
-/* Hauptcontainer für zweispaltiges Layout */
+/* Professionelles 3-Spalten CSS Grid Layout */
 .main-container {
-    display: flex;
-    width: 100%;
-    max-width: 100%;
-    height: calc(100vh - 80px); /* Feste Höhe für bessere Platznutzung */
-    padding: 20px;
+    display: grid;
+    grid-template-columns: 350px 1fr 600px;
+    grid-template-rows: 1fr;
+    width: 100vw;
+    height: calc(100vh - 80px);
+    padding: 15px;
     box-sizing: border-box;
     gap: 20px;
+    overflow: hidden;
 }
 
-/* Spalten */
+/* Spalten-Definitionen */
 .left-column {
-    flex: 0 0 650px;
     display: flex;
     flex-direction: column;
     gap: 20px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #dee2e6;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.middle-column {
+    display: flex;
+    flex-direction: column;
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #dee2e6;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .right-column {
-    flex: 1;
     display: flex;
     flex-direction: column;
-    min-width: 0; /* Verhindert Überlauf bei großen Bildern */
-    height: calc(100vh - 120px); /* Feste Höhe für bessere Kontrolle */
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 12px;
+    padding: 20px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
 }
 
 .image-section {
@@ -149,39 +169,100 @@ button:hover {
     padding: 0;
 }
 
-/* Tabellenstile */
-table {
+/* Allgemeine Tabellenstile für andere Tabellen (nicht Ergebnistabelle) */
+#labelTable {
     width: 100%;
     border-collapse: collapse;
     margin-top: 10px;
     font-size: 0.9rem;
 }
 
-th, td {
+#labelTable th, #labelTable td {
     border: 1px solid #ddd;
     padding: 8px;
     text-align: left;
 }
 
-th {
+#labelTable th {
     background-color: #f2f2f2;
     position: sticky;
     top: 0;
 }
 
-tr:nth-child(even) {
-    background-color: #f9f9f9;
-}
 
 .results-table-section {
-    max-height: calc(100vh - 450px);
-    overflow-y: auto;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
-.summary {
-    margin-bottom: 15px;
-    font-weight: bold;
+.results-table-section h2 {
+    margin: 0 0 20px 0;
+    color: #495057;
+    font-size: 1.5rem;
+    font-weight: 600;
+    text-align: center;
+    padding-bottom: 15px;
+    border-bottom: 2px solid #e9ecef;
 }
+
+.results-table-section .summary {
+    margin-bottom: 20px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    border-left: 4px solid #4a90e2;
+}
+
+.results-table-section table {
+    flex: 1;
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.results-table-section thead {
+    background: #4a90e2;
+    color: white;
+}
+
+.results-table-section tbody {
+    display: block;
+    overflow-y: auto;
+    max-height: calc(100vh - 400px);
+}
+
+.results-table-section thead,
+.results-table-section tbody tr {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+}
+
+.results-table-section th,
+.results-table-section td {
+    padding: 12px 8px;
+    text-align: left;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.results-table-section th {
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+}
+
+.results-table-section tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
 
 /* Lade-Animation */
 .loader {
@@ -320,24 +401,55 @@ tr:nth-child(even) {
     flex: 0 0 120px;
 }
 
-/* Responsives Design */
-@media (max-width: 992px) {
+/* Responsive Design für verschiedene Bildschirmgrößen */
+@media (max-width: 1400px) {
     .main-container {
-        flex-direction: column;
+        grid-template-columns: 320px 1fr 280px;
+        gap: 15px;
+        padding: 10px;
+    }
+}
+
+@media (max-width: 1200px) {
+    .main-container {
+        grid-template-columns: 280px 1fr 250px;
+        gap: 10px;
+        padding: 8px;
+    }
+    
+    .left-column,
+    .right-column {
+        padding: 15px;
+    }
+}
+
+@media (max-width: 900px) {
+    .main-container {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr auto;
+        height: auto;
+        gap: 15px;
     }
     
     .left-column {
-        flex: 0 0 auto;
-        width: 100%;
+        order: 1;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+    
+    .middle-column {
+        order: 2;
+        min-height: 400px;
     }
     
     .right-column {
-        flex: 0 0 auto;
-        width: 100%;
+        order: 3;
+        max-height: 350px;
+        overflow-y: auto;
     }
     
-    .results-table-section {
-        max-height: 400px;
+    .results-table-section tbody {
+        max-height: 200px;
     }
 }
 
@@ -777,53 +889,74 @@ background-color: #2a70c2;
     background: #c82333;
 }
 
-/* Project Management Styles */
-.project-list {
-    margin-top: 1rem;
-    background: white;
-    border: 1px solid #dee2e6;
-    border-radius: 5px;
-    padding: 1rem;
-    max-height: 400px;
+/* Project Modal Styles */
+.project-manager-container {
+    margin-top: 20px;
+}
+
+.project-list-modal {
+    max-height: 500px;
     overflow-y: auto;
+    margin-bottom: 20px;
 }
 
 .project-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.9rem;
-}
-
-.project-table th,
-.project-table td {
-    padding: 0.5rem;
-    text-align: left;
-    border-bottom: 1px solid #dee2e6;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .project-table th {
-    background-color: #f8f9fa;
+    background-color: #4a90e2;
+    color: white;
+    padding: 12px 15px;
+    text-align: left;
     font-weight: 600;
-    color: #495057;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.5px;
+}
+
+.project-table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #e9ecef;
+    vertical-align: middle;
 }
 
 .project-table tr:hover {
     background-color: #f8f9fa;
 }
 
+.project-table tr:last-child td {
+    border-bottom: none;
+}
+
 .load-project-btn {
-    background: #007bff;
+    background: #28a745;
     color: white;
     border: none;
-    padding: 0.3rem 0.8rem;
-    border-radius: 3px;
+    padding: 6px 12px;
+    border-radius: 4px;
     cursor: pointer;
     font-size: 0.8rem;
     transition: background-color 0.2s;
+    font-weight: 500;
 }
 
 .load-project-btn:hover {
-    background: #0056b3;
+    background: #218838;
+}
+
+.project-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding-top: 15px;
+    border-top: 1px solid #e9ecef;
 }
 
 /* Save Status Indicator */

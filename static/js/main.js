@@ -600,13 +600,21 @@ function clearResults() {
   const resultsSection = document.getElementById('resultsSection');
   const resultsTableSection = document.getElementById('resultsTableSection');
   if (resultsSection) resultsSection.style.display = 'none';
-  if (resultsTableSection) resultsTableSection.style.display = 'none';
+  // Keep resultsTableSection always visible
   
-  // Clear tables
+  // Clear tables but keep them visible
   const summary = document.getElementById('summary');
   const resultsBody = document.getElementById('resultsBody');
-  if (summary) summary.innerHTML = '';
-  if (resultsBody) resultsBody.innerHTML = '';
+  if (summary) summary.innerHTML = '<p><em>Keine Analyse durchgeführt.</em></p>';
+  if (resultsBody) {
+    resultsBody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center; color: #666; font-style: italic;">
+          Lade eine Datei hoch und starte die Analyse, um Ergebnisse zu sehen.
+        </td>
+      </tr>
+    `;
+  }
   
   // Clear canvas
   if (canvas) {
@@ -1787,9 +1795,7 @@ function initApp() {
         
         // Show results sections
         const resultsSection = document.getElementById('resultsSection');
-        const resultsTableSection = document.getElementById('resultsTableSection');
         if (resultsSection) resultsSection.style.display = 'block';
-        if (resultsTableSection) resultsTableSection.style.display = 'block';
         
         // Handle PDF vs regular image
         if (data.is_pdf) {

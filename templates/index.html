@@ -85,10 +85,6 @@
                         </div>
                     </div>
                     
-                    <!-- Project List Container -->
-                    <div id="projectList" class="project-list" style="display: none;">
-                        <!-- Project list will be populated here -->
-                    </div>
                 </div>
 
                 <!-- Label Management Section -->
@@ -158,34 +154,46 @@
                     </div>
                 </div>
 
+                <!-- Modal für Projekt-Verwaltung -->
+                <div id="projectManagerModal" class="modal">
+                    <div class="modal-content">
+                        <span class="close" id="closeProjectModal">&times;</span>
+                        <h3>Gespeicherte Projekte</h3>
+                        
+                        <div class="project-manager-container">
+                            <div class="project-list-modal">
+                                <table id="projectTable" class="project-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Projektname</th>
+                                            <th>Erstellt am</th>
+                                            <th>Seiten</th>
+                                            <th>Erkennungen</th>
+                                            <th>Aktionen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="projectTableBody">
+                                        <!-- Projekt-Liste wird hier dynamisch eingefügt -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div class="project-actions">
+                                <button id="refreshProjectsBtn" class="editor-button">🔄 Liste aktualisieren</button>
+                                <button id="closeProjectManagerBtn" class="editor-button">Schließen</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="loader" id="loader"></div>
                 <div id="errorMessage"></div>
             </div>
             
-            <div class="results-table-section" id="resultsTableSection" style="display: none;">
-                <div class="summary" id="summary">
-                    <!-- Zusammenfassung wird hier angezeigt -->
-                </div>
-                
-                <table id="resultsTable">
-                    <thead>
-                        <tr>
-                            <th>Nr.</th>
-                            <th>Klasse</th>
-                            <th>Typ</th>
-                            <th>Wahrsch.</th>
-                            <th>Messwert</th>
-                        </tr>
-                    </thead>
-                    <tbody id="resultsBody">
-                        <!-- Ergebniszeilen werden hier durch JavaScript hinzugefügt -->
-                    </tbody>
-                </table>
-            </div>
         </div>
         
-        <!-- Rechte Spalte -->
-        <div class="right-column">
+        <!-- Mittlere Spalte für Image-Container -->
+        <div class="middle-column">
             <!-- Oberer Bereich für Bild und Steuerung -->
             <div class="image-section">
                 <div class="results-section" id="resultsSection">
@@ -247,7 +255,35 @@
               <button id="nextPageBtn" class="pdf-nav-btn">Nächste ▶</button>
               <button id="reprocessBtn" class="pdf-reprocess-btn" title="Aktuelle Seite mit aktuellen Einstellungen neu verarbeiten">🔄 Seite neu analyiseren</button>
             </div>
-        </div>         
+        </div>
+        
+        <!-- Rechte Spalte für Ergebnistabelle -->
+        <div class="right-column">
+            <div class="results-table-section" id="resultsTableSection">
+                <h2>Ergebnisse</h2>
+                <div class="summary" id="summary">
+                    <p><em>Keine Analyse durchgeführt.</em></p>
+                </div>
+                
+                <table id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>Nr.</th>
+                            <th>Klasse</th>
+                            <th>Typ</th>
+                            <th>Wahrsch.</th>
+                            <th>Messwert</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; color: #666; font-style: italic;">
+                                Lade eine Datei hoch und starte die Analyse, um Ergebnisse zu sehen.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
     
