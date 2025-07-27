@@ -66,3 +66,47 @@ Projektname: bison (buildingvision), sparrow (weil er immer gegen scheiben flieg
 - Speichern von User-zeichnungen über const naturalCoord. 
 - Die Api/Datenbank arbeitet immer mit der Original-Auflösung (unabhägig vom Browser wird das Bild immer richtig angezeigt). 
 
+
+# Smoke-Tests
+Wie du es benutzt:
+
+  1. Lade deine App und führe eine normale Analyse durch (PDF hochladen, etc.)
+  2. Öffne Browser Console (F12 → Console Tab)
+  3. Tippe: runSmokeTests()
+  4. Schau dir die Ergebnisse an ✅❌
+
+  Was getestet wird:
+
+  🏗️ Grundstruktur:
+
+  - Existieren alle wichtigen DOM-Elemente?
+  - Ist die Results-Section sichtbar?
+  - Funktioniert das Upload-Form?
+
+  🎨 Canvas & Annotations:
+
+  - Ist Canvas initialisiert und hat die richtige Größe?
+  - Sind Annotationen als Groups implementiert?
+  - Stimmen die Annotation-Indices überein?
+
+  📊 Daten & Tabelle:
+
+  - Existiert window.data mit Predictions?
+  - Hat die Tabelle die richtige Anzahl Zeilen?
+  - Sind Hover-Events verbunden?
+
+  🔧 Tools & Editor:
+
+  - Sind alle Tool-Buttons sichtbar?
+  - Funktioniert das Label-Dropdown?
+  - Ist der Editor immer aktiv?
+
+Wann verwenden:
+
+  - Nach Änderungen am Code
+  - Vor wichtigen Demos
+  - Wenn etwas "komisch" funktioniert
+  - Beim Testen neuer Browser
+
+
+

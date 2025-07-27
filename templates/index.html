@@ -200,37 +200,25 @@
                     <div class="results-header">
                       <h2>Erkennungsergebnisse</h2>
                     </div>
-                    
                     <!-- Editor-Kontrolle -->
                     <div class="annotation-controls">
-                      <!-- Editor-Toggle -->
-                      <div>
-                        <button id="toggleEditorBtn" class="toggle-button">📝 Editor aktivieren</button>
-                      </div>
-                      
-                      <!-- Editor-Tools (zunächst versteckt) -->
-                      <div id="editorTools" class="editor-tools" style="display: none;">
-                        <div class="tool-group">
-                          <button id="rectangleTool" class="tool-button active" data-tool="rectangle" title="Rechteck zeichnen">⬜</button>
-                          <button id="polygonTool" class="tool-button" data-tool="polygon" title="Polygon zeichnen">⬟</button>
-                          <button id="lineTool" class="tool-button" data-tool="line" title="Linie zeichnen">📏</button>
-                        </div>
-                        <div class="tool-group">
-                          <button id="selectTool" class="tool-button" data-tool="select" title="Auswählen">👆</button>
-                          <button id="deleteTool" class="tool-button" data-tool="delete" title="Löschen">🗑️</button>
-                        </div>
+                      <!-- Editor-Tools -->
+                        <button data-tool="rectangle" title="Rechteck zeichnen">⬜</button>
+                        <button class="tool-button" data-tool="polygon" title="Polygon zeichnen">⬟</button>
+                        <button class="tool-button" data-tool="line" title="Linie zeichnen">📏</button>
+                        <button class="tool-button" data-tool="select" title="Auswählen">👆</button>
+                        <button class="tool-button" data-tool="delete" title="Löschen">🗑️</button>
                         
                         <!-- Universelles Label-Dropdown -->
                         <div class="label-selection-group">
-                          <select id="universalLabelSelect" class="universal-label-select">
-                            <option value="1">Fenster</option>
-                            <option value="2">Tür</option>
-                            <option value="3">Wand</option>
-                            <option value="4">Lukarne</option>
-                            <option value="5">Dach</option>
-                          </select>
+                            <select id="universalLabelSelect" class="universal-label-select">
+                                <option value="1">Fenster</option>
+                                <option value="2">Tür</option>
+                                <option value="3">Wand</option>
+                                <option value="4">Lukarne</option>
+                                <option value="5">Dach</option>
+                            </select>
                         </div>
-                      </div>
                     </div>
                     
                     <!-- Legende für Labels -->
@@ -292,5 +280,8 @@
     
     <!-- Main application script with ES6 modules -->
     <script type="module" src="static/js/main.js"></script>
+    
+    <!-- Smoke Tests (nur für Development) -->
+    <script src="static/js/smoke-tests.js"></script>
 </body>
 </html>

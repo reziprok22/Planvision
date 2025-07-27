@@ -51,7 +51,7 @@ let imageContainer = null;
 let uploadedImage = null;
 
 // Editor state
-let isEditorActive = false;
+let isEditorActive = true;
 let currentTool = 'rectangle';
 let drawingMode = false;
 let currentPath = null;
@@ -63,6 +63,9 @@ let rectangleStartPoint = null;
 
 // Event timing control
 let isProcessingClick = false;
+
+// Debounced table update
+let updateTableTimeout = null;
 
 // Utility Functions
 /**
@@ -357,12 +360,8 @@ function displayAnnotations(predictions) {
         objectLabel: labelId
       });
       
-      canvas.add(rect);
-      
-      // Create label text with standardized format matching table
-      const area = pred.calculatedArea || pred.area || 0;
-      const labelText = generateLabelText(index, label.name, area, 'm²');
-      createAnnotationLabel({ x: canvasCoords.x1, y: canvasCoords.y1 }, labelText, labelColor, pred.label);
+      // Create annotation group with number instead of separate label
+      createAnnotationGroup(rect, index, labelColor);
       rectangleCount++;
       
     } else if (pred.annotationType === 'polygon' && pred.points) {
@@ -380,13 +379,8 @@ function displayAnnotations(predictions) {
         objectCaching: false
       });
       
-      canvas.add(polygon);
-      
-      // Create label text
-      const area = pred.calculatedArea || pred.area || 0;
-      const labelText = generateLabelText(index, label.name, area, 'm²');
-      const firstPoint = pred.points[0];
-      createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, labelColor, pred.label);
+      // Create annotation group with number instead of separate label
+      createAnnotationGroup(polygon, index, labelColor);
       polygonCount++;
       
     } else if (pred.annotationType === 'line' && pred.points) {
@@ -403,14 +397,8 @@ function displayAnnotations(predictions) {
         objectLabel: labelId
       });
       
-      canvas.add(line);
-      
-      // Create label text
-      const length = pred.calculatedLength || 0;
-      const labelText = generateLabelText(index, label.name, length, 'm');
-      const midIndex = Math.floor(pred.points.length / 2);
-      const labelPosition = pred.points[midIndex];
-      createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor, pred.label);
+      // Create annotation group with number instead of separate label
+      createAnnotationGroup(line, index, labelColor);
       lineCount++;
       
     } else {
@@ -430,6 +418,156 @@ function displayAnnotations(predictions) {
   }
 }
 
+
+/**
+ * Debounced table update - delays update to avoid too frequent calls
+ */
+function debouncedTableUpdate() {
+  if (updateTableTimeout) {
+    clearTimeout(updateTableTimeout);
+  }
+  updateTableTimeout = setTimeout(() => {
+    updateAnnotationDataFromCanvas();
+    updateResultsTable();
+    updateSummary();
+  }, 500); // 500ms delay
+}
+
+/**
+ * Remove annotation from predictions data when object is deleted
+ */
+function removeAnnotationFromData(deletedObject) {
+  if (!window.data?.predictions || typeof deletedObject.annotationIndex === 'undefined') {
+    return;
+  }
+  
+  const indexToRemove = deletedObject.annotationIndex;
+  
+  // Remove the prediction from the array
+  if (indexToRemove >= 0 && indexToRemove < window.data.predictions.length) {
+    window.data.predictions.splice(indexToRemove, 1);
+    
+    // Update annotation indices for remaining objects
+    updateAnnotationIndicesAfterDeletion(indexToRemove);
+  }
+}
+
+/**
+ * Update annotation indices for canvas objects after deletion
+ */
+function updateAnnotationIndicesAfterDeletion(deletedIndex) {
+  if (!canvas) return;
+  
+  // Update indices for all remaining annotation objects
+  canvas.forEachObject(obj => {
+    if (obj.objectType === 'annotation' && typeof obj.annotationIndex === 'number') {
+      if (obj.annotationIndex > deletedIndex) {
+        obj.annotationIndex = obj.annotationIndex - 1;
+      }
+    }
+  });
+  
+  // No need to remove text labels since they're part of the group
+  
+  canvas.renderAll();
+}
+
+/**
+ * Update annotation data from canvas objects (recalculate areas/lengths)
+ */
+function updateAnnotationDataFromCanvas() {
+  if (!canvas || !window.data?.predictions) {
+    return;
+  }
+  
+  const canvasObjects = canvas.getObjects();
+  
+  window.data.predictions.forEach((pred, index) => {
+    // Find corresponding canvas group
+    const canvasGroup = canvasObjects.find(obj => obj.annotationIndex === index);
+    
+    if (!canvasGroup || canvasGroup.objectType !== 'annotation') {
+      return;
+    }
+    
+    // Get the actual annotation object from the group (first object, second is the number text)
+    const groupObjects = canvasGroup.getObjects();
+    const canvasObj = groupObjects[0]; // The annotation is the first object in the group
+    if (!canvasObj) {
+      return;
+    }
+    
+    // Recalculate measurements based on current object dimensions
+    if (pred.annotationType === 'rectangle' || pred.box) {
+      // For groups, we need to use the group's scale and the object's dimensions
+      const groupScaleX = canvasGroup.scaleX || 1;
+      const groupScaleY = canvasGroup.scaleY || 1;
+      const objScaleX = canvasObj.scaleX || 1;
+      const objScaleY = canvasObj.scaleY || 1;
+      
+      // Combined scaling (group scale * object scale)
+      const totalScaleX = groupScaleX * objScaleX;
+      const totalScaleY = groupScaleY * objScaleY;
+      
+      const actualWidth = canvasObj.width * totalScaleX;
+      const actualHeight = canvasObj.height * totalScaleY;
+      
+      // Update bounding box coordinates with group position and scaled dimensions
+      pred.box = [
+        canvasGroup.left,
+        canvasGroup.top,
+        canvasGroup.left + actualWidth,
+        canvasGroup.top + actualHeight
+      ];
+      
+      // Recalculate area using scaled dimensions
+      const pixelToMeter = getPixelToMeterFactor();
+      const widthM = actualWidth * pixelToMeter;
+      const heightM = actualHeight * pixelToMeter;
+      pred.calculatedArea = widthM * heightM;
+      
+    } else if (pred.annotationType === 'polygon' && canvasObj.points) {
+      // For groups, we need to use the group's scale and position
+      const groupScaleX = canvasGroup.scaleX || 1;
+      const groupScaleY = canvasGroup.scaleY || 1;
+      const objScaleX = canvasObj.scaleX || 1;
+      const objScaleY = canvasObj.scaleY || 1;
+      
+      // Combined scaling
+      const totalScaleX = groupScaleX * objScaleX;
+      const totalScaleY = groupScaleY * objScaleY;
+      
+      // Transform points considering group position and combined scaling
+      const actualPoints = canvasObj.points.map(p => ({
+        x: canvasGroup.left + (p.x * totalScaleX),
+        y: canvasGroup.top + (p.y * totalScaleY)
+      }));
+      
+      pred.points = actualPoints;
+      pred.calculatedArea = calculatePolygonArea(actualPoints);
+      
+    } else if (pred.annotationType === 'line' && canvasObj.points) {
+      // For groups, we need to use the group's scale and position
+      const groupScaleX = canvasGroup.scaleX || 1;
+      const groupScaleY = canvasGroup.scaleY || 1;
+      const objScaleX = canvasObj.scaleX || 1;
+      const objScaleY = canvasObj.scaleY || 1;
+      
+      // Combined scaling
+      const totalScaleX = groupScaleX * objScaleX;
+      const totalScaleY = groupScaleY * objScaleY;
+      
+      // Transform points considering group position and combined scaling
+      const actualPoints = canvasObj.points.map(p => ({
+        x: canvasGroup.left + (p.x * totalScaleX),
+        y: canvasGroup.top + (p.y * totalScaleY)
+      }));
+      
+      pred.points = actualPoints;
+      pred.calculatedLength = calculatePolylineLength(actualPoints);
+    }
+  });
+}
 
 /**
  * Update results table (simplified)
@@ -498,28 +636,33 @@ function highlightAnnotation(index) {
   if (!canvas) return;
   
   const canvasObjects = canvas.getObjects();
-  const targetObject = canvasObjects.find(obj => obj.annotationIndex === index);
+  const targetGroup = canvasObjects.find(obj => obj.annotationIndex === index);
   
-  if (targetObject) {
-    // Store original stroke width
-    if (!targetObject.originalStrokeWidth) {
-      targetObject.originalStrokeWidth = targetObject.strokeWidth;
+  if (targetGroup && targetGroup.objectType === 'annotation') {
+    // Get the actual annotation object from the group (first object)
+    const annotationObject = targetGroup.getObjects()[0];
+    
+    if (annotationObject) {
+      // Store original stroke width on the annotation object
+      if (!annotationObject.originalStrokeWidth) {
+        annotationObject.originalStrokeWidth = annotationObject.strokeWidth;
+      }
+      
+      // Make annotation bold
+      annotationObject.set({
+        strokeWidth: annotationObject.originalStrokeWidth * 2,
+        shadow: new fabric.Shadow({
+          color: annotationObject.stroke,
+          blur: 5,
+          offsetX: 0,
+          offsetY: 0
+        })
+      });
+      
+      // Bring group to front
+      canvas.bringToFront(targetGroup);
+      canvas.renderAll();
     }
-    
-    // Make annotation bold
-    targetObject.set({
-      strokeWidth: targetObject.originalStrokeWidth * 2,
-      shadow: new fabric.Shadow({
-        color: targetObject.stroke,
-        blur: 5,
-        offsetX: 0,
-        offsetY: 0
-      })
-    });
-    
-    // Bring to front
-    canvas.bringToFront(targetObject);
-    canvas.renderAll();
   }
 }
 
@@ -530,16 +673,53 @@ function removeHighlight(index) {
   if (!canvas) return;
   
   const canvasObjects = canvas.getObjects();
-  const targetObject = canvasObjects.find(obj => obj.annotationIndex === index);
+  const targetGroup = canvasObjects.find(obj => obj.annotationIndex === index);
   
-  if (targetObject && targetObject.originalStrokeWidth) {
-    // Restore original stroke width
-    targetObject.set({
-      strokeWidth: targetObject.originalStrokeWidth,
-      shadow: null
-    });
+  if (targetGroup && targetGroup.objectType === 'annotation') {
+    // Get the actual annotation object from the group (first object)
+    const annotationObject = targetGroup.getObjects()[0];
     
-    canvas.renderAll();
+    if (annotationObject && annotationObject.originalStrokeWidth) {
+      // Restore original stroke width
+      annotationObject.set({
+        strokeWidth: annotationObject.originalStrokeWidth,
+        shadow: null
+      });
+      
+      canvas.renderAll();
+    }
+  }
+}
+
+/**
+ * Highlight table row when hovering over annotation
+ */
+function highlightTableRow(index) {
+  const resultsBody = document.getElementById('resultsBody');
+  if (!resultsBody) return;
+  
+  const rows = resultsBody.querySelectorAll('tr');
+  if (index < rows.length) {
+    const targetRow = rows[index];
+    targetRow.style.backgroundColor = '#e3f2fd'; // Light blue background
+    targetRow.style.transform = 'scale(1.02)'; // Slight scale effect
+    targetRow.style.transition = 'all 0.2s ease';
+  }
+}
+
+/**
+ * Remove highlight from table row
+ */
+function removeTableRowHighlight(index) {
+  const resultsBody = document.getElementById('resultsBody');
+  if (!resultsBody) return;
+  
+  const rows = resultsBody.querySelectorAll('tr');
+  if (index < rows.length) {
+    const targetRow = rows[index];
+    targetRow.style.backgroundColor = ''; // Remove background
+    targetRow.style.transform = ''; // Remove scale
+    targetRow.style.transition = 'all 0.2s ease';
   }
 }
 
@@ -629,42 +809,6 @@ function clearResults() {
   // Results cleared
 }
 
-/**
- * Toggle Editor Mode
- */
-function toggleEditor() {
-  isEditorActive = !isEditorActive;
-  
-  const toggleBtn = document.getElementById('toggleEditorBtn');
-  const editorTools = document.getElementById('editorTools');
-  const canvasElement = document.getElementById('annotationCanvas');
-  
-  if (isEditorActive) {
-    // Aktiviere Editor
-    toggleBtn.textContent = '❌ Editor deaktivieren';
-    toggleBtn.classList.add('active');
-    if (editorTools) editorTools.style.display = 'flex';
-    if (canvasElement) canvasElement.style.pointerEvents = 'auto';
-    
-    // Setup canvas events
-    if (canvas) {
-      setupCanvasEvents();
-    }
-  } else {
-    // Deaktiviere Editor
-    toggleBtn.textContent = '📝 Editor aktivieren';
-    toggleBtn.classList.remove('active');
-    if (editorTools) editorTools.style.display = 'none';
-    if (canvasElement) canvasElement.style.pointerEvents = 'none';
-    
-    // Deselect all objects and update positioning
-    if (canvas) {
-      canvas.discardActiveObject();
-      canvas.renderAll();
-    }
-    selectedObjects = [];
-  }
-}
 
 /**
  * Setup Canvas Events for Editor - Pure Fabric.js approach
@@ -687,6 +831,11 @@ function setupCanvasEvents() {
   // Mouse down event - handles all drawing tools
   canvas.on('mouse:down', function(options) {    
     if (!isEditorActive || isProcessingClick) return;
+    
+    // If there's a target object (user clicked on an existing annotation), don't start drawing
+    if (options.target && options.target.objectType === 'annotation') {
+      return; // Let Fabric.js handle object selection/manipulation
+    }
     
     const pointer = canvas.getPointer(options.e);
     
@@ -762,6 +911,53 @@ function setupCanvasEvents() {
     selectedObjects = [];
     if (currentTool === 'select') {
       updateUniversalLabelDropdown(currentTool);
+    }
+  });
+  
+  // Object modification events - update table when annotations are modified
+  canvas.on('object:modified', function(e) {
+    if (!isEditorActive || !e.target) return;
+    // Only update for annotation objects, not text labels
+    if (e.target.objectType === 'annotation') {
+      debouncedTableUpdate();
+    }
+  });
+  
+  canvas.on('object:scaling', function(e) {
+    if (!isEditorActive || !e.target) return;
+    if (e.target.objectType === 'annotation') {
+      debouncedTableUpdate();
+    }
+  });
+  
+  canvas.on('object:moving', function(e) {
+    if (!isEditorActive || !e.target) return;
+    if (e.target.objectType === 'annotation') {
+      debouncedTableUpdate();
+    }
+  });
+  
+  // Object removal events - update table when annotations are deleted
+  canvas.on('object:removed', function(e) {
+    if (!isEditorActive || !e.target) return;
+    if (e.target.objectType === 'annotation') {
+      removeAnnotationFromData(e.target);
+      debouncedTableUpdate();
+    }
+  });
+  
+  // Mouse hover events for annotation highlighting
+  canvas.on('mouse:over', function(e) {
+    if (!isEditorActive || !e.target) return;
+    if (e.target.objectType === 'annotation' && typeof e.target.annotationIndex === 'number') {
+      highlightTableRow(e.target.annotationIndex);
+    }
+  });
+  
+  canvas.on('mouse:out', function(e) {
+    if (!isEditorActive || !e.target) return;
+    if (e.target.objectType === 'annotation' && typeof e.target.annotationIndex === 'number') {
+      removeTableRowHighlight(e.target.annotationIndex);
     }
   });
 }
@@ -984,11 +1180,12 @@ function finishDrawingRectangle() {
     
     // Set annotation index for hover functionality
     const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
-    currentPath.set('annotationIndex', annotationIndex);
     
-    // Add text label like other annotations
-    const labelText = generateLabelText(annotationIndex, label.name, area, 'm²');
-    createAnnotationLabel({ x: currentPath.left, y: currentPath.top }, labelText, label.color, label.id);
+    // Remove the current rectangle from canvas (will be re-added as group)
+    canvas.remove(currentPath);
+    
+    // Create annotation group with number instead of separate label
+    createAnnotationGroup(currentPath, annotationIndex, label.color);
   }
   
   drawingMode = false;
@@ -1058,23 +1255,66 @@ function deleteSelectedObjects() {
 }
 
 /**
- * Create annotation text label
+ * Create annotation group with number label (without positioning)
  */
-function createAnnotationLabel(position, labelText, backgroundColor, labelId = null) {
-  const text = new fabric.Text(labelText, {
-    left: position.x,
-    top: position.y - 20,
-    fontSize: 12,
+function createAnnotationGroup(annotationObject, annotationIndex, labelColor) {
+  // Reset annotation position to (0,0) since it will be positioned relative to group
+  const originalLeft = annotationObject.left || 0;
+  const originalTop = annotationObject.top || 0;
+  annotationObject.set({ left: 0, top: 0 });
+  
+  // Calculate center position for number text based on annotation type
+  let centerX = 0, centerY = 0;
+  
+  if (annotationObject.type === 'rect') {
+    // For rectangles: center of the rectangle
+    centerX = annotationObject.width / 2;
+    centerY = annotationObject.height / 2;
+  } else if (annotationObject.type === 'polygon') {
+    // For polygons: approximate center
+    const bounds = annotationObject.getBoundingRect();
+    centerX = bounds.width / 2;
+    centerY = bounds.height / 2;
+  } else if (annotationObject.type === 'polyline') {
+    // For lines: center point
+    const bounds = annotationObject.getBoundingRect();
+    centerX = bounds.width / 2;
+    centerY = bounds.height / 2;
+  }
+  
+  // Create number text positioned at center (relative to annotation)
+  const numberText = new fabric.Text((annotationIndex + 1).toString(), {
+    left: centerX,
+    top: centerY,
+    fontSize: 18,
     fill: 'white',
-    backgroundColor: backgroundColor,
-    padding: 3,
-    objectType: 'label',
-    textBaseline: 'alphabetic',
+    backgroundColor: labelColor,
+    padding: 4,
+    textAlign: 'center',
+    fontWeight: 'bold',
+    originX: 'center',
+    originY: 'center',
     selectable: false,
-    associatedLabelId: labelId // Add this property for label updates
+    evented: false
   });
-  canvas.add(text);
-  return text;
+  
+  // Create group with annotation + number
+  const group = new fabric.Group([annotationObject, numberText], {
+    objectType: 'annotation',
+    annotationType: annotationObject.annotationType,
+    annotationIndex: annotationIndex,
+    labelId: annotationObject.labelId,
+    objectLabel: annotationObject.objectLabel,
+    selectable: true,
+    hasControls: true,
+    hasBorders: true,
+    evented: true,
+    left: originalLeft, // Now position the group
+    top: originalTop
+  });
+  
+  canvas.add(group);
+  return group;
 }
 
 /**
@@ -1409,12 +1649,12 @@ function finishPolygonDrawing() {
   
   // Set annotation index for hover functionality
   const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
-  currentPolygon.set('annotationIndex', annotationIndex);
   
-  // Add text label positioned near the first point for predictable placement
-  const firstPoint = currentPoints[0];
-  const labelText = generateLabelText(annotationIndex, label.name, area, 'm²');
-  createAnnotationLabel({ x: firstPoint.x, y: firstPoint.y }, labelText, label.color, label.id);
+  // Remove the current polygon from canvas (will be re-added as group)
+  canvas.remove(currentPolygon);
+  
+  // Create annotation group with number instead of separate label
+  createAnnotationGroup(currentPolygon, annotationIndex, label.color);
   
   resetPolygonDrawing();
 }
@@ -1543,13 +1783,12 @@ function finishLineDrawing() {
   
   // Set annotation index for hover functionality
   const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
-  currentLine.set('annotationIndex', annotationIndex);
   
-  // Add text label positioned at the midpoint of the line with same format as table
-  const midIndex = Math.floor(currentPoints.length / 2);
-  const labelPosition = currentPoints[midIndex];
-  const labelText = generateLabelText(annotationIndex, labelName, totalLength, 'm');
-  createAnnotationLabel({ x: labelPosition.x, y: labelPosition.y }, labelText, labelColor, selectedLabelId);
+  // Remove the current line from canvas (will be re-added as group)
+  canvas.remove(currentLine);
+  
+  // Create annotation group with number instead of separate label
+  createAnnotationGroup(currentLine, annotationIndex, labelColor);
   
   resetLineDrawing();
 }
@@ -1846,11 +2085,8 @@ function initApp() {
     });
   }
   
-  // Setup editor event listeners
-  const toggleEditorBtn = document.getElementById('toggleEditorBtn');
-  if (toggleEditorBtn) {
-    toggleEditorBtn.addEventListener('click', toggleEditor);
-  }
+  // Editor is always active - setup canvas events when canvas is ready
+  // Canvas events will be set up in initCanvas() when editor is active
   
   // Setup tool buttons
   document.querySelectorAll('.tool-button').forEach(button => {
