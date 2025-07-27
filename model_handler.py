@@ -9,8 +9,11 @@ import numpy as np
 from utils import calculate_scale_factor, apply_nms
 from image_preprocessing import preprocess_image
 
-# Name des Fast R-CNN Model
-MODEL_PATH = 'fasterrcnn_model/fasterrcnn_model_2025-04-22-20-04-25.pth'
+# Base directory für absolute Pfade
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Absoluter Pfad zum Fast R-CNN Model
+MODEL_PATH = os.path.join(BASE_DIR, 'fasterrcnn_model', 'fasterrcnn_model_2025-04-22-20-04-25.pth')
 
 # Globale Variable für das Modell
 model = None

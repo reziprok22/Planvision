@@ -17,9 +17,13 @@ import datetime
 from PyPDF2 import PdfReader
 
 # Base directory für alle Pfade
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# __file__ = Pfad zur aktuellen Python-Datei (app.py) 
+# os.path.abspath(__file__) = Macht den Pfad absolut 
+# os.path.dirname(...) = Entfernt den Dateinamen, behält nur das Verzeichnis
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
 PROJECTS_DIR = os.path.join(BASE_DIR, 'projects')
 
+# Erstellt den projects-Ordner falls er nicht existiert
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 
 

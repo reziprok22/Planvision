@@ -7,6 +7,12 @@ train model
 - Im train_model windowdataset, use_preprocessing auf True stellen, um mit vorverarbeiteten Bilder zu trainieren (ist unklar, ob es besser wird, aus meiner Sicht)
 
 
+
+# pythonanyhwere sync mit github (lokal).
+- Die Pfade sind anders. im app.pyy werden sie über base-dir und projects-dir definiert. da braucht es keine Änderung. 
+- im Hodel-hanlder.py wurde es auch so gelöst
+
+
 Webapp:
 - Fenster Überlappungen entfernen funktioniert noch nicht vollständig. Ist implementiert, funktioniert aber immer noch nicht. 
 - In der Tabelle Höhe und Breite von Fenster und Türen ausgeben.
