@@ -2032,6 +2032,15 @@ function initApp() {
         // Store data
         window.data = data;
         
+        // Update DPI field if PDF with actual_dpi info
+        if (data.actual_dpi && data.is_pdf) {
+          const dpiField = document.getElementById('dpi');
+          if (dpiField) {
+            dpiField.value = data.actual_dpi;
+            console.log(`DPI field updated to ${data.actual_dpi} for PDF analysis`);
+          }
+        }
+        
         // Show results sections
         const resultsSection = document.getElementById('resultsSection');
         if (resultsSection) resultsSection.style.display = 'block';

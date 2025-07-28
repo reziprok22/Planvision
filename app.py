@@ -214,6 +214,8 @@ def predict():
                     with open(current_image_path, 'rb') as f:
                         image_bytes = f.read()
                     
+                    # DPI auf 200 setzen für PDF-Konvertierung (nicht 300)
+                    dpi = 200.0
                     is_pdf = True
                 except Exception as e:
                     print(f"Fehler bei der PDF-Verarbeitung: {str(e)}")
@@ -270,7 +272,8 @@ def predict():
                     'page_count': int(pdf_info.get("page_count", 1)),
                     'all_pages': pdf_info["image_paths"],
                     'session_id': pdf_info["session_id"],
-                    'page_sizes': pdf_info.get("page_sizes", [])  # Diese Zeile hinzufügen
+                    'page_sizes': pdf_info.get("page_sizes", []),
+                    'actual_dpi': 200  # Tatsächliche DPI für Frontend
                 })
                 # Debugging Ausgabe
                 print(f"Sende Antwort mit page_sizes: {pdf_info.get('page_sizes', [])}")
@@ -304,7 +307,7 @@ def analyze_page():
             float(request.form.get('format_width', 210)),
             float(request.form.get('format_height', 297))
         )
-        dpi = float(request.form.get('dpi', 300))
+        dpi = 200.0  # Angepasst an PDF-Konvertierung DPI
         plan_scale = float(request.form.get('plan_scale', 100))
         threshold = float(request.form.get('threshold', 0.5))
         
@@ -381,7 +384,8 @@ def analyze_page():
             'current_page': page,
             'page_count': page_count,
             'all_pages': all_image_paths,
-            'session_id': session_id
+            'session_id': session_id,
+            'actual_dpi': 200  # Tatsächliche DPI für Frontend
         }
         
         print(f"Antwortdaten: Seite {page} von {page_count}, {len(results)} Vorhersagen")
