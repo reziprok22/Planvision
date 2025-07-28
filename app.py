@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify, url_for, send_from_directory
 import os
-from model_handler import load_model, predict_image
+from model_handler import load_model, predict_image, cleanup_memory
 import shutil
 import json
 from pdf2image.exceptions import PDFInfoNotInstalledError, PDFPageCountError, PDFSyntaxError
@@ -10,6 +10,8 @@ from pdf_export import generate_report_pdf
 import tempfile
 from pdf2image import convert_from_path
 import logging
+import gc
+import atexit
 
 import uuid
 import datetime
@@ -26,6 +28,35 @@ PROJECTS_DIR = os.path.join(BASE_DIR, 'projects')
 # Erstellt den projects-Ordner falls er nicht existiert
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 
+# Automatische Bereinigung alter Upload-Dateien (> 24h)
+def cleanup_old_uploads():
+    """Bereinigt alte Upload-Dateien um Speicherplatz zu sparen."""
+    try:
+        import time
+        current_time = time.time()
+        for project_id in os.listdir(PROJECTS_DIR):
+            project_path = os.path.join(PROJECTS_DIR, project_id)
+            if os.path.isdir(project_path):
+                # Prüfe ob Metadaten existieren - wenn nicht, temporärer Upload
+                metadata_path = os.path.join(project_path, 'metadata.json')
+                if not os.path.exists(metadata_path):
+                    # Prüfe Alter des Ordners
+                    folder_age = current_time - os.path.getctime(project_path)
+                    if folder_age > 86400:  # 24 Stunden
+                        shutil.rmtree(project_path, ignore_errors=True)
+                        print(f"Cleaned up old upload folder: {project_id}")
+    except Exception as e:
+        print(f"Error during cleanup: {e}")
+
+# Cleanup bei App-Start
+cleanup_old_uploads()
+
+# Cleanup-Funktion für App-Beendigung
+def cleanup_on_exit():
+    cleanup_memory()
+    gc.collect()
+
+atexit.register(cleanup_on_exit)
 
 # Logging einrichten
 logging.basicConfig(level=logging.INFO)
@@ -72,20 +103,37 @@ def convert_pdf_to_images(pdf_file_object, project_id=None):
     
     print("Ausgelesene PDF-Seitengrößen:", page_sizes)
     
-    # Konvertiere alle Seiten der PDF zu Bildern
-    images = convert_from_path(pdf_path, dpi=300)
+    # Konvertiere alle Seiten der PDF zu Bildern (reduzierte DPI für RAM-Ersparnis)
+    images = None
     image_paths = []
-    
-    # Speichere jede Seite als JPG
     local_image_paths = []  # Lokale Pfade für Backend-Zugriff
-    for i, image in enumerate(images):
-        image_path = os.path.join(output_dir, f"page_{i+1}.jpg")
-        image.save(image_path, "JPEG")
-        # Lokalen Pfad für Backend-Zugriff speichern
-        local_image_paths.append(image_path)
-        # URL-Pfad für Frontend-Anzeige
-        rel_path = f"/project_files/{session_id}/uploads/page_{i+1}.jpg"
-        image_paths.append(rel_path)
+    page_count = 0
+    
+    try:
+        images = convert_from_path(pdf_path, dpi=200)  # Reduziert von 300 auf 200 DPI
+        page_count = len(images)  # Anzahl speichern bevor images gelöscht wird
+        
+        # Speichere jede Seite als JPG mit Qualitätsoptimierung
+        for i, image in enumerate(images):
+            image_path = os.path.join(output_dir, f"page_{i+1}.jpg")
+            # Speichere mit reduzierter Qualität um Speicherplatz zu sparen
+            image.save(image_path, "JPEG", quality=85, optimize=True)
+            # Lokalen Pfad für Backend-Zugriff speichern
+            local_image_paths.append(image_path)
+            # URL-Pfad für Frontend-Anzeige
+            rel_path = f"/project_files/{session_id}/uploads/page_{i+1}.jpg"
+            image_paths.append(rel_path)
+        
+        # Memory cleanup nach PDF Konvertierung
+        if images:
+            del images
+        gc.collect()
+        
+    except Exception as e:
+        if images:
+            del images
+        gc.collect()
+        raise e
     
     # Informationen über die Konvertierung
     pdf_info = {
@@ -93,10 +141,10 @@ def convert_pdf_to_images(pdf_file_object, project_id=None):
         "pdf_path": pdf_path,
         "image_paths": image_paths,  # URLs für Frontend
         "local_image_paths": local_image_paths,  # Lokale Pfade für Backend
-        "page_count": len(images),
+        "page_count": page_count,
         "page_sizes": page_sizes  # Seitengrößen hinzufügen
     }
-    print(f"PDF konvertiert: {len(images)} Seiten")
+    print(f"PDF konvertiert: {page_count} Seiten")
     for i, size in enumerate(page_sizes):
         print(f"Seite {i+1}: {size[0]:.2f} x {size[1]:.2f} mm")
 
@@ -230,6 +278,8 @@ def predict():
             print(f"Final response data: {response_data}")
             print(f"Predictions in response: {len(response_data['predictions'])}")
 
+            # Memory cleanup nach Anfrage
+            cleanup_memory()
                 
             return jsonify(response_data)
         
@@ -335,6 +385,9 @@ def analyze_page():
         }
         
         print(f"Antwortdaten: Seite {page} von {page_count}, {len(results)} Vorhersagen")
+        
+        # Memory cleanup nach Anfrage
+        cleanup_memory()
         
         return jsonify(response_data)
         

@@ -17,6 +17,7 @@ MODEL_PATH = os.path.join(BASE_DIR, 'fasterrcnn_model', 'fasterrcnn_model_2025-0
 
 # Globale Variable für das Modell
 model = None
+device = None
 
 def get_model(num_classes=6):
     """
@@ -35,26 +36,64 @@ def get_model(num_classes=6):
 
 def load_model():
     """
-    Lädt das vortrainierte Modell aus der Modelldatei.
+    Lädt das vortrainierte Modell aus der Modelldatei einmalig.
     
     Returns:
         model: Das geladene Modell-Objekt
     """
-    global model
+    global model, device
     # Überprüfen, ob das Modell bereits geladen wurde
     if model is None:
+        print("Loading model for the first time...")
+        device = torch.device('cpu')  # Force CPU für weniger RAM-Verbrauch
         model = get_model()
-        # Überprüfen, ob die Modelldatei existiert
+        
         if os.path.exists(MODEL_PATH):
-            model.load_state_dict(torch.load(MODEL_PATH, map_location=torch.device('cpu')))
+            # Lade Model direkt auf CPU
+            model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+            model.to(device)
             model.eval()
+            print(f"Model loaded on {device}")
         else:
             raise FileNotFoundError(f"Model file '{MODEL_PATH}' not found")
     return model
 
+def cleanup_memory():
+    """
+    Bereinigt nicht benötigten Speicher nach der Inferenz.
+    """
+    import gc
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+def resize_image_if_large(image, max_size=2048):
+    """
+    Verkleinert Bild wenn es zu groß ist, um RAM zu sparen.
+    
+    Args:
+        image: PIL Image
+        max_size: Maximale Bildgröße (längste Seite)
+        
+    Returns:
+        resized_image: Verkleinertes Bild
+        scale_factor: Skalierungsfaktor für Koordinaten-Rückkonvertierung
+    """
+    w, h = image.size
+    max_dim = max(w, h)
+    
+    if max_dim > max_size:
+        scale_factor = max_size / max_dim
+        new_w = int(w * scale_factor)
+        new_h = int(h * scale_factor)
+        resized_image = image.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        return resized_image, 1/scale_factor
+    
+    return image, 1.0
+
 def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, threshold=0.5):
     """
-    Führt Objekterkennung auf einem Bild durch.
+    Führt memory-effiziente Objekterkennung auf einem Bild durch.
     
     Args:
         image_bytes: Bilddaten als Bytes
@@ -67,31 +106,40 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         boxes, labels, scores, areas: Arrays mit Erkennungsergebnissen
     """
     try:
-        device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+        global device
         
-        # Modell laden
+        # Modell laden (nur einmal)
         model = load_model()
-        model.to(device)
-
+        
         # Vorverarbeitung mit OpenCV
         processed_image = preprocess_image(image_bytes)
         
-        # Bild öffnen und transformieren
+        # Bild verkleinern falls zu groß
+        processed_image, coord_scale = resize_image_if_large(processed_image, max_size=1024)
+        
+        # Bild transformieren (ohne extra .to(device) calls)
         transform = transforms.Compose([transforms.ToTensor()])
-        # image = Image.open(io.BytesIO(image_bytes)) 
-        image_tensor = transform(processed_image).unsqueeze(0).to(device) # Image einsetzten, wenn ohne Vorverarbeitung mit OpenCV, gewünscht ist
+        image_tensor = transform(processed_image).unsqueeze(0)
         
         # Berechne den Umrechnungsfaktor
         pixels_per_meter = calculate_scale_factor(format_size, dpi, plan_scale)
         
-        # Inferenz
+        # Inferenz mit Memory-Cleanup
         with torch.no_grad():
             prediction = model(image_tensor)
+        
+        # Sofortiges Memory-Cleanup
+        del image_tensor
+        cleanup_memory()
         
         # Ergebnisse extrahieren
         boxes = prediction[0]['boxes'].cpu().numpy()
         labels = prediction[0]['labels'].cpu().numpy()
         scores = prediction[0]['scores'].cpu().numpy()
+        
+        # Koordinaten zurück skalieren falls Bild verkleinert wurde
+        if coord_scale != 1.0:
+            boxes = boxes * coord_scale
         
         # Schwellenwert anwenden
         valid_detections = scores >= threshold
@@ -125,8 +173,12 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
             tolerance=5
         )
         
+        # Final cleanup
+        cleanup_memory()
+        
         return boxes, labels, scores, areas
     
     except Exception as e:
         print(f"Error in predict_image: {e}")
+        cleanup_memory()
         return [], [], [], []

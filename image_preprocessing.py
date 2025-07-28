@@ -5,7 +5,7 @@ import io
 
 def preprocess_image(image_bytes):
     """
-    Verbessert die Qualität eines Bildes für die Objekterkennung.
+    Memory-effiziente Bildverbesserung für die Objekterkennung.
     
     Args:
         image_bytes: Bilddaten als Bytes
@@ -17,31 +17,37 @@ def preprocess_image(image_bytes):
     nparr = np.frombuffer(image_bytes, np.uint8)
     img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     
+    # Originalgröße für später merken
+    original_height, original_width = img.shape[:2]
+    
+    # Bild verkleinern falls sehr groß (reduziert RAM-Verbrauch)
+    max_dimension = 2048
+    if max(original_height, original_width) > max_dimension:
+        scale = max_dimension / max(original_height, original_width)
+        new_width = int(original_width * scale)
+        new_height = int(original_height * scale)
+        img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+    
     # Graustufen-Konvertierung für Bauplan-Analyse
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    del img  # Sofortiges Löschen um RAM zu sparen
     
-    # Rauschunterdrückung mit Gaußschem Filter
-    denoised = cv2.GaussianBlur(gray, (5, 5), 0)
+    # Vereinfachte Verarbeitung um RAM zu sparen
+    # Rauschunterdrückung mit kleinerem Kernel
+    denoised = cv2.GaussianBlur(gray, (3, 3), 0)
+    del gray
     
-    # Adaptiver Threshold für bessere Binarisierung (optional)
-    # binary = cv2.adaptiveThreshold(denoised, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-    #                              cv2.THRESH_BINARY, 11, 2)
-    
-    # Kontrastverbesserung mit CLAHE
-    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    # Leichtere Kontrastverbesserung 
+    clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(4, 4))
     enhanced = clahe.apply(denoised)
-    
-    # Kantenhervorhebung (optional)
-    edges = cv2.Canny(enhanced, 50, 150)
+    del denoised
     
     # Zurück zu RGB für das neuronale Netz
     enhanced_rgb = cv2.cvtColor(enhanced, cv2.COLOR_GRAY2RGB)
+    del enhanced
     
     # OpenCV zu PIL-Image für Kompatibilität mit torch transformations
     pil_image = Image.fromarray(enhanced_rgb)
-
-    # Speichert das Bild vor und nach der Verarbeitung. Zur Überprüfung des Ergebnisses
-    ## cv2.imwrite('before_preprocessing.jpg', img)
-    ## cv2.imwrite('after_preprocessing.jpg', enhanced_rgb)
+    del enhanced_rgb
     
     return pil_image

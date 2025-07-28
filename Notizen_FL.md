@@ -7,10 +7,10 @@ train model
 - Im train_model windowdataset, use_preprocessing auf True stellen, um mit vorverarbeiteten Bilder zu trainieren (ist unklar, ob es besser wird, aus meiner Sicht)
 
 
-
 # pythonanyhwere sync mit github (lokal).
 - Die Pfade sind anders. im app.pyy werden sie über base-dir und projects-dir definiert. da braucht es keine Änderung. 
-- im Hodel-hanlder.py wurde es auch so gelöst
+- im Model_handler.py wurde es auch so gelöst
+- Fasterrcnn_modelle müssen vor dem Upload auf pythonanyhwere gesplittet werden (100 MB Grenze):  split -b 50M fasterrcnn_model_2025-04-22-20-04-25.pth model_part_ -> Hochalden auf pythonanyhwere und wieder zusammensetzen ->   cat model_part_* > fasterrcnn_model_2025-04-22-20-04-25.pth
 
 
 Webapp:
