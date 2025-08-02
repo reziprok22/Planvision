@@ -51,18 +51,18 @@ let imageContainer = null;
 let uploadedImage = null;
 
 // Editor state
-let isEditorActive = true;
-let currentTool = 'rectangle';
+let currentTool = 'select';
 let drawingMode = false;
-let currentPath = null;
 let currentPoints = [];
 let selectedObjects = [];
+let currentRectangle = null;
 let currentPolygon = null;
 let currentLine = null;
 let rectangleStartPoint = null;
 
 // Event timing control
 let isProcessingClick = false;
+let isPageSwitching = false; // Prevent canvas events during page switches
 
 // Debounced table update
 let updateTableTimeout = null;
@@ -251,10 +251,6 @@ function initCanvas() {
   // Setup enhanced scrolling for container
   setupContainerScrolling();
   
-  // Setup editor event handlers if editor is active
-  if (isEditorActive) {
-    setupCanvasEvents();
-  }
   return canvas;
 }
 
@@ -409,13 +405,9 @@ function displayAnnotations(predictions) {
   canvas.renderAll();
   // Annotations displayed on canvas
   
-  // Re-setup canvas events if editor is active
-  if (isEditorActive) {
-    setTimeout(() => {
+  // Re-setup canvas events
       setupCanvasEvents();
-      // Canvas events re-established
-    }, 100);
-  }
+
 }
 
 
@@ -830,7 +822,7 @@ function setupCanvasEvents() {
   
   // Mouse down event - handles all drawing tools
   canvas.on('mouse:down', function(options) {    
-    if (!isEditorActive || isProcessingClick) return;
+    if (isProcessingClick) return;
     
     // If there's a target object (user clicked on an existing annotation), don't start drawing
     if (options.target && options.target.objectType === 'annotation') {
@@ -854,11 +846,11 @@ function setupCanvasEvents() {
   
   // Mouse move event - for drawing previews
   canvas.on('mouse:move', function(options) {
-    if (!isEditorActive || !drawingMode) return;
+    if (!drawingMode) return;
     
     const pointer = canvas.getPointer(options.e);
     
-    if (currentTool === 'rectangle' && currentPath) {
+    if (currentTool === 'rectangle' && currentRectangle) {
       updateDrawingRectangle(pointer);
     } else if (currentTool === 'polygon' && currentPolygon) {
       updatePolygonPreview(pointer);
@@ -869,9 +861,7 @@ function setupCanvasEvents() {
   
   // Mouse up event - finish drawing operations
   canvas.on('mouse:up', function(options) {
-    
-    if (!isEditorActive) return;
-    
+        
     if (currentTool === 'rectangle' && drawingMode) {
       finishDrawingRectangle();
     }
@@ -879,9 +869,7 @@ function setupCanvasEvents() {
   
   // Double-click event - for polygon and line finishing
   canvas.on('mouse:dblclick', function(options) {
-    
-    if (!isEditorActive) return;
-    
+        
     if (currentTool === 'polygon' && currentPoints.length >= 3) {
       finishPolygonDrawing();
     } else if (currentTool === 'line' && currentPoints.length >= 2) {
@@ -891,7 +879,6 @@ function setupCanvasEvents() {
   
   // Selection events
   canvas.on('selection:created', function(e) {
-    if (!isEditorActive) return;
     selectedObjects = e.selected || [];
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
@@ -899,7 +886,6 @@ function setupCanvasEvents() {
   });
   
   canvas.on('selection:updated', function(e) {
-    if (!isEditorActive) return;
     selectedObjects = e.selected || [];
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
@@ -907,7 +893,6 @@ function setupCanvasEvents() {
   });
   
   canvas.on('selection:cleared', function(e) {
-    if (!isEditorActive) return;
     selectedObjects = [];
     if (currentTool === 'select') {
       updateUniversalLabelDropdown(currentTool);
@@ -916,7 +901,7 @@ function setupCanvasEvents() {
   
   // Object modification events - update table when annotations are modified
   canvas.on('object:modified', function(e) {
-    if (!isEditorActive || !e.target) return;
+    if (!e.target) return;
     // Only update for annotation objects, not text labels
     if (e.target.objectType === 'annotation') {
       debouncedTableUpdate();
@@ -924,14 +909,14 @@ function setupCanvasEvents() {
   });
   
   canvas.on('object:scaling', function(e) {
-    if (!isEditorActive || !e.target) return;
+    if (!e.target) return;
     if (e.target.objectType === 'annotation') {
       debouncedTableUpdate();
     }
   });
   
   canvas.on('object:moving', function(e) {
-    if (!isEditorActive || !e.target) return;
+    if (!e.target) return;
     if (e.target.objectType === 'annotation') {
       debouncedTableUpdate();
     }
@@ -939,7 +924,7 @@ function setupCanvasEvents() {
   
   // Object removal events - update table when annotations are deleted
   canvas.on('object:removed', function(e) {
-    if (!isEditorActive || !e.target) return;
+    if (isPageSwitching || !e.target) return;
     if (e.target.objectType === 'annotation') {
       removeAnnotationFromData(e.target);
       debouncedTableUpdate();
@@ -948,14 +933,14 @@ function setupCanvasEvents() {
   
   // Mouse hover events for annotation highlighting
   canvas.on('mouse:over', function(e) {
-    if (!isEditorActive || !e.target) return;
+    if (!e.target) return;
     if (e.target.objectType === 'annotation' && typeof e.target.annotationIndex === 'number') {
       highlightTableRow(e.target.annotationIndex);
     }
   });
   
   canvas.on('mouse:out', function(e) {
-    if (!isEditorActive || !e.target) return;
+    if (!e.target) return;
     if (e.target.objectType === 'annotation' && typeof e.target.annotationIndex === 'number') {
       removeTableRowHighlight(e.target.annotationIndex);
     }
@@ -1073,9 +1058,9 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
  * Tool State Management
  */
 function cleanupCurrentTool() {
-  if (currentTool === 'rectangle' && currentPath) {
-    canvas.remove(currentPath);
-    currentPath = null;
+  if (currentTool === 'rectangle' && currentRectangle) {
+    canvas.remove(currentRectangle);
+    currentRectangle = null;
   } else if (currentTool === 'polygon' && currentPolygon) {
     canvas.remove(currentPolygon);
     currentPolygon = null;
@@ -1092,7 +1077,7 @@ function cleanupCurrentTool() {
 function resetAllDrawingStates() {
   
   drawingMode = false;
-  currentPath = null;
+  currentRectangle = null;
   currentPoints = [];
   currentPolygon = null;
   currentLine = null;
@@ -1125,23 +1110,23 @@ function startDrawingRectangle(pointer) {
     strokeWidth: 2,
     objectType: 'annotation',
     annotationType: 'rectangle',
-    selectable: isEditorActive && currentTool === 'select',
-    evented: isEditorActive && currentTool === 'select'
+    selectable: currentTool === 'select',
+    evented: currentTool === 'select'
   });
   
   canvas.add(rect);
-  currentPath = rect;
+  currentRectangle = rect;
 }
 
 function updateDrawingRectangle(pointer) {
-  if (!currentPath || !rectangleStartPoint) return;
+  if (!currentRectangle || !rectangleStartPoint) return;
   
   const startX = rectangleStartPoint.x;
   const startY = rectangleStartPoint.y;
   const width = pointer.x - startX;
   const height = pointer.y - startY;
     
-  currentPath.set({
+  currentRectangle.set({
     width: Math.abs(width),
     height: Math.abs(height),
     left: width < 0 ? pointer.x : startX,
@@ -1152,18 +1137,18 @@ function updateDrawingRectangle(pointer) {
 }
 
 function finishDrawingRectangle() {
-  if (!currentPath) return;
+  if (!currentRectangle) return;
   
   // Minimum size check
-  if (currentPath.width < 10 || currentPath.height < 10) {
-    canvas.remove(currentPath);
+  if (currentRectangle.width < 10 || currentRectangle.height < 10) {
+    canvas.remove(currentRectangle);
   } else {
     // Get selected label
     const selectedLabelId = getCurrentSelectedLabel('area');
     const label = getLabel(selectedLabelId);
     
     // Update rectangle with correct label and colors
-    currentPath.set({
+    currentRectangle.set({
       selectable: true,
       evented: true,
       labelId: selectedLabelId,
@@ -1173,23 +1158,23 @@ function finishDrawingRectangle() {
     });
     
     // Calculate area
-    const area = calculateRectangleArea(currentPath);
+    const area = calculateRectangleArea(currentRectangle);
     
     // Add to results data
-    addAnnotationToResults(currentPath, 'rectangle', area);
+    addAnnotationToResults(currentRectangle, 'rectangle', area);
     
     // Set annotation index for hover functionality
     const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
     
     // Remove the current rectangle from canvas (will be re-added as group)
-    canvas.remove(currentPath);
+    canvas.remove(currentRectangle);
     
     // Create annotation group with number instead of separate label
-    createAnnotationGroup(currentPath, annotationIndex, label.color);
+    createAnnotationGroup(currentRectangle, annotationIndex, label.color);
   }
   
   drawingMode = false;
-  currentPath = null;
+  currentRectangle = null;
   rectangleStartPoint = null;
   canvas.renderAll();
 }
@@ -1576,8 +1561,8 @@ function startPolygonDrawing() {
     strokeWidth: 2,
     objectType: 'annotation',
     annotationType: 'polygon',
-    selectable: isEditorActive,
-    evented: isEditorActive,
+    selectable: true,
+    evented: true,
     hasControls: true,
     hasBorders: true,
     objectCaching: false
@@ -1709,8 +1694,8 @@ function startLineDrawing() {
     strokeWidth: 3,
     objectType: 'annotation',
     annotationType: 'line',
-    selectable: isEditorActive && currentTool === 'select',
-    evented: isEditorActive && currentTool === 'select',
+    selectable: currentTool === 'select',
+    evented: currentTool === 'select',
     objectCaching: false, // true = verbessert performance und objekte werden schneller gerendert
     absolutePositioned: true, // Wichtig, dass Objekt anhand der canvas-Koordinaten positioniert wird
     clipPath: null, // null = keine Einschränkung bei der Grösse des Polygons. 
@@ -1880,6 +1865,9 @@ function calculatePolylineLength(points) {
 function displayPdfPage(pageNumber, pageData) {
   // Displaying PDF page
   
+  // Prevent canvas events during page switching to avoid race conditions
+  isPageSwitching = true;
+  
   // Store the data globally
   window.data = pageData;
   
@@ -1930,10 +1918,15 @@ function displayPdfPage(pageNumber, pageData) {
     // Update UI
     updateSummary();
     updateResultsTable();
+    
+    // Re-enable canvas events after page switch is complete
+    isPageSwitching = false;
   };
   
   uploadedImage.onerror = function() {
     console.error(`Failed to load image for page ${pageNumber}:`, pageData.pdf_image_url);
+    // Re-enable canvas events even if image loading failed
+    isPageSwitching = false;
   };
 }
 

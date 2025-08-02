@@ -219,10 +219,11 @@ class SmokeTests {
     this.test('Canvas has event listeners', () => {
       // Check if canvas has mouse events (indirect test)
       this.assert(canvas._objects, 'Canvas should have _objects property');
-      
-      // Check if isEditorActive is true (since we removed the toggle)
-      this.assert(typeof isEditorActive !== 'undefined', 'isEditorActive should be defined');
-      this.assert(isEditorActive === true, 'Editor should always be active');
+    });
+
+    this.test('Page switching protection works', () => {
+      this.assert(typeof isPageSwitching !== 'undefined', 'isPageSwitching should be defined');
+      this.assert(isPageSwitching === false, 'isPageSwitching should be false when not switching pages');
     });
 
     this.test('Debounced update system works', () => {
