@@ -129,6 +129,71 @@ Lösungsansatz:
 3. Position-Berechnung: Textlabel-Position wird basierend auf Annotation-Bounds dynamisch berechnet
 4. Lifecycle-Management: Bei Annotation-Erstellung/Löschung wird gekoppeltes Textlabel automatisch erstellt/entfernt
 
+Hier im Detail:
+  1. Architektur: ID-basierte Kopplung
+
+  // Jede Annotation bekommt eine einzigartige ID
+  const linkId = `annotation_${Date.now()}_${Math.random()}`;
+
+  // Annotation speichert die ID
+  annotation.set('id', linkId);
+
+  // Text-Label verweist auf diese ID
+  textLabel.linkedAnnotationId = linkId;
+
+  2. Objekt-Typen auf dem Canvas
+
+  // Annotationen
+  obj.objectType === 'annotation'  // Rechtecke, Polygone, Linien
+
+  // Text-Labels 
+  obj.objectType === 'textLabel'   // Nummerierte Labels mit Flächenangabe
+
+  3. Text-Label Erstellung - Zwei Wege
+
+  A) Bestehende Annotationen (API/window.data.prediction)
+
+  displayAnnotations() → initializeCanvasTextLabels()
+  // Erstellt Text-Labels für alle Annotationen zentral
+
+  B) Neue Annotationen (User gezeichnet)
+
+  finishDrawingRectangle() → setTimeout(() => createSingleTextLabel())
+  // Verzögerte Erstellung für stabilere Position
+
+  4. Text-Label Inhalt
+
+  // Format: "Nummer\nFläche/Länge"
+  "1\n2.45 m²"  // Rechteck/Polygon
+  "2\n5.20 m"   // Linie
+
+  5. Positionierung
+  Claude hat immer die Text-Label falsch positioniert. Neu verwenden wir die echten absoluten fabric.js Koordinaten, früher hat es die bounding-Koordinaten verwendet, die nie funktionieren.
+  
+  const actualLeft = annotation.left;   // ✅ Echte Fabric.js Position
+  const actualTop = annotation.top;     // ✅ Echte Fabric.js Position
+
+
+  // Rechtecke & Linien: Oben links (+ kleine Offsets)
+  x: bounds.left + 10, y: bounds.top - 5
+
+  // Polygone: Zentrum
+  x: bounds.left + bounds.width / 2, y: bounds.top + bounds.height / 2
+
+  6. Synchronisation beim Verschieben
+
+  canvas.on('object:modified', function(e) {
+    setTimeout(() => {
+      updateLinkedTextLabelPosition(e.target); // Findet über linkedAnnotationId
+    }, 5);
+  });
+
+  7. Index-Nummerierung
+
+  // Canvas als Single Source of Truth
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  const displayNumber = annotations.length; // Array-Position = Index
+
 
 # Ergebnistabelle
 - Canvas-Annotationen sind single source of truth (früher hat es noch window.data.prediction gelesen).

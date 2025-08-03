@@ -800,18 +800,19 @@ function setupCanvasEvents() {
   });
   
   canvas.on('selection:cleared', function(e) {
+    // Update text labels only for annotations that were actually selected/modified
+    if (selectedObjects && selectedObjects.length > 0) {
+      selectedObjects.forEach(selectedObj => {
+        if (selectedObj.objectType === 'annotation') {
+          updateLinkedTextLabelPosition(selectedObj);
+        }
+      });
+      debouncedTableUpdate();
+    }
+    
     selectedObjects = [];
     if (currentTool === 'select') {
       updateUniversalLabelDropdown(currentTool);
-    }
-  });
-  
-  // Single event handler to avoid blocking selection
-  canvas.on('object:modified', function(e) {
-    if (!e.target) return;
-    if (e.target.objectType === 'annotation') {
-      updateLinkedTextLabelPosition(e.target);
-      debouncedTableUpdate();
     }
   });
   
@@ -819,7 +820,13 @@ function setupCanvasEvents() {
   canvas.on('object:removed', function(e) {
     if (isPageSwitching || !e.target) return;
     if (e.target.objectType === 'annotation') {
-      // Text labels are automatically cleaned up when linked annotation is removed
+      // Find and remove linked text label
+      const linkedTextLabel = canvas.getObjects().find(obj => 
+        obj.objectType === 'textLabel' && obj.linkedAnnotationId === e.target.id
+      );
+      if (linkedTextLabel) {
+        canvas.remove(linkedTextLabel);
+      }
       debouncedTableUpdate();
     }
   });
@@ -1064,8 +1071,11 @@ function finishDrawingRectangle() {
       stroke: label.color
     });
     
-    // Create text label for this specific annotation only  
-    createSingleTextLabel(currentRectangle);
+    // Create text label with delay to ensure annotation is fully stabilized
+    const rectToLabel = currentRectangle; // Store reference before clearing
+    setTimeout(() => {
+      createSingleTextLabel(rectToLabel);
+    }, 10);
   }
   
   drawingMode = false;
@@ -1136,23 +1146,27 @@ function deleteSelectedObjects() {
 
 
 /**
- * Calculate optimal position for text label based on annotation bounds
+ * Calculate optimal position for text label based on annotation's REAL Fabric.js coordinates
  */
 function calculateLabelPosition(annotationObject) {
-  const bounds = annotationObject.getBoundingRect();
+  // Use REAL Fabric.js coordinates instead of calculated bounds
+  const actualLeft = annotationObject.left || 0;
+  const actualTop = annotationObject.top || 0;
+  const actualWidth = (annotationObject.width || 0) * (annotationObject.scaleX || 1);
+  const actualHeight = (annotationObject.height || 0) * (annotationObject.scaleY || 1);
   
-  // For polygons, position text at center
+  // For polygons, position text at center of actual object
   if (annotationObject.type === 'polygon') {
     return {
-      x: bounds.left + bounds.width / 2,
-      y: bounds.top + bounds.height / 2
+      x: actualLeft,  // Center of polygon
+      y: actualTop    // Center of polygon
     };
   }
   
-  // For rectangles and lines, position slightly above and to the left
+  // For rectangles and lines, position slightly above and to the left of actual position
   return {
-    x: bounds.left + 10,
-    y: bounds.top - 5
+    x: actualLeft + 10,
+    y: actualTop - 5
   };
 }
 
@@ -1203,6 +1217,16 @@ function applyLabelChangeToSelectedObject() {
     selectedObject.set({
       fill: label.color + '20', // 20% opacity
       stroke: label.color
+    });
+  }
+  
+  // Update linked text label color
+  const linkedTextLabel = canvas.getObjects().find(obj => 
+    obj.objectType === 'textLabel' && obj.linkedAnnotationId === selectedObject.id
+  );
+  if (linkedTextLabel) {
+    linkedTextLabel.set({
+      backgroundColor: label.color
     });
   }
   
@@ -1322,8 +1346,11 @@ function finishPolygonDrawing() {
     stroke: label.color
   });
   
-  // Create text label for this specific annotation only
-  createSingleTextLabel(currentPolygon);
+  // Create text label with delay to ensure annotation is fully stabilized
+  const polygonToLabel = currentPolygon; // Store reference before clearing
+  setTimeout(() => {
+    createSingleTextLabel(polygonToLabel);
+  }, 10);
   
   resetPolygonDrawing();
 }
@@ -1444,8 +1471,11 @@ function finishLineDrawing() {
     stroke: labelColor
   });
   
-  // Create text label for this specific annotation only
-  createSingleTextLabel(currentLine);
+  // Create text label with delay to ensure annotation is fully stabilized
+  const lineToLabel = currentLine; // Store reference before clearing
+  setTimeout(() => {
+    createSingleTextLabel(lineToLabel);
+  }, 10);
   
   resetLineDrawing();
 }
@@ -1517,14 +1547,14 @@ function createSingleTextLabel(annotation) {
   // Calculate position
   const labelPosition = calculateLabelPosition(annotation);
   
-  // Create text label with number and area/length
+  // Create text label with number and area/length (no inverse scaling)
   const textLabel = new fabric.Text(displayNumber.toString() + measurement, {
     left: labelPosition.x,
     top: labelPosition.y,
-    fontSize: 14,
+    fontSize: 14, // Fixed font size - let Canvas handle zoom scaling
     fill: 'white',
     backgroundColor: labelColor,
-    padding: 4,
+    padding: 4, // Fixed padding - let Canvas handle zoom scaling
     textAlign: 'center',
     fontWeight: 'bold',
     originX: 'center',
@@ -1577,15 +1607,16 @@ function updateLinkedTextLabelPosition(annotation) {
     const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
     const displayNumber = annotations.indexOf(annotation) + 1;
     
-    // Update position and text content
+    // Sync text label color with annotation color
+    const annotationColor = annotation.stroke || annotation.fill || '#000000';
+    
+    // Update position, text content, and color
     textLabel.set({
       left: newPosition.x,
       top: newPosition.y,
-      text: displayNumber.toString() + measurement
+      text: displayNumber.toString() + measurement,
+      backgroundColor: annotationColor
     });
-    
-    // Ensure text label coordinates are updated for zoom
-    textLabel.setCoords();
   }
 }
 
