@@ -115,4 +115,46 @@ Wann verwenden:
   - Beim Testen neuer Browser
 
 
+# Text-Labels seperat
+Text-Labels als Gruppe bedeutet, dass es mitskaliert wird. Auch Groups sind komplziert und Annotationen zeichnen ist schwierig.
+Text-Labels müssen 
+- bei neuen Annotationen entstehen
+- die Labelfarbe übernehmen
+- sich mitbwegen bei verschieben, skalieren und verändern.
+- beim löschen verschwinden. 
+
+Lösungsansatz: 
+1. Textlabel-Kopplung via ID-System: Jedes Textlabel bekommt eine linkedAnnotationId Eigenschaft
+2. Event-Handler für Synchronisation: Events für object:moving, object:scaling, object:rotating
+3. Position-Berechnung: Textlabel-Position wird basierend auf Annotation-Bounds dynamisch berechnet
+4. Lifecycle-Management: Bei Annotation-Erstellung/Löschung wird gekoppeltes Textlabel automatisch erstellt/entfernt
+
+
+# Ergebnistabelle
+- Canvas-Annotationen sind single source of truth (früher hat es noch window.data.prediction gelesen).
+- In der Tabelle erscheint nur, was auch auf dem canvas gezeichnet ist.
+- Der Index wir ebenfalls über das Canvas bestimmt (früher über predictions und user). Die Nummerierun erfolgt über die Array-Position im Canvas. 
+
+Neue saubere Architektur:
+
+  1. API-Phase (window.data.prediction):
+
+  - Erstellt nur pure Annotationen (ohne Text-Labels)
+  - Fügt sie zu Canvas hinzu
+  - KEINE Text-Label-Erstellung hier
+
+  2. Canvas-Phase (nach API):
+
+  - Canvas ist "Single Source of Truth"
+  - Verwaltet automatisch nummerierte Text-Labels für ALLE Annotationen
+  - Index basiert auf Array-Position im Canvas
+  - Text-Labels werden automatisch erstellt/aktualisiert
+
+  3. Ergebnistabelle:
+
+  - Liest ausschließlich Canvas-Objekte
+  - Keine eigenen Datenstrukturen
+
+
+
 

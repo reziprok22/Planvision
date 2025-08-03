@@ -82,12 +82,6 @@ function convertPointsToFabric(points) {
   return points.map(p => ({ x: p.x, y: p.y }));
 }
 
-/**
- * Generate annotation label text
- */
-function generateLabelText(index, labelName, measurement, unit) {
-  return `#${index + 1}: ${labelName} (${measurement.toFixed(2)}${unit})`;
-}
 
 /**
  * Convert bbox coordinates to canvas coordinates
@@ -136,7 +130,6 @@ function createFabricObjectConfig(type, labelColor, objectType = 'annotation') {
   }
 }
 
-// Dynamic Labels (replaced by labels.js functionality)
 function getLabel(labelId) {
   // Try to get from dynamic labels first
   const dynamicLabel = getLabelById(labelId, 'area');
@@ -294,12 +287,8 @@ function calculatePredictionArea(coords) {
  * Display annotations
  */
 function displayAnnotations(predictions) {
-  // Displaying annotations
-  // Processing predictions
-  // Current format settings applied
   
   if (!canvas) {
-    // No canvas, initializing...
     initCanvas();
   }
   
@@ -316,7 +305,6 @@ function displayAnnotations(predictions) {
   let lineCount = 0;
   
   predictions.forEach((pred, index) => {
-    // Processing prediction
     
     // Get label info
     const labelId = pred.label || 0;
@@ -351,13 +339,12 @@ function displayAnnotations(predictions) {
         width: canvasCoords.width,
         height: canvasCoords.height,
         ...rectConfig,
-        annotationIndex: index,
         labelId: labelId,
         objectLabel: labelId
       });
       
-      // Create annotation group with number instead of separate label
-      createAnnotationGroup(rect, index, labelColor);
+      // Add annotation to canvas (text labels managed separately)
+      canvas.add(rect);
       rectangleCount++;
       
     } else if (pred.annotationType === 'polygon' && pred.points) {
@@ -369,14 +356,13 @@ function displayAnnotations(predictions) {
       const polygonConfig = createFabricObjectConfig('polygon', labelColor);
       const polygon = new fabric.Polygon(fabricPoints, {
         ...polygonConfig,
-        annotationIndex: index,
         labelId: labelId,
         objectLabel: labelId,
         objectCaching: false
       });
       
-      // Create annotation group with number instead of separate label
-      createAnnotationGroup(polygon, index, labelColor);
+      // Add annotation to canvas (text labels managed separately)
+      canvas.add(polygon);
       polygonCount++;
       
     } else if (pred.annotationType === 'line' && pred.points) {
@@ -388,25 +374,24 @@ function displayAnnotations(predictions) {
       const lineConfig = createFabricObjectConfig('line', labelColor);
       const line = new fabric.Polyline(fabricPoints, {
         ...lineConfig,
-        annotationIndex: index,
         labelId: labelId,
         objectLabel: labelId
       });
       
-      // Create annotation group with number instead of separate label
-      createAnnotationGroup(line, index, labelColor);
+      // Add annotation to canvas (text labels managed separately)
+      canvas.add(line);
       lineCount++;
       
-    } else {
-      // Skipping annotation
     }
   });
   
   canvas.renderAll();
-  // Annotations displayed on canvas
   
   // Re-setup canvas events
-      setupCanvasEvents();
+  setupCanvasEvents();
+  
+  // Initialize canvas text label management
+  initializeCanvasTextLabels();
 
 }
 
@@ -419,196 +404,72 @@ function debouncedTableUpdate() {
     clearTimeout(updateTableTimeout);
   }
   updateTableTimeout = setTimeout(() => {
-    updateAnnotationDataFromCanvas();
     updateResultsTable();
     updateSummary();
   }, 500); // 500ms delay
 }
 
-/**
- * Remove annotation from predictions data when object is deleted
- */
-function removeAnnotationFromData(deletedObject) {
-  if (!window.data?.predictions || typeof deletedObject.annotationIndex === 'undefined') {
-    return;
-  }
-  
-  const indexToRemove = deletedObject.annotationIndex;
-  
-  // Remove the prediction from the array
-  if (indexToRemove >= 0 && indexToRemove < window.data.predictions.length) {
-    window.data.predictions.splice(indexToRemove, 1);
-    
-    // Update annotation indices for remaining objects
-    updateAnnotationIndicesAfterDeletion(indexToRemove);
-  }
-}
+
+
 
 /**
- * Update annotation indices for canvas objects after deletion
- */
-function updateAnnotationIndicesAfterDeletion(deletedIndex) {
-  if (!canvas) return;
-  
-  // Update indices for all remaining annotation objects
-  canvas.forEachObject(obj => {
-    if (obj.objectType === 'annotation' && typeof obj.annotationIndex === 'number') {
-      if (obj.annotationIndex > deletedIndex) {
-        obj.annotationIndex = obj.annotationIndex - 1;
-      }
-    }
-  });
-  
-  // No need to remove text labels since they're part of the group
-  
-  canvas.renderAll();
-}
-
-/**
- * Update annotation data from canvas objects (recalculate areas/lengths)
- */
-function updateAnnotationDataFromCanvas() {
-  if (!canvas || !window.data?.predictions) {
-    return;
-  }
-  
-  const canvasObjects = canvas.getObjects();
-  
-  window.data.predictions.forEach((pred, index) => {
-    // Find corresponding canvas group
-    const canvasGroup = canvasObjects.find(obj => obj.annotationIndex === index);
-    
-    if (!canvasGroup || canvasGroup.objectType !== 'annotation') {
-      return;
-    }
-    
-    // Get the actual annotation object from the group (first object, second is the number text)
-    const groupObjects = canvasGroup.getObjects();
-    const canvasObj = groupObjects[0]; // The annotation is the first object in the group
-    if (!canvasObj) {
-      return;
-    }
-    
-    // Recalculate measurements based on current object dimensions
-    if (pred.annotationType === 'rectangle' || pred.box) {
-      // For groups, we need to use the group's scale and the object's dimensions
-      const groupScaleX = canvasGroup.scaleX || 1;
-      const groupScaleY = canvasGroup.scaleY || 1;
-      const objScaleX = canvasObj.scaleX || 1;
-      const objScaleY = canvasObj.scaleY || 1;
-      
-      // Combined scaling (group scale * object scale)
-      const totalScaleX = groupScaleX * objScaleX;
-      const totalScaleY = groupScaleY * objScaleY;
-      
-      const actualWidth = canvasObj.width * totalScaleX;
-      const actualHeight = canvasObj.height * totalScaleY;
-      
-      // Update bounding box coordinates with group position and scaled dimensions
-      pred.box = [
-        canvasGroup.left,
-        canvasGroup.top,
-        canvasGroup.left + actualWidth,
-        canvasGroup.top + actualHeight
-      ];
-      
-      // Recalculate area using scaled dimensions
-      const pixelToMeter = getPixelToMeterFactor();
-      const widthM = actualWidth * pixelToMeter;
-      const heightM = actualHeight * pixelToMeter;
-      pred.calculatedArea = widthM * heightM;
-      
-    } else if (pred.annotationType === 'polygon' && canvasObj.points) {
-      // For groups, we need to use the group's scale and position
-      const groupScaleX = canvasGroup.scaleX || 1;
-      const groupScaleY = canvasGroup.scaleY || 1;
-      const objScaleX = canvasObj.scaleX || 1;
-      const objScaleY = canvasObj.scaleY || 1;
-      
-      // Combined scaling
-      const totalScaleX = groupScaleX * objScaleX;
-      const totalScaleY = groupScaleY * objScaleY;
-      
-      // Transform points considering group position and combined scaling
-      const actualPoints = canvasObj.points.map(p => ({
-        x: canvasGroup.left + (p.x * totalScaleX),
-        y: canvasGroup.top + (p.y * totalScaleY)
-      }));
-      
-      pred.points = actualPoints;
-      pred.calculatedArea = calculatePolygonArea(actualPoints);
-      
-    } else if (pred.annotationType === 'line' && canvasObj.points) {
-      // For groups, we need to use the group's scale and position
-      const groupScaleX = canvasGroup.scaleX || 1;
-      const groupScaleY = canvasGroup.scaleY || 1;
-      const objScaleX = canvasObj.scaleX || 1;
-      const objScaleY = canvasObj.scaleY || 1;
-      
-      // Combined scaling
-      const totalScaleX = groupScaleX * objScaleX;
-      const totalScaleY = groupScaleY * objScaleY;
-      
-      // Transform points considering group position and combined scaling
-      const actualPoints = canvasObj.points.map(p => ({
-        x: canvasGroup.left + (p.x * totalScaleX),
-        y: canvasGroup.top + (p.y * totalScaleY)
-      }));
-      
-      pred.points = actualPoints;
-      pred.calculatedLength = calculatePolylineLength(actualPoints);
-    }
-  });
-}
-
-/**
- * Update results table (simplified)
+ * Update results table - reads directly from canvas objects
  */
 function updateResultsTable() {
   const resultsBody = document.getElementById('resultsBody');
-  if (!resultsBody || !window.data?.predictions) return;
+  if (!resultsBody || !canvas) return;
   
   resultsBody.innerHTML = '';
   
-  window.data.predictions.forEach((pred, index) => {
-    // Get appropriate label based on annotation type
+  // Get all annotation objects from canvas
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  
+  annotations.forEach((annotation, index) => {
+    // Get label info
+    const labelId = annotation.labelId || annotation.objectLabel || 1;
     let label;
-    if (pred.annotationType === 'line') {
+    
+    if (annotation.annotationType === 'line') {
       // Use line labels for line annotations
-      const lineLabel = getLabelById ? getLabelById(pred.label || 1, 'line') : null;
+      const lineLabel = getLabelById ? getLabelById(labelId, 'line') : null;
       label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
     } else {
       // Use area labels for rectangles and polygons
-      label = getLabel(pred.label || 0);
+      label = getLabel(labelId);
     }
     
-    // Determine annotation type and measurement
+    // Determine annotation type and calculate measurement
     let annotationType = 'Rechteck';
     let measurement = 'N/A';
     
-    if (pred.annotationType === 'rectangle' || pred.box) {
+    if (annotation.type === 'rect') {
       annotationType = 'Rechteck';
-      measurement = pred.calculatedArea ? `${pred.calculatedArea.toFixed(2)} m²` : 
-                   pred.area ? `${pred.area.toFixed(2)} m²` : 'N/A';
-    } else if (pred.annotationType === 'polygon') {
+      const area = calculateRectangleAreaFromCanvas(annotation);
+      measurement = `${area.toFixed(2)} m²`;
+    } else if (annotation.type === 'polygon') {
       annotationType = 'Polygon';
-      measurement = pred.calculatedArea ? `${pred.calculatedArea.toFixed(2)} m²` : 'N/A';
-    } else if (pred.annotationType === 'line') {
+      const area = calculatePolygonAreaFromCanvas(annotation);
+      measurement = `${area.toFixed(2)} m²`;
+    } else if (annotation.type === 'polyline') {
       annotationType = 'Linie';
-      measurement = pred.calculatedLength ? `${pred.calculatedLength.toFixed(2)} m` : 'N/A';
+      const length = calculatePolylineLength(annotation.points || []);
+      measurement = `${length.toFixed(2)} m`;
     }
+    
+    // Determine confidence score
+    const confidence = annotation.userCreated ? 100 : (annotation.score || 0) * 100;
     
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${index + 1}</td>
       <td>${label.name}</td>
       <td>${annotationType}</td>
-      <td>${((pred.score || 0) * 100).toFixed(1)}%</td>
+      <td>${confidence.toFixed(1)}%</td>
       <td>${measurement}</td>
     `;
     
     // Add visual indicator for user-created annotations
-    if (pred.userCreated) {
+    if (annotation.userCreated) {
       row.style.fontStyle = 'italic';
       row.title = 'Benutzer-erstellt';
     }
@@ -622,39 +483,76 @@ function updateResultsTable() {
 }
 
 /**
+ * Calculate rectangle area from canvas object
+ */
+function calculateRectangleAreaFromCanvas(rectObject) {
+  const pixelToMeter = getPixelToMeterFactor();
+  const actualWidth = rectObject.width * (rectObject.scaleX || 1);
+  const actualHeight = rectObject.height * (rectObject.scaleY || 1);
+  const widthM = actualWidth * pixelToMeter;
+  const heightM = actualHeight * pixelToMeter;
+  return widthM * heightM;
+}
+
+/**
+ * Calculate polygon area from canvas object
+ */
+function calculatePolygonAreaFromCanvas(polygonObject) {
+  if (!polygonObject.points || polygonObject.points.length < 3) return 0;
+  
+  const pixelToMeter = getPixelToMeterFactor();
+  const scaleX = polygonObject.scaleX || 1;
+  const scaleY = polygonObject.scaleY || 1;
+  
+  // Transform points with scaling
+  const scaledPoints = polygonObject.points.map(p => ({
+    x: p.x * scaleX,
+    y: p.y * scaleY
+  }));
+  
+  // Shoelace formula for polygon area in pixels
+  let areaPixels = 0;
+  for (let i = 0; i < scaledPoints.length; i++) {
+    const j = (i + 1) % scaledPoints.length;
+    areaPixels += scaledPoints[i].x * scaledPoints[j].y;
+    areaPixels -= scaledPoints[j].x * scaledPoints[i].y;
+  }
+  areaPixels = Math.abs(areaPixels) / 2;
+  
+  // Convert to square meters
+  return areaPixels * pixelToMeter * pixelToMeter;
+}
+
+/**
  * Highlight annotation on canvas when hovering over table row
  */
 function highlightAnnotation(index) {
   if (!canvas) return;
   
-  const canvasObjects = canvas.getObjects();
-  const targetGroup = canvasObjects.find(obj => obj.annotationIndex === index);
+  // Get annotation by array position
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  const targetAnnotation = annotations[index];
   
-  if (targetGroup && targetGroup.objectType === 'annotation') {
-    // Get the actual annotation object from the group (first object)
-    const annotationObject = targetGroup.getObjects()[0];
-    
-    if (annotationObject) {
-      // Store original stroke width on the annotation object
-      if (!annotationObject.originalStrokeWidth) {
-        annotationObject.originalStrokeWidth = annotationObject.strokeWidth;
-      }
-      
-      // Make annotation bold
-      annotationObject.set({
-        strokeWidth: annotationObject.originalStrokeWidth * 2,
-        shadow: new fabric.Shadow({
-          color: annotationObject.stroke,
-          blur: 5,
-          offsetX: 0,
-          offsetY: 0
-        })
-      });
-      
-      // Bring group to front
-      canvas.bringToFront(targetGroup);
-      canvas.renderAll();
+  if (targetAnnotation) {
+    // Store original stroke width on the annotation object
+    if (!targetAnnotation.originalStrokeWidth) {
+      targetAnnotation.originalStrokeWidth = targetAnnotation.strokeWidth;
     }
+    
+    // Make annotation bold
+    targetAnnotation.set({
+      strokeWidth: targetAnnotation.originalStrokeWidth * 2,
+      shadow: new fabric.Shadow({
+        color: targetAnnotation.stroke,
+        blur: 5,
+        offsetX: 0,
+        offsetY: 0
+      })
+    });
+    
+    // Bring annotation to front
+    canvas.bringToFront(targetAnnotation);
+    canvas.renderAll();
   }
 }
 
@@ -664,22 +562,18 @@ function highlightAnnotation(index) {
 function removeHighlight(index) {
   if (!canvas) return;
   
-  const canvasObjects = canvas.getObjects();
-  const targetGroup = canvasObjects.find(obj => obj.annotationIndex === index);
+  // Get annotation by array position
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  const targetAnnotation = annotations[index];
   
-  if (targetGroup && targetGroup.objectType === 'annotation') {
-    // Get the actual annotation object from the group (first object)
-    const annotationObject = targetGroup.getObjects()[0];
+  if (targetAnnotation && targetAnnotation.originalStrokeWidth) {
+    // Restore original stroke width
+    targetAnnotation.set({
+      strokeWidth: targetAnnotation.originalStrokeWidth,
+      shadow: null
+    });
     
-    if (annotationObject && annotationObject.originalStrokeWidth) {
-      // Restore original stroke width
-      annotationObject.set({
-        strokeWidth: annotationObject.originalStrokeWidth,
-        shadow: null
-      });
-      
-      canvas.renderAll();
-    }
+    canvas.renderAll();
   }
 }
 
@@ -716,20 +610,31 @@ function removeTableRowHighlight(index) {
 }
 
 /**
- * Update summary (simplified)
+ * Update summary - reads directly from canvas objects
  */
 function updateSummary() {
   const summary = document.getElementById('summary');
-  if (!summary || !window.data?.predictions) return;
+  if (!summary || !canvas) return;
   
-  const counts = { fenster: 0, tuer: 0, wand: 0, lukarne: 0, dach: 0, other: 0 };
-  const areas = { fenster: 0, tuer: 0, wand: 0, lukarne: 0, dach: 0, other: 0 };
+  const counts = {};
+  const areas = {};
   
-  window.data.predictions.forEach(pred => {
-    const labelId = pred.label || 0;
+  // Get all annotation objects from canvas
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  
+  annotations.forEach(annotation => {
+    const labelId = annotation.labelId || annotation.objectLabel || 1;
     const label = getLabel(labelId);
-    // Use the correctly calculated area, fallback to original API area if not available
-    const area = pred.calculatedArea || pred.area || 0;
+    
+    // Calculate area/length based on annotation type
+    let measurement = 0;
+    if (annotation.type === 'rect') {
+      measurement = calculateRectangleAreaFromCanvas(annotation);
+    } else if (annotation.type === 'polygon') {
+      measurement = calculatePolygonAreaFromCanvas(annotation);
+    } else if (annotation.type === 'polyline') {
+      measurement = calculatePolylineLength(annotation.points || []);
+    }
     
     // Create dynamic counting based on label names
     const labelKey = label.name.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/\s+/g, '_');
@@ -738,7 +643,7 @@ function updateSummary() {
       areas[labelKey] = 0;
     }
     counts[labelKey]++;
-    areas[labelKey] += area;
+    areas[labelKey] += measurement;
   });
   
   let summaryHtml = '';
@@ -747,7 +652,17 @@ function updateSummary() {
       // Convert key back to readable name
       const labelName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
       const pluralName = count > 1 ? (labelName.endsWith('e') ? labelName + 'n' : labelName) : labelName;
-      summaryHtml += `<p>${pluralName}: <strong>${count}</strong> (${areas[key].toFixed(2)} m²)</p>`;
+      
+      // Determine unit based on first annotation of this type
+      const firstAnnotation = annotations.find(ann => {
+        const annLabelId = ann.labelId || ann.objectLabel || 1;
+        const annLabel = getLabel(annLabelId);
+        const annLabelKey = annLabel.name.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/\s+/g, '_');
+        return annLabelKey === key;
+      });
+      
+      const unit = firstAnnotation && firstAnnotation.type === 'polyline' ? 'm' : 'm²';
+      summaryHtml += `<p>${pluralName}: <strong>${count}</strong> (${areas[key].toFixed(2)} ${unit})</p>`;
     }
   });
   
@@ -762,19 +677,11 @@ function clearResults() {
   
   // Reset PDF state
   resetPdfState();
-  
-  // Clear image
   if (uploadedImage) {
     uploadedImage.src = '';
   }
-  
-  // Hide results sections
   const resultsSection = document.getElementById('resultsSection');
-  const resultsTableSection = document.getElementById('resultsTableSection');
   if (resultsSection) resultsSection.style.display = 'none';
-  // Keep resultsTableSection always visible
-  
-  // Clear tables but keep them visible
   const summary = document.getElementById('summary');
   const resultsBody = document.getElementById('resultsBody');
   if (summary) summary.innerHTML = '<p><em>Keine Analyse durchgeführt.</em></p>';
@@ -899,25 +806,11 @@ function setupCanvasEvents() {
     }
   });
   
-  // Object modification events - update table when annotations are modified
+  // Single event handler to avoid blocking selection
   canvas.on('object:modified', function(e) {
     if (!e.target) return;
-    // Only update for annotation objects, not text labels
     if (e.target.objectType === 'annotation') {
-      debouncedTableUpdate();
-    }
-  });
-  
-  canvas.on('object:scaling', function(e) {
-    if (!e.target) return;
-    if (e.target.objectType === 'annotation') {
-      debouncedTableUpdate();
-    }
-  });
-  
-  canvas.on('object:moving', function(e) {
-    if (!e.target) return;
-    if (e.target.objectType === 'annotation') {
+      updateLinkedTextLabelPosition(e.target);
       debouncedTableUpdate();
     }
   });
@@ -926,7 +819,7 @@ function setupCanvasEvents() {
   canvas.on('object:removed', function(e) {
     if (isPageSwitching || !e.target) return;
     if (e.target.objectType === 'annotation') {
-      removeAnnotationFromData(e.target);
+      // Text labels are automatically cleaned up when linked annotation is removed
       debouncedTableUpdate();
     }
   });
@@ -934,15 +827,25 @@ function setupCanvasEvents() {
   // Mouse hover events for annotation highlighting
   canvas.on('mouse:over', function(e) {
     if (!e.target) return;
-    if (e.target.objectType === 'annotation' && typeof e.target.annotationIndex === 'number') {
-      highlightTableRow(e.target.annotationIndex);
+    if (e.target.objectType === 'annotation') {
+      // Find index in annotations array
+      const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+      const index = annotations.indexOf(e.target);
+      if (index >= 0) {
+        highlightTableRow(index);
+      }
     }
   });
   
   canvas.on('mouse:out', function(e) {
     if (!e.target) return;
-    if (e.target.objectType === 'annotation' && typeof e.target.annotationIndex === 'number') {
-      removeTableRowHighlight(e.target.annotationIndex);
+    if (e.target.objectType === 'annotation') {
+      // Find index in annotations array
+      const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+      const index = annotations.indexOf(e.target);
+      if (index >= 0) {
+        removeTableRowHighlight(index);
+      }
     }
   });
 }
@@ -981,6 +884,10 @@ function setTool(toolName) {
         if (obj.objectType === 'annotation') {
           obj.selectable = true;
           obj.evented = true;
+        } else if (obj.objectType === 'textLabel') {
+          // Text labels should never be selectable or interactive
+          obj.selectable = false;
+          obj.evented = false;
         } else {
           obj.selectable = false;
           obj.evented = false;
@@ -1157,20 +1064,8 @@ function finishDrawingRectangle() {
       stroke: label.color
     });
     
-    // Calculate area
-    const area = calculateRectangleArea(currentRectangle);
-    
-    // Add to results data
-    addAnnotationToResults(currentRectangle, 'rectangle', area);
-    
-    // Set annotation index for hover functionality
-    const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
-    
-    // Remove the current rectangle from canvas (will be re-added as group)
-    canvas.remove(currentRectangle);
-    
-    // Create annotation group with number instead of separate label
-    createAnnotationGroup(currentRectangle, annotationIndex, label.color);
+    // Create text label for this specific annotation only  
+    createSingleTextLabel(currentRectangle);
   }
   
   drawingMode = false;
@@ -1236,70 +1131,29 @@ function deleteSelectedObjects() {
   
   selectedObjects = [];
   canvas.renderAll();
-  // Selected objects deleted
 }
 
+
+
 /**
- * Create annotation group with number label (without positioning)
+ * Calculate optimal position for text label based on annotation bounds
  */
-function createAnnotationGroup(annotationObject, annotationIndex, labelColor) {
-  // Reset annotation position to (0,0) since it will be positioned relative to group
-  const originalLeft = annotationObject.left || 0;
-  const originalTop = annotationObject.top || 0;
-  annotationObject.set({ left: 0, top: 0 });
+function calculateLabelPosition(annotationObject) {
+  const bounds = annotationObject.getBoundingRect();
   
-  // Calculate center position for number text based on annotation type
-  let centerX = 0, centerY = 0;
-  
-  if (annotationObject.type === 'rect') {
-    // For rectangles: center of the rectangle
-    centerX = annotationObject.width / 2;
-    centerY = annotationObject.height / 2;
-  } else if (annotationObject.type === 'polygon') {
-    // For polygons: approximate center
-    const bounds = annotationObject.getBoundingRect();
-    centerX = bounds.width / 2;
-    centerY = bounds.height / 2;
-  } else if (annotationObject.type === 'polyline') {
-    // For lines: center point
-    const bounds = annotationObject.getBoundingRect();
-    centerX = bounds.width / 2;
-    centerY = bounds.height / 2;
+  // For polygons, position text at center
+  if (annotationObject.type === 'polygon') {
+    return {
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2
+    };
   }
   
-  // Create number text positioned at center (relative to annotation)
-  const numberText = new fabric.Text((annotationIndex + 1).toString(), {
-    left: centerX,
-    top: centerY,
-    fontSize: 18,
-    fill: 'white',
-    backgroundColor: labelColor,
-    padding: 4,
-    textAlign: 'center',
-    fontWeight: 'bold',
-    originX: 'center',
-    originY: 'center',
-    selectable: false,
-    evented: false
-  });
-  
-  // Create group with annotation + number
-  const group = new fabric.Group([annotationObject, numberText], {
-    objectType: 'annotation',
-    annotationType: annotationObject.annotationType,
-    annotationIndex: annotationIndex,
-    labelId: annotationObject.labelId,
-    objectLabel: annotationObject.objectLabel,
-    selectable: true,
-    hasControls: true,
-    hasBorders: true,
-    evented: true,
-    left: originalLeft, // Now position the group
-    top: originalTop
-  });
-  
-  canvas.add(group);
-  return group;
+  // For rectangles and lines, position slightly above and to the left
+  return {
+    x: bounds.left + 10,
+    y: bounds.top - 5
+  };
 }
 
 /**
@@ -1310,51 +1164,7 @@ function getCurrentSelectedLabel(type = 'area') {
   return universalLabelSelect ? parseInt(universalLabelSelect.value) : 1;
 }
 
-/**
- * Add annotation to results data structure
- */
-function addAnnotationToResults(annotationObject, type, area = null, length = null) {
-  if (!window.data) {
-    window.data = { predictions: [] };
-  }
-  if (!window.data.predictions) {
-    window.data.predictions = [];
-  }
-  
-  const newPrediction = {
-    label: annotationObject.labelId || 1,
-    score: 1.0, // User-created annotations have 100% confidence
-    objectType: annotationObject.objectType,
-    annotationType: type,
-    userCreated: true
-  };
-  
-  if (type === 'rectangle') {
-    // Add bounding box coordinates
-    newPrediction.box = [
-      annotationObject.left,
-      annotationObject.top,
-      annotationObject.left + annotationObject.width,
-      annotationObject.top + annotationObject.height
-    ];
-    newPrediction.calculatedArea = area;
-  } else if (type === 'polygon') {
-    // Store polygon points
-    newPrediction.points = annotationObject.points;
-    newPrediction.calculatedArea = area;
-  } else if (type === 'line') {
-    // Store line points
-    newPrediction.points = annotationObject.points;
-    newPrediction.calculatedLength = length;
-  }
-  
-  window.data.predictions.push(newPrediction);
-  // Added annotation to results
-  
-  // Update UI
-  updateResultsTable();
-  updateSummary();
-}
+
 
 /**
  * Apply label change to currently selected object
@@ -1399,122 +1209,8 @@ function applyLabelChangeToSelectedObject() {
   canvas.renderAll();
 }
 
-/**
- * Check if a canvas object matches the specified label type
- */
-function isCorrectObjectType(obj, labelType) {
-  if (labelType === 'area') {
-    return obj.type === 'rect' || obj.type === 'polygon';
-  } else if (labelType === 'line') {
-    return obj.type === 'polyline' || obj.annotationType === 'line';
-  }
-  return false;
-}
-
-/**
- * Check if a text label matches the specified label type based on its content
- */
-function isCorrectTextLabelType(obj, labelType) {
-  if (!obj.text) return false;
-  
-  // Check if text contains measurements that indicate the type
-  if (labelType === 'area') {
-    return obj.text.includes('m²'); // Area measurements
-  } else if (labelType === 'line') {
-    return obj.text.includes('m)') && !obj.text.includes('m²'); // Line measurements (but not area)
-  }
-  return false;
-}
-
-/**
- * Update all existing annotations with a specific label ID when label properties change
- */
-function updateExistingAnnotationsWithLabel(labelId, newLabelData, labelType = 'area') {
-  if (!canvas) {
-    // Canvas not available for label update
-    return;
-  }
-  
-  
-  let updatedCount = 0;
-  
-  // Update all canvas objects with this label ID and matching type
-  canvas.forEachObject(obj => {
-    if ((obj.labelId === labelId || obj.objectLabel === labelId) && 
-        isCorrectObjectType(obj, labelType)) {
-      
-      // Update visual appearance based on object type
-      if (obj.type === 'rect' || obj.type === 'polygon') {
-        // Area objects (rectangles and polygons)
-        obj.set({
-          fill: newLabelData.color + '20', // Semi-transparent fill
-          stroke: newLabelData.color,
-          strokeWidth: 2
-        });
-      } else if (obj.type === 'polyline' || obj.annotationType === 'line') {
-        // Line objects (Fabric.js polylines)
-        obj.set({
-          stroke: newLabelData.color,
-          strokeWidth: 3
-        });
-      }
-      
-      // Update label references
-      obj.labelId = labelId;
-      obj.objectLabel = labelId;
-      
-      updatedCount++;
-    }
-  });
-  
-  // Update text labels associated with annotations (with type filtering)
-  canvas.forEachObject(obj => {
-    if (obj.type === 'text' && obj.associatedLabelId === labelId && 
-        isCorrectTextLabelType(obj, labelType)) {
-      
-      // Update the text content if it contains the old label name
-      const currentText = obj.text;
-      if (currentText && currentText.includes(':')) {
-        // Extract the annotation number and measurements, update label name
-        const parts = currentText.split(':');
-        if (parts.length >= 2) {
-          const annotationNumber = parts[0]; // e.g., "#1"
-          const measurementPart = parts[1].trim(); // e.g., "OldName (5.2m²)"
-          
-          // Find the measurement part (everything in parentheses)
-          const measurementMatch = measurementPart.match(/\(([^)]+)\)$/);
-          if (measurementMatch) {
-            const measurement = measurementMatch[1]; // e.g., "5.2m²"
-            const newText = `${annotationNumber}: ${newLabelData.name} (${measurement})`;
-            obj.set('text', newText);
-          }
-        }
-      }
-      
-      obj.set({
-        fill: 'white',
-        backgroundColor: newLabelData.color
-      });
-      updatedCount++;
-    }
-  });
-  
-  // Update predictions data if available
-  if (window.data && window.data.predictions) {
-    window.data.predictions.forEach(pred => {
-      if (pred.label === labelId) {
-        // The prediction data structure doesn't store label details directly,
-        // so we mainly need to ensure consistency
-      }
-    });
-  }
-  
-  // Re-render canvas to show changes
-  canvas.renderAll();
-}
 
 // Make functions globally available
-window.updateExistingAnnotationsWithLabel = updateExistingAnnotationsWithLabel;
 window.updateResultsTable = updateResultsTable;
 
 /**
@@ -1626,20 +1322,8 @@ function finishPolygonDrawing() {
     stroke: label.color
   });
   
-  // Calculate area
-  const area = calculatePolygonArea(currentPoints);
-  
-  // Add to results data
-  addAnnotationToResults(currentPolygon, 'polygon', area);
-  
-  // Set annotation index for hover functionality
-  const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
-  
-  // Remove the current polygon from canvas (will be re-added as group)
-  canvas.remove(currentPolygon);
-  
-  // Create annotation group with number instead of separate label
-  createAnnotationGroup(currentPolygon, annotationIndex, label.color);
+  // Create text label for this specific annotation only
+  createSingleTextLabel(currentPolygon);
   
   resetPolygonDrawing();
 }
@@ -1760,20 +1444,8 @@ function finishLineDrawing() {
     stroke: labelColor
   });
   
-  // Calculate total length of all segments
-  const totalLength = calculatePolylineLength(currentPoints);
-  
-  // Add to results data
-  addAnnotationToResults(currentLine, 'line', null, totalLength);
-  
-  // Set annotation index for hover functionality
-  const annotationIndex = window.data ? window.data.predictions.length - 1 : 0;
-  
-  // Remove the current line from canvas (will be re-added as group)
-  canvas.remove(currentLine);
-  
-  // Create annotation group with number instead of separate label
-  createAnnotationGroup(currentLine, annotationIndex, labelColor);
+  // Create text label for this specific annotation only
+  createSingleTextLabel(currentLine);
   
   resetLineDrawing();
 }
@@ -1782,6 +1454,139 @@ function resetLineDrawing() {
   drawingMode = false;
   currentLine = null;
   currentPoints = [];
+}
+
+/**
+ * Canvas Text Label Management System
+ * Centralized management of numbered text labels for all annotations
+ */
+
+/**
+ * Initialize text labels for all existing annotations on canvas
+ */
+function initializeCanvasTextLabels() {
+  if (!canvas) return;
+  
+  // Remove all existing text labels first
+  const textLabels = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
+  textLabels.forEach(label => canvas.remove(label));
+  
+  // Get all annotations and create text labels for each
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  annotations.forEach((annotation, index) => {
+    createSingleTextLabel(annotation);
+  });
+  
+  canvas.renderAll();
+  updateResultsTable();
+}
+
+
+/**
+ * Create a text label for a single new annotation without affecting others
+ */
+function createSingleTextLabel(annotation) {
+  if (!annotation || !canvas) return;
+  
+  // Generate unique ID for linking
+  const linkId = `annotation_${Date.now()}_${Math.random()}`;
+  
+  // Set ID on annotation
+  annotation.set('id', linkId);
+  
+  // Calculate display number based on current annotations count
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  const displayNumber = annotations.length;
+  
+  // Calculate area/length for display
+  let measurement = '';
+  if (annotation.type === 'rect') {
+    const area = calculateRectangleAreaFromCanvas(annotation);
+    measurement = `\n${area.toFixed(2)} m²`;
+  } else if (annotation.type === 'polygon') {
+    const area = calculatePolygonAreaFromCanvas(annotation);
+    measurement = `\n${area.toFixed(2)} m²`;
+  } else if (annotation.type === 'polyline') {
+    const length = calculatePolylineLength(annotation.points || []);
+    measurement = `\n${length.toFixed(2)} m`;
+  }
+  
+  // Get annotation color
+  const labelColor = annotation.stroke || annotation.fill || '#000000';
+  
+  // Calculate position
+  const labelPosition = calculateLabelPosition(annotation);
+  
+  // Create text label with number and area/length
+  const textLabel = new fabric.Text(displayNumber.toString() + measurement, {
+    left: labelPosition.x,
+    top: labelPosition.y,
+    fontSize: 14,
+    fill: 'white',
+    backgroundColor: labelColor,
+    padding: 4,
+    textAlign: 'center',
+    fontWeight: 'bold',
+    originX: 'center',
+    originY: 'center',
+    selectable: false,
+    evented: false,
+    objectType: 'textLabel',
+    linkedAnnotationId: linkId
+  });
+  
+  // Add text label to canvas
+  canvas.add(textLabel);
+  canvas.renderAll();
+  
+  // Update results table
+  updateResultsTable();
+  
+  return textLabel;
+}
+
+/**
+ * Update position of linked text label - zoom-safe synchronization
+ */
+function updateLinkedTextLabelPosition(annotation) {
+  if (!canvas || !annotation.id) return;
+  
+  // Find the linked text label
+  const textLabel = canvas.getObjects().find(obj => 
+    obj.objectType === 'textLabel' && obj.linkedAnnotationId === annotation.id
+  );
+  
+  if (textLabel) {
+    // Calculate new position
+    const newPosition = calculateLabelPosition(annotation);
+    
+    // Recalculate area/length after object modification
+    let measurement = '';
+    if (annotation.type === 'rect') {
+      const area = calculateRectangleAreaFromCanvas(annotation);
+      measurement = `\n${area.toFixed(2)} m²`;
+    } else if (annotation.type === 'polygon') {
+      const area = calculatePolygonAreaFromCanvas(annotation);
+      measurement = `\n${area.toFixed(2)} m²`;
+    } else if (annotation.type === 'polyline') {
+      const length = calculatePolylineLength(annotation.points || []);
+      measurement = `\n${length.toFixed(2)} m`;
+    }
+    
+    // Get display number (find position in annotations array)
+    const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+    const displayNumber = annotations.indexOf(annotation) + 1;
+    
+    // Update position and text content
+    textLabel.set({
+      left: newPosition.x,
+      top: newPosition.y,
+      text: displayNumber.toString() + measurement
+    });
+    
+    // Ensure text label coordinates are updated for zoom
+    textLabel.setCoords();
+  }
 }
 
 /**
@@ -1810,23 +1615,6 @@ function calculatePolygonArea(points) {
   return area;
 }
 
-function calculateLineLength(point1, point2) {
-  const pixelToMeter = getPixelToMeterFactor();
-  
-  // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
-  const naturalPoint1 = point1;
-  const naturalPoint2 = point2;
-  
-  // Calculate length in natural pixels
-  const dx = naturalPoint2.x - naturalPoint1.x;
-  const dy = naturalPoint2.y - naturalPoint1.y;
-  const lengthInPixels = Math.sqrt(dx * dx + dy * dy);
-  
-  // Convert to meters
-  const length = lengthInPixels * pixelToMeter;
-  
-  return length;
-}
 
 /**
  * Calculate total length of a polyline (multiple connected segments)
@@ -2030,7 +1818,6 @@ function initApp() {
           const dpiField = document.getElementById('dpi');
           if (dpiField) {
             dpiField.value = data.actual_dpi;
-            console.log(`DPI field updated to ${data.actual_dpi} for PDF analysis`);
           }
         }
         
@@ -2055,17 +1842,9 @@ function initApp() {
           
           // Wait for image to load
           uploadedImage.onload = function() {
-            // Image loaded
-            // Image size logged
-            // Natural size logged
-            
-            // Checking predictions data
-            
             // Display annotations
             if (data.predictions && data.predictions.length > 0) {
               displayAnnotations(data.predictions);
-            } else {
-              console.warn("❌ No predictions to display - skipping displayAnnotations()");
             }
             
             // Update UI
@@ -2075,7 +1854,7 @@ function initApp() {
         }
       })
       .catch(error => {
-        console.error('=== API ERROR ===', error);
+        console.error('API Error:', error);
         if (errorMessage) {
           errorMessage.textContent = 'Error: ' + error.message;
           errorMessage.style.display = 'block';
