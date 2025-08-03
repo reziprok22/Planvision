@@ -186,6 +186,10 @@ function initCanvas() {
   canvas.hoverCursor = 'default';
   canvas.moveCursor = 'default';
   
+  // Improve selection tolerance for thin lines and complex shapes
+  canvas.targetFindTolerance = 10;      // 10px tolerance around objects
+  canvas.perPixelTargetFind = true;     // More precise hit detection
+  
   // FABRIC.JS NATURAL-SIZE STRATEGY: Canvas = image size, 1:1 coordinates
   const naturalWidth = uploadedImage.naturalWidth;
   const naturalHeight = uploadedImage.naturalHeight;
@@ -1295,7 +1299,7 @@ function startPolygonDrawing() {
 function updatePolygonFromPoints() {
   if (!currentPolygon || currentPoints.length < 2) return;
   
-  // Convert points to Fabric.js format
+  // TEMPORARY DRAWING: Use absolute coordinates (incorrect but works for preview)
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
   
   // Update polygon points
@@ -1332,24 +1336,52 @@ function finishPolygonDrawing() {
     return;
   }
   
+  // Remove the temporary polygon (with wrong coordinates)
+  canvas.remove(currentPolygon);
+  
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel('area');
   const label = getLabel(selectedLabelId);
   
-  // Make polygon selectable and apply label
-  currentPolygon.set({
+  // Convert absolute points to relative coordinates for proper Fabric.js polygon
+  const minX = Math.min(...currentPoints.map(p => p.x));
+  const minY = Math.min(...currentPoints.map(p => p.y));
+  const maxX = Math.max(...currentPoints.map(p => p.x));
+  const maxY = Math.max(...currentPoints.map(p => p.y));
+  
+  // Calculate center point (bounding box center for simplicity)
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  
+  // Convert to relative coordinates
+  const relativePoints = currentPoints.map(point => ({
+    x: point.x - centerX,
+    y: point.y - centerY
+  }));
+  
+  // Create properly positioned polygon
+  const finalPolygon = new fabric.Polygon(relativePoints, {
+    left: centerX,
+    top: centerY,
+    fill: label.color + '20', // 20% opacity
+    stroke: label.color,
+    strokeWidth: 2,
+    objectType: 'annotation',
+    annotationType: 'polygon',
     selectable: true,
     evented: true,
     labelId: selectedLabelId,
     objectLabel: selectedLabelId,
-    fill: label.color + '20', // 20% opacity
-    stroke: label.color
+    hasControls: true,
+    hasBorders: true,
+    objectCaching: false
   });
   
+  canvas.add(finalPolygon);
+  
   // Create text label with delay to ensure annotation is fully stabilized
-  const polygonToLabel = currentPolygon; // Store reference before clearing
   setTimeout(() => {
-    createSingleTextLabel(polygonToLabel);
+    createSingleTextLabel(finalPolygon);
   }, 10);
   
   resetPolygonDrawing();
@@ -1402,7 +1434,7 @@ function startLineDrawing() {
   currentLine = new fabric.Polyline(points, {
     fill: '',
     stroke: labelColor,
-    strokeWidth: 3,
+    strokeWidth: 5, // Increased from 3 to 5 for better selection
     objectType: 'annotation',
     annotationType: 'line',
     selectable: currentTool === 'select',
@@ -1421,7 +1453,7 @@ function startLineDrawing() {
 function updateLineFromPoints() {
   if (!currentLine || currentPoints.length < 2) return;
   
-  // Convert points to Fabric.js format
+  // TEMPORARY DRAWING: Use absolute coordinates (incorrect but works for preview)
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
   
   // Update polyline points
@@ -1455,26 +1487,53 @@ function finishLineDrawing() {
     resetLineDrawing();
     return;
   }
+  
+  // Remove the temporary line (with wrong coordinates)
+  canvas.remove(currentLine);
     
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel('line');
   const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
-  const labelName = lineLabel ? lineLabel.name : 'Strecke';
   
-  // Make line sequence selectable and apply label
-  currentLine.set({
+  // Convert absolute points to relative coordinates for proper Fabric.js polyline
+  let centerX = 0, centerY = 0;
+  currentPoints.forEach(point => {
+    centerX += point.x;
+    centerY += point.y;
+  });
+  centerX /= currentPoints.length;
+  centerY /= currentPoints.length;
+  
+  // Convert to relative coordinates
+  const relativePoints = currentPoints.map(point => ({
+    x: point.x - centerX,
+    y: point.y - centerY
+  }));
+  
+  // Create properly positioned polyline
+  const finalLine = new fabric.Polyline(relativePoints, {
+    left: centerX,
+    top: centerY,
+    fill: '',
+    stroke: labelColor,
+    strokeWidth: 5,
+    objectType: 'annotation',
+    annotationType: 'line',
     selectable: true,
     evented: true,
     labelId: selectedLabelId,
     objectLabel: selectedLabelId,
-    stroke: labelColor
+    hasControls: true,
+    hasBorders: true,
+    objectCaching: false
   });
   
+  canvas.add(finalLine);
+  
   // Create text label with delay to ensure annotation is fully stabilized
-  const lineToLabel = currentLine; // Store reference before clearing
   setTimeout(() => {
-    createSingleTextLabel(lineToLabel);
+    createSingleTextLabel(finalLine);
   }, 10);
   
   resetLineDrawing();
