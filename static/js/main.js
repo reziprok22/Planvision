@@ -1343,26 +1343,11 @@ function finishPolygonDrawing() {
   const selectedLabelId = getCurrentSelectedLabel('area');
   const label = getLabel(selectedLabelId);
   
-  // Convert absolute points to relative coordinates for proper Fabric.js polygon
-  const minX = Math.min(...currentPoints.map(p => p.x));
-  const minY = Math.min(...currentPoints.map(p => p.y));
-  const maxX = Math.max(...currentPoints.map(p => p.x));
-  const maxY = Math.max(...currentPoints.map(p => p.y));
+  // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
+  const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
   
-  // Calculate center point (bounding box center for simplicity)
-  const centerX = (minX + maxX) / 2;
-  const centerY = (minY + maxY) / 2;
-  
-  // Convert to relative coordinates
-  const relativePoints = currentPoints.map(point => ({
-    x: point.x - centerX,
-    y: point.y - centerY
-  }));
-  
-  // Create properly positioned polygon
-  const finalPolygon = new fabric.Polygon(relativePoints, {
-    left: centerX,
-    top: centerY,
+  // Create polygon with original points
+  const finalPolygon = new fabric.Polygon(fabricPoints, {
     fill: label.color + '20', // 20% opacity
     stroke: label.color,
     strokeWidth: 2,
@@ -1376,8 +1361,9 @@ function finishPolygonDrawing() {
     hasBorders: true,
     objectCaching: false
   });
-  
+    
   canvas.add(finalPolygon);
+  canvas.renderAll();
   
   // Create text label with delay to ensure annotation is fully stabilized
   setTimeout(() => {
@@ -1496,25 +1482,11 @@ function finishLineDrawing() {
   const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
   
-  // Convert absolute points to relative coordinates for proper Fabric.js polyline
-  let centerX = 0, centerY = 0;
-  currentPoints.forEach(point => {
-    centerX += point.x;
-    centerY += point.y;
-  });
-  centerX /= currentPoints.length;
-  centerY /= currentPoints.length;
+  // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
+  const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
   
-  // Convert to relative coordinates
-  const relativePoints = currentPoints.map(point => ({
-    x: point.x - centerX,
-    y: point.y - centerY
-  }));
-  
-  // Create properly positioned polyline
-  const finalLine = new fabric.Polyline(relativePoints, {
-    left: centerX,
-    top: centerY,
+  // Create polyline with original points
+  const finalLine = new fabric.Polyline(fabricPoints, {
     fill: '',
     stroke: labelColor,
     strokeWidth: 5,
@@ -1529,7 +1501,9 @@ function finishLineDrawing() {
     objectCaching: false
   });
   
+  
   canvas.add(finalLine);
+  canvas.renderAll();
   
   // Create text label with delay to ensure annotation is fully stabilized
   setTimeout(() => {

@@ -14,10 +14,11 @@ projects
 static/js/mainone_file.js
 
 # Einzelne Datei ignorieren
-Notizen_FL.txt
+Notizen_FL.md
 requirements.txt
 after_preprocessing.png
 before_preprocessing.png
+
 
 # Alle temporären Dateien ignorieren
 *.tmp

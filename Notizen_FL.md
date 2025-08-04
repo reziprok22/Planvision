@@ -115,6 +115,143 @@ Wann verwenden:
   - Beim Testen neuer Browser
 
 
+# Zeichen Elemente Rechteck, Linien und Polygon
+Das Planvision-System verwendet tatsächlich zwei verschiedene Koordinatensysteme für Linien und Polygone:
+
+  - **Während der Erstellung:** Absolute Koordinaten (direkte Mauszeiger-Koordinaten)
+  - **Nach Abschluss:** Relative Koordinaten (bezogen auf das Objektzentrum)
+
+  Diese Diskrepanz verursacht den "Sprung-Effekt", der im letzten Commit als ungelöstes Problem dokumentiert ist: "Beim Abschluss einer
+   Linie oder Polygon, macht die Annotation einen Sprung gegenüber der Zeichenposition."
+
+  Rechtecke haben dieses Problem nicht, da sie durchgehend dasselbe absolute Koordinatensystem verwenden.
+
+Die Eckpunkt einer Linie oder eines Polygon sind relativ zum Zentrum des Objekts. Das Objekt selber ist aber mit dem absoluten Koordinatensystem positioniert
+
+  Objektpositionierung: Absolutes Koordinatensystem
+  - left: centerX, top: centerY - das Objekt wird absolut auf dem Canvas positioniert
+
+  Eckpunkte: Relatives Koordinatensystem
+  - x: point.x - centerX, y: point.y - centerY - alle Punkte sind relativ zum Objektzentrum
+
+Die Eckpunkte müssen sich auf das Objektzentrum beziehen - das ist eine Anforderung von Fabric.js.
+
+  Warum Zentrum und nicht erster Punkt:
+
+  1. Transformationen: Fabric.js führt Rotationen, Skalierungen und andere Transformationen vom Objektzentrum aus durch
+  2. Konsistenz: Alle Fabric.js-Objekte verwenden das Zentrum als Referenzpunkt
+  3. Performance: Transformationsmatrizen sind effizienter wenn das Zentrum der Ursprung ist
+
+  Was passiert wenn man den ersten Punkt als Referenz nimmt:
+  - Rotationen würden um den ersten Punkt statt um die Objektmitte erfolgen
+  - Skalierungen würden das Objekt "wegziehen" statt gleichmäßig vergrößern
+  - Transformations-Handles wären falsch positioniert
+
+  Im Code siehst du deshalb auch die explizite Zentrums-Berechnung:
+  - Polygone: Bounding-Box-Zentrum (minX + maxX) / 2
+  - Linien: Schwerpunkt aller Punkte sum(points) / count
+
+  Das ist eine Design-Entscheidung von Fabric.js die nicht umgangen werden kann.
+
+  Wir verwenden nun _applyPointOffset, was ein internes Fabric.JS Attribut ist (finde es in der Dok allerdings nicht)
+
+  Was ist _applyPointOffset?
+
+  // In Fabric.js Polygon/Polyline Quellcode:
+  _applyPointOffset: function() {
+      this.points.forEach(function(p) {
+          p.x -= this.minX + this.width / 2;  // Punkt um Mittelpunkt zentrieren
+          p.y -= this.minY + this.height / 2;
+      }, this);
+  }
+
+  Warum existiert das?
+
+  Fabric.js Design-Prinzip: Alle Objekte sollen um ihren Mittelpunkt positioniert werden, nicht um ihre Ecken.
+
+  Problem bei Polygonen:
+  - Sie geben absolute Koordinaten ein: [{x: 100, y: 50}, {x: 200, y: 150}]
+  - Fabric.js will aber: "Mittelpunkt bei (150, 100), Punkte relativ dazu"
+
+  Der Fabric.js Algorithmus:
+
+  // 1. Bei new fabric.Polygon(points):
+  initialize: function(points) {
+      this.points = points;                    // Absolute Koordinaten speichern
+      this._calcDimensions();                  // minX, minY, width, height berechnen
+      this.left = this.minX;                   // Position = linke obere Ecke
+      this.top = this.minY;
+      // _applyPointOffset wird NICHT sofort aufgerufen!
+  }
+
+  // 2. Beim ersten Rendering:
+  commonRender: function(ctx) {
+      if (this._applyPointOffset) {            // Nur beim ersten Mal
+          this._applyPointOffset();            // Punkte zu relativen Koordinaten
+          this._applyPointOffset = null;       // Nie wieder ausführen
+      }
+      // Polygon zeichnen...
+  }
+
+  Unser Hack:
+
+  finalPolygon._applyPointOffset = null;  // "Ich habe das schon gemacht"
+
+  Fabric.js denkt: "Ah, die Punkte sind schon relativ, ich muss nichts machen."
+
+  In Wahrheit: Unsere Punkte sind immer noch absolut, aber das Polygon wird trotzdem korrekt gezeichnet, weil die absolute Position mit
+   den absoluten Punkten zusammenpasst.
+
+  Es ist ein cleverer Trick, aber eben auch ein "Hack" des internen Fabric.js Systems!
+
+
+Potentielle Nachteile:
+
+  1. Objektmanipulation funktioniert anders
+
+  // Nach dem Verschieben/Skalieren werden die Punkte NICHT automatisch angepasst
+  // Bei normalen Fabric.js Polygonen: Punkte bleiben relativ zum Mittelpunkt
+  // Bei unserer Lösung: Punkte sind absolut → können "wegdriften"
+
+  2. Serialisierung/Export-Probleme
+
+  - SVG Export: Könnte falsche Koordinaten liefern
+  - JSON toObject(): Speichert absolute statt relative Koordinaten
+  - Projekt speichern/laden: Könnte Inkonsistenzen verursachen
+
+  3. Fabric.js Transformationen
+
+  // Rotation um den Mittelpunkt funktioniert möglicherweise nicht korrekt
+  // Skalierung könnte unerwartete Ergebnisse liefern
+  // Gruppierung mit anderen Objekten könnte problematisch werden
+
+  4. Canvas-Zoom/Pan Verhalten
+
+  - Bei starkem Zoom könnten Rendering-Probleme auftreten
+  - Bounding-Box-Berechnungen könnten ungenau werden
+
+  5. Performance
+
+  - Fabric.js erwartet das Standard-Koordinatensystem
+  - Einige Optimierungen funktionieren möglicherweise nicht
+
+  Praktische Auswirkungen für Ihr System:
+
+  ✅ Sollte funktionieren:
+  - Grundlegendes Zeichnen und Anzeigen
+  - Einfache Bearbeitung (Verschieben)
+  - Ihre Text-Labels und Berechnungen
+
+  ⚠ Könnte Probleme machen:
+  - PDF-Export mit Koordinaten
+  - Projekt speichern/laden
+  - Komplexe Transformationen
+
+  Empfehlung: Testen Sie die wichtigsten Workflows (speichern, laden, exportieren) - falls Probleme auftreten, können wir zur
+  robusteren Kompensations-Lösung zurück.
+
+
+
 # Text-Labels seperat
 Text-Labels als Gruppe bedeutet, dass es mitskaliert wird. Auch Groups sind komplziert und Annotationen zeichnen ist schwierig.
 Text-Labels müssen 
