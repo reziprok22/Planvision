@@ -3,6 +3,15 @@
  * Part of the Fenster-Erkennungstool project
  */
 
+// Import required functions from labels module
+import { 
+  updateUIForLabels, 
+  getCurrentLabels, 
+  getCurrentLineLabels,
+  setCurrentLabels,
+  setCurrentLineLabels
+} from './labels.js';
+
 // DOM references
 let projectList;
 let saveProjectBtn;
@@ -62,7 +71,6 @@ export function setupProject(elements, modules) {
     });
   }
   
-  console.log('Project module initialized');
   
   // Make loadSpecificProject globally available for onclick handlers
   window.loadSpecificProject = loadSpecificProject;
@@ -168,12 +176,7 @@ export function saveProject() {
     analysisData[pageNum] = pdfPageData[pageNum];
   });
 
-  // Debug before saving
   const pageSettings = pdfModule.getPageSettings();
-  console.log("Page settings being sent to server:", JSON.parse(JSON.stringify(pageSettings)));
-  Object.keys(pageSettings).forEach(pageNum => {
-    console.log(`Settings for page ${pageNum}:`, pageSettings[pageNum]);
-  });
 
   // Prepare data for the server (including labels)
   const projectData = {
@@ -182,8 +185,8 @@ export function saveProject() {
     is_update: isExistingProject && projectName === null,
     analysis_data: analysisData,
     settings: pageSettings,
-    labels: window.currentLabels,
-    lineLabels: window.currentLineLabels
+    labels: getCurrentLabels(),
+    lineLabels: getCurrentLineLabels()
   };
 
   // Save project on the server
@@ -211,13 +214,11 @@ export function saveProject() {
 
       // Load labels if available
       if (data.labels && Array.isArray(data.labels) && data.labels.length > 0) {
-        window.currentLabels = data.labels;
-        localStorage.setItem('labels', JSON.stringify(window.currentLabels));
+        setCurrentLabels(data.labels);
+        localStorage.setItem('labels', JSON.stringify(data.labels));
         
         // Update UI with loaded labels
-        if (typeof window.updateUIForLabels === 'function') {
-          window.updateUIForLabels('area');
-        }
+        updateUIForLabels('area');
       }
 
       // Only if the ID has changed (first save)
@@ -307,23 +308,18 @@ function loadProjectListModal() {
  * Load the project list (legacy function - keep for compatibility)
  */
 export function loadProjectList() {
-  console.log("loadProjectList called");
-  
   if (!projectList) {
     console.error("Project list element not found!");
     return;
   }
   
   projectList.innerHTML = '<p>Loading projects...</p>';
-  console.log("Sending request to /list_projects");
   
   fetch('/list_projects')
     .then(response => {
-      console.log("Response received:", response);
       return response.json();
     })
     .then(data => {
-      console.log("Data received:", data);
       if (data.success) {
         if (data.projects.length === 0) {
           projectList.innerHTML = '<p>No projects found.</p>';
@@ -372,7 +368,6 @@ export function loadProjectList() {
         document.querySelectorAll('.load-project-btn').forEach(btn => {
           btn.addEventListener('click', () => {
             const projectId = btn.dataset.id;
-            console.log(`Loading project with ID: ${projectId}`);
             loadProject(projectId);
           });
         });
@@ -392,8 +387,6 @@ export function loadProjectList() {
  * @param {string} projectId - The project ID to load
  */
 export function loadProject(projectId) {
-  console.log(`loadProject called with ID: ${projectId}`);
-  
   // Reset UI
   if (typeof window.clearResults === 'function') {
     window.clearResults();
@@ -407,14 +400,12 @@ export function loadProject(projectId) {
   
   fetch(`/load_project/${projectId}`)
     .then(response => {
-      console.log("Response received:", response);
       if (!response.ok) {
         throw new Error(`Server error: ${response.status} ${response.statusText}`);
       }
       return response.json();
     })
     .then(data => {
-      console.log("Project data received:", data);
       if (data.success) {
         // Reset and fill with project data
         const pdfPageData = {};
@@ -443,10 +434,6 @@ export function loadProject(projectId) {
           }
         }
         
-        // Debug output for first page data
-        console.log("Data for page 1:", pdfPageData["1"]);
-        console.log("Number of predictions:", pdfPageData["1"]?.predictions?.length);
-        
         // Display first page
         if (typeof window.displayPdfPage === 'function') {
           window.displayPdfPage(1, pdfPageData["1"]);
@@ -462,12 +449,9 @@ export function loadProject(projectId) {
         }
         
         if (missingPages.length > 0) {
-          console.log("Starting background processing for missing pages:", missingPages);
           setTimeout(() => {
             pdfModule.processRemainingPagesInBackground();
           }, 1000);
-        } else {
-          console.log("Project loaded with all page data:", Object.keys(pdfPageData));
         }
         
         // Update page title
@@ -487,20 +471,16 @@ export function loadProject(projectId) {
           localStorage.setItem('labels', JSON.stringify(window.currentLabels));
           
           // Update UI with loaded labels
-          if (typeof window.updateUIForLabels === 'function') {
-            window.updateUIForLabels('area');
-          }
+          updateUIForLabels('area');
         }
         
         // Update line labels if provided
         if (data.lineLabels && Array.isArray(data.lineLabels) && data.lineLabels.length > 0) {
-          window.currentLineLabels = data.lineLabels;
-          localStorage.setItem('lineLabels', JSON.stringify(window.currentLineLabels));
+          setCurrentLineLabels(data.lineLabels);
+          localStorage.setItem('lineLabels', JSON.stringify(data.lineLabels));
           
           // Update UI with loaded line labels
-          if (typeof window.updateUIForLabels === 'function') {
-            window.updateUIForLabels('line');
-          }
+          updateUIForLabels('line');
         }
       } else {
         if (errorMessage) {

@@ -114,7 +114,6 @@ export function setupLabels(elements) {
   // Update UI with current labels
   updateUIForLabels('both');
   
-  console.log('Labels module initialized');
 }
 
 /**
@@ -299,7 +298,6 @@ function saveLabel() {
   
   // Update existing annotations with the saved label data if function is available
   if (typeof window.updateExistingAnnotationsWithLabel === 'function' && labelId) {
-    console.log(`Updating existing annotations for label ID: ${labelId}`);
     const updatedLabel = labelType === 'area' 
       ? currentLabels.find(l => l.id === labelId)
       : currentLineLabels.find(l => l.id === labelId);
@@ -311,7 +309,6 @@ function saveLabel() {
   
   // Update results table to reflect label name changes
   if (typeof window.updateResultsTable === 'function') {
-    console.log('Updating results table after label change');
     window.updateResultsTable();
   }
   
@@ -330,31 +327,24 @@ function hideForm() {
  * Save labels to localStorage and update UI
  * @param {string} type - The type of labels to save ('area', 'line', or 'both')
  */
-function saveLabels(type = 'area') {
-  console.log('saveLabels: called with type:', type);
-  console.log('saveLabels: currentLabels:', currentLabels);
-  console.log('saveLabels: currentLineLabels:', currentLineLabels);
+export function saveLabels(type = 'area') {
   
   if (type === 'area' || type === 'both') {
     localStorage.setItem('labels', JSON.stringify(currentLabels));
     window.currentLabels = currentLabels;
-    console.log('saveLabels: Saved area labels to localStorage');
   }
   
   if (type === 'line' || type === 'both') {
     localStorage.setItem('lineLabels', JSON.stringify(currentLineLabels));
     window.currentLineLabels = currentLineLabels;
-    console.log('saveLabels: Saved line labels to localStorage');
   }
   
-  console.log('saveLabels: Calling updateUIForLabels with type:', type);
   updateUIForLabels(type);
   
   // Notify FabricHandler about label changes if available
   if (typeof window.FabricHandler !== 'undefined' && typeof window.FabricHandler.setLabels === 'function') {
     if (type === 'area' || type === 'both') {
       window.FabricHandler.setLabels(currentLabels);
-      console.log('saveLabels: Updated FabricHandler with area labels');
     }
   }
   
@@ -431,32 +421,23 @@ function exportLabels() {
 function resetLabels() {
   // Get active tab to determine which labels to reset
   const activeTab = document.querySelector('.label-tab.active');
-  console.log('resetLabels: activeTab element:', activeTab);
-  console.log('resetLabels: activeTab.id:', activeTab ? activeTab.id : 'null');
   
   const labelType = activeTab && activeTab.id === 'lineLabelsTab' ? 'line' : 'area';
-  console.log('resetLabels: determined labelType:', labelType);
   
   if (confirm(`Are you sure you want to reset all ${labelType} labels to default values?`)) {
-    console.log('resetLabels: User confirmed reset');
     
     if (labelType === 'area') {
-      console.log('resetLabels: Resetting area labels');
       currentLabels = [...defaultLabels];
     } else {
-      console.log('resetLabels: Resetting line labels');
       currentLineLabels = [...defaultLineLabels]; 
     }
     
-    console.log('resetLabels: Calling saveLabels with type:', labelType);
     saveLabels(labelType);
     
-    console.log('resetLabels: Calling refreshLabelTable with type:', labelType);
     refreshLabelTable(labelType);
     
     // Update existing canvas objects with new label data if a plan is open
     if (typeof window.updateExistingAnnotationsWithLabel === 'function') {
-      console.log('Updating existing annotations after label reset');
       const labelsToUpdate = labelType === 'area' ? currentLabels : currentLineLabels;
       labelsToUpdate.forEach(label => {
         window.updateExistingAnnotationsWithLabel(label.id, label, labelType);
@@ -465,7 +446,6 @@ function resetLabels() {
     
     // Update results table to reflect reset label names
     if (typeof window.updateResultsTable === 'function') {
-      console.log('Updating results table after label reset');
       window.updateResultsTable();
     }
   }
@@ -476,11 +456,9 @@ function resetLabels() {
  * @param {string} type - The type of labels to update UI for ('area', 'line', or 'both')
  */
 export function updateUIForLabels(type = 'both') {
-  console.log('updateUIForLabels: called with type:', type);
   
   // Update legend for area labels
   if (type === 'area' || type === 'both') {
-    console.log('updateUIForLabels: Updating area labels UI');
     const legend = document.querySelector('.legend');
     if (legend) {
       legend.innerHTML = '';
@@ -494,7 +472,6 @@ export function updateUIForLabels(type = 'both') {
         `;
         legend.appendChild(legendItem);
       });
-      console.log('updateUIForLabels: Updated legend with area labels');
     }
     
     // Update universal label select for area labels
@@ -516,7 +493,6 @@ export function updateUIForLabels(type = 'both') {
       if (selectedValue && universalLabelSelect.querySelector(`option[value="${selectedValue}"]`)) {
         universalLabelSelect.value = selectedValue;
       }
-      console.log('updateUIForLabels: Updated universalLabelSelect with area labels');
     }
     
     // Legacy support: Update object type selection in the editor (if it exists)
@@ -546,19 +522,15 @@ export function updateUIForLabels(type = 'both') {
       if (selectedValue && objectTypeSelect.querySelector(`option[value="${selectedValue}"]`)) {
         objectTypeSelect.value = selectedValue;
       }
-      console.log('updateUIForLabels: Updated objectTypeSelect with area labels');
     }
   }
   
   // Update line type dropdown for line labels
   if (type === 'line' || type === 'both') {
-    console.log('updateUIForLabels: Updating line labels UI');
     const lineTypeSelect = document.getElementById('lineTypeSelect');
     if (lineTypeSelect) {
-      console.log('updateUIForLabels: Found lineTypeSelect element');
       // Remember current selection
       const selectedLineValue = lineTypeSelect.value;
-      console.log('updateUIForLabels: Current selected line value:', selectedLineValue);
       
       // Recreate options
       lineTypeSelect.innerHTML = '';
@@ -571,16 +543,12 @@ export function updateUIForLabels(type = 'both') {
         lineTypeSelect.appendChild(option);
       });
       
-      console.log('updateUIForLabels: Added', currentLineLabels.length, 'line label options');
       
       // Restore previous selection if possible
       if (selectedLineValue && lineTypeSelect.querySelector(`option[value="${selectedLineValue}"]`)) {
         lineTypeSelect.value = selectedLineValue;
-        console.log('updateUIForLabels: Restored previous line selection');
       }
-      console.log('updateUIForLabels: Updated lineTypeSelect with line labels');
     } else {
-      console.log('updateUIForLabels: lineTypeSelect element not found');
     }
   }
 }
@@ -700,15 +668,34 @@ export function setLineLabels(labels) {
   saveLabels('line');
 }
 
-// Export functions as a global object for easier access from other modules
-window.LabelsManager = {
-  getAreaLabels,
-  getLineLabels,
-  getLabelById,
-  getLabelName,
-  getLabelColor,
-  setAreaLabels,
-  setLineLabels,
-  updateUIForLabels,
-  saveLabels
-};
+/**
+ * Get reference to current labels (for compatibility)
+ */
+export function getCurrentLabels() {
+  return currentLabels;
+}
+
+/**
+ * Get reference to current line labels (for compatibility)
+ */
+export function getCurrentLineLabels() {
+  return currentLineLabels;
+}
+
+/**
+ * Set current labels (for external access)
+ */
+export function setCurrentLabels(labels) {
+  currentLabels = labels;
+  window.currentLabels = labels; // Keep for transition period
+}
+
+/**
+ * Set current line labels (for external access)
+ */
+export function setCurrentLineLabels(labels) {
+  currentLineLabels = labels;
+  window.currentLineLabels = labels; // Keep for transition period
+}
+
+// Legacy global object removed - now using ES6 modules

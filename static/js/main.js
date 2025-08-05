@@ -4,18 +4,23 @@
  */
 
 // Import modules
-import { setupLabels, updateUIForLabels, getAreaLabels, getLabelById, getLabelName, getLabelColor } from './labels.js';
+import { 
+  setupLabels, 
+  getLabelById, 
+  getLabelName, 
+  getLabelColor,
+  updateUIForLabels,
+  getCurrentLabels,
+  getCurrentLineLabels
+} from './labels.js';
 import { 
   setupPdfHandler, 
   setDisplayPageCallback, 
   processPdfData, 
-  navigateToPdfPage, 
   resetPdfState,
   getPdfSessionId,
   getPdfPageData,
   getPageSettings,
-  getCurrentPdfPage,
-  getTotalPdfPages,
   getAllPdfPages,
   setPdfSessionId,
   setPdfPageData,
@@ -26,10 +31,7 @@ import {
 import { 
   setupProject, 
   saveProject, 
-  loadProject, 
-  loadProjectList, 
-  exportPdf, 
-  exportAnnotatedPdf 
+  loadProject
 } from './project.js';
 
 // Fabric.js text baseline patch
@@ -131,22 +133,10 @@ function createFabricObjectConfig(type, labelColor, objectType = 'annotation') {
 }
 
 function getLabel(labelId) {
-  // Try to get from dynamic labels first
-  const dynamicLabel = getLabelById(labelId, 'area');
-  if (dynamicLabel) {
-    return { name: dynamicLabel.name, color: dynamicLabel.color };
-  }
-  
-  // Fallback to hardcoded labels if dynamic labels not available
-  const FALLBACK_LABELS = {
-    0: { name: "Andere", color: "#808080" },
-    1: { name: "Fenster", color: "#0000FF" },
-    2: { name: "Tür", color: "#FF0000" },
-    3: { name: "Wand", color: "#D4D638" },
-    4: { name: "Lukarne", color: "#FFA500" },
-    5: { name: "Dach", color: "#800080" }
+  return {
+    name: getLabelName(labelId, 'area'),
+    color: getLabelColor(labelId, 'area')
   };
-  return FALLBACK_LABELS[labelId] || FALLBACK_LABELS[0];
 }
 
 
@@ -308,7 +298,7 @@ function displayAnnotations(predictions) {
   let polygonCount = 0;
   let lineCount = 0;
   
-  predictions.forEach((pred, index) => {
+  predictions.forEach((pred) => {
     
     // Get label info
     const labelId = pred.label || 0;
@@ -933,13 +923,13 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   
   // Get appropriate labels
   const labels = useLineLabels ? 
-    (typeof window.currentLineLabels !== 'undefined' ? window.currentLineLabels : [
+    (getCurrentLineLabels() || [
       { id: 1, name: "Strecke" },
       { id: 2, name: "Höhe" },
       { id: 3, name: "Breite" },
       { id: 4, name: "Abstand" }
     ]) :
-    (typeof window.currentLabels !== 'undefined' ? window.currentLabels : [
+    (getCurrentLabels() || [
       { id: 1, name: "Fenster" },
       { id: 2, name: "Tür" },
       { id: 3, name: "Wand" },
@@ -1015,7 +1005,7 @@ function startDrawingRectangle(pointer) {
   rectangleStartPoint = { x: pointer.x, y: pointer.y };
   
   // Get current selected label and its color
-  const selectedLabelId = getCurrentSelectedLabel('area');
+  const selectedLabelId = getCurrentSelectedLabel();
   const label = getLabel(selectedLabelId);
   
   const rect = new fabric.Rect({
@@ -1062,7 +1052,7 @@ function finishDrawingRectangle() {
     canvas.remove(currentRectangle);
   } else {
     // Get selected label
-    const selectedLabelId = getCurrentSelectedLabel('area');
+    const selectedLabelId = getCurrentSelectedLabel();
     const label = getLabel(selectedLabelId);
     
     // Update rectangle with correct label and colors
@@ -1093,7 +1083,6 @@ function finishDrawingRectangle() {
  */
 function getPixelToMeterFactor() {
   // Get form values
-  const dpi = parseFloat(document.getElementById('dpi')?.value || 300);
   const formatWidth = parseFloat(document.getElementById('formatWidth')?.value || 210); // mm
   const planScale = parseFloat(document.getElementById('planScale')?.value || 100); // 1:X
   
@@ -1115,25 +1104,6 @@ function getPixelToMeterFactor() {
 }
 
 /**
- * Calculate rectangle area
- */
-function calculateRectangleArea(rect) {
-  const pixelToMeter = getPixelToMeterFactor();
-  
-  // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
-  const naturalWidth = rect.width;
-  const naturalHeight = rect.height;
-  
-  // Convert to real world dimensions
-  const widthM = naturalWidth * pixelToMeter;
-  const heightM = naturalHeight * pixelToMeter;
-  
-  const area = widthM * heightM;
-  
-  return area;
-}
-
-/**
  * Delete selected objects
  */
 function deleteSelectedObjects() {
@@ -1147,8 +1117,6 @@ function deleteSelectedObjects() {
   canvas.renderAll();
 }
 
-
-
 /**
  * Calculate optimal position for text label based on annotation's REAL Fabric.js coordinates
  */
@@ -1156,8 +1124,6 @@ function calculateLabelPosition(annotationObject) {
   // Use REAL Fabric.js coordinates instead of calculated bounds
   const actualLeft = annotationObject.left || 0;
   const actualTop = annotationObject.top || 0;
-  const actualWidth = (annotationObject.width || 0) * (annotationObject.scaleX || 1);
-  const actualHeight = (annotationObject.height || 0) * (annotationObject.scaleY || 1);
   
   // For polygons, position text at center of actual object
   if (annotationObject.type === 'polygon') {
@@ -1177,12 +1143,10 @@ function calculateLabelPosition(annotationObject) {
 /**
  * Get currently selected label ID from universal dropdown
  */
-function getCurrentSelectedLabel(type = 'area') {
+function getCurrentSelectedLabel() {
   const universalLabelSelect = document.getElementById('universalLabelSelect');
   return universalLabelSelect ? parseInt(universalLabelSelect.value) : 1;
 }
-
-
 
 /**
  * Apply label change to currently selected object
@@ -1269,7 +1233,7 @@ function startPolygonDrawing() {
   drawingMode = true;
   
   // Get current selected label and its color
-  const selectedLabelId = getCurrentSelectedLabel('area');
+  const selectedLabelId = getCurrentSelectedLabel();
   const label = getLabel(selectedLabelId);
   
   // Create initial polygon with first point duplicated to make it visible
@@ -1340,7 +1304,7 @@ function finishPolygonDrawing() {
   canvas.remove(currentPolygon);
   
   // Get selected label
-  const selectedLabelId = getCurrentSelectedLabel('area');
+  const selectedLabelId = getCurrentSelectedLabel();
   const label = getLabel(selectedLabelId);
   
   // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
@@ -1406,7 +1370,7 @@ function startLineDrawing() {
   if (!canvas || currentPoints.length === 0) return;
     
   // Get current selected label and its color
-  const selectedLabelId = getCurrentSelectedLabel('line');
+  const selectedLabelId = getCurrentSelectedLabel();
   const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
   
@@ -1478,7 +1442,7 @@ function finishLineDrawing() {
   canvas.remove(currentLine);
     
   // Get selected label
-  const selectedLabelId = getCurrentSelectedLabel('line');
+  const selectedLabelId = getCurrentSelectedLabel();
   const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
   
@@ -1520,11 +1484,6 @@ function resetLineDrawing() {
 }
 
 /**
- * Canvas Text Label Management System
- * Centralized management of numbered text labels for all annotations
- */
-
-/**
  * Initialize text labels for all existing annotations on canvas
  */
 function initializeCanvasTextLabels() {
@@ -1536,7 +1495,7 @@ function initializeCanvasTextLabels() {
   
   // Get all annotations and create text labels for each
   const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  annotations.forEach((annotation, index) => {
+  annotations.forEach((annotation) => {
     createSingleTextLabel(annotation);
   });
   
@@ -1652,33 +1611,6 @@ function updateLinkedTextLabelPosition(annotation) {
     });
   }
 }
-
-/**
- * Area and Length Calculations
- */
-function calculatePolygonArea(points) {
-  if (points.length < 3) return 0;
-  
-  const pixelToMeter = getPixelToMeterFactor();
-  
-  // Canvas coordinates are now 1:1 with natural coordinates (no conversion needed)
-  const naturalPoints = points;
-  
-  // Shoelace formula for polygon area in natural pixels
-  let areaPixels = 0;
-  for (let i = 0; i < naturalPoints.length; i++) {
-    const j = (i + 1) % naturalPoints.length;
-    areaPixels += naturalPoints[i].x * naturalPoints[j].y;
-    areaPixels -= naturalPoints[j].x * naturalPoints[i].y;
-  }
-  areaPixels = Math.abs(areaPixels) / 2;
-  
-  // Convert to square meters
-  const area = areaPixels * pixelToMeter * pixelToMeter;
-  
-  return area;
-}
-
 
 /**
  * Calculate total length of a polyline (multiple connected segments)
