@@ -9,7 +9,6 @@ import {
   getLabelById, 
   getLabelName, 
   getLabelColor,
-  updateUIForLabels,
   getCurrentLabels,
   getCurrentLineLabels
 } from './labels.js';
@@ -454,8 +453,9 @@ function updateResultsTable() {
     const confidence = annotation.userCreated ? 100 : (annotation.score || 0) * 100;
     
     const row = document.createElement('tr');
+    const displayNumber = annotation.displayIndex || (index + 1);
     row.innerHTML = `
-      <td>${index + 1}</td>
+      <td>${displayNumber}</td>
       <td>${label.name}</td>
       <td>${annotationType}</td>
       <td>${confidence.toFixed(1)}%</td>
@@ -1516,9 +1516,23 @@ function createSingleTextLabel(annotation) {
   // Set ID on annotation
   annotation.set('id', linkId);
   
-  // Calculate display number based on current annotations count
-  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  const displayNumber = annotations.length;
+  // Assign stable display index if not already set
+  if (!annotation.displayIndex) {
+    const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+    const existingIndices = annotations
+      .filter(ann => ann.displayIndex)
+      .map(ann => ann.displayIndex);
+    
+    // Find next available index
+    let nextIndex = 1;
+    while (existingIndices.includes(nextIndex)) {
+      nextIndex++;
+    }
+    
+    annotation.displayIndex = nextIndex;
+  }
+  
+  const displayNumber = annotation.displayIndex;
   
   // Calculate area/length for display
   let measurement = '';
@@ -1595,9 +1609,8 @@ function updateLinkedTextLabelPosition(annotation) {
       measurement = `\n${length.toFixed(2)} m`;
     }
     
-    // Get display number (find position in annotations array)
-    const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-    const displayNumber = annotations.indexOf(annotation) + 1;
+    // Use stable display index instead of dynamic calculation
+    const displayNumber = annotation.displayIndex || 1;
     
     // Sync text label color with annotation color
     const annotationColor = annotation.stroke || annotation.fill || '#000000';
@@ -1610,6 +1623,65 @@ function updateLinkedTextLabelPosition(annotation) {
       backgroundColor: annotationColor
     });
   }
+}
+
+/**
+ * Recalculate all annotation indices in order of creation or position
+ * @param {string} sortBy - 'creation' (default) or 'position' (left-to-right, top-to-bottom)
+ */
+function recalculateAllIndices(sortBy = 'creation') {
+  if (!canvas) return;
+  
+  // Get all annotations
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  
+  if (annotations.length === 0) return;
+  
+  // Sort annotations based on preference
+  let sortedAnnotations;
+  if (sortBy === 'position') {
+    // Sort by position: first by top (y), then by left (x)
+    sortedAnnotations = [...annotations].sort((a, b) => {
+      const aTop = a.top || 0;
+      const bTop = b.top || 0;
+      const aLeft = a.left || 0;
+      const bLeft = b.left || 0;
+      
+      // If same row (within 50px), sort by left position
+      if (Math.abs(aTop - bTop) < 50) {
+        return aLeft - bLeft;
+      }
+      return aTop - bTop;
+    });
+  } else {
+    // Sort by creation order (keep existing order in canvas)
+    sortedAnnotations = annotations;
+  }
+  
+  // Reassign display indices
+  sortedAnnotations.forEach((annotation, index) => {
+    annotation.displayIndex = index + 1;
+    
+    // Update linked text label
+    updateLinkedTextLabelPosition(annotation);
+  });
+  
+  // Update UI
+  canvas.renderAll();
+  updateResultsTable();
+  updateSummary();
+  
+  // Show confirmation
+  const statusDiv = document.createElement('div');
+  statusDiv.className = 'save-status';
+  statusDiv.textContent = `${annotations.length} Annotationen neu nummeriert`;
+  statusDiv.style.backgroundColor = '#4CAF50';
+  document.body.appendChild(statusDiv);
+  
+  setTimeout(() => {
+    statusDiv.style.opacity = '0';
+    setTimeout(() => statusDiv.remove(), 500);
+  }, 2000);
 }
 
 /**
@@ -1876,6 +1948,22 @@ function initApp() {
       }
     });
   });
+  
+  // Setup recalculate indices button
+  const recalculateBtn = document.getElementById('recalculateIndicesBtn');
+  if (recalculateBtn) {
+    recalculateBtn.addEventListener('click', function() {
+      // Ask user for sorting preference
+      const sortByPosition = confirm(
+        'Möchten Sie die Nummern nach Position sortieren?\n\n' +
+        'OK = Nach Position (links-rechts, oben-unten)\n' +
+        'Abbrechen = Nach Erstellungsreihenfolge'
+      );
+      
+      const sortBy = sortByPosition ? 'position' : 'creation';
+      recalculateAllIndices(sortBy);
+    });
+  }
   
   // Setup universal label dropdown change listener
   const universalLabelSelect = document.getElementById('universalLabelSelect');
