@@ -169,24 +169,29 @@ export function saveProject() {
   saveStatus.textContent = 'Saving project...';
   document.body.appendChild(saveStatus);
 
-  // Collect all analysis data
-  const pdfPageData = pdfModule.getPdfPageData();
-  const analysisData = {};
-  Object.keys(pdfPageData).forEach(pageNum => {
-    analysisData[pageNum] = pdfPageData[pageNum];
-  });
+  // NEW: Collect Multi-Page canvas data
+  // This saves Canvas data for all pages (current implementation: current page only)
+  const allPagesCanvasData = window.collectAllPagesCanvasData ? window.collectAllPagesCanvasData() : null;
+  
+  if (!allPagesCanvasData) {
+    saveStatus.textContent = 'Error: No canvas data available to save';
+    saveStatus.style.backgroundColor = '#f44336';
+    setTimeout(() => saveStatus.remove(), 3000);
+    return;
+  }
 
   const pageSettings = pdfModule.getPageSettings();
 
-  // Prepare data for the server (including labels)
+  // Prepare data for the server with Multi-Page Canvas format
   const projectData = {
     project_name: projectName,
     session_id: sessionId,
     is_update: isExistingProject && projectName === null,
-    analysis_data: analysisData,
+    canvas_data: allPagesCanvasData,  // NEW: Multi-page Canvas data
     settings: pageSettings,
     labels: getCurrentLabels(),
-    lineLabels: getCurrentLineLabels()
+    lineLabels: getCurrentLineLabels(),
+    data_format: 'multi_page_canvas_v1'  // Multi-page version flag
   };
 
   // Save project on the server
@@ -304,83 +309,6 @@ function loadProjectListModal() {
     });
 }
 
-/**
- * Load the project list (legacy function - keep for compatibility)
- */
-export function loadProjectList() {
-  if (!projectList) {
-    console.error("Project list element not found!");
-    return;
-  }
-  
-  projectList.innerHTML = '<p>Loading projects...</p>';
-  
-  fetch('/list_projects')
-    .then(response => {
-      return response.json();
-    })
-    .then(data => {
-      if (data.success) {
-        if (data.projects.length === 0) {
-          projectList.innerHTML = '<p>No projects found.</p>';
-          return;
-        }
-        
-        projectList.innerHTML = '';
-        const table = document.createElement('table');
-        table.className = 'project-table';
-        
-        // Table header
-        const thead = document.createElement('thead');
-        thead.innerHTML = `
-          <tr>
-            <th>Project Name</th>
-            <th>Created</th>
-            <th>Pages</th>
-            <th>Actions</th>
-          </tr>
-        `;
-        table.appendChild(thead);
-        
-        // Table body
-        const tbody = document.createElement('tbody');
-        data.projects.forEach(project => {
-          const tr = document.createElement('tr');
-          
-          // Format date
-          const date = new Date(project.created_at);
-          const formattedDate = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-          
-          tr.innerHTML = `
-            <td>${project.project_name}</td>
-            <td>${formattedDate}</td>
-            <td>${project.page_count}</td>
-            <td>
-              <button class="load-project-btn" data-id="${project.project_id}">Load</button>
-            </td>
-          `;
-          tbody.appendChild(tr);
-        });
-        table.appendChild(tbody);
-        projectList.appendChild(table);
-        
-        // Add event listeners for "Load" buttons
-        document.querySelectorAll('.load-project-btn').forEach(btn => {
-          btn.addEventListener('click', () => {
-            const projectId = btn.dataset.id;
-            loadProject(projectId);
-          });
-        });
-      } else {
-        console.error("Error:", data.error);
-        projectList.innerHTML = `<p>Error: ${data.error}</p>`;
-      }
-    })
-    .catch(error => {
-      console.error("Fetch error:", error);
-      projectList.innerHTML = `<p>Error: ${error.message}</p>`;
-    });
-}
 
 /**
  * Load a specific project
@@ -407,13 +335,25 @@ export function loadProject(projectId) {
     })
     .then(data => {
       if (data.success) {
-        // Reset and fill with project data
-        const pdfPageData = {};
-        Object.entries(data.analysis_data).forEach(([pageNum, pageData]) => {
-          pdfPageData[pageNum] = pageData;
-        });
+        // Canvas-based project loading (Single Source of Truth)
+        console.log('Loading Canvas-based project');
         
-        // Set module data
+        // Initialize Multi-Page Canvas State
+        if (window.initializePageCanvasData) {
+          window.initializePageCanvasData(data.canvas_data);
+        }
+        
+        // Set up PDF page data structure for Multi-Page Canvas
+        const pdfPageData = {};
+        const canvasPages = data.canvas_data.pages || {};
+        const totalPages = data.canvas_data.total_pages || 1;
+        
+        for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+          pdfPageData[pageNum] = {
+            canvas_data: canvasPages[pageNum] || null,
+            page_number: pageNum
+          };
+        }
         pdfModule.setPdfPageData(pdfPageData);
         pdfModule.setPageSettings(data.settings);
         pdfModule.setPdfSessionId(projectId); // Use project ID as session ID
@@ -434,25 +374,27 @@ export function loadProject(projectId) {
           }
         }
         
-        // Display first page
-        if (typeof window.displayPdfPage === 'function') {
-          window.displayPdfPage(1, pdfPageData["1"]);
-        }
-        
-        // For loaded projects, we already have all the data
-        // Only start background processing if some pages are missing data
-        const missingPages = [];
-        for (let i = 1; i <= totalPdfPages; i++) {
-          if (!pdfPageData[i] || !pdfPageData[i].predictions) {
-            missingPages.push(i);
+        // Setup image display for Multi-Page Canvas format
+        if (data.image_urls && data.image_urls.length > 0) {
+          const uploadedImage = document.getElementById('uploadedImage');
+          if (uploadedImage) {
+            uploadedImage.onload = function() {
+              console.log('Project image loaded, now loading canvas data for page 1');
+              
+              // Load Canvas data for first page
+              const page1CanvasData = data.canvas_data.pages && data.canvas_data.pages['1'];
+              
+              if (page1CanvasData && window.loadCanvasData) {
+                window.loadCanvasData(page1CanvasData);
+              }
+            };
+            // Set image source AFTER setting onload handler
+            uploadedImage.src = data.image_urls[0] + '?t=' + new Date().getTime();
           }
         }
         
-        if (missingPages.length > 0) {
-          setTimeout(() => {
-            pdfModule.processRemainingPagesInBackground();
-          }, 1000);
-        }
+        // Canvas-based projects have all data already loaded
+        // No background processing needed
         
         // Update page title
         document.title = `Window Detection Tool - ${data.metadata.project_name}`;

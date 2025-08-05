@@ -402,114 +402,7 @@ def analyze_page():
         return jsonify({'error': str(e)}), 500
 
 
-# Ist zum überprüfen, ob PDF to jpfg richtig funktoniert, kann gelöscht werden.
-@app.route('/debug_pdf', methods=['POST'])
-def debug_pdf():
-    try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file part'}), 400
-        file = request.files['file']
-        
-        if file.filename == '':
-            return jsonify({'error': 'No selected file'}), 400
-        
-        if file.filename.lower().endswith('.pdf'):
-            try:
-                logger.info(f"PDF-Datei erkannt: {file.filename}")
-                image_bytes = convert_pdf_to_jpg(file)
-                logger.info("PDF erfolgreich in JPG konvertiert")
-                
-                # Speichere das Bild temporär und gib den Pfad zurück
-                debug_path = "static/temp_debug.jpg"
-                with open(debug_path, 'wb') as debug_file:
-                    debug_file.write(image_bytes)
-                
-                return jsonify({
-                    'success': True,
-                    'message': 'PDF erfolgreich konvertiert',
-                    'image_path': debug_path,
-                    'image_size': len(image_bytes)
-                })
-            except Exception as e:
-                logger.error(f"PDF-Konvertierung fehlgeschlagen: {str(e)}")
-                return jsonify({'error': f'PDF-Konvertierung fehlgeschlagen: {str(e)}'}), 500
-        else:
-            return jsonify({'error': 'Die hochgeladene Datei ist keine PDF-Datei'}), 400
-    
-    except Exception as e:
-        logger.error(f"Fehler bei der Debug-Verarbeitung: {str(e)}")
-        return jsonify({'error': str(e)}), 500
 
-# Editor
-@app.route('/save_edits', methods=['POST'])
-def save_edits():
-    try:
-        data = request.json
-        
-        if not data or 'predictions' not in data:
-            return jsonify({'error': 'Keine gültigen Daten erhalten'}), 400
-        
-        # Hier könnten Sie die bearbeiteten Daten in einer Datenbank 
-        # oder einer JSON-Datei speichern
-        # Zum Beispiel:
-        # filename = f"edits_{datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}.json"
-        # with open(os.path.join('saved_edits', filename), 'w') as f:
-        #     json.dump(data, f)
-        
-        return jsonify({
-            'success': True,
-            'message': 'Bearbeitungen erfolgreich gespeichert'
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/debug')
-def debug_page():
-    return render_template('debug.html')
-
-@app.route('/convert_pdf', methods=['POST'])
-def convert_pdf_debug():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    if not file.filename.lower().endswith('.pdf'):
-        return jsonify({'error': 'Not a PDF file'}), 400
-    
-    try:
-        # Speichere die PDF in einem statischen Verzeichnis zur Überprüfung
-        os.makedirs('static/debug', exist_ok=True)
-        pdf_path = 'static/debug/test.pdf'
-        file.save(pdf_path)
-        
-        # Konvertiere die PDF zu JPG
-        images = convert_from_path(pdf_path, first_page=1, last_page=1, dpi=300)
-        
-        if not images:
-            return jsonify({'error': 'No images could be extracted from PDF'}), 500
-        
-        # Speichere das Bild
-        jpg_path = 'static/debug/test.jpg'
-        images[0].save(jpg_path, 'JPEG')
-        
-        # Überprüfe, ob die Datei existiert und die Größe
-        if os.path.exists(jpg_path):
-            file_size = os.path.getsize(jpg_path)
-            return jsonify({
-                'success': True,
-                'message': f'PDF converted successfully. JPG size: {file_size} bytes',
-                'jpg_url': '/static/debug/test.jpg',
-                'pdf_url': '/static/debug/test.pdf'
-            })
-        else:
-            return jsonify({'error': 'JPG file was not created'}), 500
-            
-    except Exception as e:
-        return jsonify({'error': f'Error: {str(e)}'}), 500
 
 
 # Projekte speichern
@@ -581,9 +474,21 @@ def save_project():
                         os.path.join(pages_dir, filename)
                     )
         
-        # Speichere Analyse-Daten vom Client
-        analysis_data = data.get('analysis_data', {})
-        print(f"Projektdaten zum Speichern: {len(analysis_data)} Seiten")
+        # Multi-Page Canvas-basierte Projektdaten (Single Source of Truth)
+        canvas_data = data.get('canvas_data', {})
+        data_format = data.get('data_format', 'canvas_v1')
+        
+        if data_format == 'multi_page_canvas_v1':
+            # Multi-page format
+            total_pages = canvas_data.get('total_pages', 1)
+            pages_data = canvas_data.get('pages', {})
+            total_annotations = sum(page.get('annotation_count', 0) for page in pages_data.values())
+            print(f"Multi-Page Canvas-Projektdaten: {total_pages} Seiten, {total_annotations} Annotationen")
+        else:
+            # Legacy single-page format
+            if not canvas_data.get('canvas_available', False):
+                return jsonify({'error': 'Keine Canvas-Daten verfügbar'}), 400
+            print(f"Single-Page Canvas-Projektdaten: {canvas_data.get('annotation_count', 0)} Annotationen")
         
         # Einstellungen vom Client holen
         settings = data.get('settings', {})
@@ -604,20 +509,15 @@ def save_project():
         with open(os.path.join(project_dir, 'analysis', 'line_labels.json'), 'w') as f:
             json.dump(line_labels, f, indent=2)
         
-        # Speichere Analyse-Ergebnisse pro Seite
-        saved_pages = 0
-        for page_num, page_data in analysis_data.items():
-            # Stelle sicher, dass page_num als String behandelt wird
-            page_filename = f"page_{str(page_num)}_results.json"
-            save_path = os.path.join(project_dir, 'analysis', page_filename)
-            
-            try:
-                with open(save_path, 'w') as f:
-                    json.dump(page_data, f, indent=2)
-                print(f"Gespeichert: {save_path}")
-                saved_pages += 1
-            except Exception as e:
-                print(f"Fehler beim Speichern von Seite {page_num}: {e}")
+        # Speichere Canvas-Daten (Single Source of Truth)
+        canvas_save_path = os.path.join(project_dir, 'analysis', 'canvas_data.json')
+        try:
+            with open(canvas_save_path, 'w') as f:
+                json.dump(canvas_data, f, indent=2)
+            print(f"Canvas-Daten gespeichert: {canvas_save_path}")
+        except Exception as e:
+            print(f"Fehler beim Speichern der Canvas-Daten: {e}")
+            return jsonify({'error': f'Fehler beim Speichern: {str(e)}'}), 500
         
         # Speichere Metadaten
         pages_dir = os.path.join(project_dir, 'pages')
@@ -627,7 +527,12 @@ def save_project():
         else:
             page_count = 0
         
-        # Handle metadata for updates vs new projects
+        # Handle metadata for Multi-Page Canvas-based projects
+        if data_format == 'multi_page_canvas_v1':
+            annotation_count = sum(page.get('annotation_count', 0) for page in canvas_data.get('pages', {}).values())
+        else:
+            annotation_count = canvas_data.get('annotation_count', 0)
+        
         if is_update:
             # Load existing metadata and update it
             metadata_path = os.path.join(project_dir, 'metadata.json')
@@ -638,7 +543,8 @@ def save_project():
                 metadata['project_name'] = project_name
                 metadata['updated_at'] = datetime.datetime.now().isoformat()
                 metadata['page_count'] = page_count
-                metadata['saved_pages'] = saved_pages
+                metadata['annotation_count'] = annotation_count
+                metadata['data_format'] = data_format
             else:
                 # Fallback if metadata doesn't exist
                 metadata = {
@@ -646,7 +552,8 @@ def save_project():
                     'created_at': datetime.datetime.now().isoformat(),
                     'page_count': page_count,
                     'project_id': project_id,
-                    'saved_pages': saved_pages
+                    'annotation_count': annotation_count,
+                    'data_format': data_format
                 }
         else:
             # New project metadata
@@ -655,21 +562,22 @@ def save_project():
                 'created_at': datetime.datetime.now().isoformat(),
                 'page_count': page_count,
                 'project_id': project_id,
-                'saved_pages': saved_pages
+                'annotation_count': annotation_count,
+                'data_format': data_format
             }
         
         with open(os.path.join(project_dir, 'metadata.json'), 'w') as f:
             json.dump(metadata, f, indent=2)
         
         action = "aktualisiert" if is_update else "gespeichert"
-        print(f"Projekt {project_name} erfolgreich {action}. {saved_pages} Seiten-Ergebnisse gespeichert.")
+        print(f"Projekt {project_name} erfolgreich {action}. {annotation_count} Annotationen gespeichert.")
         
         return jsonify({
             'success': True,
             'message': f'Projekt erfolgreich {action}',
             'project_id': project_id,
             'project_name': project_name,
-            'saved_pages': saved_pages,
+            'annotation_count': annotation_count,
             'is_update': is_update
         })
         
@@ -741,17 +649,17 @@ def load_project(project_id):
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
         
-        # Analyse-Daten laden
+        # Canvas-Daten laden (Single Source of Truth)
         analysis_dir = os.path.join(project_dir, 'analysis')
-        analysis_data = {}
+        canvas_data_path = os.path.join(analysis_dir, 'canvas_data.json')
         
-        # Analysedaten für jede Seite laden
-        for filename in os.listdir(analysis_dir):
-            if filename.startswith('page_') and filename.endswith('_results.json'):
-                page_num = filename.split('_')[1]  # Extrahiere Seitennummer
-                with open(os.path.join(analysis_dir, filename), 'r') as f:
-                    page_data = json.load(f)
-                    analysis_data[page_num] = page_data
+        if not os.path.exists(canvas_data_path):
+            print(f"Canvas-Daten nicht gefunden: {canvas_data_path}")
+            return jsonify({'error': 'Canvas-Daten nicht gefunden. Projekt möglicherweise im alten Format.'}), 404
+            
+        with open(canvas_data_path, 'r') as f:
+            canvas_data = json.load(f)
+            print(f"Canvas-Daten geladen: {canvas_data.get('annotation_count', 0)} Annotationen")
         
         # Einstellungen laden
         settings_path = os.path.join(analysis_dir, 'analysis_settings.json')
@@ -799,14 +707,18 @@ def load_project(project_id):
                 image_url = f"/project_files/{project_id}/pages/{filename}"
                 image_urls.append(image_url)
         
+        # Determine data format from metadata
+        project_data_format = metadata.get('data_format', 'canvas_v1')
+        
         return jsonify({
             'success': True,
             'metadata': metadata,
-            'analysis_data': analysis_data,
+            'canvas_data': canvas_data,  # Multi-page or single-page Canvas data
             'settings': settings,
             'labels': labels,
             'lineLabels': line_labels,
-            'image_urls': image_urls
+            'image_urls': image_urls,
+            'data_format': project_data_format  # Pass through the actual format
         })
         
     except Exception as e:

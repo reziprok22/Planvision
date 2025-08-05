@@ -51,6 +51,10 @@ let canvas = null;
 let imageContainer = null;
 let uploadedImage = null;
 
+// Multi-Page Canvas State Management
+let pageCanvasData = {}; // Store canvas data for each page: { "1": canvasData, "2": canvasData, ... }
+let currentPageNumber = 1;
+
 // Editor state
 let currentTool = 'select';
 let drawingMode = false;
@@ -277,115 +281,175 @@ function calculatePredictionArea(coords) {
 }
 
 /**
- * Display annotations
+ * Load Canvas data directly into the canvas (Single Source of Truth approach)
+ * @param {Object} canvasData - Canvas data from saved project
  */
-function displayAnnotations(predictions) {
-  
+function loadCanvasData(canvasData) {
   if (!canvas) {
     initCanvas();
   }
   
-  if (!canvas || !predictions) {
-    console.error("Cannot display annotations: missing canvas or predictions");
+  if (!canvas || !canvasData || !canvasData.canvas_annotations) {
+    console.error("Cannot load canvas data: missing canvas or data");
     return;
   }
   
-  // Clear existing annotations
+  // Clear existing canvas content
   canvas.clear();
   
-  let rectangleCount = 0;
-  let polygonCount = 0;
-  let lineCount = 0;
+  // Reinitialize canvas to set background image
+  initCanvas();
   
-  predictions.forEach((pred) => {
-    
-    // Get label info
-    const labelId = pred.label || 0;
-    let label, labelColor;
-    
-    if (pred.annotationType === 'line') {
-      // Use line labels for line annotations
-      const lineLabel = getLabelById ? getLabelById(labelId, 'line') : null;
-      label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
-      labelColor = label.color;
-    } else {
-      // Use area labels for rectangles and polygons
-      label = getLabel(labelId);
-      labelColor = label.color;
-    }
-    
-    // Process rectangles
-    if (pred.box || pred.bbox) {
-      const coords = pred.box || pred.bbox;
+  console.log(`Loading ${canvasData.canvas_annotations.length} annotations from canvas data`);
+  
+  // Load each annotation from saved canvas data
+  canvasData.canvas_annotations.forEach((annotationData, index) => {
+    // Use Fabric.js enlivenObjects to recreate objects from saved data
+    fabric.util.enlivenObjects([annotationData], function(objects) {
+      const annotation = objects[0];
       
-      // Calculate correct area for this prediction and store it
-      pred.calculatedArea = calculatePredictionArea(coords);
-      
-      // Convert coordinates using utility function
-      const canvasCoords = convertToCanvasCoordinates(coords);
-            
-      // Create rectangle with canvas coordinates using utility function
-      const rectConfig = createFabricObjectConfig('rectangle', labelColor);
-      const rect = new fabric.Rect({
-        left: canvasCoords.x1,
-        top: canvasCoords.y1,
-        width: canvasCoords.width,
-        height: canvasCoords.height,
-        ...rectConfig,
-        labelId: labelId,
-        objectLabel: labelId
-      });
-      
-      // Add annotation to canvas (text labels managed separately)
-      canvas.add(rect);
-      rectangleCount++;
-      
-    } else if (pred.annotationType === 'polygon' && pred.points) {
-      // Process polygons
-      
-      // Convert points to Fabric.js format using utility function
-      const fabricPoints = convertPointsToFabric(pred.points);
-      
-      const polygonConfig = createFabricObjectConfig('polygon', labelColor);
-      const polygon = new fabric.Polygon(fabricPoints, {
-        ...polygonConfig,
-        labelId: labelId,
-        objectLabel: labelId,
-        objectCaching: false
-      });
-      
-      // Add annotation to canvas (text labels managed separately)
-      canvas.add(polygon);
-      polygonCount++;
-      
-    } else if (pred.annotationType === 'line' && pred.points) {
-      // Process lines
-      
-      // Convert points to Fabric.js format using utility function
-      const fabricPoints = convertPointsToFabric(pred.points);
-      
-      const lineConfig = createFabricObjectConfig('line', labelColor);
-      const line = new fabric.Polyline(fabricPoints, {
-        ...lineConfig,
-        labelId: labelId,
-        objectLabel: labelId
-      });
-      
-      // Add annotation to canvas (text labels managed separately)
-      canvas.add(line);
-      lineCount++;
-      
-    }
+      if (annotation) {
+        // Ensure our custom properties are set
+        annotation.set({
+          objectType: 'annotation',
+          selectable: true,
+          evented: true
+        });
+        
+        // Add to canvas
+        canvas.add(annotation);
+        
+        // Create text label for this annotation
+        setTimeout(() => {
+          createSingleTextLabel(annotation);
+        }, 10);
+      }
+    });
   });
+  
+  // Restore canvas viewport if saved
+  if (canvasData.canvas_viewport) {
+    canvas.setViewportTransform(canvasData.canvas_viewport);
+  }
+  
+  // Restore zoom if saved
+  if (canvasData.canvas_zoom) {
+    canvas.setZoom(canvasData.canvas_zoom);
+  }
   
   canvas.renderAll();
   
   // Re-setup canvas events
   setupCanvasEvents();
   
-  // Initialize canvas text label management
-  initializeCanvasTextLabels();
+  // Update UI
+  setTimeout(() => {
+    updateResultsTable();
+    updateSummary();
+  }, 100);
+}
 
+
+/**
+ * Convert predictions to canvas data format (for new uploads only)
+ */
+function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
+  if (!predictions || predictions.length === 0) {
+    return {
+      page_number: pageNumber,
+      canvas_annotations: [],
+      annotation_count: 0,
+      canvas_available: true
+    };
+  }
+  
+  // Convert predictions to Fabric.js serializable format
+  const canvasAnnotations = predictions.map((pred, index) => {
+    const labelId = pred.label || 1;
+    let label, labelColor;
+    
+    if (pred.annotationType === 'line') {
+      const lineLabel = getLabelById ? getLabelById(labelId, 'line') : null;
+      label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
+      labelColor = label.color;
+    } else {
+      label = getLabel(labelId);
+      labelColor = label.color;
+    }
+    
+    if (pred.box || pred.bbox) {
+      // Rectangle from bounding box
+      const coords = pred.box || pred.bbox;
+      const canvasCoords = convertToCanvasCoordinates(coords);
+      
+      return {
+        type: 'rect',
+        objectType: 'annotation',
+        annotationType: 'rectangle',
+        left: canvasCoords.x1,
+        top: canvasCoords.y1,
+        width: canvasCoords.width,
+        height: canvasCoords.height,
+        fill: getLabelColorWithOpacity(labelColor),
+        stroke: labelColor,
+        strokeWidth: 2,
+        labelId: labelId,
+        objectLabel: labelId,
+        displayIndex: index + 1,
+        userCreated: false,
+        selectable: true,
+        evented: true
+      };
+    } else if (pred.annotationType === 'polygon' && pred.points) {
+      // Polygon from points
+      const fabricPoints = convertPointsToFabric(pred.points);
+      
+      return {
+        type: 'polygon',
+        objectType: 'annotation',
+        annotationType: 'polygon',
+        points: fabricPoints,
+        fill: getLabelColorWithOpacity(labelColor),
+        stroke: labelColor,
+        strokeWidth: 2,
+        labelId: labelId,
+        objectLabel: labelId,
+        displayIndex: index + 1,
+        userCreated: false,
+        selectable: true,
+        evented: true,
+        objectCaching: false
+      };
+    } else if (pred.annotationType === 'line' && pred.points) {
+      // Line from points
+      const fabricPoints = convertPointsToFabric(pred.points);
+      
+      return {
+        type: 'polyline',
+        objectType: 'annotation',
+        annotationType: 'line',
+        points: fabricPoints,
+        fill: '',
+        stroke: labelColor,
+        strokeWidth: 3,
+        labelId: labelId,
+        objectLabel: labelId,
+        displayIndex: index + 1,
+        userCreated: false,
+        selectable: true,
+        evented: true,
+        objectCaching: false
+      };
+    }
+  }).filter(Boolean);
+  
+  return {
+    page_number: pageNumber,
+    canvas_annotations: canvasAnnotations,
+    annotation_count: canvasAnnotations.length,
+    canvas_available: true,
+    saved_at: new Date().toISOString()
+  };
 }
 
 
@@ -1087,7 +1151,7 @@ function getPixelToMeterFactor() {
   const planScale = parseFloat(document.getElementById('planScale')?.value || 100); // 1:X
   
   if (!uploadedImage || !uploadedImage.naturalWidth) {
-    return 0.001; // fallback
+    return 0.001; // Default value if image not available
   }
   
   // Real world width in meters (taking plan scale into account)
@@ -1714,76 +1778,218 @@ function calculatePolylineLength(points) {
 }
 
 /**
+ * Collect current canvas annotations in Fabric.js format for saving
+ * Multi-Page version: collects data for the current page
+ * @param {number} pageNumber - The current page number
+ * @returns {Object} Canvas data with all annotations and metadata for this page
+ */
+function collectCurrentCanvasData(pageNumber = 1) {
+  if (!canvas) {
+    console.warn('No canvas available for data collection');
+    return {
+      page_number: pageNumber,
+      canvas_annotations: [],
+      annotation_count: 0,
+      canvas_available: false
+    };
+  }
+  
+  // Get all annotations from canvas (exclude background image and text labels)
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  
+  // Convert canvas objects to serializable format with all custom properties
+  const canvasAnnotations = annotations.map(annotation => {
+    // Use Fabric.js toObject method to get serializable data
+    // Include our custom properties that need to be preserved
+    const customProperties = [
+      'displayIndex',      // Our stable index system
+      'labelId',          // Label assignment
+      'objectLabel',      // Alternative label field
+      'userCreated',      // User vs AI created flag
+      'linkedAnnotationId', // Link to text label
+      'annotationType'    // Type: rectangle, polygon, line
+    ];
+    
+    const fabricObject = annotation.toObject(customProperties);
+    
+    // Add our metadata
+    fabricObject.objectType = 'annotation';
+    fabricObject.saved_at = new Date().toISOString();
+    
+    return fabricObject;
+  });
+  
+  return {
+    page_number: pageNumber,
+    canvas_annotations: canvasAnnotations,
+    annotation_count: annotations.length,
+    canvas_available: true,
+    canvas_zoom: canvas.getZoom(),
+    canvas_viewport: canvas.viewportTransform,
+    saved_at: new Date().toISOString()
+  };
+}
+
+/**
+ * Save current canvas state to page-specific storage
+ * @param {number} pageNum - Page number to save to
+ */
+function saveCurrentPageCanvasData(pageNum = currentPageNumber) {
+  if (canvas) {
+    const canvasData = collectCurrentCanvasData(pageNum);
+    pageCanvasData[pageNum] = canvasData;
+    console.log(`Saved canvas data for page ${pageNum}: ${canvasData.annotation_count} annotations`);
+  }
+}
+
+/**
+ * Load canvas data for a specific page
+ * @param {number} pageNum - Page number to load
+ */
+function loadPageCanvasData(pageNum) {
+  const canvasData = pageCanvasData[pageNum];
+  if (canvasData && canvasData.canvas_available && window.loadCanvasData) {
+    console.log(`Loading canvas data for page ${pageNum}: ${canvasData.annotation_count} annotations`);
+    window.loadCanvasData(canvasData);
+  } else {
+    console.log(`No canvas data available for page ${pageNum}`);
+    // Clear canvas for empty page
+    if (canvas) {
+      canvas.clear();
+      initCanvas();
+    }
+  }
+}
+
+/**
+ * Set current page number and handle page switching
+ * @param {number} pageNum - New current page number
+ */
+function setCurrentPage(pageNum) {
+  if (pageNum !== currentPageNumber) {
+    // Save current page before switching
+    saveCurrentPageCanvasData(currentPageNumber);
+    
+    // Switch to new page
+    currentPageNumber = pageNum;
+    console.log(`Switched to page ${currentPageNumber}`);
+  }
+}
+
+/**
+ * Initialize page canvas data from loaded project data
+ * @param {Object} projectCanvasData - Canvas data from loaded project
+ */
+function initializePageCanvasData(projectCanvasData) {
+  // Multi-page format: load all pages
+  pageCanvasData = { ...projectCanvasData.pages };
+  currentPageNumber = projectCanvasData.current_page || 1;
+  console.log(`Initialized ${Object.keys(pageCanvasData).length} pages of canvas data`);
+}
+
+/**
+ * Collect Canvas data for ALL pages in a multi-page project
+ * @returns {Object} Canvas data organized by page number
+ */
+function collectAllPagesCanvasData() {
+  // Save current page first
+  saveCurrentPageCanvasData(currentPageNumber);
+  
+  // Get current page info from PDF module
+  const allPages = getAllPdfPages();
+  const totalPages = allPages ? allPages.length : 1;
+  
+  return {
+    format: 'multi_page_canvas_v1',
+    total_pages: totalPages,
+    pages: { ...pageCanvasData }, // Include all pages with data
+    current_page: currentPageNumber,
+    saved_at: new Date().toISOString()
+  };
+}
+
+/**
  * Display PDF page callback function for pdf-handler
  * @param {number} pageNumber - The page number being displayed
  * @param {Object} pageData - The page data to display
  */
 function displayPdfPage(pageNumber, pageData) {
-  // Displaying PDF page
+  console.log(`Displaying page ${pageNumber}`);
   
-  // Prevent canvas events during page switching to avoid race conditions
+  // Handle page switching with canvas state management
+  setCurrentPage(pageNumber);
+  
+  // Prevent canvas events during page switching
   isPageSwitching = true;
   
   // Store the data globally
   window.data = pageData;
   
-  // Update form fields with page-specific settings if available
-  if (pageData.page_sizes && pageData.page_sizes.length >= pageNumber) {
-    const currentPageSize = pageData.page_sizes[pageNumber - 1];
-    if (currentPageSize) {
-      document.getElementById('formatWidth').value = Math.round(currentPageSize[0]);
-      document.getElementById('formatHeight').value = Math.round(currentPageSize[1]);
+  // Get image URL for current page
+  let imageUrl;
+  if (pageData.pdf_image_url) {
+    imageUrl = pageData.pdf_image_url;
+  } else {
+    const allPages = getAllPdfPages();
+    if (allPages && allPages.length > 0 && pageNumber <= allPages.length) {
+      imageUrl = allPages[pageNumber - 1];
     }
-  }
-  
-  // Set image source - use correct URL for current page
-  let imageUrl = pageData.pdf_image_url;
-  
-  // If we have allPdfPages array, use the correct URL for the current page
-  const allPages = getAllPdfPages();
-  if (allPages && allPages.length > 0 && pageNumber <= allPages.length) {
-    imageUrl = allPages[pageNumber - 1];
-  } else if (pageData.pdf_image_url) {
   }
   
   if (imageUrl) {
+    // Show image temporarily for loading, will be hidden after Canvas setup
+    uploadedImage.style.display = 'block';
+    
+    uploadedImage.onload = function() {
+      console.log(`Page ${pageNumber} image loaded`);
+      
+      // DEBUG: Check image visibility after load
+      setTimeout(() => {
+        const imgRect = uploadedImage.getBoundingClientRect();
+        const imgStyle = window.getComputedStyle(uploadedImage);
+        console.log(`IMAGE DEBUG: Page ${pageNumber} - Width: ${imgRect.width}, Height: ${imgRect.height}, Display: ${imgStyle.display}, Visibility: ${imgStyle.visibility}, Opacity: ${imgStyle.opacity}`);
+        console.log(`IMAGE DEBUG: Image src: ${uploadedImage.src}`);
+        console.log(`IMAGE DEBUG: Image naturalWidth: ${uploadedImage.naturalWidth}, naturalHeight: ${uploadedImage.naturalHeight}`);
+      }, 100);
+      
+      // Multi-Page Canvas System: Load from page state management
+      if (pageCanvasData[pageNumber]) {
+        // Loaded project: use canvas data
+        loadPageCanvasData(pageNumber);
+      } else if (pageData.predictions && pageData.predictions.length > 0) {
+        // New upload: convert predictions to canvas data format
+        console.log(`Converting predictions to canvas for new upload on page ${pageNumber}`);
+        const canvasData = convertPredictionsToCanvasData(pageData.predictions, pageNumber);
+        
+        // Load the converted canvas data (loadCanvasData will clear annotations)
+        loadCanvasData(canvasData);
+        
+        // Save to page state for later switching
+        pageCanvasData[pageNumber] = canvasData;
+      } else {
+        // Empty page
+        console.log(`Empty page ${pageNumber}`);
+        if (canvas) {
+          canvas.clear();
+          initCanvas();
+        }
+      }
+      
+      // Re-enable canvas events after page switch is complete
+      isPageSwitching = false;
+    };
+    
+    uploadedImage.onerror = function() {
+      console.error(`Failed to load image for page ${pageNumber}: ${imageUrl}`);
+      isPageSwitching = false;
+    };
+    
     uploadedImage.src = imageUrl + '?t=' + new Date().getTime();
+  } else {
+    console.error(`No image URL available for page ${pageNumber}`);
+    // No image URL, re-enable events
+    isPageSwitching = false;
   }
-  
-  // Wait for image to load and then display annotations
-  uploadedImage.onload = function() {
-    // PDF page image loaded
-
-    
-    // Clear existing canvas content
-    if (canvas) {
-      canvas.clear();
-    }
-    
-    // Reinitialize canvas for the new image
-    initCanvas();
-    
-    // Display annotations if any
-    if (pageData.predictions && pageData.predictions.length > 0) {
-      // Displaying annotations for page
-      displayAnnotations(pageData.predictions);
-    } else {
-      // Page has no annotations to display
-    }
-    
-    // Update UI
-    updateSummary();
-    updateResultsTable();
-    
-    // Re-enable canvas events after page switch is complete
-    isPageSwitching = false;
-  };
-  
-  uploadedImage.onerror = function() {
-    console.error(`Failed to load image for page ${pageNumber}:`, pageData.pdf_image_url);
-    // Re-enable canvas events even if image loading failed
-    isPageSwitching = false;
-  };
 }
 
 /**
@@ -1910,9 +2116,13 @@ function initApp() {
           
           // Wait for image to load
           uploadedImage.onload = function() {
-            // Display annotations
+            // Convert predictions to canvas data and load
             if (data.predictions && data.predictions.length > 0) {
-              displayAnnotations(data.predictions);
+              const canvasData = convertPredictionsToCanvasData(data.predictions, 1);
+              // Load canvas data (will clear annotations automatically)
+              loadCanvasData(canvasData);
+              // Save to page state for consistency
+              pageCanvasData[1] = canvasData;
             }
             
             // Update UI
@@ -2032,10 +2242,12 @@ function initApp() {
     }
   });
   
-  // Make project functions globally available for compatibility
-  window.saveProject = saveProject;
-  window.loadProject = loadProject;
+  // Make essential functions globally available for inter-module communication
   window.displayPdfPage = displayPdfPage;
+  window.collectCurrentCanvasData = collectCurrentCanvasData;
+  window.collectAllPagesCanvasData = collectAllPagesCanvasData;
+  window.loadCanvasData = loadCanvasData;
+  window.initializePageCanvasData = initializePageCanvasData;
 
 }
 
