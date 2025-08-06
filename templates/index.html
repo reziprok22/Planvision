@@ -279,10 +279,21 @@
     <!-- Fabric.js library -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.0/fabric.min.js"></script>
     
+    <!-- Performance Monitor -->
+    <script src="static/js/performance-monitor.js"></script>
+    
     <!-- Main application script with ES6 modules -->
     <script type="module" src="static/js/main.js"></script>
     
     <!-- Smoke Tests (nur für Development) -->
     <script src="static/js/smoke-tests.js"></script>
+    
+    <!-- Performance Dashboard Controls (Development only) -->
+    <div id="perfControls" style="position: fixed; top: 10px; right: 10px; background: #f0f0f0; padding: 10px; border-radius: 5px; z-index: 9999; font-family: Arial; font-size: 12px;">
+        <strong>🚀 Performance</strong><br>
+        <button onclick="showPerfDashboard()" style="margin: 2px;">Dashboard</button>
+        <button onclick="exportPerfData()" style="margin: 2px;">Export</button>
+        <button onclick="console.clear(); perfMonitor.measurements = [];" style="margin: 2px;">Reset</button>
+    </div>
 </body>
 </html>

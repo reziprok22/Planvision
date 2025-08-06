@@ -37,6 +37,7 @@ def get_model(num_classes=6):
 def load_model():
     """
     Lädt das vortrainierte Modell aus der Modelldatei einmalig.
+    Nutzt GPU falls verfügbar für deutlich bessere Performance.
     
     Returns:
         model: Das geladene Modell-Objekt
@@ -45,15 +46,29 @@ def load_model():
     # Überprüfen, ob das Modell bereits geladen wurde
     if model is None:
         print("Loading model for the first time...")
-        device = torch.device('cpu')  # Force CPU für weniger RAM-Verbrauch
+        
+        # GPU-First Strategie: Nutze GPU falls verfügbar, sonst CPU
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            gpu_name = torch.cuda.get_device_name(0)
+            gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
+            print(f"🚀 GPU-Beschleunigung aktiviert: {gpu_name} ({gpu_memory:.1f}GB VRAM)")
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            device = torch.device('mps')
+            print("🍎 Apple Silicon MPS-Beschleunigung aktiviert")
+        else:
+            device = torch.device('cpu')
+            print("⚠️ Keine GPU verfügbar - nutze CPU (langsamer)")
+        
         model = get_model()
         
         if os.path.exists(MODEL_PATH):
-            # Lade Model direkt auf CPU
+            # Lade Model-Gewichte auf das gewählte Device
+            print(f"Loading model weights on {device}...")
             model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
             model.to(device)
             model.eval()
-            print(f"Model loaded on {device}")
+            print(f"✅ Model successfully loaded on {device}")
         else:
             raise FileNotFoundError(f"Model file '{MODEL_PATH}' not found")
     return model
@@ -61,11 +76,20 @@ def load_model():
 def cleanup_memory():
     """
     Bereinigt nicht benötigten Speicher nach der Inferenz.
+    Optimiert für GPU-Memory-Management.
     """
     import gc
     gc.collect()
+    
+    # GPU-Speicher bereinigen falls verfügbar
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        torch.cuda.synchronize()  # Synchronisiere GPU-Operationen
+    
+    # MPS-Speicher bereinigen (Apple Silicon)
+    elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        if hasattr(torch.mps, 'empty_cache'):
+            torch.mps.empty_cache()
 
 def resize_image_if_large(image, max_size=2048):
     """
@@ -117,20 +141,21 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         # Bild verkleinern falls zu groß
         processed_image, coord_scale = resize_image_if_large(processed_image, max_size=1024)
         
-        # Bild transformieren (ohne extra .to(device) calls)
+        # Bild transformieren und direkt auf GPU verschieben
         transform = transforms.Compose([transforms.ToTensor()])
-        image_tensor = transform(processed_image).unsqueeze(0)
+        image_tensor = transform(processed_image).unsqueeze(0).to(device)
         
         # Berechne den Umrechnungsfaktor
         pixels_per_meter = calculate_scale_factor(format_size, dpi, plan_scale)
         
-        # Inferenz mit Memory-Cleanup
+        # GPU-optimierte Inferenz mit Memory-Management
         with torch.no_grad():
             prediction = model(image_tensor)
         
-        # Sofortiges Memory-Cleanup
+        # Sofortiges Memory-Cleanup für GPU-Effizienz
         del image_tensor
-        cleanup_memory()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()  # GPU-Cache sofort leeren
         
         # Ergebnisse extrahieren
         boxes = prediction[0]['boxes'].cpu().numpy()

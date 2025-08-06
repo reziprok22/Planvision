@@ -25,6 +25,10 @@ from PyPDF2 import PdfReader
 BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
 PROJECTS_DIR = os.path.join(BASE_DIR, 'projects')
 
+# Performance-Konfiguration
+PDF_DPI = 150  # DPI für PDF-zu-Bild-Konvertierung (optimiert für Performance vs. Qualität)
+JPEG_QUALITY = 70  # JPEG-Kompression (optimiert für Performance vs. Qualität)
+
 # Erstellt den projects-Ordner falls er nicht existiert
 os.makedirs(PROJECTS_DIR, exist_ok=True)
 
@@ -110,14 +114,14 @@ def convert_pdf_to_images(pdf_file_object, project_id=None):
     page_count = 0
     
     try:
-        images = convert_from_path(pdf_path, dpi=200)  # Reduziert von 300 auf 200 DPI
+        images = convert_from_path(pdf_path, dpi=PDF_DPI)
         page_count = len(images)  # Anzahl speichern bevor images gelöscht wird
         
         # Speichere jede Seite als JPG mit Qualitätsoptimierung
         for i, image in enumerate(images):
             image_path = os.path.join(output_dir, f"page_{i+1}.jpg")
-            # Speichere mit reduzierter Qualität um Speicherplatz zu sparen
-            image.save(image_path, "JPEG", quality=85, optimize=True)
+            # Speichere mit optimierter Qualität (Performance vs. Größe)
+            image.save(image_path, "JPEG", quality=JPEG_QUALITY, optimize=True)
             # Lokalen Pfad für Backend-Zugriff speichern
             local_image_paths.append(image_path)
             # URL-Pfad für Frontend-Anzeige
@@ -170,6 +174,10 @@ def minimal():
 
 @app.route('/predict', methods=['POST'])
 def predict():
+    # Performance-Timing starten
+    request_start_time = time.time()
+    performance_metrics = {}
+    
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file part'}), 400
@@ -193,7 +201,9 @@ def predict():
             if file.filename.lower().endswith('.pdf'):
                 try:
                     # PDF-Datei in Bilder konvertieren
+                    pdf_start_time = time.time()
                     pdf_info = convert_pdf_to_images(file)
+                    performance_metrics['pdf_conversion_time'] = time.time() - pdf_start_time
                     
                     # Debug-Ausgabe für PDF-Informationen
                     print(f"PDF Info: {pdf_info['session_id']}, Seiten: {pdf_info['page_count']}")
@@ -214,8 +224,8 @@ def predict():
                     with open(current_image_path, 'rb') as f:
                         image_bytes = f.read()
                     
-                    # DPI auf 200 setzen für PDF-Konvertierung (nicht 300)
-                    dpi = 200.0
+                    # Verwende konfigurierte DPI für PDF-Konvertierung
+                    dpi = float(PDF_DPI)
                     is_pdf = True
                 except Exception as e:
                     print(f"Fehler bei der PDF-Verarbeitung: {str(e)}")
@@ -230,6 +240,7 @@ def predict():
             print(f"Starte Vorhersage mit Parametern: format={format_size}, dpi={dpi}, scale={plan_scale}, threshold={threshold}")
             
             # Bildvorhersage durchführen
+            inference_start_time = time.time()
             boxes, labels, scores, areas = predict_image(
                 image_bytes, 
                 format_size=format_size, 
@@ -237,6 +248,7 @@ def predict():
                 plan_scale=plan_scale, 
                 threshold=threshold
             )
+            performance_metrics['model_inference_time'] = time.time() - inference_start_time
 
             # debug
             # print(f"Prediction results: {len(boxes)} objects found")
@@ -273,13 +285,20 @@ def predict():
                     'all_pages': pdf_info["image_paths"],
                     'session_id': pdf_info["session_id"],
                     'page_sizes': pdf_info.get("page_sizes", []),
-                    'actual_dpi': 200  # Tatsächliche DPI für Frontend
+                    'actual_dpi': PDF_DPI  # Tatsächliche DPI für Frontend
                 })
                 # Debugging Ausgabe
                 print(f"Sende Antwort mit page_sizes: {pdf_info.get('page_sizes', [])}")
 
+            # Gesamte Request-Zeit berechnen
+            performance_metrics['total_request_time'] = time.time() - request_start_time
+            
+            # Performance-Metriken zur Antwort hinzufügen
+            response_data['performance_metrics'] = performance_metrics
+            
             print(f"Final response data: {response_data}")
             print(f"Predictions in response: {len(response_data['predictions'])}")
+            print(f"Performance Metrics: {performance_metrics}")
 
             # Memory cleanup nach Anfrage
             cleanup_memory()
@@ -307,7 +326,7 @@ def analyze_page():
             float(request.form.get('format_width', 210)),
             float(request.form.get('format_height', 297))
         )
-        dpi = 200.0  # Angepasst an PDF-Konvertierung DPI
+        dpi = float(PDF_DPI)  # Verwende konfigurierte DPI
         plan_scale = float(request.form.get('plan_scale', 100))
         threshold = float(request.form.get('threshold', 0.5))
         
@@ -385,7 +404,7 @@ def analyze_page():
             'page_count': page_count,
             'all_pages': all_image_paths,
             'session_id': session_id,
-            'actual_dpi': 200  # Tatsächliche DPI für Frontend
+            'actual_dpi': PDF_DPI  # Tatsächliche DPI für Frontend
         }
         
         print(f"Antwortdaten: Seite {page} von {page_count}, {len(results)} Vorhersagen")

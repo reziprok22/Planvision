@@ -33,15 +33,34 @@ import {
   loadProject
 } from './project.js';
 
-// Fabric.js text baseline patch
+// Fabric.js text baseline patch - Fix für Canvas-Kompatibilität
 if (typeof fabric !== 'undefined') {
   const originalInitialize = fabric.Text.prototype.initialize;
   fabric.Text.prototype.initialize = function() {
     const result = originalInitialize.apply(this, arguments);
+    // Fix für Canvas-Baseline-Kompatibilität
     if (this.textBaseline === 'alphabetical') {
       this.textBaseline = 'alphabetic';
     }
     return result;
+  };
+  
+  // Zusätzlicher Fix für bestehende Text-Objekte beim Rendern
+  const originalRender = fabric.Text.prototype._render;
+  fabric.Text.prototype._render = function(ctx) {
+    if (ctx.textBaseline === 'alphabetical') {
+      ctx.textBaseline = 'alphabetic';
+    }
+    return originalRender.call(this, ctx);
+  };
+  
+  // Fix für deserialisierte Text-Objekte
+  const originalFromObject = fabric.Text.fromObject;
+  fabric.Text.fromObject = function(object, callback) {
+    if (object.textBaseline === 'alphabetical') {
+      object.textBaseline = 'alphabetic';
+    }
+    return originalFromObject.call(this, object, callback);
   };
 }
 
@@ -147,6 +166,8 @@ function getLabel(labelId) {
  * Initialize canvas
  */
 function initCanvas() {
+  startPerfMeasurement('canvas-initialization', 'canvas');
+  
   if (!uploadedImage || !uploadedImage.complete || uploadedImage.naturalWidth === 0) {
     console.warn("Image not loaded yet, retrying...");
     setTimeout(initCanvas, 100);
@@ -241,6 +262,12 @@ function initCanvas() {
   // Setup enhanced scrolling for container
   setupContainerScrolling();
   
+  endPerfMeasurement('canvas-initialization', {
+    canvas_width: naturalWidth,
+    canvas_height: naturalHeight,
+    image_size_mb: (naturalWidth * naturalHeight * 4) / (1024 * 1024) // Rough estimate
+  });
+  
   return canvas;
 }
 
@@ -285,12 +312,15 @@ function calculatePredictionArea(coords) {
  * @param {Object} canvasData - Canvas data from saved project
  */
 function loadCanvasData(canvasData) {
+  startPerfMeasurement('canvas-data-loading', 'canvas');
+  
   if (!canvas) {
     initCanvas();
   }
   
   if (!canvas || !canvasData || !canvasData.canvas_annotations) {
     console.error("Cannot load canvas data: missing canvas or data");
+    endPerfMeasurement('canvas-data-loading', { success: false });
     return;
   }
   
@@ -346,6 +376,11 @@ function loadCanvasData(canvasData) {
   setTimeout(() => {
     updateResultsTable();
     updateSummary();
+    
+    endPerfMeasurement('canvas-data-loading', {
+      annotations_loaded: canvasData.canvas_annotations.length,
+      success: true
+    });
   }, 100);
 }
 
@@ -2068,7 +2103,8 @@ function initApp() {
         // Form submission with manual format
       }
       
-      // API call
+      // API call mit Performance-Monitoring
+      startPerfMeasurement('api-predict', 'api');
       fetch('/predict', {
         method: 'POST',
         body: formData
@@ -2082,7 +2118,12 @@ function initApp() {
         return response.json();
       })
       .then(data => {
-        // API response received
+        // API response received - Performance-Messung beenden
+        endPerfMeasurement('api-predict', {
+          predictions_count: data.predictions?.length || 0,
+          is_pdf: data.is_pdf,
+          backend_metrics: data.performance_metrics || {}
+        });
         
         // Store data
         window.data = data;
