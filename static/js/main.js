@@ -74,6 +74,11 @@ let uploadedImage = null;
 let pageCanvasData = {}; // Store canvas data for each page: { "1": canvasData, "2": canvasData, ... }
 let currentPageNumber = 1;
 
+// Make canvas and pageCanvasData globally available for label validation
+window.getCanvas = () => canvas;
+window.getPageCanvasData = () => pageCanvasData;
+window.getCurrentPageNumber = () => currentPageNumber;
+
 // Editor state
 let currentTool = 'select';
 let drawingMode = false;

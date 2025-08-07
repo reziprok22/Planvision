@@ -564,13 +564,15 @@ button:hover {
 
 .modal-content {
     background-color: #fefefe;
-    margin: 10% auto;
+    margin: 5% auto;
     padding: 20px;
     border: 1px solid #888;
-    width: 70%;
-    max-width: 800px;
+    width: 85%;
+    max-width: 1200px;
+    max-height: 85vh;
     border-radius: 5px;
     box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    overflow-y: auto;
 }
 
 .close {
@@ -593,7 +595,7 @@ button:hover {
 }
 
 .label-list {
-    max-height: 300px;
+    max-height: 60vh;
     overflow-y: auto;
     margin-bottom: 15px;
 }

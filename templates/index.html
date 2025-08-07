@@ -104,10 +104,6 @@
                         <span class="close">&times;</span>
                         <h3>Labels verwalten</h3>
 
-                        <div class="label-tabs">
-                            <button id="areaLabelsTab" class="label-tab active">Flächen-Labels</button>
-                            <button id="lineLabelsTab" class="label-tab">Linien-Labels</button>
-                        </div>
                         
                         <div class="label-manager-container">
                             <div class="label-list">
@@ -117,6 +113,9 @@
                                             <th>ID</th>
                                             <th>Name</th>
                                             <th>Farbe</th>
+                                            <th>Rechteck</th>
+                                            <th>Polygon</th>
+                                            <th>Linie</th>
                                             <th>Aktionen</th>
                                         </tr>
                                     </thead>
@@ -133,6 +132,11 @@
                                 <button id="resetLabelsBtn" class="editor-button">Auf Standard zurücksetzen</button>
                             </div>
                             
+                            <div class="label-batch-actions" style="display:none;">
+                                <button id="applyChangesBtn" class="save-button">Änderungen übernehmen</button>
+                                <button id="cancelChangesBtn" class="cancel-button">Abbrechen</button>
+                            </div>
+                            
                             <!-- Formular für neues/zu bearbeitendes Label -->
                             <div id="labelForm" class="label-form" style="display:none;">
                                 <h4 id="labelFormTitle">Label hinzufügen</h4>
@@ -144,6 +148,14 @@
                                 <div class="form-group">
                                     <label for="labelColor">Farbe:</label>
                                     <input type="color" id="labelColor" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Verfügbar für Werkzeuge:</label>
+                                    <div class="checkbox-group">
+                                        <label><input type="checkbox" id="toolRectangle"> Rechteck</label>
+                                        <label><input type="checkbox" id="toolPolygon"> Polygon</label>
+                                        <label><input type="checkbox" id="toolLine"> Linie</label>
+                                    </div>
                                 </div>
                                 <div class="form-actions">
                                     <button id="saveLabelBtn" class="save-button">Speichern</button>
