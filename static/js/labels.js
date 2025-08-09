@@ -697,3 +697,26 @@ export function setCurrentLabels(labels) {
   saveLabels();
 }
 
+/**
+ * Get current labels for rectangles/polygons
+ */
+export function getCurrentLabels() {
+  return getLabelsForTool('rectangle');
+}
+
+/**
+ * Get current labels for lines
+ */
+export function getCurrentLineLabels() {
+  return getLabelsForTool('line');
+}
+
+/**
+ * Set current line labels (for compatibility)
+ */
+export function setCurrentLineLabels(labels) {
+  // This function exists for compatibility but is not actively used
+  // since we use unified labels now
+  console.warn('setCurrentLineLabels is deprecated - use unified label system');
+}
+

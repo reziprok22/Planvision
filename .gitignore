@@ -13,6 +13,7 @@ static/reports
 projects
 static/js/mainone_file.js
 performance_optimierung
+node_modules
 
 # Einzelne Datei ignorieren
 Notizen_FL.md

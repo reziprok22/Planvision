@@ -3,6 +3,9 @@
  * Core functionality: Upload, Predict, Annotation Display, Drawing Tools, Zoom
  */
 
+// Import Fabric.js
+import { Canvas, FabricImage as Image, Rect, Polygon, Line, FabricText as Text, Shadow, util } from 'fabric';
+
 // Import modules
 import { 
   setupLabels, 
@@ -33,36 +36,8 @@ import {
   loadProject
 } from './project.js';
 
-// Fabric.js text baseline patch - Fix für Canvas-Kompatibilität
-if (typeof fabric !== 'undefined') {
-  const originalInitialize = fabric.Text.prototype.initialize;
-  fabric.Text.prototype.initialize = function() {
-    const result = originalInitialize.apply(this, arguments);
-    // Fix für Canvas-Baseline-Kompatibilität
-    if (this.textBaseline === 'alphabetical') {
-      this.textBaseline = 'alphabetic';
-    }
-    return result;
-  };
-  
-  // Zusätzlicher Fix für bestehende Text-Objekte beim Rendern
-  const originalRender = fabric.Text.prototype._render;
-  fabric.Text.prototype._render = function(ctx) {
-    if (ctx.textBaseline === 'alphabetical') {
-      ctx.textBaseline = 'alphabetic';
-    }
-    return originalRender.call(this, ctx);
-  };
-  
-  // Fix für deserialisierte Text-Objekte
-  const originalFromObject = fabric.Text.fromObject;
-  fabric.Text.fromObject = function(object, callback) {
-    if (object.textBaseline === 'alphabetical') {
-      object.textBaseline = 'alphabetic';
-    }
-    return originalFromObject.call(this, object, callback);
-  };
-}
+// Fabric.js v6 ES6 modules imported successfully
+console.log('✅ Fabric.js v6 ES6 modules loaded');
 
 // Global app state
 window.data = null;
@@ -197,7 +172,7 @@ function initCanvas() {
   imageContainer.appendChild(canvasElement);
   
   // Initialize Fabric.js canvas
-  canvas = new fabric.Canvas('annotationCanvas');
+  canvas = new Canvas('annotationCanvas');
   
   // Configure canvas for drawing mode initially
   canvas.selection = false;  // Disable selection by default
@@ -217,8 +192,8 @@ function initCanvas() {
   canvas.setWidth(naturalWidth);
   canvas.setHeight(naturalHeight);
   
-  // Add image as Fabric.js background at 1:1 scale
-  fabric.Image.fromURL(uploadedImage.src, function(img) {
+  // Add image as Fabric.js v6 background at 1:1 scale
+  Image.fromURL(uploadedImage.src).then(img => {
     img.set({
       left: 0,
       top: 0,
@@ -229,8 +204,9 @@ function initCanvas() {
       excludeFromExport: true
     });
     
-    // Add as background (lowest layer)
-    canvas.setBackgroundImage(img, canvas.renderAll.bind(canvas));
+    // Set as background image - v6 direct property assignment
+    canvas.backgroundImage = img;
+    canvas.renderAll();
   });
   
   // Hide the HTML image since we're using Fabric.js background
@@ -340,7 +316,7 @@ function loadCanvasData(canvasData) {
   // Load each annotation from saved canvas data
   canvasData.canvas_annotations.forEach((annotationData, index) => {
     // Use Fabric.js enlivenObjects to recreate objects from saved data
-    fabric.util.enlivenObjects([annotationData], function(objects) {
+    util.enlivenObjects([annotationData]).then(objects => {
       const annotation = objects[0];
       
       if (annotation) {
@@ -640,7 +616,7 @@ function highlightAnnotation(index) {
     // Make annotation bold
     targetAnnotation.set({
       strokeWidth: targetAnnotation.originalStrokeWidth * 2,
-      shadow: new fabric.Shadow({
+      shadow: new Shadow({
         color: targetAnnotation.stroke,
         blur: 5,
         offsetX: 0,
@@ -648,8 +624,8 @@ function highlightAnnotation(index) {
       })
     });
     
-    // Bring annotation to front
-    canvas.bringToFront(targetAnnotation);
+    // Bring annotation to front - v6 API
+    canvas.bringObjectToFront(targetAnnotation);
     canvas.renderAll();
   }
 }
@@ -1112,7 +1088,7 @@ function startDrawingRectangle(pointer) {
   const selectedLabelId = getCurrentSelectedLabel();
   const label = getLabel(selectedLabelId);
   
-  const rect = new fabric.Rect({
+  const rect = new Rect({
     left: pointer.x,
     top: pointer.y,
     width: 0,
@@ -1347,7 +1323,7 @@ function startPolygonDrawing() {
     { x: firstPoint.x + 1, y: firstPoint.y + 1 } // Slightly offset to make it visible
   ];
   
-  currentPolygon = new fabric.Polygon(points, {
+  currentPolygon = new Polygon(points, {
     fill: label.color + '20', // 20% opacity
     stroke: label.color,
     strokeWidth: 2,
@@ -1415,7 +1391,7 @@ function finishPolygonDrawing() {
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
   
   // Create polygon with original points
-  const finalPolygon = new fabric.Polygon(fabricPoints, {
+  const finalPolygon = new Polygon(fabricPoints, {
     fill: label.color + '20', // 20% opacity
     stroke: label.color,
     strokeWidth: 2,
@@ -1485,7 +1461,7 @@ function startLineDrawing() {
     { x: firstPoint.x + 1, y: firstPoint.y + 1 } // Slightly offset to make it visible
   ];
   
-  currentLine = new fabric.Polyline(points, {
+  currentLine = new Polyline(points, {
     fill: '',
     stroke: labelColor,
     strokeWidth: 5, // Increased from 3 to 5 for better selection
@@ -1554,7 +1530,7 @@ function finishLineDrawing() {
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
   
   // Create polyline with original points
-  const finalLine = new fabric.Polyline(fabricPoints, {
+  const finalLine = new Polyline(fabricPoints, {
     fill: '',
     stroke: labelColor,
     strokeWidth: 5,
@@ -1658,7 +1634,7 @@ function createSingleTextLabel(annotation) {
   const labelPosition = calculateLabelPosition(annotation);
   
   // Create text label with number and area/length (no inverse scaling)
-  const textLabel = new fabric.Text(displayNumber.toString() + measurement, {
+  const textLabel = new Text(displayNumber.toString() + measurement, {
     left: labelPosition.x,
     top: labelPosition.y,
     fontSize: 14, // Fixed font size - let Canvas handle zoom scaling
@@ -2036,6 +2012,8 @@ function displayPdfPage(pageNumber, pageData) {
  * Initialize application
  */
 function initApp() {
+  
+  // Fabric.js is now available through ES6 imports
   
   // Get DOM elements
   imageContainer = document.getElementById('imageContainer');

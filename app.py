@@ -160,6 +160,12 @@ app = Flask(__name__)
 def index():
     return render_template('index.html')
 
+@app.route('/dist/<path:filename>')
+def serve_dist_file(filename):
+    """Serve bundled JavaScript files from dist directory"""
+    dist_dir = os.path.join(BASE_DIR, 'dist')
+    return send_from_directory(dist_dir, filename)
+
 @app.route('/project_files/<project_id>/<path:filename>')
 def serve_project_file(project_id, filename):
     """Serve files from project directories"""
