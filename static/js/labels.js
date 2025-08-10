@@ -25,18 +25,8 @@ let toolLineInput;
 let saveLabelBtn;
 let cancelLabelBtn;
 
-// Default unified labels
-const defaultLabels = [
-  { id: 1, name: "Fenster", color: "#0000FF", tools: { rectangle: true, polygon: true, line: false } },
-  { id: 2, name: "Tür", color: "#FF0000", tools: { rectangle: true, polygon: true, line: false } },
-  { id: 3, name: "Wand", color: "#D4D638", tools: { rectangle: true, polygon: true, line: false } },
-  { id: 4, name: "Lukarne", color: "#FFA500", tools: { rectangle: true, polygon: true, line: false } },
-  { id: 5, name: "Dach", color: "#800080", tools: { rectangle: true, polygon: true, line: false } },
-  { id: 6, name: "Strecke", color: "#FF9500", tools: { rectangle: false, polygon: false, line: true } },
-  { id: 7, name: "Höhe", color: "#00AAFF", tools: { rectangle: false, polygon: false, line: true } },
-  { id: 8, name: "Breite", color: "#4CAF50", tools: { rectangle: false, polygon: false, line: true } },
-  { id: 9, name: "Abstand", color: "#9C27B0", tools: { rectangle: false, polygon: false, line: true } }
-];
+// Default unified labels - will be loaded from JSON file
+let defaultLabels = [];
 
 // Current unified labels
 let currentLabels;
@@ -44,9 +34,29 @@ let originalLabels; // For cancel functionality
 let hasUnsavedChanges = false;
 
 /**
+ * Load default labels from JSON file
+ */
+async function loadDefaultLabels() {
+  try {
+    const response = await fetch('/static/config/default_labels.json');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    defaultLabels = await response.json();
+  } catch (error) {
+    console.error('Fehler beim Laden der Default-Labels:', error);
+    // Fallback auf leeres Array
+    defaultLabels = [];
+  }
+}
+
+/**
  * Initialize labels module
  */
-export function setupLabels(elements) {
+export async function setupLabels(elements) {
+  // Lade zuerst die Default-Labels
+  await loadDefaultLabels();
+  
   // Store DOM references
   labelManagerModal = elements.labelManagerModal;
   manageLabelBtn = elements.manageLabelBtn;
@@ -389,10 +399,132 @@ export function saveLabels() {
   
   updateUIForLabels();
   
-  // Notify FabricHandler about label changes if available
-  if (typeof window.FabricHandler !== 'undefined' && typeof window.FabricHandler.setLabels === 'function') {
-    window.FabricHandler.setLabels(getLabelsForTool('rectangle'));
+  // Update existing canvas annotations with new label information
+  updateCanvasLabels();
+}
+
+/**
+ * Update existing canvas annotations with new label information
+ */
+function updateCanvasLabels() {
+  // Update current canvas if available
+  const canvas = typeof window.getCanvas === 'function' ? window.getCanvas() : null;
+  
+  if (canvas) {
+    updateCanvasAnnotations(canvas);
+    
+    // Update results table and UI elements for current canvas
+    if (typeof window.updateResultsTable === 'function') {
+      window.updateResultsTable();
+    }
   }
+  
+  // Update all pages in pageCanvasData if available
+  const pageCanvasData = typeof window.getPageCanvasData === 'function' ? window.getPageCanvasData() : null;
+  
+  if (pageCanvasData) {
+    for (const pageNum in pageCanvasData) {
+      const pageData = pageCanvasData[pageNum];
+      if (pageData && pageData.canvas_annotations) {
+        // Update each annotation in the stored page data
+        pageData.canvas_annotations.forEach(annotation => {
+          const labelId = annotation.labelId || annotation.objectLabel;
+          if (!labelId) return;
+          
+          // Find the current label
+          const label = getLabelById(labelId);
+          if (!label) return;
+          
+          // Update stored annotation colors and styles
+          annotation.stroke = label.color;
+          if (annotation.annotationType === 'rectangle' || annotation.annotationType === 'polygon') {
+            annotation.fill = getLabelColorWithOpacity(label.color);
+          } else if (annotation.annotationType === 'line') {
+            // Ensure lines never have a fill
+            annotation.fill = '';
+          }
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Helper function to update annotations on a specific canvas
+ */
+function updateCanvasAnnotations(canvas) {
+  // Get all annotation objects from canvas
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  
+  // Update each annotation with current label information
+  annotations.forEach(annotation => {
+    const labelId = annotation.labelId || annotation.objectLabel;
+    if (!labelId) return;
+    
+    // Find the current label
+    const label = getLabelById(labelId);
+    if (!label) return;
+    
+    // Update annotation colors and styles
+    const needsFill = annotation.annotationType === 'rectangle' || annotation.annotationType === 'polygon';
+    annotation.set({
+      stroke: label.color,
+      fill: needsFill ? getLabelColorWithOpacity(label.color) : ''
+    });
+  });
+  
+  // Recreate all text labels to ensure they use updated colors
+  initializeCanvasTextLabels(canvas);
+}
+
+/**
+ * Initialize text labels for all existing annotations on canvas
+ * Moved from main.js to labels.js for better organization
+ */
+function initializeCanvasTextLabels(canvas) {
+  if (!canvas) return;
+  
+  // Remove all existing text labels first
+  const textLabels = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
+  textLabels.forEach(label => canvas.remove(label));
+  
+  // Get all annotations and create text labels for each
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  annotations.forEach((annotation) => {
+    createSingleTextLabel(canvas, annotation);
+  });
+  
+  canvas.renderAll();
+  
+  // Update results table if available
+  if (typeof window.updateResultsTable === 'function') {
+    window.updateResultsTable();
+  }
+}
+
+/**
+ * Create a text label for a single annotation
+ */
+function createSingleTextLabel(canvas, annotation) {
+  if (!annotation || !canvas) return;
+  
+  // Use the main.js function which has all the proper calculations
+  if (typeof window.createSingleTextLabel === 'function') {
+    return window.createSingleTextLabel(annotation);
+  }
+}
+
+
+/**
+ * Helper function to get label color with opacity for fill
+ */
+function getLabelColorWithOpacity(color) {
+  // Convert hex color to rgba with opacity
+  const hex = color.replace('#', '');
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, 0.3)`;
 }
 
 /**
@@ -603,51 +735,6 @@ export function updateUIForLabels() {
       universalLabelSelect.value = selectedValue;
     }
   }
-  
-  // Update object type selection in the editor
-  const objectTypeSelect = document.getElementById('objectTypeSelect');
-  if (objectTypeSelect) {
-    const selectedValue = objectTypeSelect.value;
-    
-    objectTypeSelect.innerHTML = '';
-    
-    // Option for "Other" (0)
-    const otherOption = document.createElement('option');
-    otherOption.value = '0';
-    otherOption.textContent = 'Other';
-    objectTypeSelect.appendChild(otherOption);
-    
-    // Options for custom labels
-    getLabelsForTool('rectangle').forEach(label => {
-      const option = document.createElement('option');
-      option.value = label.id;
-      option.textContent = label.name;
-      objectTypeSelect.appendChild(option);
-    });
-    
-    if (selectedValue && objectTypeSelect.querySelector(`option[value="${selectedValue}"]`)) {
-      objectTypeSelect.value = selectedValue;
-    }
-  }
-  
-  // Update line type dropdown for line labels
-  const lineTypeSelect = document.getElementById('lineTypeSelect');
-  if (lineTypeSelect) {
-    const selectedLineValue = lineTypeSelect.value;
-    
-    lineTypeSelect.innerHTML = '';
-    
-    getLabelsForTool('line').forEach(label => {
-      const option = document.createElement('option');
-      option.value = label.id;
-      option.textContent = label.name;
-      lineTypeSelect.appendChild(option);
-    });
-    
-    if (selectedLineValue && lineTypeSelect.querySelector(`option[value="${selectedLineValue}"]`)) {
-      lineTypeSelect.value = selectedLineValue;
-    }
-  }
 }
 
 /**
@@ -711,12 +798,4 @@ export function getCurrentLineLabels() {
   return getLabelsForTool('line');
 }
 
-/**
- * Set current line labels (for compatibility)
- */
-export function setCurrentLineLabels(labels) {
-  // This function exists for compatibility but is not actively used
-  // since we use unified labels now
-  console.warn('setCurrentLineLabels is deprecated - use unified label system');
-}
 

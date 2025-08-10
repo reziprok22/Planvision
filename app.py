@@ -518,21 +518,16 @@ def save_project():
         # Einstellungen vom Client holen
         settings = data.get('settings', {})
         
-        # Labels vom Client holen
-        labels = data.get('labels', [])
-        line_labels = data.get('lineLabels', [])
+        # Unified Labels vom Client holen
+        unified_labels = data.get('unified_labels', [])
         
         # Speichere globale Einstellungen
         with open(os.path.join(project_dir, 'analysis', 'analysis_settings.json'), 'w') as f:
             json.dump(settings, f, indent=2)
         
-        # Speichere Labels
-        with open(os.path.join(project_dir, 'analysis', 'labels.json'), 'w') as f:
-            json.dump(labels, f, indent=2)
-        
-        # Speichere Line-Labels
-        with open(os.path.join(project_dir, 'analysis', 'line_labels.json'), 'w') as f:
-            json.dump(line_labels, f, indent=2)
+        # Speichere Unified Labels
+        with open(os.path.join(project_dir, 'analysis', 'unified_labels.json'), 'w') as f:
+            json.dump(unified_labels, f, indent=2)
         
         # Speichere Canvas-Daten (Single Source of Truth)
         canvas_save_path = os.path.join(project_dir, 'analysis', 'canvas_data.json')
@@ -694,34 +689,21 @@ def load_project(project_id):
         else:
             settings = {}
         
-        # Labels laden
-        labels_path = os.path.join(analysis_dir, 'labels.json')
-        if os.path.exists(labels_path):
-            with open(labels_path, 'r') as f:
-                labels = json.load(f)
+        # Unified Labels laden
+        unified_labels_path = os.path.join(analysis_dir, 'unified_labels.json')
+        if os.path.exists(unified_labels_path):
+            with open(unified_labels_path, 'r') as f:
+                unified_labels = json.load(f)
         else:
-            # Standard-Labels als Fallback
-            labels = [
-                {"id": 1, "name": "Fenster", "color": "#0000FF"},
-                {"id": 2, "name": "Tür", "color": "#FF0000"},
-                {"id": 3, "name": "Wand", "color": "#D4D638"},
-                {"id": 4, "name": "Lukarne", "color": "#FFA500"},
-                {"id": 5, "name": "Dach", "color": "#800080"}
-            ]
-        
-        # Line-Labels laden
-        line_labels_path = os.path.join(analysis_dir, 'line_labels.json')
-        if os.path.exists(line_labels_path):
-            with open(line_labels_path, 'r') as f:
-                line_labels = json.load(f)
-        else:
-            # Standard-Line-Labels als Fallback
-            line_labels = [
-                {"id": 1, "name": "Strecke", "color": "#FF9500"},
-                {"id": 2, "name": "Höhe", "color": "#00AAFF"},
-                {"id": 3, "name": "Breite", "color": "#4CAF50"},
-                {"id": 4, "name": "Abstand", "color": "#9C27B0"}
-            ]
+            # Lade Standard unified labels aus JSON-Datei
+            default_labels_path = os.path.join(os.path.dirname(__file__), 'static', 'config', 'default_labels.json')
+            try:
+                with open(default_labels_path, 'r', encoding='utf-8') as f:
+                    unified_labels = json.load(f)
+            except Exception as e:
+                print(f"Fehler beim Laden der Default-Labels: {e}")
+                # Fallback auf leeres Array falls Datei nicht gefunden
+                unified_labels = []
         
         # URLs für die Bildseiten erstellen
         image_urls = []
@@ -740,8 +722,7 @@ def load_project(project_id):
             'metadata': metadata,
             'canvas_data': canvas_data,  # Multi-page or single-page Canvas data
             'settings': settings,
-            'labels': labels,
-            'lineLabels': line_labels,
+            'unified_labels': unified_labels,
             'image_urls': image_urls,
             'data_format': project_data_format  # Pass through the actual format
         })

@@ -4,7 +4,7 @@
  */
 
 // Import Fabric.js
-import { Canvas, FabricImage as Image, Rect, Polygon, Line, FabricText as Text, Shadow, util } from 'fabric';
+import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util } from 'fabric';
 
 // Import modules
 import { 
@@ -13,7 +13,8 @@ import {
   getLabelName, 
   getLabelColor,
   getCurrentLabels,
-  getCurrentLineLabels
+  getCurrentLineLabels,
+  getLabelsForTool
 } from './labels.js';
 import { 
   setupPdfHandler, 
@@ -102,42 +103,10 @@ function convertToCanvasCoordinates(bbox) {
   };
 }
 
-/**
- * Create standardized Fabric.js object configuration
- */
-function createFabricObjectConfig(type, labelColor, objectType = 'annotation') {
-  const baseConfig = {
-    objectType: objectType,
-    annotationType: type,
-    selectable: true,
-    hasControls: true,
-    hasBorders: true,
-    evented: true
-  };
-
-  if (type === 'line') {
-    return {
-      ...baseConfig,
-      fill: '',
-      stroke: labelColor,
-      strokeWidth: 3,
-      objectCaching: false,
-      absolutePositioned: true
-    };
-  } else {
-    return {
-      ...baseConfig,
-      fill: getLabelColorWithOpacity(labelColor),
-      stroke: labelColor,
-      strokeWidth: 2
-    };
-  }
-}
-
 function getLabel(labelId) {
   return {
-    name: getLabelName(labelId, 'area'),
-    color: getLabelColor(labelId, 'area')
+    name: getLabelName(labelId),
+    color: getLabelColor(labelId)
   };
 }
 
@@ -996,26 +965,19 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   const universalLabelSelect = document.getElementById('universalLabelSelect');
   if (!universalLabelSelect) return;
   
-  // Determine if we're dealing with line or area labels
-  const isLineTool = toolName === 'line';
-  const isLineObject = selectedObject && selectedObject.annotationType === 'line';
-  const useLineLabels = isLineTool || isLineObject;
+  // Determine tool type and get appropriate labels
+  let labels;
   
-  // Get appropriate labels
-  const labels = useLineLabels ? 
-    (getCurrentLineLabels() || [
-      { id: 1, name: "Strecke" },
-      { id: 2, name: "Höhe" },
-      { id: 3, name: "Breite" },
-      { id: 4, name: "Abstand" }
-    ]) :
-    (getCurrentLabels() || [
-      { id: 1, name: "Fenster" },
-      { id: 2, name: "Tür" },
-      { id: 3, name: "Wand" },
-      { id: 4, name: "Lukarne" },
-      { id: 5, name: "Dach" }
-    ]);
+  if (toolName === 'line' || (selectedObject && selectedObject.annotationType === 'line')) {
+    // Line tool - use line labels
+    labels = getCurrentLineLabels();
+  } else if (toolName === 'polygon' || (selectedObject && selectedObject.annotationType === 'polygon')) {
+    // Polygon tool - use polygon labels  
+    labels = getLabelsForTool('polygon');
+  } else {
+    // Rectangle tool or other - use rectangle labels
+    labels = getCurrentLabels();
+  }
   
   // Remember current selection
   const currentValue = universalLabelSelect.value;
@@ -1284,6 +1246,10 @@ function applyLabelChangeToSelectedObject() {
 
 // Make functions globally available
 window.updateResultsTable = updateResultsTable;
+window.createSingleTextLabel = createSingleTextLabel;
+window.calculateRectangleAreaFromCanvas = calculateRectangleAreaFromCanvas;
+window.calculatePolygonAreaFromCanvas = calculatePolygonAreaFromCanvas;
+window.calculatePolylineLength = calculatePolylineLength;
 
 /**
  * Polygon Drawing Functions
@@ -1451,7 +1417,7 @@ function startLineDrawing() {
     
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel();
-  const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
+  const lineLabel = getLabelById ? getLabelById(selectedLabelId) : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
   
   // Create initial polyline with first point duplicated to make it visible
@@ -1523,7 +1489,7 @@ function finishLineDrawing() {
     
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel();
-  const lineLabel = getLabelById ? getLabelById(selectedLabelId, 'line') : null;
+  const lineLabel = getLabelById ? getLabelById(selectedLabelId) : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
   
   // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
@@ -1562,27 +1528,6 @@ function resetLineDrawing() {
   currentLine = null;
   currentPoints = [];
 }
-
-/**
- * Initialize text labels for all existing annotations on canvas
- */
-function initializeCanvasTextLabels() {
-  if (!canvas) return;
-  
-  // Remove all existing text labels first
-  const textLabels = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
-  textLabels.forEach(label => canvas.remove(label));
-  
-  // Get all annotations and create text labels for each
-  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  annotations.forEach((annotation) => {
-    createSingleTextLabel(annotation);
-  });
-  
-  canvas.renderAll();
-  updateResultsTable();
-}
-
 
 /**
  * Create a text label for a single new annotation without affecting others
@@ -2011,7 +1956,7 @@ function displayPdfPage(pageNumber, pageData) {
 /**
  * Initialize application
  */
-function initApp() {
+async function initApp() {
   
   // Fabric.js is now available through ES6 imports
   
@@ -2210,8 +2155,8 @@ function initApp() {
     });
   }
     
-  // Initialize labels module
-  setupLabels({
+  // Initialize labels module (async)
+  await setupLabels({
     labelManagerModal: document.getElementById('labelManagerModal'),
     manageLabelBtn: document.getElementById('manageLabelBtn'),
     closeModalBtn: document.querySelector('#labelManagerModal .close'),
@@ -2226,9 +2171,7 @@ function initApp() {
     labelNameInput: document.getElementById('labelName'),
     labelColorInput: document.getElementById('labelColor'),
     saveLabelBtn: document.getElementById('saveLabelBtn'),
-    cancelLabelBtn: document.getElementById('cancelLabelBtn'),
-    areaLabelsTab: document.getElementById('areaLabelsTab'),
-    lineLabelsTab: document.getElementById('lineLabelsTab')
+    cancelLabelBtn: document.getElementById('cancelLabelBtn')
   });
   
   // Initialize PDF handler module

@@ -5,11 +5,10 @@
 
 // Import required functions from labels module
 import { 
-  updateUIForLabels, 
-  getCurrentLabels, 
-  getCurrentLineLabels,
   setCurrentLabels,
-  setCurrentLineLabels
+  getAllLabels,
+  getCurrentLabels,
+  getCurrentLineLabels
 } from './labels.js';
 
 // DOM references
@@ -171,10 +170,18 @@ export function saveProject() {
 
   // NEW: Collect Multi-Page canvas data
   // This saves Canvas data for all pages (current implementation: current page only)
-  const allPagesCanvasData = window.collectAllPagesCanvasData ? window.collectAllPagesCanvasData() : null;
+  // Debug: Check if function is available
+  if (!window.collectAllPagesCanvasData) {
+    saveStatus.textContent = 'Error: Canvas-Datensammlung nicht verfügbar';
+    saveStatus.style.backgroundColor = '#f44336';
+    setTimeout(() => saveStatus.remove(), 3000);
+    return;
+  }
+  
+  const allPagesCanvasData = window.collectAllPagesCanvasData();
   
   if (!allPagesCanvasData) {
-    saveStatus.textContent = 'Error: No canvas data available to save';
+    saveStatus.textContent = 'Error: Keine Canvas-Daten verfügbar';
     saveStatus.style.backgroundColor = '#f44336';
     setTimeout(() => saveStatus.remove(), 3000);
     return;
@@ -189,9 +196,8 @@ export function saveProject() {
     is_update: isExistingProject && projectName === null,
     canvas_data: allPagesCanvasData,  // NEW: Multi-page Canvas data
     settings: pageSettings,
-    labels: getCurrentLabels(),
-    lineLabels: getCurrentLineLabels(),
-    data_format: 'multi_page_canvas_v1'  // Multi-page version flag
+    unified_labels: getAllLabels(),  // Save all unified labels
+    data_format: 'multi_page_canvas_v1'  // Keep v1 format for server compatibility
   };
 
   // Save project on the server
@@ -408,22 +414,11 @@ export function loadProject(projectId) {
         }
         
         // Update labels if provided
-        if (data.labels && Array.isArray(data.labels) && data.labels.length > 0) {
-          window.currentLabels = data.labels;
-          localStorage.setItem('labels', JSON.stringify(window.currentLabels));
-          
-          // Update UI with loaded labels
-          updateUIForLabels('area');
+        if (data.unified_labels && Array.isArray(data.unified_labels) && data.unified_labels.length > 0) {
+          setCurrentLabels(data.unified_labels);
         }
         
-        // Update line labels if provided
-        if (data.lineLabels && Array.isArray(data.lineLabels) && data.lineLabels.length > 0) {
-          setCurrentLineLabels(data.lineLabels);
-          localStorage.setItem('lineLabels', JSON.stringify(data.lineLabels));
-          
-          // Update UI with loaded line labels
-          updateUIForLabels('line');
-        }
+        // Line labels are now part of unified labels - no separate handling needed
       } else {
         if (errorMessage) {
           errorMessage.textContent = data.error;
