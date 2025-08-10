@@ -112,6 +112,30 @@ function getLabel(labelId) {
 
 
 /**
+ * Setup tool button event listeners
+ */
+function setupToolButtons() {
+  // Remove existing event listeners to prevent duplicates
+  document.querySelectorAll('.tool-button').forEach(button => {
+    // Clone node to remove all event listeners
+    const newButton = button.cloneNode(true);
+    button.parentNode.replaceChild(newButton, button);
+  });
+  
+  // Add fresh event listeners
+  document.querySelectorAll('.tool-button').forEach(button => {
+    button.addEventListener('click', function() {
+      const tool = this.dataset.tool;
+      if (tool === 'delete') {
+        deleteSelectedObjects();
+      } else {
+        setTool(tool);
+      }
+    });
+  });
+}
+
+/**
  * Initialize canvas
  */
 function initCanvas() {
@@ -211,6 +235,9 @@ function initCanvas() {
   
   // Setup enhanced scrolling for container
   setupContainerScrolling();
+  
+  // Ensure tool buttons work after canvas initialization
+  setupToolButtons();
   
   endPerfMeasurement('canvas-initialization', {
     canvas_width: naturalWidth,
@@ -2116,17 +2143,8 @@ async function initApp() {
   // Editor is always active - setup canvas events when canvas is ready
   // Canvas events will be set up in initCanvas() when editor is active
   
-  // Setup tool buttons
-  document.querySelectorAll('.tool-button').forEach(button => {
-    button.addEventListener('click', function() {
-      const tool = this.dataset.tool;
-      if (tool === 'delete') {
-        deleteSelectedObjects();
-      } else {
-        setTool(tool);
-      }
-    });
-  });
+  // Setup tool buttons initially
+  setupToolButtons();
   
   // Setup recalculate indices button
   const recalculateBtn = document.getElementById('recalculateIndicesBtn');

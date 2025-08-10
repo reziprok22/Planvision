@@ -3,6 +3,7 @@
     "id": 1,
     "name": "Fenster",
     "color": "#0000FF",
+    "opacity": 0.3,
     "tools": {
       "rectangle": true,
       "polygon": true,
@@ -13,6 +14,7 @@
     "id": 2,
     "name": "Tür",
     "color": "#FF0000",
+    "opacity": 0.4,
     "tools": {
       "rectangle": true,
       "polygon": true,
@@ -23,6 +25,7 @@
     "id": 3,
     "name": "Wand",
     "color": "#D4D638",
+    "opacity": 0.2,
     "tools": {
       "rectangle": true,
       "polygon": true,
@@ -33,6 +36,7 @@
     "id": 4,
     "name": "Lukarne",
     "color": "#FFA500",
+    "opacity": 0.3,
     "tools": {
       "rectangle": true,
       "polygon": true,
@@ -43,6 +47,7 @@
     "id": 5,
     "name": "Dach",
     "color": "#800080",
+    "opacity": 0.1,
     "tools": {
       "rectangle": true,
       "polygon": true,
@@ -53,6 +58,7 @@
     "id": 6,
     "name": "Strecke",
     "color": "#FF9500",
+    "opacity": 0.0,
     "tools": {
       "rectangle": false,
       "polygon": false,
@@ -63,6 +69,7 @@
     "id": 7,
     "name": "Höhe",
     "color": "#00AAFF",
+    "opacity": 0.0,
     "tools": {
       "rectangle": false,
       "polygon": false,
@@ -73,6 +80,7 @@
     "id": 8,
     "name": "Breite",
     "color": "#4CAF50",
+    "opacity": 0.0,
     "tools": {
       "rectangle": false,
       "polygon": false,
@@ -83,6 +91,7 @@
     "id": 9,
     "name": "Abstand",
     "color": "#9C27B0",
+    "opacity": 0.0,
     "tools": {
       "rectangle": false,
       "polygon": false,

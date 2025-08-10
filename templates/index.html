@@ -110,9 +110,11 @@
                                 <table id="labelTable">
                                     <thead>
                                         <tr>
+                                            <th>Ebene</th>
                                             <th>ID</th>
                                             <th>Name</th>
                                             <th>Farbe</th>
+                                            <th>Opacity</th>
                                             <th>Rechteck</th>
                                             <th>Polygon</th>
                                             <th>Linie</th>
@@ -148,6 +150,10 @@
                                 <div class="form-group">
                                     <label for="labelColor">Farbe:</label>
                                     <input type="color" id="labelColor" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="labelOpacity">Opacity: <span id="opacityValueDisplay">70%</span></label>
+                                    <input type="range" id="labelOpacity" min="0" max="100" step="5" value="70">
                                 </div>
                                 <div class="form-group">
                                     <label>Verfügbar für Werkzeuge:</label>

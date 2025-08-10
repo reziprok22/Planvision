@@ -19,6 +19,8 @@ let labelFormTitle;
 let labelIdInput;
 let labelNameInput;
 let labelColorInput;
+let labelOpacityInput;
+let opacityValueDisplay;
 let toolRectangleInput;
 let toolPolygonInput;
 let toolLineInput;
@@ -74,6 +76,10 @@ export async function setupLabels(elements) {
   saveLabelBtn = elements.saveLabelBtn;
   cancelLabelBtn = elements.cancelLabelBtn;
   
+  // Get opacity elements
+  labelOpacityInput = document.getElementById('labelOpacity');
+  opacityValueDisplay = document.getElementById('opacityValueDisplay');
+  
   // Get batch action buttons
   applyChangesBtn = document.getElementById('applyChangesBtn');
   cancelChangesBtn = document.getElementById('cancelChangesBtn');
@@ -118,6 +124,13 @@ export async function setupLabels(elements) {
   applyChangesBtn.addEventListener('click', applyAllChanges);
   cancelChangesBtn.addEventListener('click', cancelChanges);
   
+  // Opacity slider in form
+  if (labelOpacityInput && opacityValueDisplay) {
+    labelOpacityInput.addEventListener('input', function() {
+      opacityValueDisplay.textContent = this.value + '%';
+    });
+  }
+  
   // Update UI with current labels
   updateUIForLabels();
 }
@@ -157,7 +170,17 @@ function refreshLabelTable() {
   currentLabels.forEach(label => {
     const row = document.createElement('tr');
     
+    const isFirst = (currentLabels.indexOf(label) === 0);
+    const isLast = (currentLabels.indexOf(label) === currentLabels.length - 1);
+    
+    // Get opacity value from label data
+    const opacityPercent = Math.round((1 - label.opacity) * 100); // Umkehrung: 1 - opacity
+
     row.innerHTML = `
+      <td>
+        <button class="layer-move-btn" data-id="${label.id}" data-direction="down" ${isFirst ? 'disabled' : ''} title="In der Tabelle nach oben (Layer nach vorne)">⬆️</button>
+        <button class="layer-move-btn" data-id="${label.id}" data-direction="up" ${isLast ? 'disabled' : ''} title="In der Tabelle nach unten (Layer nach hinten)">⬇️</button>
+      </td>
       <td>${label.id}</td>
       <td>
         <input type="text" class="inline-edit" data-field="name" data-id="${label.id}" value="${label.name}" />
@@ -165,6 +188,12 @@ function refreshLabelTable() {
       <td>
         <input type="color" class="inline-edit" data-field="color" data-id="${label.id}" value="${label.color}" />
         <span class="color-preview" style="background-color:${label.color}; margin-left: 5px;"></span>
+      </td>
+      <td>
+        <input type="range" class="inline-edit opacity-slider" data-field="opacity" data-id="${label.id}" 
+               min="0" max="100" step="5" value="${opacityPercent}" 
+               title="Opacity: ${opacityPercent}%" />
+        <span class="opacity-value">${opacityPercent}%</span>
       </td>
       <td><input type="checkbox" class="inline-edit" data-field="rectangle" data-id="${label.id}" ${label.tools.rectangle ? 'checked' : ''}></td>
       <td><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${label.id}" ${label.tools.polygon ? 'checked' : ''}></td>
@@ -190,6 +219,17 @@ function refreshLabelTable() {
         }
       });
     }
+    
+    // Special handling for opacity slider to update display and tooltip
+    if (input.classList.contains('opacity-slider')) {
+      input.addEventListener('input', function() {
+        const opacityValue = this.nextElementSibling;
+        if (opacityValue && opacityValue.classList.contains('opacity-value')) {
+          opacityValue.textContent = this.value + '%';
+        }
+        this.title = `Opacity: ${this.value}%`;
+      });
+    }
   });
   
   // Event listeners for Delete buttons
@@ -197,6 +237,15 @@ function refreshLabelTable() {
     btn.addEventListener('click', function() {
       const labelId = parseInt(this.dataset.id);
       deleteLabel(labelId);
+    });
+  });
+  
+  // Event listeners for Layer Move buttons
+  document.querySelectorAll('.layer-move-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const labelId = parseInt(this.dataset.id);
+      const direction = this.dataset.direction;
+      moveLabelLayer(labelId, direction);
     });
   });
   
@@ -221,6 +270,12 @@ function handleInlineEdit(event) {
     label.name = value;
   } else if (field === 'color') {
     label.color = value;
+  } else if (field === 'opacity') {
+    // Convert percentage back to decimal (0-1 range), umgekehrt: 100% = 0.0, 0% = 1.0
+    label.opacity = 1 - (parseInt(value) / 100);
+    
+    // Update canvas immediately to show opacity changes
+    updateCanvasLabels();
   } else if (['rectangle', 'polygon', 'line'].includes(field)) {
     // Check if disabling a tool that's currently used by existing annotations
     if (!value) { // User is unchecking the tool
@@ -281,6 +336,9 @@ function applyAllChanges() {
   // Save to localStorage and update UI
   saveLabels();
   
+  // Update canvas layer order with new label order
+  updateCanvasLayerOrder();
+  
   // Update original state and reset change tracking
   originalLabels = JSON.parse(JSON.stringify(currentLabels));
   hasUnsavedChanges = false;
@@ -311,6 +369,13 @@ function showAddLabelForm() {
   labelIdInput.value = '';
   labelNameInput.value = '';
   labelColorInput.value = '#' + Math.floor(Math.random()*16777215).toString(16);
+  
+  // Set default opacity (70% opaque = 30% transparent in internal storage)
+  if (labelOpacityInput && opacityValueDisplay) {
+    labelOpacityInput.value = 70; // 70% opaque wird angezeigt
+    opacityValueDisplay.textContent = '70%';
+  }
+  
   toolRectangleInput.checked = false;
   toolPolygonInput.checked = false;
   toolLineInput.checked = false;
@@ -323,6 +388,7 @@ function showAddLabelForm() {
 function saveNewLabel() {
   const name = labelNameInput.value.trim();
   const color = labelColorInput.value;
+  const opacity = 1 - (parseInt(labelOpacityInput.value) / 100);
   const tools = {
     rectangle: toolRectangleInput.checked,
     polygon: toolPolygonInput.checked,
@@ -339,12 +405,13 @@ function saveNewLabel() {
     return;
   }
   
-  // Add new label
+  // Add new label at the end (highest layer priority - most in front)
   const maxId = currentLabels.reduce((max, label) => Math.max(max, label.id), 0);
   currentLabels.push({
     id: maxId + 1,
     name: name,
     color: color,
+    opacity: opacity,
     tools: tools
   });
   
@@ -378,6 +445,125 @@ function deleteLabel(labelId) {
     hasUnsavedChanges = true;
     refreshLabelTable();
   }
+}
+
+/**
+ * Move a label up or down in the layer order
+ */
+function moveLabelLayer(labelId, direction) {
+  const currentIndex = currentLabels.findIndex(label => label.id === labelId);
+  
+  if (currentIndex === -1) return;
+  
+  let newIndex;
+  if (direction === 'up') {
+    // Move up in display (towards end of array) = higher layer priority (more in front)
+    newIndex = Math.min(currentIndex + 1, currentLabels.length - 1);
+  } else if (direction === 'down') {
+    // Move down in display (towards start of array) = lower layer priority (more in back)  
+    newIndex = Math.max(currentIndex - 1, 0);
+  } else {
+    return;
+  }
+  
+  if (newIndex === currentIndex) return;
+  
+  // Move the label in the array
+  const label = currentLabels.splice(currentIndex, 1)[0];
+  currentLabels.splice(newIndex, 0, label);
+  
+  hasUnsavedChanges = true;
+  refreshLabelTable();
+  
+  // Update canvas layers immediately
+  updateCanvasLayerOrder();
+}
+
+/**
+ * Update canvas layer order based on current label order
+ */
+function updateCanvasLayerOrder() {
+  const canvas = typeof window.getCanvas === 'function' ? window.getCanvas() : null;
+  
+  if (canvas) {
+    sortCanvasObjectsByLabelOrder(canvas);
+  }
+  
+  // Also update all pages in pageCanvasData if available
+  const pageCanvasData = typeof window.getPageCanvasData === 'function' ? window.getPageCanvasData() : null;
+  
+  if (pageCanvasData) {
+    for (const pageNum in pageCanvasData) {
+      const pageData = pageCanvasData[pageNum];
+      if (pageData && pageData.canvas_annotations) {
+        // Sort the stored annotations by label order
+        pageData.canvas_annotations.sort((a, b) => {
+          const labelIdA = a.labelId || a.objectLabel || 999;
+          const labelIdB = b.labelId || b.objectLabel || 999;
+          
+          const indexA = currentLabels.findIndex(label => label.id === labelIdA);
+          const indexB = currentLabels.findIndex(label => label.id === labelIdB);
+          
+          // UMGEKEHRTE Logik: Lower table index = higher layer (front), higher table index = lower layer (behind)
+          return indexB - indexA;
+        });
+      }
+    }
+  }
+}
+
+/**
+ * Sort canvas objects by label order (low index = back, high index = front)
+ */
+function sortCanvasObjectsByLabelOrder(canvas) {
+  if (!canvas) return;
+  
+  // Get all objects by type
+  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+  const textLabels = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
+  const backgroundImages = canvas.getObjects().filter(obj => 
+    obj.type === 'image' && !obj.objectType
+  );
+  const otherObjects = canvas.getObjects().filter(obj => 
+    obj.objectType !== 'annotation' && 
+    obj.objectType !== 'textLabel' && 
+    !(obj.type === 'image' && !obj.objectType)
+  );
+  
+  // Sort annotations by label order
+  annotations.sort((a, b) => {
+    const labelIdA = a.labelId || a.objectLabel || 999;
+    const labelIdB = b.labelId || b.objectLabel || 999;
+    
+    const indexA = currentLabels.findIndex(label => label.id === labelIdA);
+    const indexB = currentLabels.findIndex(label => label.id === labelIdB);
+    
+    // If labels are not found, put them at the end
+    const finalIndexA = indexA === -1 ? 999 : indexA;
+    const finalIndexB = indexB === -1 ? 999 : indexB;
+    
+    // UMGEKEHRTE Logik: Lower table index = higher layer (front), higher table index = lower layer (behind)
+    return finalIndexB - finalIndexA;
+  });
+  
+  // Instead of clearing the entire canvas, just reorder the objects
+  // This preserves all canvas properties and event handlers
+  
+  // Remove all objects temporarily
+  const allObjects = canvas.getObjects().slice();
+  allObjects.forEach(obj => canvas.remove(obj));
+  
+  // Add back in correct order:
+  // 1. Background images - always at the very back
+  // 2. Other objects (if any)
+  // 3. Annotations sorted by label order
+  // 4. Text labels - always at the front
+  backgroundImages.forEach(obj => canvas.add(obj));
+  otherObjects.forEach(obj => canvas.add(obj));
+  annotations.forEach(obj => canvas.add(obj));
+  textLabels.forEach(obj => canvas.add(obj));
+  
+  canvas.renderAll();
 }
 
 /**
@@ -438,7 +624,7 @@ function updateCanvasLabels() {
           // Update stored annotation colors and styles
           annotation.stroke = label.color;
           if (annotation.annotationType === 'rectangle' || annotation.annotationType === 'polygon') {
-            annotation.fill = getLabelColorWithOpacity(label.color);
+            annotation.fill = getLabelColorWithOpacity(label.color, label.opacity);
           } else if (annotation.annotationType === 'line') {
             // Ensure lines never have a fill
             annotation.fill = '';
@@ -469,7 +655,7 @@ function updateCanvasAnnotations(canvas) {
     const needsFill = annotation.annotationType === 'rectangle' || annotation.annotationType === 'polygon';
     annotation.set({
       stroke: label.color,
-      fill: needsFill ? getLabelColorWithOpacity(label.color) : ''
+      fill: needsFill ? getLabelColorWithOpacity(label.color, label.opacity) : ''
     });
   });
   
@@ -518,13 +704,13 @@ function createSingleTextLabel(canvas, annotation) {
 /**
  * Helper function to get label color with opacity for fill
  */
-function getLabelColorWithOpacity(color) {
+function getLabelColorWithOpacity(color, opacity = 0.3) {
   // Convert hex color to rgba with opacity
   const hex = color.replace('#', '');
   const r = parseInt(hex.substring(0, 2), 16);
   const g = parseInt(hex.substring(2, 4), 16);
   const b = parseInt(hex.substring(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, 0.3)`;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
 }
 
 /**
@@ -796,6 +982,13 @@ export function getCurrentLabels() {
  */
 export function getCurrentLineLabels() {
   return getLabelsForTool('line');
+}
+
+/**
+ * Apply layer ordering to current canvas (can be called from other modules)
+ */
+export function applyLayerOrdering() {
+  updateCanvasLayerOrder();
 }
 
 
