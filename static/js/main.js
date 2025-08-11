@@ -36,6 +36,11 @@ import {
   saveProject, 
   loadProject
 } from './project.js';
+import { 
+  setupUploadModal,
+  showUploadModal,
+  resetUploadModal
+} from './upload-modal.js';
 
 // Fabric.js v6 ES6 modules imported successfully
 console.log('✅ Fabric.js v6 ES6 modules loaded');
@@ -113,6 +118,7 @@ function getLabel(labelId) {
 
 /**
  * Setup tool button event listeners
+ * Ist damit Werkzeuge nach dem Plan analysieren aktiv sind
  */
 function setupToolButtons() {
   // Remove existing event listeners to prevent duplicates
@@ -1910,13 +1916,38 @@ function displayPdfPage(pageNumber, pageData) {
   // Prevent canvas events during page switching
   isPageSwitching = true;
   
+  // Check if this page was analyzed via upload modal
+  let finalPageData = pageData;
+  if (window.uploadModalPageData) {
+    const sessionId = window.uploadModalPageData.sessionId;
+    const analyzedData = window.uploadModalPageData.analyzedPages.get(pageNumber);
+    
+    if (analyzedData) {
+      // Page was analyzed - use analysis data
+      console.log(`Seite ${pageNumber} wurde analysiert - zeige Erkennungen an`);
+      finalPageData = analyzedData;
+    } else {
+      // Page was not analyzed - show only image
+      console.log(`Seite ${pageNumber} wurde nicht analysiert - zeige nur Bild an`);
+      finalPageData = {
+        ...pageData,
+        predictions: [], // No predictions
+        session_id: sessionId,
+        current_page: pageNumber,
+        is_pdf: true
+      };
+    }
+  }
+  
   // Store the data globally
-  window.data = pageData;
+  window.data = finalPageData;
   
   // Get image URL for current page
   let imageUrl;
-  if (pageData.pdf_image_url) {
-    imageUrl = pageData.pdf_image_url;
+  if (finalPageData.pdf_image_url) {
+    imageUrl = finalPageData.pdf_image_url;
+  } else if (window.uploadModalPageData && window.uploadModalPageData.allPages) {
+    imageUrl = window.uploadModalPageData.allPages[pageNumber - 1];
   } else {
     const allPages = getAllPdfPages();
     if (allPages && allPages.length > 0 && pageNumber <= allPages.length) {
@@ -1944,10 +1975,10 @@ function displayPdfPage(pageNumber, pageData) {
       if (pageCanvasData[pageNumber]) {
         // Loaded project: use canvas data
         loadPageCanvasData(pageNumber);
-      } else if (pageData.predictions && pageData.predictions.length > 0) {
+      } else if (finalPageData.predictions && finalPageData.predictions.length > 0) {
         // New upload: convert predictions to canvas data format
         console.log(`Converting predictions to canvas for new upload on page ${pageNumber}`);
-        const canvasData = convertPredictionsToCanvasData(pageData.predictions, pageNumber);
+        const canvasData = convertPredictionsToCanvasData(finalPageData.predictions, pageNumber);
         
         // Load the converted canvas data (loadCanvasData will clear annotations)
         loadCanvasData(canvasData);
@@ -1955,12 +1986,20 @@ function displayPdfPage(pageNumber, pageData) {
         // Save to page state for later switching
         pageCanvasData[pageNumber] = canvasData;
       } else {
-        // Empty page
-        console.log(`Empty page ${pageNumber}`);
+        // Empty page (no analysis or no detections)
+        console.log(`Empty page ${pageNumber} - no analysis data`);
         if (canvas) {
           canvas.clear();
           initCanvas();
         }
+        
+        // Clear any existing canvas data for this page
+        pageCanvasData[pageNumber] = {
+          page_number: pageNumber,
+          canvas_annotations: [],
+          annotation_count: 0,
+          canvas_available: true
+        };
       }
       
       // Re-enable canvas events after page switch is complete
@@ -2022,6 +2061,25 @@ async function initApp() {
           // Format changed
         }
       }
+    });
+  }
+  
+  // Setup new upload button
+  const newUploadBtn = document.getElementById('newUploadBtn');
+  if (newUploadBtn) {
+    newUploadBtn.addEventListener('click', function() {
+      showUploadModal();
+    });
+  }
+  
+  // Setup legacy toggle button
+  const toggleLegacyBtn = document.getElementById('toggleLegacyBtn');
+  const legacyUpload = document.querySelector('.legacy-upload');
+  if (toggleLegacyBtn && legacyUpload) {
+    toggleLegacyBtn.addEventListener('click', function() {
+      const isVisible = legacyUpload.style.display !== 'none';
+      legacyUpload.style.display = isVisible ? 'none' : 'block';
+      toggleLegacyBtn.textContent = isVisible ? '⚙️ Erweiterte Optionen' : '📁 Einfacher Upload';
     });
   }
   
@@ -2173,6 +2231,9 @@ async function initApp() {
     });
   }
     
+  // Initialize upload modal
+  setupUploadModal();
+  
   // Initialize labels module (async)
   await setupLabels({
     labelManagerModal: document.getElementById('labelManagerModal'),

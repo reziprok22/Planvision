@@ -178,6 +178,77 @@ def serve_project_file(project_id, filename):
 def minimal():
     return render_template('index-minimal.html')
 
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    """
+    Separater Upload-Endpoint: Konvertiert PDF zu Bildern ohne Analyse
+    """
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file part'}), 400
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        # Parameter für Format-Detection (optional)
+        format_width = request.form.get('format_width')
+        format_height = request.form.get('format_height')
+        
+        if file:
+            # Überprüfen, ob es sich um eine PDF-Datei handelt
+            if file.filename.lower().endswith('.pdf'):
+                try:
+                    # PDF-Datei in Bilder konvertieren (ohne Analyse)
+                    pdf_info = convert_pdf_to_images(file)
+                    
+                    response_data = {
+                        'is_pdf': True,
+                        'session_id': pdf_info["session_id"],
+                        'page_count': int(pdf_info.get("page_count", 1)),
+                        'all_pages': pdf_info["image_paths"],
+                        'page_sizes': pdf_info.get("page_sizes", []),
+                        'filename': file.filename
+                    }
+                    
+                    print(f"Upload erfolgreich: {file.filename}, Session: {pdf_info['session_id']}, Seiten: {pdf_info['page_count']}")
+                    return jsonify(response_data)
+                    
+                except Exception as e:
+                    print(f"Fehler bei der PDF-Verarbeitung: {str(e)}")
+                    return jsonify({'error': f'Error converting PDF: {str(e)}'}), 500
+            else:
+                # Normale Bilddatei - erstelle Session für Konsistenz
+                project_id = str(uuid.uuid4())
+                output_dir = os.path.join(PROJECTS_DIR, project_id, 'uploads')
+                os.makedirs(output_dir, exist_ok=True)
+                
+                # Speichere das Bild
+                image_path = os.path.join(output_dir, f"image.{file.filename.split('.')[-1]}")
+                file.save(image_path)
+                
+                # URL für Frontend
+                rel_path = f"/project_files/{project_id}/uploads/image.{file.filename.split('.')[-1]}"
+                
+                response_data = {
+                    'is_pdf': False,
+                    'session_id': project_id,
+                    'page_count': 1,
+                    'all_pages': [rel_path],
+                    'page_sizes': [],  # Wird bei Bildern nicht automatisch erkannt
+                    'filename': file.filename
+                }
+                
+                print(f"Bild hochgeladen: {file.filename}, Session: {project_id}")
+                return jsonify(response_data)
+        
+        return jsonify({'error': 'Error processing file'}), 500
+    
+    except Exception as e:
+        print(f"Upload-Fehler: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/predict', methods=['POST'])
 def predict():
     # Performance-Timing starten
@@ -320,6 +391,13 @@ def predict():
 
 @app.route('/analyze_page', methods=['POST'])
 def analyze_page():
+    """
+    Separater Analyse-Endpoint: Analysiert einzelne Seiten von hochgeladenen Dokumenten
+    """
+    # Performance-Timing starten
+    request_start_time = time.time()
+    performance_metrics = {}
+    
     try:
         # Parameter aus der Anfrage lesen
         session_id = request.form.get('session_id')
@@ -332,29 +410,40 @@ def analyze_page():
             float(request.form.get('format_width', 210)),
             float(request.form.get('format_height', 297))
         )
-        dpi = float(PDF_DPI)  # Verwende konfigurierte DPI
+        dpi = float(request.form.get('dpi', PDF_DPI))  # Verwende gegebene oder Standard-DPI
         plan_scale = float(request.form.get('plan_scale', 100))
         threshold = float(request.form.get('threshold', 0.5))
         
-        # Überprüfe, ob die Session existiert (neue Struktur: projects/session_id/uploads/)
+        # Überprüfe, ob die Session existiert
         session_dir = os.path.join(PROJECTS_DIR, session_id, 'uploads')
         if not os.path.exists(session_dir):
             print(f"Session-Verzeichnis nicht gefunden: {session_dir}")
-            return jsonify({'error': 'PDF-Session nicht gefunden'}), 404
+            return jsonify({'error': 'Session nicht gefunden'}), 404
         
-        # Ermittle die Anzahl verfügbarer Seiten
-        image_files = [f for f in os.listdir(session_dir) if f.startswith('page_') and f.endswith('.jpg')]
-        page_count = len(image_files)
+        # Ermittle verfügbare Dateien (PDF-Seiten oder Einzelbild)
+        pdf_files = [f for f in os.listdir(session_dir) if f.startswith('page_') and f.endswith('.jpg')]
+        image_files = [f for f in os.listdir(session_dir) if f.startswith('image.')]
         
-        print(f"Gefundene Bilddateien: {image_files}")
-        print(f"Seitenanzahl: {page_count}")
+        is_pdf = len(pdf_files) > 0
+        page_count = len(pdf_files) if is_pdf else len(image_files)
+        
+        print(f"Ist PDF: {is_pdf}, Seitenanzahl: {page_count}")
         
         if page < 1 or page > page_count:
             return jsonify({'error': 'Ungültige Seitenzahl'}), 400
         
-        # Pfad zum Bild der aktuellen Seite
-        image_path = os.path.join(session_dir, f"page_{page}.jpg")
-        rel_image_path = f"/project_files/{session_id}/uploads/page_{page}.jpg"
+        # Bestimme Bildpfad basierend auf Dokumenttyp
+        if is_pdf:
+            image_filename = f"page_{page}.jpg"
+            rel_image_path = f"/project_files/{session_id}/uploads/page_{page}.jpg"
+        else:
+            # Einzelbild - finde die Datei
+            image_filename = image_files[0] if image_files else None
+            if not image_filename:
+                return jsonify({'error': 'Keine Bilddatei gefunden'}), 404
+            rel_image_path = f"/project_files/{session_id}/uploads/{image_filename}"
+        
+        image_path = os.path.join(session_dir, image_filename)
         
         print(f"Bildpfad: {image_path}")
         
@@ -373,6 +462,7 @@ def analyze_page():
         
         # Bildvorhersage durchführen
         try:
+            inference_start_time = time.time()
             boxes, labels, scores, areas = predict_image(
                 image_bytes, 
                 format_size=format_size, 
@@ -380,6 +470,7 @@ def analyze_page():
                 plan_scale=plan_scale, 
                 threshold=threshold
             )
+            performance_metrics['model_inference_time'] = time.time() - inference_start_time
         except Exception as e:
             print(f"Fehler bei der Bildvorhersage: {e}")
             return jsonify({'error': f'Fehler bei der Analyse: {str(e)}'}), 500
@@ -395,22 +486,29 @@ def analyze_page():
             })
         
         # Alle Bildpfade für die Navigation
-        all_image_paths = [f"/project_files/{session_id}/uploads/page_{i+1}.jpg" for i in range(page_count)]
+        if is_pdf:
+            all_image_paths = [f"/project_files/{session_id}/uploads/page_{i+1}.jpg" for i in range(page_count)]
+        else:
+            all_image_paths = [rel_image_path]
         
         # Gesamtfläche berechnen
         total_area = sum(area for area in areas)
+        
+        # Gesamte Request-Zeit berechnen
+        performance_metrics['total_request_time'] = time.time() - request_start_time
         
         response_data = {
             'predictions': results,
             'total_area': round(float(total_area), 2),
             'count': len(results),
-            'is_pdf': True,
+            'is_pdf': is_pdf,
             'pdf_image_url': rel_image_path,
             'current_page': page,
             'page_count': page_count,
             'all_pages': all_image_paths,
             'session_id': session_id,
-            'actual_dpi': PDF_DPI  # Tatsächliche DPI für Frontend
+            'actual_dpi': dpi,
+            'performance_metrics': performance_metrics
         }
         
         print(f"Antwortdaten: Seite {page} von {page_count}, {len(results)} Vorhersagen")

@@ -12,11 +12,134 @@
         <h1>Fenster-Erkennungstool</h1>
     </header>
     
+    <!-- Upload-Modal -->
+    <div id="uploadModal" class="modal upload-modal active">
+        <div class="modal-content upload-modal-content">
+            <div class="upload-modal-header">
+                <h2>Plan hochladen</h2>
+                <p>Wählen Sie eine PDF- oder Bilddatei aus, um sie zu analysieren</p>
+            </div>
+            
+            <div class="upload-modal-body">
+                <!-- Hidden file input outside drop zone -->
+                <input type="file" id="uploadFileInput" accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
+                
+                <!-- Upload-Bereich mit Drag & Drop -->
+                <div class="upload-drop-zone" id="uploadDropZone">
+                    <div class="drop-zone-content">
+                        <div class="drop-zone-icon">📄</div>
+                        <div class="drop-zone-text">
+                            <p><strong>Datei hierher ziehen oder klicken zum Auswählen</strong></p>
+                            <p>PDF, JPG, JPEG oder PNG (max. 50MB)</p>
+                        </div>
+                        <button type="button" class="upload-browse-btn" id="uploadBrowseBtn">Datei auswählen</button>
+                    </div>
+                </div>
+                
+                <!-- Datei-Info nach Upload -->
+                <div id="uploadedFileInfo" class="uploaded-file-info" style="display: none;">
+                    <div class="file-info-header">
+                        <span class="file-icon">📄</span>
+                        <span class="file-name" id="uploadedFileName"></span>
+                        <span class="file-size" id="uploadedFileSize"></span>
+                    </div>
+                </div>
+                
+                <!-- Seitentabelle für PDF -->
+                <div id="pagesTable" class="pages-table" style="display: none;">
+                    <h3>Seiten auswählen</h3>
+                    <div class="pages-table-controls">
+                        <button type="button" id="selectAllPages" class="control-btn">Alle auswählen</button>
+                        <button type="button" id="selectNonePages" class="control-btn">Keine auswählen</button>
+                    </div>
+                    <div class="pages-table-container">
+                        <table class="pages-selection-table">
+                            <thead>
+                                <tr>
+                                    <th>Auswählen</th>
+                                    <th>Seite</th>
+                                    <th>Format</th>
+                                    <th>Vorschau</th>
+                                </tr>
+                            </thead>
+                            <tbody id="pagesTableBody">
+                                <!-- Seiten werden hier dynamisch eingefügt -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Analyse-Parameter -->
+                <div id="analysisParameters" class="analysis-parameters" style="display: none;">
+                    <h3>Analyse-Parameter</h3>
+                    <div class="parameter-grid">
+                        <div class="form-group">
+                            <label>Format:</label>
+                            <select id="modalFormatSelect" name="format">
+                                <option value="auto" selected>Automatisch erkennen</option>
+                                <option value="custom">Benutzerdefiniert</option>
+                                <option value="A4 (Hochformat)">A4 Hochformat (210 × 297 mm)</option>
+                                <option value="A4 (Querformat)">A4 Querformat (297 × 210 mm)</option>
+                                <option value="A3 (Hochformat)">A3 Hochformat (297 × 420 mm)</option>
+                                <option value="A3 (Querformat)">A3 Querformat (420 × 297 mm)</option>
+                            </select>
+                        </div>
+                        <div id="modalCustomFormatFields" style="display: none;">
+                            <div class="form-group">
+                                <label for="modalFormatWidth">Breite (mm):</label>
+                                <input type="number" id="modalFormatWidth" name="format_width" value="210" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label for="modalFormatHeight">Höhe (mm):</label>
+                                <input type="number" id="modalFormatHeight" name="format_height" value="297" min="1">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="modalDpi">DPI (Auflösung):</label>
+                            <input type="number" id="modalDpi" name="dpi" value="300" min="72" max="600">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalPlanScale">Massstab (1:X):</label>
+                            <input type="number" id="modalPlanScale" name="plan_scale" value="100" min="1">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalThreshold">Erkennungsschwellenwert (0-1):</label>
+                            <input type="number" id="modalThreshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="upload-modal-footer">
+                <button type="button" id="closeUploadModal" class="modal-btn secondary">Abbrechen</button>
+                <button type="button" id="startAnalysisBtn" class="modal-btn primary" style="display: none;">Analyse starten</button>
+            </div>
+        </div>
+    </div>
+    
     <div class="main-container">
         <!-- Linke Spalte -->
         <div class="left-column">
+            <!-- Neuer Upload Button -->
             <div class="upload-section">
                 <h2>Plan hochladen</h2>
+                <div class="upload-actions">
+                    <button type="button" id="newUploadBtn" class="upload-button primary">
+                        📁 Neue Datei hochladen
+                    </button>
+                    <p class="upload-description">Laden Sie eine PDF- oder Bilddatei hoch und wählen Sie die zu analysierenden Seiten aus.</p>
+                    <button type="button" id="toggleLegacyBtn" class="toggle-legacy-btn">
+                        ⚙️ Erweiterte Optionen
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Legacy Upload Form (Hidden by default) -->
+            <div class="upload-section legacy-upload" style="display: none;">
+                <h2>Direkter Upload & Analyse</h2>
+                <div class="legacy-toggle">
+                    <small style="color: #666;">Für erweiterte Nutzer: Upload und Analyse in einem Schritt</small>
+                </div>
                 <form id="uploadForm">
                     <div class="form-group">
                         <label for="file">Plan-Datei (PDF oder Bild):</label>
