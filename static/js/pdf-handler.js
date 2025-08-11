@@ -68,6 +68,17 @@ export function setupPdfHandler(elements) {
       navigateToPdfPage(currentPdfPage, true);
     });
   }
+  
+  // Setup dropdown page selection
+  const pageDropdown = document.getElementById('pageDropdown');
+  if (pageDropdown) {
+    pageDropdown.addEventListener('change', function() {
+      const selectedPage = parseInt(this.value);
+      if (selectedPage && selectedPage !== currentPdfPage) {
+        navigateToPdfPage(selectedPage);
+      }
+    });
+  }
 }
 
 /**
@@ -126,6 +137,8 @@ export function processPdfData(responseData) {
     
     // Show navigation if multiple pages
     if (totalPdfPages > 1 && pdfSessionId && pdfNavigation) {
+      // Initialize dropdown with all pages
+      initializePageDropdown();
       updatePdfNavigation();
       pdfNavigation.style.display = 'flex';
 
@@ -294,6 +307,47 @@ export function updatePdfNavigation() {
     if (prevPageBtn) prevPageBtn.disabled = currentPdfPage <= 1;
     if (nextPageBtn) nextPageBtn.disabled = currentPdfPage >= totalPdfPages;
   }
+  
+  // Update dropdown selection
+  updatePageDropdown();
+}
+
+/**
+ * Initialize page dropdown with all available pages
+ */
+function initializePageDropdown() {
+  const pageDropdown = document.getElementById('pageDropdown');
+  if (!pageDropdown) return;
+  
+  // Clear existing options
+  pageDropdown.innerHTML = '';
+  
+  // Add options for all pages
+  for (let i = 1; i <= totalPdfPages; i++) {
+    const option = document.createElement('option');
+    option.value = i;
+    option.textContent = i;
+    if (i === currentPdfPage) {
+      option.selected = true;
+    }
+    pageDropdown.appendChild(option);
+  }
+  
+  console.log(`Initialized dropdown with ${totalPdfPages} pages`);
+}
+
+/**
+ * Update page dropdown in navigation footer
+ */
+function updatePageDropdown() {
+  const pageDropdown = document.getElementById('pageDropdown');
+  if (!pageDropdown) return;
+  
+  // Update dropdown selection without triggering change event
+  const originalHandler = pageDropdown.onchange;
+  pageDropdown.onchange = null;
+  pageDropdown.value = currentPdfPage;
+  pageDropdown.onchange = originalHandler;
 }
 
 /**

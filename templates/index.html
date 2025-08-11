@@ -295,6 +295,7 @@
                     </div>
                 </div>
 
+
                 <!-- Modal für Projekt-Verwaltung -->
                 <div id="projectManagerModal" class="modal">
                     <div class="modal-content">
@@ -379,9 +380,15 @@
             <!-- PDF Navigation - fest am unteren Rand -->
             <div id="pdfNavigation" class="pdf-navigation" style="display: none;">
               <button id="prevPageBtn" class="pdf-nav-btn">◀ Vorherige</button>
-              <span class="pdf-page-info">
-                Seite <span id="currentPageSpan">1</span> von <span id="totalPagesSpan">1</span>
-              </span>
+              
+              <div class="pdf-page-info-enhanced">
+                <span class="pdf-page-text">Seite</span>
+                <select id="pageDropdown" class="page-dropdown">
+                  <option value="1">1</option>
+                </select>
+                <span class="pdf-page-text">von <span id="totalPagesSpan">1</span></span>
+              </div>
+              
               <button id="nextPageBtn" class="pdf-nav-btn">Nächste ▶</button>
               <button id="reprocessBtn" class="pdf-reprocess-btn" title="Aktuelle Seite mit aktuellen Einstellungen neu verarbeiten">🔄 Seite neu analyiseren</button>
             </div>

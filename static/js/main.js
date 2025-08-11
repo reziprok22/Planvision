@@ -753,6 +753,7 @@ function clearResults() {
   
   // Reset PDF state
   resetPdfState();
+  
   if (uploadedImage) {
     uploadedImage.src = '';
   }

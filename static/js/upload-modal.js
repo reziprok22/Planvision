@@ -487,29 +487,43 @@ async function startSelectedAnalysis() {
         predictions: [] // Will be filled after analysis
     };
     
-    // Initialize PDF handler with all pages
-    if (window.processPdfData && pdfData.is_pdf) {
-        console.log('📋 Initializing PDF handler with data:', pdfData);
-        window.processPdfData(pdfData);
-    }
-    
-    // Force show navigation for multi-page documents
+    // Force show navigation for multi-page documents BEFORE initializing PDF handler
     if (uploadedPages.length > 1) {
         const pdfNavigation = document.getElementById('pdfNavigation');
         if (pdfNavigation) {
             pdfNavigation.style.display = 'flex';
             
-            // Update navigation immediately
-            const currentPageSpan = document.getElementById('currentPageSpan');
+            // Update navigation immediately with all pages
             const totalPagesSpan = document.getElementById('totalPagesSpan');
-            if (currentPageSpan) currentPageSpan.textContent = Math.min(...selectedPagesForAnalysis);
             if (totalPagesSpan) totalPagesSpan.textContent = uploadedPages.length;
             
-            console.log(`📋 PDF Navigation shown: ${uploadedPages.length} pages`);
+            // Setup dropdown with all pages immediately
+            const pageDropdown = document.getElementById('pageDropdown');
+            if (pageDropdown) {
+                pageDropdown.innerHTML = '';
+                for (let i = 1; i <= uploadedPages.length; i++) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = i;
+                    if (i === Math.min(...selectedPagesForAnalysis)) {
+                        option.selected = true;
+                    }
+                    pageDropdown.appendChild(option);
+                }
+                console.log(`📋 Dropdown populated with ${uploadedPages.length} pages`);
+            }
             
             // Setup navigation button handlers for upload modal data
             setupUploadModalNavigation();
+            
+            console.log(`📋 PDF Navigation shown: ${uploadedPages.length} pages`);
         }
+    }
+    
+    // Initialize PDF handler with all pages AFTER navigation setup
+    if (window.processPdfData && pdfData.is_pdf) {
+        console.log('📋 Initializing PDF handler with data:', pdfData);
+        window.processPdfData(pdfData);
     }
     
     // Create page data storage for selected pages
@@ -683,6 +697,7 @@ async function analyzePageWithParams(pageNumber, params) {
 function setupUploadModalNavigation() {
     const prevPageBtn = document.getElementById('prevPageBtn');
     const nextPageBtn = document.getElementById('nextPageBtn');
+    const pageDropdown = document.getElementById('pageDropdown');
     
     if (prevPageBtn) {
         prevPageBtn.onclick = function() {
@@ -704,6 +719,27 @@ function setupUploadModalNavigation() {
         };
     }
     
+    // Setup dropdown navigation
+    if (pageDropdown) {
+        pageDropdown.onchange = function() {
+            const selectedPage = parseInt(this.value);
+            if (selectedPage && window.uploadModalPageData) {
+                navigateToUploadModalPage(selectedPage);
+            }
+        };
+    }
+    
+    // Setup reprocess button for upload modal
+    const reprocessBtn = document.getElementById('reprocessBtn');
+    if (reprocessBtn) {
+        reprocessBtn.onclick = function() {
+            if (window.uploadModalPageData) {
+                const currentPage = getCurrentDisplayedPage();
+                reprocessCurrentPage(currentPage);
+            }
+        };
+    }
+    
     console.log('🧭 Upload modal navigation handlers installed');
 }
 
@@ -711,6 +747,12 @@ function setupUploadModalNavigation() {
  * Get currently displayed page number
  */
 function getCurrentDisplayedPage() {
+    // Try dropdown first, then span
+    const pageDropdown = document.getElementById('pageDropdown');
+    if (pageDropdown && pageDropdown.value) {
+        return parseInt(pageDropdown.value);
+    }
+    
     const currentPageSpan = document.getElementById('currentPageSpan');
     return currentPageSpan ? parseInt(currentPageSpan.textContent) : 1;
 }
@@ -726,9 +768,24 @@ function navigateToUploadModalPage(pageNumber) {
     
     console.log(`🧭 Navigating to page ${pageNumber}`);
     
-    // Update navigation display
+    // Update all navigation elements
     const currentPageSpan = document.getElementById('currentPageSpan');
     if (currentPageSpan) currentPageSpan.textContent = pageNumber;
+    
+    const pageDropdown = document.getElementById('pageDropdown');
+    if (pageDropdown) {
+        // Update dropdown without triggering change event
+        const originalHandler = pageDropdown.onchange;
+        pageDropdown.onchange = null;
+        pageDropdown.value = pageNumber;
+        pageDropdown.onchange = originalHandler;
+    }
+    
+    // Update button states
+    const prevPageBtn = document.getElementById('prevPageBtn');
+    const nextPageBtn = document.getElementById('nextPageBtn');
+    if (prevPageBtn) prevPageBtn.disabled = pageNumber <= 1;
+    if (nextPageBtn) nextPageBtn.disabled = pageNumber >= totalPages;
     
     // Check if page was analyzed
     const analyzedData = window.uploadModalPageData.analyzedPages.get(pageNumber);
@@ -737,6 +794,7 @@ function navigateToUploadModalPage(pageNumber) {
     if (analyzedData) {
         // Page was analyzed - use analysis data
         pageData = analyzedData;
+        console.log(`📊 Showing analyzed data for page ${pageNumber}`);
     } else {
         // Page was not analyzed - create basic page data
         pageData = {
@@ -748,6 +806,7 @@ function navigateToUploadModalPage(pageNumber) {
             pdf_image_url: window.uploadModalPageData.allPages[pageNumber - 1],
             predictions: [] // No predictions for non-analyzed pages
         };
+        console.log(`📄 Showing non-analyzed page ${pageNumber} (image only)`);
     }
     
     // Display the page
@@ -805,3 +864,4 @@ export function showUploadModal() {
 // Export for global access
 window.showUploadModal = showUploadModal;
 window.resetUploadModal = resetUploadModal;
+window.navigateToUploadModalPage = navigateToUploadModalPage;

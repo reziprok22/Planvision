@@ -788,14 +788,15 @@ background-color: #2a70c2;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
-    padding: 0.75rem;
+    gap: 1.5rem;
+    padding: 0.75rem 1rem;
     background: #f8f9fa;
     border: 1px solid #dee2e6;
     border-radius: 5px;
     font-size: 0.9rem;
     flex-shrink: 0; /* Verhindert Schrumpfen */
     margin-top: 10px; /* Abstand vom Bild-Container */
+    min-width: 400px; /* Mindestbreite für Text */
 }
 
 .pdf-nav-btn {
@@ -1425,3 +1426,45 @@ background-color: #2a70c2;
     border-radius: 4px;
     border-left: 3px solid #ffc107;
 }
+
+
+/* Enhanced PDF Navigation */
+.pdf-page-info-enhanced {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-weight: 500;
+    color: #333;
+    white-space: nowrap; /* Verhindert Textumbruch */
+    min-width: 120px; /* Mindestbreite für "Seite X von Y" */
+    justify-content: center;
+}
+
+.pdf-page-text {
+    font-size: 0.9rem;
+}
+
+.page-dropdown {
+    background: white;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    min-width: 50px;
+    width: 50px; /* Feste Breite für bessere Ausrichtung */
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+    text-align: center;
+}
+
+.page-dropdown:focus {
+    outline: none;
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.25);
+}
+
+.page-dropdown:hover {
+    border-color: #adb5bd;
+}
+
