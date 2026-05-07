@@ -351,32 +351,6 @@ button:hover {
     background-color: #d32f2f;
 }
 
-/* Background processing indicator styles */
-.background-processing {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    padding: 10px 15px;
-    background-color: rgba(0, 0, 0, 0.7);
-    color: white;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    font-size: 14px;
-    z-index: 1000;
-    transition: opacity 0.5s;
-}
-
-.processing-spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    border-radius: 50%;
-    border-top-color: white;
-    margin-right: 10px;
-    animation: spin 1s linear infinite;
-}
-
 @keyframes spin {
     0% { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
@@ -783,115 +757,6 @@ background-color: #2a70c2;
     border-bottom: 1px solid #ddd;
   }
 
-/* PDF Navigation */
-.pdf-navigation {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 1.5rem;
-    padding: 0.75rem 1rem;
-    background: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 5px;
-    font-size: 0.9rem;
-    flex-shrink: 0; /* Verhindert Schrumpfen */
-    margin-top: 10px; /* Abstand vom Bild-Container */
-    min-width: 400px; /* Mindestbreite für Text */
-}
-
-.pdf-nav-btn {
-    background: #007bff;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    transition: background-color 0.2s;
-}
-
-.pdf-nav-btn:hover:not(:disabled) {
-    background: #0056b3;
-}
-
-.pdf-nav-btn:disabled {
-    background: #6c757d;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.pdf-reprocess-btn {
-    background: #28a745;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.85rem;
-    transition: background-color 0.2s;
-    margin-left: 0.5rem;
-}
-
-.pdf-reprocess-btn:hover {
-    background: #1e7e34;
-}
-
-.pdf-page-info {
-    font-weight: 500;
-    color: #495057;
-    white-space: nowrap;
-}
-
-/* Background Processing Indicator - Compact bottom-right version */
-.background-processing {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: rgba(0, 0, 0, 0.85);
-    color: white;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    z-index: 10000;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-    transition: opacity 0.3s ease;
-    max-width: 350px;
-    font-size: 0.85rem;
-}
-
-.processing-spinner {
-    width: 18px;
-    height: 18px;
-    border: 2px solid #333;
-    border-top: 2px solid #fff;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    flex-shrink: 0;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-.background-processing button {
-    background: #dc3545;
-    color: white;
-    border: none;
-    padding: 0.3rem 0.6rem;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 0.75rem;
-    margin-left: 0.5rem;
-    flex-shrink: 0;
-}
-
-.background-processing button:hover {
-    background: #c82333;
-}
-
 /* Project Modal Styles */
 .project-manager-container {
     margin-top: 20px;
@@ -995,18 +860,6 @@ background-color: #2a70c2;
 .project-button:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
-}
-
-/* Ensure processing indicator text doesn't overflow */
-.background-processing > div {
-    flex: 1;
-    min-width: 0;
-}
-
-.background-processing > div > div {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
 /* Upload-Modal Styles */
@@ -1428,43 +1281,4 @@ background-color: #2a70c2;
 }
 
 
-/* Enhanced PDF Navigation */
-.pdf-page-info-enhanced {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-weight: 500;
-    color: #333;
-    white-space: nowrap; /* Verhindert Textumbruch */
-    min-width: 120px; /* Mindestbreite für "Seite X von Y" */
-    justify-content: center;
-}
-
-.pdf-page-text {
-    font-size: 0.9rem;
-}
-
-.page-dropdown {
-    background: white;
-    border: 1px solid #ced4da;
-    border-radius: 4px;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.9rem;
-    font-weight: 500;
-    min-width: 50px;
-    width: 50px; /* Feste Breite für bessere Ausrichtung */
-    cursor: pointer;
-    transition: border-color 0.2s ease;
-    text-align: center;
-}
-
-.page-dropdown:focus {
-    outline: none;
-    border-color: #4a90e2;
-    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.25);
-}
-
-.page-dropdown:hover {
-    border-color: #adb5bd;
-}
 

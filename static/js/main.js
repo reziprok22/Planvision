@@ -17,8 +17,6 @@ import {
   getLabelsForTool
 } from './labels.js';
 import {
-  setupPdfHandler,
-  setDisplayPageCallback,
   resetPdfState,
   getPdfSessionId,
   getPdfPageData,
@@ -1905,123 +1903,6 @@ function collectAllPagesCanvasData() {
 }
 
 /**
- * Display PDF page callback function for pdf-handler
- * @param {number} pageNumber - The page number being displayed
- * @param {Object} pageData - The page data to display
- */
-function displayPdfPage(pageNumber, pageData) {
-  console.log(`Displaying page ${pageNumber}`);
-  
-  // Handle page switching with canvas state management
-  setCurrentPage(pageNumber);
-  
-  // Prevent canvas events during page switching
-  isPageSwitching = true;
-  
-  // Check if this page was analyzed via upload modal
-  let finalPageData = pageData;
-  if (window.uploadModalPageData) {
-    const sessionId = window.uploadModalPageData.sessionId;
-    const analyzedData = window.uploadModalPageData.analyzedPages.get(pageNumber);
-    
-    if (analyzedData) {
-      // Page was analyzed - use analysis data
-      console.log(`Seite ${pageNumber} wurde analysiert - zeige Erkennungen an`);
-      finalPageData = analyzedData;
-    } else {
-      // Page was not analyzed - show only image
-      console.log(`Seite ${pageNumber} wurde nicht analysiert - zeige nur Bild an`);
-      finalPageData = {
-        ...pageData,
-        predictions: [], // No predictions
-        session_id: sessionId,
-        current_page: pageNumber,
-        is_pdf: true
-      };
-    }
-  }
-  
-  // Store the data globally
-  window.data = finalPageData;
-  
-  // Get image URL for current page
-  let imageUrl;
-  if (finalPageData.pdf_image_url) {
-    imageUrl = finalPageData.pdf_image_url;
-  } else if (window.uploadModalPageData && window.uploadModalPageData.allPages) {
-    imageUrl = window.uploadModalPageData.allPages[pageNumber - 1];
-  } else {
-    const allPages = getAllPdfPages();
-    if (allPages && allPages.length > 0 && pageNumber <= allPages.length) {
-      imageUrl = allPages[pageNumber - 1];
-    }
-  }
-  
-  if (imageUrl) {
-    // Show image temporarily for loading, will be hidden after Canvas setup
-    uploadedImage.style.display = 'block';
-    
-    uploadedImage.onload = function() {
-      console.log(`Page ${pageNumber} image loaded`);
-      
-      // DEBUG: Check image visibility after load
-      setTimeout(() => {
-        const imgRect = uploadedImage.getBoundingClientRect();
-        const imgStyle = window.getComputedStyle(uploadedImage);
-        console.log(`IMAGE DEBUG: Page ${pageNumber} - Width: ${imgRect.width}, Height: ${imgRect.height}, Display: ${imgStyle.display}, Visibility: ${imgStyle.visibility}, Opacity: ${imgStyle.opacity}`);
-        console.log(`IMAGE DEBUG: Image src: ${uploadedImage.src}`);
-        console.log(`IMAGE DEBUG: Image naturalWidth: ${uploadedImage.naturalWidth}, naturalHeight: ${uploadedImage.naturalHeight}`);
-      }, 100);
-      
-      // Multi-Page Canvas System: Load from page state management
-      if (pageCanvasData[pageNumber]) {
-        // Loaded project: use canvas data
-        loadPageCanvasData(pageNumber);
-      } else if (finalPageData.predictions && finalPageData.predictions.length > 0) {
-        // New upload: convert predictions to canvas data format
-        console.log(`Converting predictions to canvas for new upload on page ${pageNumber}`);
-        const canvasData = convertPredictionsToCanvasData(finalPageData.predictions, pageNumber);
-        
-        // Load the converted canvas data (loadCanvasData will clear annotations)
-        loadCanvasData(canvasData);
-        
-        // Save to page state for later switching
-        pageCanvasData[pageNumber] = canvasData;
-      } else {
-        // Empty page (no analysis or no detections)
-        console.log(`Empty page ${pageNumber} - no analysis data`);
-        if (canvas) {
-          canvas.clear();
-          initCanvas();
-        }
-        
-        // Clear any existing canvas data for this page
-        pageCanvasData[pageNumber] = {
-          page_number: pageNumber,
-          canvas_annotations: [],
-          annotation_count: 0,
-          canvas_available: true
-        };
-      }
-      
-      // Re-enable canvas events after page switch is complete
-      isPageSwitching = false;
-    };
-    
-    uploadedImage.onerror = function() {
-      console.error(`Failed to load image for page ${pageNumber}: ${imageUrl}`);
-      isPageSwitching = false;
-    };
-    
-    uploadedImage.src = imageUrl + '?t=' + new Date().getTime();
-  } else {
-    console.error(`No image URL available for page ${pageNumber}`);
-    // No image URL, re-enable events
-    isPageSwitching = false;
-  }
-}
-
-/**
  * Analyze the currently displayed page with the AI model.
  * Reads session_id and settings from current state.
  * Does NOT auto-trigger – only runs when the user clicks the button.
@@ -2120,26 +2001,6 @@ async function initApp() {
     // Enable "Analyze page" button
     const analyzeBtn = document.getElementById('analyzeCurrentPageBtn');
     if (analyzeBtn) analyzeBtn.disabled = false;
-
-    // Show PDF bottom navigation for multi-page documents and populate dropdown
-    if (uploadInfo.page_count > 1) {
-      const pdfNav = document.getElementById('pdfNavigation');
-      if (pdfNav) pdfNav.style.display = 'flex';
-
-      const pageDropdown = document.getElementById('pageDropdown');
-      const totalPagesSpan = document.getElementById('totalPagesSpan');
-      if (pageDropdown) {
-        pageDropdown.innerHTML = '';
-        for (let i = 1; i <= uploadInfo.page_count; i++) {
-          const opt = document.createElement('option');
-          opt.value = i;
-          opt.textContent = i;
-          pageDropdown.appendChild(opt);
-        }
-      }
-      if (totalPagesSpan) totalPagesSpan.textContent = uploadInfo.page_count;
-      // setupPdfHandler is already called once at initApp() end – no duplicate call here
-    }
 
     // Navigate to page 1 (just display image, no analysis)
     navigateToPageNoAnalysis(1, uploadInfo.all_pages, uploadInfo.page_sizes);
@@ -2268,21 +2129,6 @@ async function initApp() {
     cancelLabelBtn: document.getElementById('cancelLabelBtn')
   });
   
-  // Initialize PDF handler module
-  setupPdfHandler({
-    pdfNavigation: document.getElementById('pdfNavigation'),
-    currentPageSpan: document.getElementById('currentPageSpan'),
-    totalPagesSpan: document.getElementById('totalPagesSpan'),
-    prevPageBtn: document.getElementById('prevPageBtn'),
-    nextPageBtn: document.getElementById('nextPageBtn'),
-    reprocessBtn: document.getElementById('reprocessBtn'),
-    loader: document.getElementById('loader'),
-    errorMessage: document.getElementById('errorMessage')
-  });
-  
-  // Set PDF page display callback
-  setDisplayPageCallback(displayPdfPage);
-  
   // Initialize project management module
   setupProject({
     projectList: document.getElementById('projectList'),
@@ -2303,7 +2149,6 @@ async function initApp() {
   });
   
   // Make essential functions globally available for inter-module communication
-  window.displayPdfPage = displayPdfPage;
   window.collectCurrentCanvasData = collectCurrentCanvasData;
   window.collectAllPagesCanvasData = collectAllPagesCanvasData;
   window.loadCanvasData = loadCanvasData;
