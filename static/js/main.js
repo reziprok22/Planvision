@@ -565,7 +565,7 @@ function updateResultsTable() {
     
     // Add hover functionality to highlight annotation on canvas
     row.addEventListener('mouseenter', () => highlightAnnotation(index));
-    row.addEventListener('mouseleave', () => removeHighlight(index));
+    row.addEventListener('mouseleave', () => removeHighlight());
     
     resultsBody.appendChild(row);
   });
@@ -612,58 +612,40 @@ function calculatePolygonAreaFromCanvas(polygonObject) {
   return areaPixels * pixelToMeter * pixelToMeter;
 }
 
+// Currently highlighted annotation object reference (avoids index-based lookup after z-order changes)
+let _highlightedAnnotation = null;
+
 /**
  * Highlight annotation on canvas when hovering over table row
  */
 function highlightAnnotation(index) {
   if (!canvas) return;
-  
-  // Get annotation by array position
+  removeHighlight(); // clear any leftover highlight first
   const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  const targetAnnotation = annotations[index];
-  
-  if (targetAnnotation) {
-    // Store original stroke width on the annotation object
-    if (!targetAnnotation.originalStrokeWidth) {
-      targetAnnotation.originalStrokeWidth = targetAnnotation.strokeWidth;
-    }
-    
-    // Make annotation bold
-    targetAnnotation.set({
-      strokeWidth: targetAnnotation.originalStrokeWidth * 2,
-      shadow: new Shadow({
-        color: targetAnnotation.stroke,
-        blur: 5,
-        offsetX: 0,
-        offsetY: 0
-      })
-    });
-    
-    // Bring annotation to front - v6 API
-    canvas.bringObjectToFront(targetAnnotation);
-    canvas.renderAll();
-  }
+  const target = annotations[index];
+  if (!target) return;
+
+  _highlightedAnnotation = target;
+  target._origStrokeWidth = target.strokeWidth;
+  target.set({
+    strokeWidth: target._origStrokeWidth * 2,
+    shadow: new Shadow({ color: target.stroke, blur: 5, offsetX: 0, offsetY: 0 })
+  });
+  canvas.bringObjectToFront(target);
+  canvas.renderAll();
 }
 
 /**
  * Remove highlight from annotation
  */
-function removeHighlight(index) {
-  if (!canvas) return;
-  
-  // Get annotation by array position
-  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  const targetAnnotation = annotations[index];
-  
-  if (targetAnnotation && targetAnnotation.originalStrokeWidth) {
-    // Restore original stroke width
-    targetAnnotation.set({
-      strokeWidth: targetAnnotation.originalStrokeWidth,
-      shadow: null
-    });
-    
-    canvas.renderAll();
-  }
+function removeHighlight() {
+  if (!canvas || !_highlightedAnnotation) return;
+  _highlightedAnnotation.set({
+    strokeWidth: _highlightedAnnotation._origStrokeWidth ?? _highlightedAnnotation.strokeWidth,
+    shadow: null
+  });
+  _highlightedAnnotation = null;
+  canvas.renderAll();
 }
 
 /**
