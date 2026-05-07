@@ -73,6 +73,12 @@ let rectangleStartPoint = null;
 let clipboard = [];      // serialised annotations ready to paste
 let pasteOffset = 0;     // increases with each paste so copies don't stack
 
+// Undo / Redo history
+const HISTORY_LIMIT = 30;
+let undoStack = [];      // serialised states; top = current state
+let redoStack = [];
+let isHistoryAction = false; // true while restoring a state (prevents recursive saves)
+
 // Event timing control
 let isProcessingClick = false;
 let isPageSwitching = false; // Prevent canvas events during page switches
@@ -365,6 +371,7 @@ function loadCanvasData(canvasData) {
     applyLayerOrdering(); // enforce label z-order after all async enlivenObjects settle
     updateResultsTable();
     updateSummary();
+    saveHistorySnapshot();
 
     endPerfMeasurement('canvas-data-loading', {
       annotations_loaded: canvasData.canvas_annotations.length,
@@ -819,6 +826,73 @@ async function pasteAnnotations() {
 
   applyLayerOrdering();
   canvas.requestRenderAll();
+  saveHistorySnapshot();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Undo / Redo helpers
+
+function serializeAnnotations() {
+  if (!canvas) return '[]';
+  return JSON.stringify(
+    canvas.getObjects()
+      .filter(o => o.objectType === 'annotation')
+      .map(o => o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel', 'id', 'displayIndex']))
+  );
+}
+
+function initHistory() {
+  undoStack = [];
+  redoStack = [];
+}
+
+function saveHistorySnapshot() {
+  if (isHistoryAction || isPageSwitching || !canvas) return;
+  const state = serializeAnnotations();
+  if (undoStack.length > 0 && undoStack[undoStack.length - 1] === state) return;
+  undoStack.push(state);
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  redoStack = [];
+}
+
+async function applyHistoryState(stateJson) {
+  isHistoryAction = true;
+  // Remove all annotation objects and their text labels
+  canvas.getObjects()
+    .filter(o => o.objectType === 'annotation' || o.objectType === 'textLabel')
+    .forEach(o => canvas.remove(o));
+
+  const annotations = JSON.parse(stateJson);
+  if (annotations.length) {
+    const objects = await util.enlivenObjects(annotations);
+    for (const obj of objects) {
+      obj.set({ selectable: currentTool === 'select', evented: currentTool === 'select' });
+      canvas.add(obj);
+      obj.setCoords();
+    }
+    applyLayerOrdering();
+    for (const obj of objects) createSingleTextLabel(obj);
+  }
+
+  canvas.discardActiveObject();
+  selectedObjects = [];
+  canvas.requestRenderAll();
+  updateResultsTable();
+  updateSummary();
+  isHistoryAction = false;
+}
+
+async function undoHistory() {
+  if (undoStack.length < 2) return;
+  redoStack.push(undoStack.pop());
+  await applyHistoryState(undoStack[undoStack.length - 1]);
+}
+
+async function redoHistory() {
+  if (!redoStack.length) return;
+  const state = redoStack.pop();
+  undoStack.push(state);
+  await applyHistoryState(state);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -934,12 +1008,13 @@ function setupCanvasEvents() {
   canvas.on('object:modified', function(e) {
     if (!e.target || e.target.objectType !== 'annotation') return;
     updateLinkedTextLabelPosition(e.target);
+    saveHistorySnapshot();
     debouncedTableUpdate();
   });
 
   // Object removal events - update table when annotations are deleted
   canvas.on('object:removed', function(e) {
-    if (isPageSwitching || !e.target) return;
+    if (isPageSwitching || isHistoryAction || !e.target) return;
     if (e.target.objectType === 'annotation') {
       // Find and remove linked text label
       const linkedTextLabel = canvas.getObjects().find(obj => 
@@ -1191,6 +1266,7 @@ function finishDrawingRectangle() {
     const rectToLabel = currentRectangle; // Store reference before clearing
     setTimeout(() => {
       createSingleTextLabel(rectToLabel);
+      saveHistorySnapshot();
     }, 10);
   }
   
@@ -1230,13 +1306,14 @@ function getPixelToMeterFactor() {
  */
 function deleteSelectedObjects() {
   if (!canvas || selectedObjects.length === 0) return;
-  
+
   selectedObjects.forEach(obj => {
     canvas.remove(obj);
   });
-  
+
   selectedObjects = [];
   canvas.renderAll();
+  saveHistorySnapshot();
 }
 
 /**
@@ -1321,6 +1398,7 @@ function applyLabelChangeToSelectedObject() {
   }
   
   canvas.renderAll();
+  saveHistorySnapshot();
 }
 
 
@@ -1458,8 +1536,9 @@ function finishPolygonDrawing() {
   // Create text label with delay to ensure annotation is fully stabilized
   setTimeout(() => {
     createSingleTextLabel(finalPolygon);
+    saveHistorySnapshot();
   }, 10);
-  
+
   resetPolygonDrawing();
 }
 
@@ -1598,8 +1677,9 @@ function finishLineDrawing() {
   // Create text label with delay to ensure annotation is fully stabilized
   setTimeout(() => {
     createSingleTextLabel(finalLine);
+    saveHistorySnapshot();
   }, 10);
-  
+
   resetLineDrawing();
 }
 
@@ -2030,7 +2110,7 @@ async function analyzeCurrentPage() {
     if (btn) {
       btn.disabled = false;
       btn.classList.remove('analyzing');
-      btn.textContent = '🔍 Seite analysieren';
+      btn.textContent = '🔍 Fenster erkennen';
     }
     if (loader) loader.style.display = 'none';
   }
@@ -2170,6 +2250,8 @@ async function initApp() {
       }
       updateResultsTable();
       updateSummary();
+      // Reset undo/redo history for each new page
+      setTimeout(() => { initHistory(); saveHistorySnapshot(); }, 200);
     };
     // Blob URLs don't support query parameters – only add cache-busting for server paths
     uploadedImage.src = imageUrl.startsWith('blob:') ? imageUrl : imageUrl + '?t=' + Date.now();
@@ -2191,6 +2273,10 @@ async function initApp() {
 
     // Ctrl / Cmd shortcuts
     if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'z' || e.key === 'Z') {
+        if (e.shiftKey) { redoHistory(); } else { undoHistory(); }
+        e.preventDefault(); return;
+      }
       if (e.key === 'c' || e.key === 'C') { copySelectedAnnotations(); e.preventDefault(); return; }
       if (e.key === 'v' || e.key === 'V') { pasteAnnotations();        e.preventDefault(); return; }
       return; // don't let other Ctrl+key combos trigger tool shortcuts
@@ -2265,7 +2351,7 @@ async function initApp() {
     updateSummary();
   });
 
-  // Wire "Seite analysieren" button
+  // Wire "Fenster erkennen" button
   const analyzeCurrentPageBtn = document.getElementById('analyzeCurrentPageBtn');
   if (analyzeCurrentPageBtn) {
     analyzeCurrentPageBtn.addEventListener('click', analyzeCurrentPage);
