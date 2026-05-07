@@ -47,11 +47,7 @@ async function handleSave() {
     return;
   }
 
-  const projectName = prompt(
-    'Projektname:',
-    `Planvision ${new Date().toLocaleDateString('de-DE')}`
-  );
-  if (!projectName) return;
+  const projectName = `Planvision ${new Date().toLocaleDateString('de-DE')}`;
 
   const status = showStatus('ZIP wird erstellt…');
   try {

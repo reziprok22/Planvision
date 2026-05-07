@@ -240,9 +240,10 @@ function initCanvas() {
   // Setup enhanced scrolling for container
   setupContainerScrolling();
   
-  // Ensure tool buttons work after canvas initialization
+  // Ensure tool buttons and canvas events work after initialization
   setupToolButtons();
-  
+  setupCanvasEvents();
+
   endPerfMeasurement('canvas-initialization', {
     canvas_width: naturalWidth,
     canvas_height: naturalHeight,
@@ -2067,7 +2068,8 @@ async function initApp() {
       updateResultsTable();
       updateSummary();
     };
-    uploadedImage.src = imageUrl + '?t=' + Date.now();
+    // Blob URLs don't support query parameters – only add cache-busting for server paths
+    uploadedImage.src = imageUrl.startsWith('blob:') ? imageUrl : imageUrl + '?t=' + Date.now();
   }
   // Expose for upload-modal page-click callback
   window.navigateToPageNoAnalysis = navigateToPageNoAnalysis;
