@@ -3,356 +3,405 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fenster-Erkennungstool</title>
+    <title>Planvision – Fenster-Erkennungstool</title>
     <link rel="stylesheet" href="static/css/styles.css">
+    <style>
+        /* =============================================
+           REDESIGN OVERRIDES & NEW COMPONENTS
+           ============================================= */
+
+        /* --- Left Column Restructure --- */
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        /* --- Drop Zone --- */
+        .left-drop-zone {
+            border: 2px dashed #c8d0da;
+            border-radius: 10px;
+            padding: 18px 12px;
+            text-align: center;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+            background: #f8f9fb;
+            margin: 12px;
+            flex-shrink: 0;
+        }
+        .left-drop-zone:hover,
+        .left-drop-zone.drag-over {
+            border-color: #1976d2;
+            background: #e8f0fe;
+        }
+        .left-drop-zone .drop-icon {
+            font-size: 1.8em;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .left-drop-zone .drop-title {
+            font-size: 0.85em;
+            font-weight: 600;
+            color: #333;
+            display: block;
+        }
+        .left-drop-zone .drop-hint {
+            font-size: 0.75em;
+            color: #888;
+            margin-top: 3px;
+            display: block;
+        }
+        .left-drop-zone .browse-link {
+            color: #1976d2;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+        #leftFileInput { display: none; }
+
+        /* --- File Info Bar (after upload) --- */
+        .file-info-bar {
+            background: #e8f5e9;
+            border-left: 3px solid #4caf50;
+            border-radius: 0 6px 6px 0;
+            padding: 8px 12px;
+            font-size: 0.82em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0 12px 8px 12px;
+            flex-shrink: 0;
+        }
+        .file-info-bar .file-icon { font-size: 1.1em; flex-shrink: 0; }
+        .file-info-bar .file-name {
+            font-weight: 600;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+            color: #2e7d32;
+        }
+        .file-info-bar .change-file-btn {
+            margin-left: auto;
+            background: none;
+            border: 1px solid #bbb;
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 2px 7px;
+            font-size: 0.8em;
+            color: #555;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .file-info-bar .change-file-btn:hover { border-color: #555; }
+
+        /* --- Page List --- */
+        .page-list-section {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 8px 8px 8px;
+            min-height: 0; /* important for flex overflow */
+        }
+        .page-list-header {
+            font-size: 0.72em;
+            font-weight: 700;
+            color: #999;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            padding: 8px 6px 6px 6px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .page-list-header .page-count-badge {
+            background: #e0e0e0;
+            color: #666;
+            border-radius: 10px;
+            padding: 1px 7px;
+            font-size: 0.9em;
+        }
+        .page-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .page-list-item {
+            display: flex;
+            align-items: center;
+            padding: 7px 8px;
+            border-radius: 7px;
+            cursor: pointer;
+            transition: background 0.15s;
+            gap: 8px;
+            font-size: 0.88em;
+            color: #333;
+            user-select: none;
+        }
+        .page-list-item:hover { background: #f0f2f5; }
+        .page-list-item.active {
+            background: #e3f2fd;
+            color: #1565c0;
+            font-weight: 600;
+        }
+        .page-list-item .page-thumb {
+            width: 28px;
+            height: 36px;
+            object-fit: cover;
+            border-radius: 3px;
+            border: 1px solid #ddd;
+            flex-shrink: 0;
+            background: #eee;
+        }
+        .page-list-item .page-label { flex: 1; }
+        .page-list-item .page-size-hint {
+            font-size: 0.75em;
+            color: #aaa;
+            display: block;
+            font-weight: normal;
+        }
+        .page-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: transparent;
+            border: 1.5px solid #ccc;
+        }
+        .page-status-dot.analyzed {
+            background: #4caf50;
+            border-color: #4caf50;
+        }
+        .page-status-dot.analyzing {
+            background: #ff9800;
+            border-color: #ff9800;
+            animation: dot-pulse 0.8s ease-in-out infinite;
+        }
+        @keyframes dot-pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+
+        /* --- Analysis Settings (compact, collapsible) --- */
+        .analysis-settings-section {
+            border-top: 1px solid #eee;
+            flex-shrink: 0;
+            padding: 8px 12px;
+        }
+        .analysis-settings-toggle {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 0.78em;
+            color: #666;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            width: 100%;
+            text-align: left;
+            font-weight: 600;
+        }
+        .analysis-settings-toggle .toggle-arrow { transition: transform 0.2s; }
+        .analysis-settings-toggle.open .toggle-arrow { transform: rotate(90deg); }
+        .analysis-settings-body {
+            display: none;
+            padding-top: 8px;
+            gap: 6px;
+            display: none;
+        }
+        .analysis-settings-body.open { display: flex; flex-direction: column; }
+        .analysis-settings-body .form-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 0;
+        }
+        .analysis-settings-body label {
+            font-size: 0.78em;
+            color: #666;
+            width: 110px;
+            flex-shrink: 0;
+        }
+        .analysis-settings-body input {
+            flex: 1;
+            padding: 3px 6px;
+            font-size: 0.82em;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            min-width: 0;
+        }
+
+        /* --- Analyze Button in Toolbar --- */
+        .analyze-page-btn {
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 5px 14px;
+            cursor: pointer;
+            font-size: 0.82em;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: background 0.2s, opacity 0.2s;
+            white-space: nowrap;
+        }
+        .analyze-page-btn:hover { background: #1565c0; }
+        .analyze-page-btn:disabled { background: #b0bec5; cursor: not-allowed; opacity: 0.7; }
+        .analyze-page-btn.analyzing {
+            background: #e65100;
+            pointer-events: none;
+        }
+
+        /* --- Toolbar separator --- */
+        .toolbar-separator {
+            width: 1px;
+            height: 24px;
+            background: #ddd;
+            margin: 0 4px;
+            flex-shrink: 0;
+        }
+
+        /* --- Loading overlay for left column actions --- */
+        .left-loader {
+            font-size: 0.8em;
+            color: #888;
+            text-align: center;
+            padding: 12px;
+            display: none;
+        }
+        .left-loader.active { display: block; }
+    </style>
 </head>
 <body>
-    
+
     <header>
-        <h1>Fenster-Erkennungstool</h1>
+        <h1>Planvision – Fenster-Erkennungstool</h1>
     </header>
-    
-    <!-- Upload-Modal -->
-    <div id="uploadModal" class="modal upload-modal active">
-        <div class="modal-content upload-modal-content">
-            <div class="upload-modal-header">
-                <h2>Plan hochladen</h2>
-                <p>Wählen Sie eine PDF- oder Bilddatei aus, um sie zu analysieren</p>
-            </div>
-            
-            <div class="upload-modal-body">
-                <!-- Hidden file input outside drop zone -->
-                <input type="file" id="uploadFileInput" accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
-                
-                <!-- Upload-Bereich mit Drag & Drop -->
-                <div class="upload-drop-zone" id="uploadDropZone">
-                    <div class="drop-zone-content">
-                        <div class="drop-zone-icon">📄</div>
-                        <div class="drop-zone-text">
-                            <p><strong>Datei hierher ziehen oder klicken zum Auswählen</strong></p>
-                            <p>PDF, JPG, JPEG oder PNG (max. 50MB)</p>
-                        </div>
-                        <button type="button" class="upload-browse-btn" id="uploadBrowseBtn">Datei auswählen</button>
-                    </div>
-                </div>
-                
-                <!-- Datei-Info nach Upload -->
-                <div id="uploadedFileInfo" class="uploaded-file-info" style="display: none;">
-                    <div class="file-info-header">
-                        <span class="file-icon">📄</span>
-                        <span class="file-name" id="uploadedFileName"></span>
-                        <span class="file-size" id="uploadedFileSize"></span>
-                    </div>
-                </div>
-                
-                <!-- Seitentabelle für PDF -->
-                <div id="pagesTable" class="pages-table" style="display: none;">
-                    <h3>Seiten auswählen</h3>
-                    <div class="pages-table-controls">
-                        <button type="button" id="selectAllPages" class="control-btn">Alle auswählen</button>
-                        <button type="button" id="selectNonePages" class="control-btn">Keine auswählen</button>
-                    </div>
-                    <div class="pages-table-container">
-                        <table class="pages-selection-table">
-                            <thead>
-                                <tr>
-                                    <th>Auswählen</th>
-                                    <th>Seite</th>
-                                    <th>Format</th>
-                                    <th>Vorschau</th>
-                                </tr>
-                            </thead>
-                            <tbody id="pagesTableBody">
-                                <!-- Seiten werden hier dynamisch eingefügt -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                
-                <!-- Analyse-Parameter -->
-                <div id="analysisParameters" class="analysis-parameters" style="display: none;">
-                    <h3>Analyse-Parameter</h3>
-                    <div class="parameter-grid">
-                        <div class="form-group">
-                            <label>Format:</label>
-                            <select id="modalFormatSelect" name="format">
-                                <option value="auto" selected>Automatisch erkennen</option>
-                                <option value="custom">Benutzerdefiniert</option>
-                                <option value="A4 (Hochformat)">A4 Hochformat (210 × 297 mm)</option>
-                                <option value="A4 (Querformat)">A4 Querformat (297 × 210 mm)</option>
-                                <option value="A3 (Hochformat)">A3 Hochformat (297 × 420 mm)</option>
-                                <option value="A3 (Querformat)">A3 Querformat (420 × 297 mm)</option>
-                            </select>
-                        </div>
-                        <div id="modalCustomFormatFields" style="display: none;">
-                            <div class="form-group">
-                                <label for="modalFormatWidth">Breite (mm):</label>
-                                <input type="number" id="modalFormatWidth" name="format_width" value="210" min="1">
-                            </div>
-                            <div class="form-group">
-                                <label for="modalFormatHeight">Höhe (mm):</label>
-                                <input type="number" id="modalFormatHeight" name="format_height" value="297" min="1">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="modalDpi">DPI (Auflösung):</label>
-                            <input type="number" id="modalDpi" name="dpi" value="300" min="72" max="600">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalPlanScale">Massstab (1:X):</label>
-                            <input type="number" id="modalPlanScale" name="plan_scale" value="100" min="1">
-                        </div>
-                        <div class="form-group">
-                            <label for="modalThreshold">Erkennungsschwellenwert (0-1):</label>
-                            <input type="number" id="modalThreshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05">
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="upload-modal-footer">
-                <button type="button" id="closeUploadModal" class="modal-btn secondary">Abbrechen</button>
-                <button type="button" id="startAnalysisBtn" class="modal-btn primary" style="display: none;">Analyse starten</button>
-            </div>
-        </div>
-    </div>
-    
+
+    <!-- Hidden file input for left column upload -->
+    <input type="file" id="leftFileInput" accept=".pdf,.jpg,.jpeg,.png">
+
     <div class="main-container">
-        <!-- Linke Spalte -->
+
+        <!-- ==================== LEFT COLUMN ==================== -->
         <div class="left-column">
-            <!-- Neuer Upload Button -->
-            <div class="upload-section">
-                <h2>Plan hochladen</h2>
-                <div class="upload-actions">
-                    <button type="button" id="newUploadBtn" class="upload-button primary">
-                        📁 Neue Datei hochladen
-                    </button>
-                    <p class="upload-description">Laden Sie eine PDF- oder Bilddatei hoch und wählen Sie die zu analysierenden Seiten aus.</p>
-                    <button type="button" id="toggleLegacyBtn" class="toggle-legacy-btn">
-                        ⚙️ Erweiterte Optionen
-                    </button>
-                </div>
+
+            <!-- Drop Zone (always visible, compact) -->
+            <div class="left-drop-zone" id="leftDropZone">
+                <span class="drop-icon">📄</span>
+                <span class="drop-title">PDF hier ablegen</span>
+                <span class="drop-hint">oder <span class="browse-link" id="leftBrowseLink">Datei auswählen</span></span>
             </div>
-            
-            <!-- Legacy Upload Form (Hidden by default) -->
-            <div class="upload-section legacy-upload" style="display: none;">
-                <h2>Direkter Upload & Analyse</h2>
-                <div class="legacy-toggle">
-                    <small style="color: #666;">Für erweiterte Nutzer: Upload und Analyse in einem Schritt</small>
+
+            <!-- File info (shown after upload) -->
+            <div class="file-info-bar" id="leftFileInfo" style="display:none">
+                <span class="file-icon">📄</span>
+                <span class="file-name" id="leftFileName">–</span>
+                <button class="change-file-btn" id="changeFileBtn" title="Andere Datei laden">↺ Ändern</button>
+            </div>
+
+            <!-- Loading indicator -->
+            <div class="left-loader" id="leftLoader">⏳ Wird verarbeitet…</div>
+
+            <!-- Page list (shown after upload) -->
+            <div class="page-list-section" id="pageListSection" style="display:none">
+                <div class="page-list-header">
+                    Seiten
+                    <span class="page-count-badge" id="pageCountBadge">0</span>
                 </div>
-                <form id="uploadForm">
+                <ul class="page-list" id="pageList">
+                    <!-- Populated dynamically -->
+                </ul>
+            </div>
+
+            <!-- Analysis Settings (collapsible) -->
+            <div class="analysis-settings-section" id="analysisSettingsSection" style="display:none">
+                <button class="analysis-settings-toggle" id="analysisSettingsToggle">
+                    <span class="toggle-arrow">▶</span> Analyse-Einstellungen
+                </button>
+                <div class="analysis-settings-body" id="analysisSettingsBody">
                     <div class="form-group">
-                        <label for="file">Plan-Datei (PDF oder Bild):</label>
-                        <input type="file" id="file" name="file" accept=".pdf,.jpg,.jpeg,.png" required>
+                        <label for="dpi">DPI:</label>
+                        <input type="number" id="dpi" name="dpi" value="150" min="72" max="600">
                     </div>
-                    
-                    <div class="form-group">
-                        <label>Format:</label>
-                        <select id="formatSelect" name="format">
-                            <option value="auto" selected>Automatisch erkennen</option>
-                            <option value="custom">Benutzerdefiniert</option>
-                            <option value="A4 (Hochformat)">A4 Hochformat (210 × 297 mm)</option>
-                            <option value="A4 (Querformat)">A4 Querformat (297 × 210 mm)</option>
-                            <option value="A3 (Hochformat)">A3 Hochformat (297 × 420 mm)</option>
-                            <option value="A3 (Querformat)">A3 Querformat (420 × 297 mm)</option>
-                        </select>
-                    </div>
-                    <div id="customFormatFields" style="display: none;">
-                        <div class="form-group">
-                            <label for="formatWidth">Breite (mm):</label>
-                            <input type="number" id="formatWidth" name="format_width" value="210" min="1">
-                        </div>
-                        <div class="form-group">
-                            <label for="formatHeight">Höhe (mm):</label>
-                            <input type="number" id="formatHeight" name="format_height" value="297" min="1">
-                        </div>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="dpi">DPI (Auflösung):</label>
-                        <input type="number" id="dpi" name="dpi" value="300" min="72" max="600">
-                    </div>
-                    
                     <div class="form-group">
                         <label for="planScale">Massstab (1:X):</label>
                         <input type="number" id="planScale" name="plan_scale" value="100" min="1">
                     </div>
-                    
                     <div class="form-group">
-                        <label for="threshold">Erkennungsschwellenwert (0-1):</label>
+                        <label for="threshold">Schwellenwert:</label>
                         <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05">
                     </div>
-                    
-                    <button type="submit" id="analyzeBtn">Plan analysieren</button>
-                </form>
-
-                <!-- Project Management Section -->
-                <div class="project-section">
-                    <h2 class="project-title">Projekt-Verwaltung</h2>
-                    <div class="project-buttons">
-                        <div class="tooltip">
-                            <button id="saveProjectBtn" class="project-button">💾 Projekt speichern</button>
-                            <span class="tooltiptext">Aktuelles Projekt mit allen Seiten und Annotationen speichern</span>
-                        </div>
-                        <div class="tooltip">
-                            <button id="loadProjectBtn" class="project-button">📂 Projekt öffnen</button>
-                            <span class="tooltiptext">Gespeichertes Projekt laden</span>
-                        </div>
-                        <div class="tooltip">
-                            <button id="exportPdfBtn" class="project-button">📄 PDF-Report</button>
-                            <span class="tooltiptext">Analyse-Ergebnisse als PDF-Report exportieren</span>
-                        </div>
-                        <div class="tooltip">
-                            <button id="exportAnnotatedPdfBtn" class="project-button">📑 Annotierte PDF</button>
-                            <span class="tooltiptext">Original-PDF mit eingezeichneten Erkennungen exportieren</span>
-                        </div>
-                    </div>
-                    
+                    <!-- Hidden format fields (auto from PDF metadata) -->
+                    <input type="hidden" id="formatWidth" value="210">
+                    <input type="hidden" id="formatHeight" value="297">
                 </div>
-
-                <!-- Label Management Section -->
-                <div class="project-section">
-                    <h2 class="project-title">Label-Verwaltung</h2>
-                    <div class="project-buttons">
-                        <div class="tooltip">
-                            <button id="manageLabelBtn" class="project-button">Labels verwalten</button>
-                            <span class="tooltiptext">Label-Kategorien hinzufügen, bearbeiten oder löschen</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Modal für Label-Verwaltung -->
-                <div id="labelManagerModal" class="modal">
-                    <div class="modal-content">
-                        <span class="close">&times;</span>
-                        <h3>Labels verwalten</h3>
-
-                        
-                        <div class="label-manager-container">
-                            <div class="label-list">
-                                <table id="labelTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Ebene</th>
-                                            <th>ID</th>
-                                            <th>Name</th>
-                                            <th>Farbe</th>
-                                            <th>Opacity</th>
-                                            <th>Rechteck</th>
-                                            <th>Polygon</th>
-                                            <th>Linie</th>
-                                            <th>Aktionen</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="labelTableBody">
-                                        <!-- Hier werden die Labels dynamisch eingefügt -->
-                                    </tbody>
-                                </table>
-                            </div>
-                            
-                            <div class="label-actions">
-                                <button id="addLabelBtn" class="editor-button">Neues Label</button>
-                                <button id="importLabelsBtn" class="editor-button">Labels importieren</button>
-                                <button id="exportLabelsBtn" class="editor-button">Labels exportieren</button>
-                                <button id="resetLabelsBtn" class="editor-button">Auf Standard zurücksetzen</button>
-                            </div>
-                            
-                            <div class="label-batch-actions" style="display:none;">
-                                <button id="applyChangesBtn" class="save-button">Änderungen übernehmen</button>
-                                <button id="cancelChangesBtn" class="cancel-button">Abbrechen</button>
-                            </div>
-                            
-                            <!-- Formular für neues/zu bearbeitendes Label -->
-                            <div id="labelForm" class="label-form" style="display:none;">
-                                <h4 id="labelFormTitle">Label hinzufügen</h4>
-                                <input type="hidden" id="labelId">
-                                <div class="form-group">
-                                    <label for="labelName">Name:</label>
-                                    <input type="text" id="labelName" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="labelColor">Farbe:</label>
-                                    <input type="color" id="labelColor" required>
-                                </div>
-                                <div class="form-group">
-                                    <label for="labelOpacity">Opacity: <span id="opacityValueDisplay">70%</span></label>
-                                    <input type="range" id="labelOpacity" min="0" max="100" step="5" value="70">
-                                </div>
-                                <div class="form-group">
-                                    <label>Verfügbar für Werkzeuge:</label>
-                                    <div class="checkbox-group">
-                                        <label><input type="checkbox" id="toolRectangle"> Rechteck</label>
-                                        <label><input type="checkbox" id="toolPolygon"> Polygon</label>
-                                        <label><input type="checkbox" id="toolLine"> Linie</label>
-                                    </div>
-                                </div>
-                                <div class="form-actions">
-                                    <button id="saveLabelBtn" class="save-button">Speichern</button>
-                                    <button id="cancelLabelBtn" class="cancel-button">Abbrechen</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-
-                <!-- Modal für Projekt-Verwaltung -->
-                <div id="projectManagerModal" class="modal">
-                    <div class="modal-content">
-                        <span class="close" id="closeProjectModal">&times;</span>
-                        <h3>Gespeicherte Projekte</h3>
-                        
-                        <div class="project-manager-container">
-                            <div class="project-list-modal">
-                                <table id="projectTable" class="project-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Projektname</th>
-                                            <th>Erstellt am</th>
-                                            <th>Seiten</th>
-                                            <th>Erkennungen</th>
-                                            <th>Aktionen</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="projectTableBody">
-                                        <!-- Projekt-Liste wird hier dynamisch eingefügt -->
-                                    </tbody>
-                                </table>
-                            </div>
-                            
-                            <div class="project-actions">
-                                <button id="refreshProjectsBtn" class="editor-button">🔄 Liste aktualisieren</button>
-                                <button id="closeProjectManagerBtn" class="editor-button">Schließen</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="loader" id="loader"></div>
-                <div id="errorMessage"></div>
             </div>
-            
-        </div>
-        
-        <!-- Mittlere Spalte für Image-Container -->
+
+            <!-- Project Management Section -->
+            <div class="project-section" style="border-top: 1px solid #eee; padding: 8px 12px;">
+                <h2 class="project-title" style="font-size:0.72em; color:#999; text-transform:uppercase; letter-spacing:0.8px; margin:0 0 6px 0; font-weight:700;">Projekt</h2>
+                <div class="project-buttons">
+                    <div class="tooltip">
+                        <button id="saveProjectBtn" class="project-button">💾 Speichern</button>
+                        <span class="tooltiptext">Projekt speichern</span>
+                    </div>
+                    <div class="tooltip">
+                        <button id="loadProjectBtn" class="project-button">📂 Öffnen</button>
+                        <span class="tooltiptext">Projekt laden</span>
+                    </div>
+                    <div class="tooltip">
+                        <button id="exportPdfBtn" class="project-button">📄 PDF-Report</button>
+                        <span class="tooltiptext">Analysebericht als PDF exportieren</span>
+                    </div>
+                    <div class="tooltip">
+                        <button id="exportAnnotatedPdfBtn" class="project-button">📑 Ann. PDF</button>
+                        <span class="tooltiptext">Annotierte Original-PDF exportieren</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Label Management -->
+            <div class="project-section" style="border-top: 1px solid #eee; padding: 8px 12px 12px 12px;">
+                <h2 class="project-title" style="font-size:0.72em; color:#999; text-transform:uppercase; letter-spacing:0.8px; margin:0 0 6px 0; font-weight:700;">Labels</h2>
+                <div class="project-buttons">
+                    <div class="tooltip">
+                        <button id="manageLabelBtn" class="project-button">🏷️ Labels verwalten</button>
+                        <span class="tooltiptext">Label-Kategorien bearbeiten</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error + loader for legacy form (kept for API calls) -->
+            <div class="loader" id="loader" style="display:none"></div>
+            <div id="errorMessage" style="display:none; color:red; font-size:0.8em; padding:8px 12px;"></div>
+
+        </div><!-- end left-column -->
+
+
+        <!-- ==================== MIDDLE COLUMN ==================== -->
         <div class="middle-column">
-            <!-- Oberer Bereich für Bild und Steuerung -->
             <div class="image-section">
                 <div class="results-section" id="resultsSection">
                     <div class="results-header">
-                      <h2>Erkennungsergebnisse</h2>
+                        <h2>Erkennungsergebnisse</h2>
                     </div>
-                    <!-- Editor-Kontrolle -->
+
+                    <!-- Toolbar -->
                     <div class="annotation-controls">
-                      <!-- Editor-Tools -->
+                        <!-- Drawing tools -->
                         <button class="tool-button" data-tool="select" title="Auswählen">👆</button>
                         <button class="tool-button active" data-tool="rectangle" title="Rechteck zeichnen">⬜</button>
                         <button class="tool-button" data-tool="polygon" title="Polygon zeichnen">⬟</button>
                         <button class="tool-button" data-tool="line" title="Linie zeichnen">📏</button>
                         <button class="tool-button" data-tool="delete" title="Löschen">🗑️</button>
                         <button id="recalculateIndicesBtn" class="tool-button" title="Nummern neu berechnen">🔢</button>
-                        
-                        <!-- Universelles Label-Dropdown -->
+
+                        <div class="toolbar-separator"></div>
+
+                        <!-- Label selector -->
                         <div class="label-selection-group">
                             <select id="universalLabelSelect" class="universal-label-select">
                                 <option value="1">Fenster</option>
@@ -362,46 +411,54 @@
                                 <option value="5">Dach</option>
                             </select>
                         </div>
+
+                        <div class="toolbar-separator"></div>
+
+                        <!-- Analyze current page button -->
+                        <button id="analyzeCurrentPageBtn" class="analyze-page-btn" disabled title="Aktuelle Seite analysieren">
+                            🔍 Seite analysieren
+                        </button>
                     </div>
-                    
-                    <!-- Legende für Labels -->
+
+                    <!-- Legend -->
                     <div class="legend">
-                      <!-- Labels werden hier dynamisch eingefügt -->
+                        <!-- Dynamically populated -->
                     </div>
                 </div>
-                
-                <!-- Vereinfachter Container für Bild und Canvas -->
+
+                <!-- Image + Canvas Container -->
                 <div id="imageContainer">
-                  <img id="uploadedImage" src="" alt="Hochgeladener Plan">
-                  <!-- Canvas wird dynamisch eingefügt -->
+                    <img id="uploadedImage" src="" alt="Hochgeladener Plan">
+                    <!-- Canvas inserted by Fabric.js -->
                 </div>
             </div>
-            
-            <!-- PDF Navigation - fest am unteren Rand -->
+
+            <!-- PDF Navigation bar (bottom) -->
             <div id="pdfNavigation" class="pdf-navigation" style="display: none;">
-              <button id="prevPageBtn" class="pdf-nav-btn">◀ Vorherige</button>
-              
-              <div class="pdf-page-info-enhanced">
-                <span class="pdf-page-text">Seite</span>
-                <select id="pageDropdown" class="page-dropdown">
-                  <option value="1">1</option>
-                </select>
-                <span class="pdf-page-text">von <span id="totalPagesSpan">1</span></span>
-              </div>
-              
-              <button id="nextPageBtn" class="pdf-nav-btn">Nächste ▶</button>
-              <button id="reprocessBtn" class="pdf-reprocess-btn" title="Aktuelle Seite mit aktuellen Einstellungen neu verarbeiten">🔄 Seite neu analyiseren</button>
+                <button id="prevPageBtn" class="pdf-nav-btn">◀ Vorherige</button>
+
+                <div class="pdf-page-info-enhanced">
+                    <span class="pdf-page-text">Seite</span>
+                    <select id="pageDropdown" class="page-dropdown">
+                        <option value="1">1</option>
+                    </select>
+                    <span class="pdf-page-text">von <span id="totalPagesSpan">1</span></span>
+                </div>
+
+                <button id="nextPageBtn" class="pdf-nav-btn">Nächste ▶</button>
+                <button id="reprocessBtn" class="pdf-reprocess-btn" title="Aktuelle Seite neu analysieren">🔄 Neu analysieren</button>
             </div>
-        </div>
-        
-        <!-- Rechte Spalte für Ergebnistabelle -->
+        </div><!-- end middle-column -->
+
+
+        <!-- ==================== RIGHT COLUMN ==================== -->
         <div class="right-column">
             <div class="results-table-section" id="resultsTableSection">
                 <h2>Ergebnisse</h2>
                 <div class="summary" id="summary">
                     <p><em>Keine Analyse durchgeführt.</em></p>
                 </div>
-                
+
                 <table id="resultsTable">
                     <thead>
                         <tr>
@@ -414,33 +471,126 @@
                     </thead>
                     <tbody id="resultsBody">
                         <tr>
-                            <td colspan="5" style="text-align: center; color: #666; font-style: italic;">
-                                Lade eine Datei hoch und starte die Analyse, um Ergebnisse zu sehen.
+                            <td colspan="5" style="text-align:center; color:#999; font-style:italic; padding:20px;">
+                                Laden Sie eine Datei hoch und analysieren Sie eine Seite.
                             </td>
                         </tr>
                     </tbody>
                 </table>
             </div>
+        </div><!-- end right-column -->
+
+    </div><!-- end main-container -->
+
+
+    <!-- ==================== MODALS ==================== -->
+
+    <!-- Label Manager Modal -->
+    <div id="labelManagerModal" class="modal">
+        <div class="modal-content">
+            <span class="close">&times;</span>
+            <h3>Labels verwalten</h3>
+            <div class="label-manager-container">
+                <div class="label-list">
+                    <table id="labelTable">
+                        <thead>
+                            <tr>
+                                <th>Ebene</th>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Farbe</th>
+                                <th>Opacity</th>
+                                <th>Rechteck</th>
+                                <th>Polygon</th>
+                                <th>Linie</th>
+                                <th>Aktionen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="labelTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="label-actions">
+                    <button id="addLabelBtn" class="editor-button">Neues Label</button>
+                    <button id="importLabelsBtn" class="editor-button">Labels importieren</button>
+                    <button id="exportLabelsBtn" class="editor-button">Labels exportieren</button>
+                    <button id="resetLabelsBtn" class="editor-button">Auf Standard zurücksetzen</button>
+                </div>
+                <div class="label-batch-actions" style="display:none;">
+                    <button id="applyChangesBtn" class="save-button">Änderungen übernehmen</button>
+                    <button id="cancelChangesBtn" class="cancel-button">Abbrechen</button>
+                </div>
+                <div id="labelForm" class="label-form" style="display:none;">
+                    <h4 id="labelFormTitle">Label hinzufügen</h4>
+                    <input type="hidden" id="labelId">
+                    <div class="form-group">
+                        <label for="labelName">Name:</label>
+                        <input type="text" id="labelName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="labelColor">Farbe:</label>
+                        <input type="color" id="labelColor" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="labelOpacity">Opacity: <span id="opacityValueDisplay">70%</span></label>
+                        <input type="range" id="labelOpacity" min="0" max="100" step="5" value="70">
+                    </div>
+                    <div class="form-group">
+                        <label>Verfügbar für:</label>
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" id="toolRectangle"> Rechteck</label>
+                            <label><input type="checkbox" id="toolPolygon"> Polygon</label>
+                            <label><input type="checkbox" id="toolLine"> Linie</label>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button id="saveLabelBtn" class="save-button">Speichern</button>
+                        <button id="cancelLabelBtn" class="cancel-button">Abbrechen</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
-    
-    <!-- Fabric.js v6 now loaded via ES6 modules -->
-    
-    <!-- Performance Monitor -->
-    <script src="static/js/performance-monitor.js"></script>
-    
-    <!-- Main application script with ES6 modules (bundled) -->
-    <script src="dist/js/main.js"></script>
-    
-    <!-- Smoke Tests (nur für Development) -->
-    <script src="static/js/smoke-tests.js"></script>
-    
-    <!-- Performance Dashboard Controls (Development only) -->
-    <div id="perfControls" style="position: fixed; top: 10px; right: 10px; background: #f0f0f0; padding: 10px; border-radius: 5px; z-index: 9999; font-family: Arial; font-size: 12px;">
-        <strong>🚀 Performance</strong><br>
-        <button onclick="showPerfDashboard()" style="margin: 2px;">Dashboard</button>
-        <button onclick="exportPerfData()" style="margin: 2px;">Export</button>
-        <button onclick="console.clear(); perfMonitor.measurements = [];" style="margin: 2px;">Reset</button>
+
+    <!-- Project Manager Modal -->
+    <div id="projectManagerModal" class="modal">
+        <div class="modal-content">
+            <span class="close" id="closeProjectModal">&times;</span>
+            <h3>Gespeicherte Projekte</h3>
+            <div class="project-manager-container">
+                <div class="project-list-modal">
+                    <table id="projectTable" class="project-table">
+                        <thead>
+                            <tr>
+                                <th>Projektname</th>
+                                <th>Erstellt am</th>
+                                <th>Seiten</th>
+                                <th>Erkennungen</th>
+                                <th>Aktionen</th>
+                            </tr>
+                        </thead>
+                        <tbody id="projectTableBody"></tbody>
+                    </table>
+                </div>
+                <div class="project-actions">
+                    <button id="refreshProjectsBtn" class="editor-button">🔄 Aktualisieren</button>
+                    <button id="closeProjectManagerBtn" class="editor-button">Schließen</button>
+                </div>
+            </div>
+        </div>
     </div>
+
+
+    <!-- ==================== SCRIPTS ==================== -->
+    <script src="static/js/performance-monitor.js"></script>
+    <script src="dist/js/main.js"></script>
+    <script src="static/js/smoke-tests.js"></script>
+
+    <!-- Dev performance controls -->
+    <div id="perfControls" style="position:fixed; top:10px; right:10px; background:#f0f0f0; padding:8px 10px; border-radius:5px; z-index:9999; font-family:Arial; font-size:11px;">
+        <strong>🚀 Perf</strong>
+        <button onclick="showPerfDashboard()" style="margin:2px 2px 0; font-size:11px;">Dashboard</button>
+        <button onclick="exportPerfData()" style="margin:2px 2px 0; font-size:11px;">Export</button>
+    </div>
+
 </body>
 </html>

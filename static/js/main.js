@@ -16,10 +16,9 @@ import {
   getCurrentLineLabels,
   getLabelsForTool
 } from './labels.js';
-import { 
-  setupPdfHandler, 
-  setDisplayPageCallback, 
-  processPdfData, 
+import {
+  setupPdfHandler,
+  setDisplayPageCallback,
   resetPdfState,
   getPdfSessionId,
   getPdfPageData,
@@ -28,18 +27,20 @@ import {
   setPdfSessionId,
   setPdfPageData,
   setPageSettings,
-  setPdfNavigationState,
-  processRemainingPagesInBackground
+  setPdfNavigationState
 } from './pdf-handler.js';
 import { 
   setupProject, 
   saveProject, 
   loadProject
 } from './project.js';
-import { 
+import {
   setupUploadModal,
-  showUploadModal,
-  resetUploadModal
+  setOnPageClick,
+  setActivePageInList,
+  setPageStatus,
+  getSessionId as getUploadSessionId,
+  getPageSizes
 } from './upload-modal.js';
 
 // Fabric.js v6 ES6 modules imported successfully
@@ -2021,6 +2022,79 @@ function displayPdfPage(pageNumber, pageData) {
 }
 
 /**
+ * Analyze the currently displayed page with the AI model.
+ * Reads session_id and settings from current state.
+ * Does NOT auto-trigger – only runs when the user clicks the button.
+ */
+async function analyzeCurrentPage() {
+  const sessionId = getPdfSessionId() || getUploadSessionId();
+  if (!sessionId) {
+    alert('Bitte zuerst eine Datei hochladen.');
+    return;
+  }
+
+  const btn = document.getElementById('analyzeCurrentPageBtn');
+  const loader = document.getElementById('loader');
+  const errorMessage = document.getElementById('errorMessage');
+
+  // UI: busy state
+  if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.textContent = '⏳ Analysiert…'; }
+  if (loader) loader.style.display = 'block';
+  if (errorMessage) errorMessage.style.display = 'none';
+
+  // Mark page as "analyzing" in sidebar
+  setPageStatus(currentPageNumber, 'analyzing');
+
+  try {
+    const formData = new FormData();
+    formData.append('session_id', sessionId);
+    formData.append('page', currentPageNumber);
+    formData.append('format_width',  document.getElementById('formatWidth')?.value  || 210);
+    formData.append('format_height', document.getElementById('formatHeight')?.value || 297);
+    formData.append('dpi',           document.getElementById('dpi')?.value           || 150);
+    formData.append('plan_scale',    document.getElementById('planScale')?.value     || 100);
+    formData.append('threshold',     document.getElementById('threshold')?.value     || 0.5);
+
+    const response = await fetch('/analyze_page', { method: 'POST', body: formData });
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Analyse fehlgeschlagen');
+    }
+
+    const data = await response.json();
+    window.data = data;
+
+    // Convert AI predictions → canvas annotations for this page
+    if (data.predictions && data.predictions.length > 0) {
+      const canvasData = convertPredictionsToCanvasData(data.predictions, currentPageNumber);
+      loadCanvasData(canvasData);
+      pageCanvasData[currentPageNumber] = canvasData;
+    }
+
+    updateResultsTable();
+    updateSummary();
+
+    // Mark as done in sidebar
+    setPageStatus(currentPageNumber, 'analyzed');
+
+  } catch (err) {
+    console.error('Analyse-Fehler:', err);
+    if (errorMessage) {
+      errorMessage.textContent = 'Fehler: ' + err.message;
+      errorMessage.style.display = 'block';
+    }
+    setPageStatus(currentPageNumber, 'none');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove('analyzing');
+      btn.textContent = '🔍 Seite analysieren';
+    }
+    if (loader) loader.style.display = 'none';
+  }
+}
+
+/**
  * Initialize application
  */
 async function initApp() {
@@ -2030,174 +2104,102 @@ async function initApp() {
   // Get DOM elements
   imageContainer = document.getElementById('imageContainer');
   uploadedImage = document.getElementById('uploadedImage');
-  const uploadForm = document.getElementById('uploadForm');
-  const formatSelect = document.getElementById('formatSelect');
-  const customFormatFields = document.getElementById('customFormatFields');
   
-  // Setup format selection
-  if (formatSelect && customFormatFields) {
-    formatSelect.addEventListener('change', function() {
-      const isCustom = this.value === 'custom';
-      customFormatFields.style.display = isCustom ? 'block' : 'none';
-      
-      // Handle predefined formats
-      if (this.value !== 'auto' && this.value !== 'custom') {
-        const formatSizes = {
-          'A4 (Hochformat)': [210, 297],
-          'A4 (Querformat)': [297, 210],
-          'A3 (Hochformat)': [297, 420],
-          'A3 (Querformat)': [420, 297],
-          'A2 (Hochformat)': [420, 594],
-          'A2 (Querformat)': [594, 420],
-          'A1 (Hochformat)': [594, 841],
-          'A1 (Querformat)': [841, 594],
-          'A0 (Hochformat)': [841, 1189],
-          'A0 (Querformat)': [1189, 841]
-        };
-        
-        const size = formatSizes[this.value];
-        if (size) {
-          document.getElementById('formatWidth').value = size[0];
-          document.getElementById('formatHeight').value = size[1];
-          // Format changed
+   // ── New upload flow: called by upload-modal.js after successful /upload ──
+  window.onUploadReady = function(uploadInfo) {
+    console.log('Upload ready:', uploadInfo);
+
+    // Store session + all pages in PDF handler so navigation and project-save work
+    setPdfSessionId(uploadInfo.session_id);
+    setPdfNavigationState(1, uploadInfo.page_count, uploadInfo.all_pages);
+
+    // Show results section + enable toolbar
+    const resultsSection = document.getElementById('resultsSection');
+    if (resultsSection) resultsSection.style.display = 'block';
+
+    // Enable "Analyze page" button
+    const analyzeBtn = document.getElementById('analyzeCurrentPageBtn');
+    if (analyzeBtn) analyzeBtn.disabled = false;
+
+    // Show PDF bottom navigation for multi-page documents and populate dropdown
+    if (uploadInfo.page_count > 1) {
+      const pdfNav = document.getElementById('pdfNavigation');
+      if (pdfNav) pdfNav.style.display = 'flex';
+
+      const pageDropdown = document.getElementById('pageDropdown');
+      const totalPagesSpan = document.getElementById('totalPagesSpan');
+      if (pageDropdown) {
+        pageDropdown.innerHTML = '';
+        for (let i = 1; i <= uploadInfo.page_count; i++) {
+          const opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = i;
+          pageDropdown.appendChild(opt);
         }
       }
-    });
-  }
-  
-  // Setup new upload button
-  const newUploadBtn = document.getElementById('newUploadBtn');
-  if (newUploadBtn) {
-    newUploadBtn.addEventListener('click', function() {
-      showUploadModal();
-    });
-  }
-  
-  // Setup legacy toggle button
-  const toggleLegacyBtn = document.getElementById('toggleLegacyBtn');
-  const legacyUpload = document.querySelector('.legacy-upload');
-  if (toggleLegacyBtn && legacyUpload) {
-    toggleLegacyBtn.addEventListener('click', function() {
-      const isVisible = legacyUpload.style.display !== 'none';
-      legacyUpload.style.display = isVisible ? 'none' : 'block';
-      toggleLegacyBtn.textContent = isVisible ? '⚙️ Erweiterte Optionen' : '📁 Einfacher Upload';
-    });
-  }
-  
-  // Setup form submission
-  if (uploadForm) {
-    uploadForm.addEventListener('submit', function(e) {
-      e.preventDefault();
-      
-      // Form submitted
-      
-      // Clear previous results
-      clearResults();
-      
-      // Show loader
-      const loader = document.getElementById('loader');
-      const errorMessage = document.getElementById('errorMessage');
-      if (loader) loader.style.display = 'block';
-      if (errorMessage) errorMessage.style.display = 'none';
-      
-      const formData = new FormData(uploadForm);
-      
-      // Handle format detection: only send values if NOT auto-detection
-      const formatSelect = document.getElementById('formatSelect');
-      
-      if (formatSelect?.value === 'auto') {
-        // For automatic detection, don't send format dimensions - let backend use PDF metadata
-        // Auto-detection: Backend will use PDF metadata
+      if (totalPagesSpan) totalPagesSpan.textContent = uploadInfo.page_count;
+      // setupPdfHandler is already called once at initApp() end – no duplicate call here
+    }
+
+    // Navigate to page 1 (just display image, no analysis)
+    navigateToPageNoAnalysis(1, uploadInfo.all_pages, uploadInfo.page_sizes);
+  };
+
+  /**
+   * Navigate to a page without running the AI – just show the image.
+   * Called from the left sidebar page list and from onUploadReady.
+   */
+  function navigateToPageNoAnalysis(pageNumber, allPages, pageSizes) {
+    const pages = allPages || getAllPdfPages();
+    if (!pages || pages.length === 0) return;
+
+    const imageUrl = pages[pageNumber - 1];
+    if (!imageUrl) return;
+
+    // Update page state
+    setCurrentPage(pageNumber);
+    currentPageNumber = pageNumber;
+
+    // Sync sidebar highlight
+    setActivePageInList(pageNumber);
+
+    // Update format fields from page metadata
+    const sizes = pageSizes || getPageSizes();
+    if (sizes && sizes[pageNumber - 1]) {
+      const s = sizes[pageNumber - 1];
+      const fw = document.getElementById('formatWidth');
+      const fh = document.getElementById('formatHeight');
+      // Support both {width_mm, height_mm} (new) and array [w, h] (legacy)
+      if (fw) fw.value = s.width_mm ?? Math.round(s[0] ?? 210);
+      if (fh) fh.value = s.height_mm ?? Math.round(s[1] ?? 297);
+    }
+
+    // Load image into canvas
+    uploadedImage.style.display = 'block';
+    uploadedImage.onload = function() {
+      // Check if we already have canvas data for this page (e.g. after analysis)
+      if (pageCanvasData[pageNumber]) {
+        loadPageCanvasData(pageNumber);
       } else {
-        // For manual selection, send the specified format dimensions
-        const formatWidthValue = document.getElementById('formatWidth')?.value || '210';
-        const formatHeightValue = document.getElementById('formatHeight')?.value || '297';
-        formData.set('format_width', formatWidthValue);
-        formData.set('format_height', formatHeightValue);
-        // Form submission with manual format
+        // Empty canvas – just show the image
+        if (canvas) {
+          canvas.clear();
+        }
+        initCanvas();
+        pageCanvasData[pageNumber] = {
+          page_number: pageNumber,
+          canvas_annotations: [],
+          annotation_count: 0,
+          canvas_available: true
+        };
       }
-      
-      // API call mit Performance-Monitoring
-      startPerfMeasurement('api-predict', 'api');
-      fetch('/predict', {
-        method: 'POST',
-        body: formData
-      })
-      .then(response => {
-        if (!response.ok) {
-          return response.json().then(data => {
-            throw new Error(data.error || 'Request failed');
-          });
-        }
-        return response.json();
-      })
-      .then(data => {
-        // API response received - Performance-Messung beenden
-        endPerfMeasurement('api-predict', {
-          predictions_count: data.predictions?.length || 0,
-          is_pdf: data.is_pdf,
-          backend_metrics: data.performance_metrics || {}
-        });
-        
-        // Store data
-        window.data = data;
-        
-        // Update DPI field if PDF with actual_dpi info
-        if (data.actual_dpi && data.is_pdf) {
-          const dpiField = document.getElementById('dpi');
-          if (dpiField) {
-            dpiField.value = data.actual_dpi;
-          }
-        }
-        
-        // Show results sections
-        const resultsSection = document.getElementById('resultsSection');
-        if (resultsSection) resultsSection.style.display = 'block';
-        
-        // Handle PDF vs regular image
-        if (data.is_pdf) {
-          // Process PDF data with the PDF handler
-          processPdfData(data);
-          
-          // The PDF handler will handle navigation and display
-          // Initial page display is handled automatically
-          displayPdfPage(data.current_page || 1, data);
-        } else {
-          // Handle regular image files as before
-          const uploadedFile = document.getElementById('file').files[0];
-          if (uploadedFile) {
-            uploadedImage.src = URL.createObjectURL(uploadedFile);
-          }
-          
-          // Wait for image to load
-          uploadedImage.onload = function() {
-            // Convert predictions to canvas data and load
-            if (data.predictions && data.predictions.length > 0) {
-              const canvasData = convertPredictionsToCanvasData(data.predictions, 1);
-              // Load canvas data (will clear annotations automatically)
-              loadCanvasData(canvasData);
-              // Save to page state for consistency
-              pageCanvasData[1] = canvasData;
-            }
-            
-            // Update UI
-            updateSummary();
-            updateResultsTable();
-          };
-        }
-      })
-      .catch(error => {
-        console.error('API Error:', error);
-        if (errorMessage) {
-          errorMessage.textContent = 'Error: ' + error.message;
-          errorMessage.style.display = 'block';
-        }
-      })
-      .finally(() => {
-        if (loader) loader.style.display = 'none';
-      });
-    });
+      updateResultsTable();
+      updateSummary();
+    };
+    uploadedImage.src = imageUrl + '?t=' + Date.now();
   }
+  // Expose for upload-modal page-click callback
+  window.navigateToPageNoAnalysis = navigateToPageNoAnalysis;
   
   // Editor is always active - setup canvas events when canvas is ready
   // Canvas events will be set up in initCanvas() when editor is active
@@ -2232,8 +2234,20 @@ async function initApp() {
     });
   }
     
-  // Initialize upload modal
+  // Initialize upload handler (left column drop zone)
   setupUploadModal();
+
+  // Wire sidebar page-click → navigate without auto-analysis
+  setOnPageClick((pageNumber) => {
+    navigateToPageNoAnalysis(pageNumber);
+  });
+
+  // Wire "Seite analysieren" button
+  const analyzeCurrentPageBtn = document.getElementById('analyzeCurrentPageBtn');
+  if (analyzeCurrentPageBtn) {
+    analyzeCurrentPageBtn.addEventListener('click', analyzeCurrentPage);
+  }
+
   
   // Initialize labels module (async)
   await setupLabels({
@@ -2284,8 +2298,7 @@ async function initApp() {
       setPdfSessionId,
       setPdfPageData,
       setPageSettings,
-      setPdfNavigationState,
-      processRemainingPagesInBackground
+      setPdfNavigationState
     }
   });
   

@@ -4,11 +4,9 @@
  */
 
 // Import required functions from labels module
-import { 
+import {
   setCurrentLabels,
-  getAllLabels,
-  getCurrentLabels,
-  getCurrentLineLabels
+  getAllLabels
 } from './labels.js';
 
 // DOM references
@@ -229,7 +227,7 @@ export function saveProject() {
         localStorage.setItem('labels', JSON.stringify(data.labels));
         
         // Update UI with loaded labels
-        updateUIForLabels('area');
+        updateUIForLabels();
       }
 
       // Only if the ID has changed (first save)
