@@ -968,6 +968,7 @@ function setTool(toolName) {
         if (obj.objectType === 'annotation') {
           obj.selectable = true;
           obj.evented = true;
+          obj.setCoords(); // ensure hit-detection bounds are current
         } else if (obj.objectType === 'textLabel') {
           // Text labels should never be selectable or interactive
           obj.selectable = false;
@@ -1140,7 +1141,8 @@ function finishDrawingRectangle() {
       fill: getLabelColorWithOpacity(label.color),
       stroke: label.color
     });
-    
+    currentRectangle.setCoords(); // sync hit-detection bounds after resize via set()
+
     // Create text label with delay to ensure annotation is fully stabilized
     const rectToLabel = currentRectangle; // Store reference before clearing
     setTimeout(() => {
