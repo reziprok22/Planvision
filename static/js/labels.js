@@ -888,22 +888,6 @@ function getAnnotationSummary(annotations) {
  * Update UI elements based on current labels
  */
 export function updateUIForLabels() {
-  // Update legend for area labels
-  const legend = document.querySelector('.legend');
-  if (legend) {
-    legend.innerHTML = '';
-    
-    getLabelsForTool('rectangle').forEach(label => {
-      const legendItem = document.createElement('div');
-      legendItem.className = 'legend-item';
-      legendItem.innerHTML = `
-        <div class="legend-color" style="background-color:${label.color}"></div>
-        <span>${label.name} (${label.id})</span>
-      `;
-      legend.appendChild(legendItem);
-    });
-  }
-  
   // Update universal label select for area labels
   const universalLabelSelect = document.getElementById('universalLabelSelect');
   if (universalLabelSelect) {

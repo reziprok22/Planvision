@@ -209,11 +209,42 @@ button:hover {
 
 .results-table-section .summary {
     margin-bottom: 20px;
-    padding: 15px;
+    padding: 12px 15px;
     background: #f8f9fa;
     border-radius: 8px;
     font-size: 0.9rem;
     border-left: 4px solid #4a90e2;
+}
+
+.summary-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: 1px solid #eee;
+}
+.summary-row:last-child { border-bottom: none; }
+
+.summary-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.summary-name {
+    flex: 1;
+    color: #333;
+}
+.summary-count {
+    color: #555;
+    min-width: 24px;
+    text-align: right;
+}
+.summary-area {
+    color: #777;
+    font-size: 0.85em;
+    min-width: 70px;
+    text-align: right;
 }
 
 .results-table-section table {
@@ -314,27 +345,6 @@ button:hover {
 }
 
 /* Legende */
-.legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 15px;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    margin-right: 15px;
-    font-size: 0.9rem;
-}
-
-.legend-color {
-    width: 12px;
-    height: 12px;
-    margin-right: 5px;
-    border: 1px solid #333;
-}
-
 .save-button {
     background-color: #4CAF50;
 }

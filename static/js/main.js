@@ -694,56 +694,48 @@ function updateSummary() {
   if (!summary || !canvas) return;
   
   const counts = {};
-  const areas = {};
-  
-  // Get all annotation objects from canvas
+  const areas  = {};
+  const colors = {};
+  const units  = {};
+
   const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  
+
   annotations.forEach(annotation => {
     const labelId = annotation.labelId || annotation.objectLabel || 1;
-    const label = getLabel(labelId);
-    
-    // Calculate area/length based on annotation type
-    let measurement = 0;
+    const label   = getLabel(labelId);
+    const key     = label.name;
+
+    if (!counts[key]) {
+      counts[key] = 0;
+      areas[key]  = 0;
+      colors[key] = annotation.stroke || label.color || '#888';
+      units[key]  = annotation.type === 'polyline' ? 'm' : 'm²';
+    }
+    counts[key]++;
+
     if (annotation.type === 'rect') {
-      measurement = calculateRectangleAreaFromCanvas(annotation);
+      areas[key] += calculateRectangleAreaFromCanvas(annotation);
     } else if (annotation.type === 'polygon') {
-      measurement = calculatePolygonAreaFromCanvas(annotation);
+      areas[key] += calculatePolygonAreaFromCanvas(annotation);
     } else if (annotation.type === 'polyline') {
-      measurement = calculatePolylineLength(annotation.points || []);
+      areas[key] += calculatePolylineLength(annotation.points || []);
     }
-    
-    // Create dynamic counting based on label names
-    const labelKey = label.name.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/\s+/g, '_');
-    if (!counts[labelKey]) {
-      counts[labelKey] = 0;
-      areas[labelKey] = 0;
-    }
-    counts[labelKey]++;
-    areas[labelKey] += measurement;
   });
-  
+
   let summaryHtml = '';
-  Object.entries(counts).forEach(([key, count]) => {
-    if (count > 0) {
-      // Convert key back to readable name
-      const labelName = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-      const pluralName = count > 1 ? (labelName.endsWith('e') ? labelName + 'n' : labelName) : labelName;
-      
-      // Determine unit based on first annotation of this type
-      const firstAnnotation = annotations.find(ann => {
-        const annLabelId = ann.labelId || ann.objectLabel || 1;
-        const annLabel = getLabel(annLabelId);
-        const annLabelKey = annLabel.name.toLowerCase().replace(/ä/g, 'ae').replace(/ö/g, 'oe').replace(/ü/g, 'ue').replace(/\s+/g, '_');
-        return annLabelKey === key;
-      });
-      
-      const unit = firstAnnotation && firstAnnotation.type === 'polyline' ? 'm' : 'm²';
-      summaryHtml += `<p>${pluralName}: <strong>${count}</strong> (${areas[key].toFixed(2)} ${unit})</p>`;
-    }
+  Object.entries(counts).forEach(([name, count]) => {
+    const color = colors[name];
+    const unit  = units[name];
+    summaryHtml += `
+      <div class="summary-row">
+        <span class="summary-color" style="background:${color}"></span>
+        <span class="summary-name">${name}</span>
+        <span class="summary-count"><strong>${count}</strong></span>
+        <span class="summary-area">${areas[name].toFixed(2)} ${unit}</span>
+      </div>`;
   });
-  
-  summary.innerHTML = summaryHtml;
+
+  summary.innerHTML = summaryHtml || '<p><em>Keine Annotationen.</em></p>';
 }
 
 /**
@@ -894,6 +886,13 @@ function setupCanvasEvents() {
     }
   });
   
+  // Object modified (resize/scale) – recalculate measurements
+  canvas.on('object:modified', function(e) {
+    if (!e.target || e.target.objectType !== 'annotation') return;
+    updateLinkedTextLabelPosition(e.target);
+    debouncedTableUpdate();
+  });
+
   // Object removal events - update table when annotations are deleted
   canvas.on('object:removed', function(e) {
     if (isPageSwitching || !e.target) return;
@@ -1631,13 +1630,12 @@ function createSingleTextLabel(annotation) {
     linkedAnnotationId: linkId
   });
   
-  // Add text label to canvas
   canvas.add(textLabel);
   canvas.renderAll();
-  
-  // Update results table
+
   updateResultsTable();
-  
+  updateSummary();
+
   return textLabel;
 }
 
