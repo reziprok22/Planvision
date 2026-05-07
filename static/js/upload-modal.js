@@ -160,11 +160,12 @@ async function handleFile(file) {
         // Tell main.js that upload is ready
         if (typeof window.onUploadReady === 'function') {
             window.onUploadReady({
-                session_id:  currentSessionId,
-                page_count:  data.page_count || 1,
-                all_pages:   uploadedPages,
-                page_sizes:  uploadedPageSizes,
-                is_pdf:      data.is_pdf
+                session_id:    currentSessionId,
+                page_count:    data.page_count || 1,
+                all_pages:     uploadedPages,
+                page_sizes:    uploadedPageSizes,
+                is_pdf:        data.is_pdf,
+                original_file: data.is_pdf ? file : null
             });
         }
 
@@ -244,6 +245,21 @@ function buildPageList(count) {
     }
 
     pageListSection.style.display = 'block';
+}
+
+/**
+ * Initialize the sidebar for a loaded project (no file upload flow).
+ * Mirrors what handleFile() does after a successful upload.
+ */
+export function initSidebarFromProject(projectName, imageUrls, pageSizes) {
+  uploadedPages     = imageUrls || [];
+  uploadedPageSizes = pageSizes  || [];
+  currentFileName   = projectName;
+
+  showFileInfo(projectName);
+  buildPageList(imageUrls.length);
+  showAnalysisSettings();
+  setActivePageInList(1);
 }
 
 /**

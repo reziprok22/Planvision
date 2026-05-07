@@ -25,13 +25,11 @@ import {
   setPdfSessionId,
   setPdfPageData,
   setPageSettings,
-  setPdfNavigationState
+  setPdfNavigationState,
+  setOriginalPdfBlob,
+  getOriginalPdfBlob
 } from './pdf-handler.js';
-import { 
-  setupProject, 
-  saveProject, 
-  loadProject
-} from './project.js';
+import { setupProject } from './project.js';
 import {
   setupUploadModal,
   setOnPageClick,
@@ -51,7 +49,8 @@ let imageContainer = null;
 let uploadedImage = null;
 
 // Multi-Page Canvas State Management
-let pageCanvasData = {}; // Store canvas data for each page: { "1": canvasData, "2": canvasData, ... }
+let pageCanvasData    = {}; // Store canvas data for each page: { "1": canvasData, "2": canvasData, ... }
+let pageAnalysisData  = {}; // Store raw AI predictions per page: { "1": [...predictions], ... }
 let currentPageNumber = 1;
 
 // Make canvas and pageCanvasData globally available for label validation
@@ -1945,6 +1944,9 @@ async function analyzeCurrentPage() {
     const data = await response.json();
     window.data = data;
 
+    // Store raw predictions for ZIP export / PDF report generation
+    pageAnalysisData[currentPageNumber] = data.predictions || [];
+
     // Convert AI predictions → canvas annotations for this page
     if (data.predictions && data.predictions.length > 0) {
       const canvasData = convertPredictionsToCanvasData(data.predictions, currentPageNumber);
@@ -1993,6 +1995,14 @@ async function initApp() {
     // Store session + all pages in PDF handler so navigation and project-save work
     setPdfSessionId(uploadInfo.session_id);
     setPdfNavigationState(1, uploadInfo.page_count, uploadInfo.all_pages);
+
+    // Track original PDF blob so it can be included in ZIP saves
+    if (uploadInfo.is_pdf && uploadInfo.original_file) {
+      setOriginalPdfBlob(uploadInfo.original_file);
+    }
+
+    // Reset analysis data for new upload
+    pageAnalysisData = {};
 
     // Show results section + enable toolbar
     const resultsSection = document.getElementById('resultsSection');
@@ -2141,10 +2151,13 @@ async function initApp() {
       getPdfSessionId,
       getPdfPageData,
       getPageSettings,
+      getAllPdfPages,
       setPdfSessionId,
       setPdfPageData,
       setPageSettings,
-      setPdfNavigationState
+      setPdfNavigationState,
+      getOriginalPdfBlob,
+      setOriginalPdfBlob
     }
   });
   
@@ -2153,6 +2166,7 @@ async function initApp() {
   window.collectAllPagesCanvasData = collectAllPagesCanvasData;
   window.loadCanvasData = loadCanvasData;
   window.initializePageCanvasData = initializePageCanvasData;
+  window.collectAllPagesAnalysisData = () => ({ ...pageAnalysisData });
 
 }
 

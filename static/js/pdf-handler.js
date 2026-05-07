@@ -8,6 +8,7 @@ let totalPdfPages = 1;
 let allPdfPages = [];
 let pdfPageData = {};
 let pageSettings = {};
+let originalPdfBlob = null;
 
 export function resetPdfState() {
   pdfSessionId = null;
@@ -16,6 +17,7 @@ export function resetPdfState() {
   allPdfPages = [];
   pdfPageData = {};
   pageSettings = {};
+  originalPdfBlob = null;
 }
 
 // Getters
@@ -28,8 +30,12 @@ export function getAllPdfPages()   { return allPdfPages; }
 export function setPdfSessionId(sessionId)          { pdfSessionId = sessionId; }
 export function setPdfPageData(data)                { pdfPageData = data; }
 export function setPageSettings(settings)           { pageSettings = settings; }
+export function setOriginalPdfBlob(blob)            { originalPdfBlob = blob; }
 export function setPdfNavigationState(currentPage, totalPages, allPages) {
   currentPdfPage = currentPage;
   totalPdfPages  = totalPages;
   allPdfPages    = allPages;
 }
+
+// Getters
+export function getOriginalPdfBlob() { return originalPdfBlob; }

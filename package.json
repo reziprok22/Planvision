@@ -21,7 +21,8 @@
   "homepage": "https://github.com/reziprok22/Planvision#readme",
   "description": "",
   "dependencies": {
-    "fabric": "^6.7.1"
+    "fabric": "^6.7.1",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "vite": "^7.1.1"

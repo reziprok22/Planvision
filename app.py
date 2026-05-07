@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, jsonify, url_for, send_from_directory
 import os
+import uuid
 from model_handler import load_model, predict_image, cleanup_memory
 import shutil
 import json
@@ -12,9 +13,6 @@ from pdf2image import convert_from_path
 import logging
 import gc
 import atexit
-
-import uuid
-import datetime
 
 from PyPDF2 import PdfReader
 
@@ -384,308 +382,55 @@ def analyze_page():
 
 
 
-# Projekte speichern
-@app.route('/save_project', methods=['POST'])
-def save_project():
+@app.route('/restore_analysis/<session_id>', methods=['POST'])
+def restore_analysis(session_id):
+    """
+    Restores server-side analysis data after loading a ZIP project.
+    Creates the analysis directory structure needed for PDF export.
+    """
     try:
-        # Projektdaten aus dem Request-Body extrahieren
-        data = request.json
-        if not data:
-            return jsonify({'error': 'Keine Daten erhalten'}), 400
-            
-        # Projektname und Session-ID extrahieren
-        project_name = data.get('project_name', f"Projekt_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}")
-        session_id = data.get('session_id')
-        is_update = data.get('is_update', False)
-        
-        if not session_id:
-            return jsonify({'error': 'Keine Session-ID angegeben'}), 400
-        
-        if is_update:
-            # Update existing project
-            project_id = session_id
-            # Keep existing project name if not provided
-            if not project_name:
-                metadata_path = os.path.join(PROJECTS_DIR, project_id, 'metadata.json')
-                if os.path.exists(metadata_path):
-                    with open(metadata_path, 'r') as f:
-                        existing_metadata = json.load(f)
-                        project_name = existing_metadata.get('project_name', f"Projekt_{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M')}")
-        else:
-            # Create new project with new UUID
-            project_id = str(uuid.uuid4())
-        
-        # Projektverzeichnis behandeln
-        project_dir = os.path.join(PROJECTS_DIR, project_id)
-        
-        if is_update:
-            # For updates, project directory should already exist
-            if not os.path.exists(project_dir):
-                return jsonify({'error': 'Projekt-Session nicht gefunden'}), 404
-        else:
-            # For new projects, we might need to copy from session directory
-            if session_id != project_id:
-                # Copy from session directory to new project directory
-                session_dir = os.path.join(PROJECTS_DIR, session_id)
-                if os.path.exists(session_dir):
-                    shutil.copytree(session_dir, project_dir)
-                else:
-                    return jsonify({'error': 'Session-Daten nicht gefunden'}), 404
-        
-        # Erstelle fehlende Unterverzeichnisse
-        os.makedirs(os.path.join(project_dir, 'analysis'), exist_ok=True)
-        
-        # Original PDF-Datei sollte bereits im uploads-Ordner sein
-        pdf_path = os.path.join(project_dir, 'uploads', 'document.pdf')
-        if os.path.exists(pdf_path):
-            shutil.copy(pdf_path, os.path.join(project_dir, 'original.pdf'))
-        
-        # Bildseiten von uploads nach pages kopieren
-        uploads_dir = os.path.join(project_dir, 'uploads')
-        pages_dir = os.path.join(project_dir, 'pages')
-        os.makedirs(pages_dir, exist_ok=True)
-        
-        if os.path.exists(uploads_dir):
-            for filename in os.listdir(uploads_dir):
-                if filename.startswith('page_') and filename.endswith('.jpg'):
-                    shutil.copy(
-                        os.path.join(uploads_dir, filename),
-                        os.path.join(pages_dir, filename)
-                    )
-        
-        # Multi-Page Canvas-basierte Projektdaten (Single Source of Truth)
-        canvas_data = data.get('canvas_data', {})
-        data_format = data.get('data_format', 'canvas_v1')
-        
-        if data_format == 'multi_page_canvas_v1':
-            # Multi-page format
-            total_pages = canvas_data.get('total_pages', 1)
-            pages_data = canvas_data.get('pages', {})
-            total_annotations = sum(page.get('annotation_count', 0) for page in pages_data.values())
-            print(f"Multi-Page Canvas-Projektdaten: {total_pages} Seiten, {total_annotations} Annotationen")
-        else:
-            # Legacy single-page format
-            if not canvas_data.get('canvas_available', False):
-                return jsonify({'error': 'Keine Canvas-Daten verfügbar'}), 400
-            print(f"Single-Page Canvas-Projektdaten: {canvas_data.get('annotation_count', 0)} Annotationen")
-        
-        # Einstellungen vom Client holen
-        settings = data.get('settings', {})
-        
-        # Unified Labels vom Client holen
-        unified_labels = data.get('unified_labels', [])
-        
-        # Speichere globale Einstellungen
-        with open(os.path.join(project_dir, 'analysis', 'analysis_settings.json'), 'w') as f:
-            json.dump(settings, f, indent=2)
-        
-        # Speichere Unified Labels
-        with open(os.path.join(project_dir, 'analysis', 'unified_labels.json'), 'w') as f:
-            json.dump(unified_labels, f, indent=2)
-        
-        # Speichere Canvas-Daten (Single Source of Truth)
-        canvas_save_path = os.path.join(project_dir, 'analysis', 'canvas_data.json')
-        try:
-            with open(canvas_save_path, 'w') as f:
-                json.dump(canvas_data, f, indent=2)
-            print(f"Canvas-Daten gespeichert: {canvas_save_path}")
-        except Exception as e:
-            print(f"Fehler beim Speichern der Canvas-Daten: {e}")
-            return jsonify({'error': f'Fehler beim Speichern: {str(e)}'}), 500
-        
-        # Speichere Metadaten
-        pages_dir = os.path.join(project_dir, 'pages')
-        if os.path.exists(pages_dir):
-            page_count = len([f for f in os.listdir(pages_dir) 
-                             if f.endswith('.jpg') and f.startswith('page_')])
-        else:
-            page_count = 0
-        
-        # Handle metadata for Multi-Page Canvas-based projects
-        if data_format == 'multi_page_canvas_v1':
-            annotation_count = sum(page.get('annotation_count', 0) for page in canvas_data.get('pages', {}).values())
-        else:
-            annotation_count = canvas_data.get('annotation_count', 0)
-        
-        if is_update:
-            # Load existing metadata and update it
-            metadata_path = os.path.join(project_dir, 'metadata.json')
-            if os.path.exists(metadata_path):
-                with open(metadata_path, 'r') as f:
-                    metadata = json.load(f)
-                # Update fields
-                metadata['project_name'] = project_name
-                metadata['updated_at'] = datetime.datetime.now().isoformat()
-                metadata['page_count'] = page_count
-                metadata['annotation_count'] = annotation_count
-                metadata['data_format'] = data_format
-            else:
-                # Fallback if metadata doesn't exist
-                metadata = {
-                    'project_name': project_name,
-                    'created_at': datetime.datetime.now().isoformat(),
-                    'page_count': page_count,
-                    'project_id': project_id,
-                    'annotation_count': annotation_count,
-                    'data_format': data_format
-                }
-        else:
-            # New project metadata
-            metadata = {
-                'project_name': project_name,
-                'created_at': datetime.datetime.now().isoformat(),
-                'page_count': page_count,
-                'project_id': project_id,
-                'annotation_count': annotation_count,
-                'data_format': data_format
-            }
-        
-        with open(os.path.join(project_dir, 'metadata.json'), 'w') as f:
-            json.dump(metadata, f, indent=2)
-        
-        action = "aktualisiert" if is_update else "gespeichert"
-        print(f"Projekt {project_name} erfolgreich {action}. {annotation_count} Annotationen gespeichert.")
-        
-        return jsonify({
-            'success': True,
-            'message': f'Projekt erfolgreich {action}',
-            'project_id': project_id,
-            'project_name': project_name,
-            'annotation_count': annotation_count,
-            'is_update': is_update
-        })
-        
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        payload = request.get_json()
+        project_dir = os.path.join(PROJECTS_DIR, session_id)
 
-# Projekte auflisten
-@app.route('/list_projects', methods=['GET'])
-def list_projects():
-    try:
-        print("list_projects wurde aufgerufen")
-        projects = []
-        projects_dir = PROJECTS_DIR
-        
-        print(f"Suche nach Projekten in: {projects_dir}")
-        if not os.path.exists(projects_dir):
-            print(f"Ordner {projects_dir} existiert nicht, erstelle ihn")
-            os.makedirs(projects_dir, exist_ok=True)
-            return jsonify({'success': True, 'projects': []})
-        
-        project_count = 0
-        for project_id in os.listdir(projects_dir):
-            project_path = os.path.join(projects_dir, project_id)
-            print(f"Gefunden: {project_id}, ist Ordner: {os.path.isdir(project_path)}")
-            if os.path.isdir(project_path):
-                metadata_path = os.path.join(project_path, 'metadata.json')
-                if os.path.exists(metadata_path):
-                    print(f"Lade Metadaten aus: {metadata_path}")
-                    with open(metadata_path, 'r') as f:
-                        metadata = json.load(f)
-                        projects.append(metadata)
-                        project_count += 1
-                else:
-                    print(f"Metadaten-Datei nicht gefunden in: {metadata_path}")
-        
-        print(f"Insgesamt {project_count} Projekte gefunden")
-        return jsonify({
-            'success': True,
-            'projects': projects
-        })
-        
-    except Exception as e:
-        import traceback
-        print("Fehler beim Auflisten der Projekte:")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
-
-# Projekt laden
-@app.route('/load_project/<project_id>', methods=['GET'])
-def load_project(project_id):
-    try:
-        print(f"load_project aufgerufen mit ID: {project_id}")
-        
-        # Projektverzeichnis überprüfen
-        project_dir = os.path.join(PROJECTS_DIR, project_id)
-        print(f"Suche Projekt in: {project_dir}")
         if not os.path.exists(project_dir):
-            print(f"Projektordner nicht gefunden: {project_dir}")
-            return jsonify({'error': 'Projekt nicht gefunden'}), 404
-        
-        # Metadaten laden
-        metadata_path = os.path.join(project_dir, 'metadata.json')
-        if not os.path.exists(metadata_path):
-            print(f"Metadaten-Datei nicht gefunden: {metadata_path}")
-            return jsonify({'error': 'Projekt-Metadaten nicht gefunden'}), 404
-            
-        with open(metadata_path, 'r') as f:
-            metadata = json.load(f)
-        
-        # Canvas-Daten laden (Single Source of Truth)
+            return jsonify({'success': False, 'error': 'Session nicht gefunden'}), 404
+
         analysis_dir = os.path.join(project_dir, 'analysis')
-        canvas_data_path = os.path.join(analysis_dir, 'canvas_data.json')
-        
-        if not os.path.exists(canvas_data_path):
-            print(f"Canvas-Daten nicht gefunden: {canvas_data_path}")
-            return jsonify({'error': 'Canvas-Daten nicht gefunden. Projekt möglicherweise im alten Format.'}), 404
-            
-        with open(canvas_data_path, 'r') as f:
-            canvas_data = json.load(f)
-            print(f"Canvas-Daten geladen: {canvas_data.get('annotation_count', 0)} Annotationen")
-        
-        # Einstellungen laden
-        settings_path = os.path.join(analysis_dir, 'analysis_settings.json')
-        if os.path.exists(settings_path):
-            with open(settings_path, 'r') as f:
-                settings = json.load(f)
-        else:
-            settings = {}
-        
-        # Unified Labels laden
-        unified_labels_path = os.path.join(analysis_dir, 'unified_labels.json')
-        if os.path.exists(unified_labels_path):
-            with open(unified_labels_path, 'r') as f:
-                unified_labels = json.load(f)
-        else:
-            # Lade Standard unified labels aus JSON-Datei
-            default_labels_path = os.path.join(os.path.dirname(__file__), 'static', 'config', 'default_labels.json')
-            try:
-                with open(default_labels_path, 'r', encoding='utf-8') as f:
-                    unified_labels = json.load(f)
-            except Exception as e:
-                print(f"Fehler beim Laden der Default-Labels: {e}")
-                # Fallback auf leeres Array falls Datei nicht gefunden
-                unified_labels = []
-        
-        # URLs für die Bildseiten erstellen
-        image_urls = []
-        pages_dir = os.path.join(project_dir, 'pages')
-        for filename in sorted(os.listdir(pages_dir)):
-            if filename.startswith('page_') and filename.endswith('.jpg'):
-                # URL zum Bild erstellen (direkt aus dem Projektordner)
-                image_url = f"/project_files/{project_id}/pages/{filename}"
-                image_urls.append(image_url)
-        
-        # Determine data format from metadata
-        project_data_format = metadata.get('data_format', 'canvas_v1')
-        
-        return jsonify({
-            'success': True,
-            'metadata': metadata,
-            'canvas_data': canvas_data,  # Multi-page or single-page Canvas data
-            'settings': settings,
-            'unified_labels': unified_labels,
-            'image_urls': image_urls,
-            'data_format': project_data_format  # Pass through the actual format
-        })
-        
+        os.makedirs(analysis_dir, exist_ok=True)
+
+        # Save per-page prediction results
+        for page_num, predictions in payload.get('analysis', {}).items():
+            path = os.path.join(analysis_dir, f'page_{page_num}_results.json')
+            with open(path, 'w') as f:
+                json.dump({'predictions': predictions}, f)
+
+        # Save labels
+        if 'labels' in payload:
+            with open(os.path.join(analysis_dir, 'labels.json'), 'w') as f:
+                json.dump(payload['labels'], f)
+
+        # Save analysis settings
+        if 'settings' in payload:
+            with open(os.path.join(analysis_dir, 'analysis_settings.json'), 'w') as f:
+                json.dump(payload['settings'], f)
+
+        # Save project metadata
+        if 'metadata' in payload:
+            with open(os.path.join(project_dir, 'metadata.json'), 'w') as f:
+                json.dump(payload['metadata'], f)
+
+        # Copy uploaded PDF to expected location for export_annotated_pdf
+        pdf_src = os.path.join(project_dir, 'uploads', 'document.pdf')
+        pdf_dst = os.path.join(project_dir, 'original.pdf')
+        if os.path.exists(pdf_src) and not os.path.exists(pdf_dst):
+            import shutil
+            shutil.copy2(pdf_src, pdf_dst)
+
+        return jsonify({'success': True})
+
     except Exception as e:
-        import traceback
-        print("Fehler beim Laden des Projekts:")
-        traceback.print_exc()
-        return jsonify({'error': str(e)}), 500
+        print(f'restore_analysis error: {e}')
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # Endpunkt zum Erstellen des PDF-Berichts
