@@ -23,10 +23,13 @@ let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
     analysisSettingsSection, leftLoader;
 
 // ── Callbacks wired by main.js ────────────────────────────────────────
-//  Called when the user clicks a page in the sidebar
-let onPageClickCallback = null;
+let onPageClickCallback  = null;
+let onScaleChangeCallback = null;
 
-export function setOnPageClick(fn) { onPageClickCallback = fn; }
+export function setOnPageClick(fn)   { onPageClickCallback = fn; }
+export function setOnScaleChange(fn) { onScaleChangeCallback = fn; }
+
+const COMMON_SCALES = [20, 50, 100, 200, 500, 1000];
 
 // ── Public API ────────────────────────────────────────────────────────
 
@@ -212,6 +215,11 @@ function buildPageList(count) {
         const li = document.createElement('li');
         li.className = 'page-list-item';
         li.dataset.page = i;
+
+        const scaleOptions = COMMON_SCALES.map(s =>
+            `<option value="${s}" ${s === 100 ? 'selected' : ''}>${s}</option>`
+        ).join('');
+
         li.innerHTML = `
             <img class="page-thumb"
                  src="${uploadedPages[i-1] || ''}"
@@ -220,24 +228,45 @@ function buildPageList(count) {
             <span class="page-label">
                 Seite ${i}
                 ${sizeText ? `<span class="page-size-hint">${sizeText}</span>` : ''}
+                <span class="page-scale-control">
+                    <span class="scale-prefix">1:</span>
+                    <select class="page-scale-select" data-page="${i}">
+                        ${scaleOptions}
+                        <option value="custom">Eigener…</option>
+                    </select>
+                    <input type="number" class="page-scale-custom" data-page="${i}"
+                           min="1" value="100" style="display:none">
+                </span>
             </span>
             <span class="page-status-dot" id="pageStatusDot_${i}"></span>
         `;
 
+        // Scale dropdown logic (stop propagation so page click isn't triggered)
+        const scaleControl = li.querySelector('.page-scale-control');
+        const scaleSelect  = li.querySelector('.page-scale-select');
+        const scaleInput   = li.querySelector('.page-scale-custom');
+
+        scaleControl.addEventListener('click', e => e.stopPropagation());
+
+        scaleSelect.addEventListener('change', () => {
+            if (scaleSelect.value === 'custom') {
+                scaleInput.style.display = 'inline-block';
+                scaleInput.focus();
+            } else {
+                scaleInput.style.display = 'none';
+                if (onScaleChangeCallback) onScaleChangeCallback(i, parseFloat(scaleSelect.value));
+            }
+        });
+
+        scaleInput.addEventListener('blur', () => {
+            const val = parseFloat(scaleInput.value);
+            if (val > 0 && onScaleChangeCallback) onScaleChangeCallback(i, val);
+        });
+        scaleInput.addEventListener('keydown', e => { if (e.key === 'Enter') scaleInput.blur(); });
+
         li.addEventListener('click', () => {
-            // Highlight active
             document.querySelectorAll('.page-list-item').forEach(el => el.classList.remove('active'));
             li.classList.add('active');
-
-            // Update format fields from page metadata
-            if (size) {
-                const fw = document.getElementById('formatWidth');
-                const fh = document.getElementById('formatHeight');
-                if (fw) fw.value = size.width_mm;
-                if (fh) fh.value = size.height_mm;
-            }
-
-            // Delegate to main.js
             if (onPageClickCallback) onPageClickCallback(i);
         });
 
@@ -260,6 +289,22 @@ export function initSidebarFromProject(projectName, imageUrls, pageSizes) {
   buildPageList(imageUrls.length);
   showAnalysisSettings();
   setActivePageInList(1);
+}
+
+/**
+ * Update the scale dropdown for a specific page from outside (e.g. after ZIP load).
+ */
+export function setPageScaleInSidebar(pageNumber, scale) {
+    const select = document.querySelector(`.page-scale-select[data-page="${pageNumber}"]`);
+    const input  = document.querySelector(`.page-scale-custom[data-page="${pageNumber}"]`);
+    if (!select) return;
+    if (COMMON_SCALES.includes(scale)) {
+        select.value = String(scale);
+        if (input) input.style.display = 'none';
+    } else {
+        select.value = 'custom';
+        if (input) { input.value = scale; input.style.display = 'inline-block'; }
+    }
 }
 
 /**

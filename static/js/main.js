@@ -33,8 +33,10 @@ import { setupProject } from './project.js';
 import {
   setupUploadModal,
   setOnPageClick,
+  setOnScaleChange,
   setActivePageInList,
   setPageStatus,
+  setPageScaleInSidebar,
   getSessionId as getUploadSessionId,
   getPageSizes
 } from './upload-modal.js';
@@ -1684,6 +1686,17 @@ function updateLinkedTextLabelPosition(annotation) {
 }
 
 /**
+ * Refresh measurement text on all canvas labels after scale/format change.
+ */
+function refreshAllCanvasLabels() {
+  if (!canvas) return;
+  canvas.getObjects()
+    .filter(obj => obj.objectType === 'annotation' && obj.id)
+    .forEach(annotation => updateLinkedTextLabelPosition(annotation));
+  canvas.renderAll();
+}
+
+/**
  * Recalculate all annotation indices in order of creation or position
  * @param {string} sortBy - 'creation' (default) or 'position' (left-to-right, top-to-bottom)
  */
@@ -2002,8 +2015,9 @@ async function initApp() {
       setOriginalPdfBlob(uploadInfo.original_file);
     }
 
-    // Reset analysis data for new upload
+    // Reset per-page state for new upload
     pageAnalysisData = {};
+    setPageSettings({});
 
     // Show results section + enable toolbar
     const resultsSection = document.getElementById('resultsSection');
@@ -2017,6 +2031,35 @@ async function initApp() {
     navigateToPageNoAnalysis(1, uploadInfo.all_pages, uploadInfo.page_sizes);
   };
 
+  /** Persist current UI field values into pageSettings for the given page. */
+  function saveCurrentPageSettings(pageNum) {
+    const current = getPageSettings();
+    current[pageNum] = {
+      format_width:  parseFloat(document.getElementById('formatWidth')?.value)  || 210,
+      format_height: parseFloat(document.getElementById('formatHeight')?.value) || 297,
+      dpi:           parseFloat(document.getElementById('dpi')?.value)           || 150,
+      plan_scale:    parseFloat(document.getElementById('planScale')?.value)     || 100
+    };
+    setPageSettings(current);
+  }
+
+  /** Restore saved pageSettings into UI fields for the given page. */
+  function loadPageSettingsToUI(pageNum) {
+    const settings = getPageSettings();
+    const s = settings[pageNum] || settings[String(pageNum)];
+    if (!s) return;
+    const fw    = document.getElementById('formatWidth');
+    const fh    = document.getElementById('formatHeight');
+    const dpi   = document.getElementById('dpi');
+    const scale = document.getElementById('planScale');
+    if (fw    && s.format_width  != null) fw.value    = s.format_width;
+    if (fh    && s.format_height != null) fh.value    = s.format_height;
+    if (dpi   && s.dpi           != null) dpi.value   = s.dpi;
+    if (scale && s.plan_scale    != null) scale.value = s.plan_scale;
+    // Keep sidebar dropdown in sync
+    if (s.plan_scale != null) setPageScaleInSidebar(pageNum, s.plan_scale);
+  }
+
   /**
    * Navigate to a page without running the AI – just show the image.
    * Called from the left sidebar page list and from onUploadReady.
@@ -2028,6 +2071,11 @@ async function initApp() {
     const imageUrl = pages[pageNumber - 1];
     if (!imageUrl) return;
 
+    // Save current page settings before switching
+    if (currentPageNumber !== pageNumber) {
+      saveCurrentPageSettings(currentPageNumber);
+    }
+
     // Update page state
     setCurrentPage(pageNumber);
     currentPageNumber = pageNumber;
@@ -2035,15 +2083,22 @@ async function initApp() {
     // Sync sidebar highlight
     setActivePageInList(pageNumber);
 
-    // Update format fields from page metadata
-    const sizes = pageSizes || getPageSizes();
-    if (sizes && sizes[pageNumber - 1]) {
-      const s = sizes[pageNumber - 1];
-      const fw = document.getElementById('formatWidth');
-      const fh = document.getElementById('formatHeight');
-      // Support both {width_mm, height_mm} (new) and array [w, h] (legacy)
-      if (fw) fw.value = s.width_mm ?? Math.round(s[0] ?? 210);
-      if (fh) fh.value = s.height_mm ?? Math.round(s[1] ?? 297);
+    // Restore per-page settings (format, DPI, scale) – falls back to pageSizes for fresh uploads
+    const savedSettings = getPageSettings();
+    if (savedSettings[pageNumber] || savedSettings[String(pageNumber)]) {
+      loadPageSettingsToUI(pageNumber);
+    } else {
+      // First visit: initialise from PDF-detected page sizes + current DPI/scale defaults
+      const sizes = pageSizes || getPageSizes();
+      if (sizes && sizes[pageNumber - 1]) {
+        const s = sizes[pageNumber - 1];
+        const fw = document.getElementById('formatWidth');
+        const fh = document.getElementById('formatHeight');
+        if (fw) fw.value = s.width_mm ?? Math.round(s[0] ?? 210);
+        if (fh) fh.value = s.height_mm ?? Math.round(s[1] ?? 297);
+      }
+      // Persist these initial values so they're included in ZIP saves
+      saveCurrentPageSettings(pageNumber);
     }
 
     // Load image into canvas
@@ -2115,6 +2170,20 @@ async function initApp() {
     navigateToPageNoAnalysis(pageNumber);
   });
 
+  // When user changes scale in sidebar → update hidden input + pageSettings + canvas labels
+  setOnScaleChange((pageNum, scale) => {
+    const scaleInput = document.getElementById('planScale');
+    if (scaleInput) scaleInput.value = scale;
+    const current = getPageSettings();
+    const existing = current[pageNum] || current[String(pageNum)] || {};
+    current[pageNum] = { ...existing, plan_scale: scale };
+    setPageSettings(current);
+    // Refresh canvas labels and results table with new scale
+    refreshAllCanvasLabels();
+    updateResultsTable();
+    updateSummary();
+  });
+
   // Wire "Seite analysieren" button
   const analyzeCurrentPageBtn = document.getElementById('analyzeCurrentPageBtn');
   if (analyzeCurrentPageBtn) {
@@ -2169,6 +2238,14 @@ async function initApp() {
   window.loadCanvasData = loadCanvasData;
   window.initializePageCanvasData = initializePageCanvasData;
   window.collectAllPagesAnalysisData = () => ({ ...pageAnalysisData });
+
+  // Update all sidebar scale dropdowns at once (called after ZIP load)
+  window.syncAllPageScalesInSidebar = function() {
+    const settings = getPageSettings();
+    for (const [page, s] of Object.entries(settings)) {
+      if (s && s.plan_scale != null) setPageScaleInSidebar(parseInt(page), s.plan_scale);
+    }
+  };
 
 }
 

@@ -136,16 +136,14 @@ async function handleLoad(file) {
     const resultsSection = document.getElementById('resultsSection');
     if (resultsSection) resultsSection.style.display = 'block';
 
-    // Load first page image + canvas data
-    const uploadedImage = document.getElementById('uploadedImage');
-    if (uploadedImage && imageUrls.length > 0) {
-      uploadedImage.onload = function () {
-        const page1 = canvasData.pages && canvasData.pages['1'];
-        if (page1 && window.loadCanvasData) window.loadCanvasData(page1);
-      };
-      uploadedImage.style.display = 'block';
-      uploadedImage.src = imageUrls[0];
-    }
+    const analyzeBtn = document.getElementById('analyzeCurrentPageBtn');
+    if (analyzeBtn) analyzeBtn.disabled = false;
+
+    // Sync all sidebar scale dropdowns with loaded settings
+    if (window.syncAllPageScalesInSidebar) window.syncAllPageScalesInSidebar();
+
+    // Navigate to page 1 – loads its settings into UI fields
+    if (window.navigateToPageNoAnalysis) window.navigateToPageNoAnalysis(1, imageUrls);
 
     document.title = `Planvision – ${metadata.project_name}`;
     updateStatus(status, 'Projekt geladen ✓', 'success');
