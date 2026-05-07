@@ -575,13 +575,13 @@ button:hover {
 
 /* Label-Manager Styles */
 .label-manager-container {
-    margin-top: 20px;
+    margin-top: 16px;
 }
 
 .label-list {
     max-height: 60vh;
     overflow-y: auto;
-    margin-bottom: 15px;
+    margin-bottom: 12px;
 }
 
 #labelTable {
@@ -589,43 +589,129 @@ button:hover {
     border-collapse: collapse;
 }
 
-#labelTable th, #labelTable td {
-    padding: 8px;
-    text-align: left;
-    border-bottom: 1px solid #ddd;
-}
-
 #labelTable th {
-    background-color: #f2f2f2;
+    padding: 4px 8px 8px;
+    text-align: left;
+    background: none;
+    color: #999;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid #e8e8e8;
 }
 
+#labelTable td {
+    padding: 5px 8px;
+    vertical-align: middle;
+    border: none;
+}
+
+#labelTable tbody tr {
+    border-bottom: 1px solid #f3f3f3;
+}
+
+#labelTable tbody tr:hover {
+    background: #fafafa;
+}
+
+/* Layer move buttons */
+.layer-move-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 5px;
+    color: #bbb;
+    font-size: 11px;
+    line-height: 1;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+.layer-move-btn:hover:not(:disabled) {
+    color: #555;
+    background: #eee;
+}
+
+.layer-move-btn:disabled {
+    color: #e0e0e0;
+    cursor: default;
+}
+
+/* Inline text edit */
+input[type="text"].inline-edit {
+    border: none;
+    border-bottom: 1px solid transparent;
+    background: transparent;
+    padding: 2px 4px;
+    font-size: 13px;
+    width: 100%;
+    border-radius: 0;
+}
+
+input[type="text"].inline-edit:hover {
+    border-bottom-color: #ccc;
+}
+
+input[type="text"].inline-edit:focus {
+    border-bottom-color: #4a90e2;
+    outline: none;
+}
+
+/* Color picker cell */
+.color-cell {
+    display: flex;
+    align-items: center;
+    gap: 0;
+}
+
+input[type="color"].inline-edit {
+    width: 28px;
+    height: 28px;
+    padding: 1px 2px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+    background: none;
+}
+
+.color-preview {
+    display: none;
+}
+
+/* Opacity slider */
+.opacity-slider {
+    width: 70px;
+    vertical-align: middle;
+    accent-color: #4a90e2;
+}
+
+.opacity-value {
+    font-size: 11px;
+    color: #aaa;
+    margin-left: 4px;
+}
+
+/* Delete button */
 .label-actions {
     display: flex;
-    gap: 10px;
-    margin-bottom: 15px;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
 }
 
 .label-form {
     background-color: #f9f9f9;
-    padding: 15px;
+    padding: 14px;
     border-radius: 5px;
-    margin-top: 15px;
+    margin-top: 12px;
 }
 
 .form-actions {
     display: flex;
     gap: 10px;
-    margin-top: 15px;
+    margin-top: 14px;
     justify-content: flex-end;
-}
-
-.color-preview {
-    width: 20px;
-    height: 20px;
-    border-radius: 3px;
-    display: inline-block;
-    vertical-align: middle;
-    margin-right: 5px;
 }
 
 /* Label tabs styling */
@@ -672,32 +758,21 @@ button:hover {
     background-color: #5a6268;
 }
 
-/* Edit and Delete buttons in label table */
-.edit-label-btn, .delete-label-btn {
-    padding: 4px 8px;
-    margin: 0 2px;
-    border: none;
-    border-radius: 3px;
-    cursor: pointer;
-    font-size: 12px;
-}
-
-.edit-label-btn {
-    background-color: #007bff;
-    color: white;
-}
-
-.edit-label-btn:hover {
-    background-color: #0056b3;
-}
-
+/* Delete button in label table */
 .delete-label-btn {
-    background-color: #dc3545;
-    color: white;
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    line-height: 1;
 }
 
 .delete-label-btn:hover {
-    background-color: #c82333;
+    color: #e74c3c;
+    background: #fff0f0;
 }
 
 /* Vereinfachte Label-Auswahl im Editor */

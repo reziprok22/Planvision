@@ -503,28 +503,29 @@ void main() {
   }
 `}applyTo2d(t){let{imageData:{data:e}}=t;const n=-this.vibrance;for(let r=0;r<e.length;r+=4){const s=e[r],i=e[r+1],a=e[r+2],l=Math.max(s,i,a),c=(s+i+a)/3,h=2*Math.abs(l-c)/255*n;e[r]+=l!==s?(l-s)*h:0,e[r+1]+=l!==i?(l-i)*h:0,e[r+2]+=l!==a?(l-a)*h:0}}sendUniformData(t,e){t.uniform1f(e.uVibrance,-this.vibrance)}isNeutralState(){return this.vibrance===0}}O(Hr,"type","Vibrance"),O(Hr,"defaults",{vibrance:0}),O(Hr,"uniformLocations",["uVibrance"]),Q.setClass(Hr);let gs,Ko,Jo,_i,Qo,ta,ea,na,ra,sa,Ki,Il,Fl,Ji,Qi,En,er,to,eo,no,ia,oa,ps=[],ut,ro,te=!1;async function Bu(){try{const o=await fetch("/static/config/default_labels.json");if(!o.ok)throw new Error(`HTTP error! status: ${o.status}`);ps=await o.json()}catch(o){console.error("Fehler beim Laden der Default-Labels:",o),ps=[]}}async function Ru(o){await Bu(),gs=o.labelManagerModal,Ko=o.manageLabelBtn,Jo=o.closeModalBtn,_i=o.labelTableBody,Qo=o.addLabelBtn,ta=o.importLabelsBtn,ea=o.exportLabelsBtn,na=o.resetLabelsBtn,Ki=o.labelForm,Il=o.labelFormTitle,Fl=o.labelIdInput,Ji=o.labelNameInput,Qi=o.labelColorInput,ia=o.saveLabelBtn,oa=o.cancelLabelBtn,En=document.getElementById("labelOpacity"),er=document.getElementById("opacityValueDisplay"),ra=document.getElementById("applyChangesBtn"),sa=document.getElementById("cancelChangesBtn"),to=document.getElementById("toolRectangle"),eo=document.getElementById("toolPolygon"),no=document.getElementById("toolLine"),ut=JSON.parse(localStorage.getItem("unifiedLabels"))||[...ps],window.currentLabels=De("rectangle"),window.currentLineLabels=De("line"),Ko.addEventListener("click",zu),Jo.addEventListener("click",Jr),window.addEventListener("click",function(t){t.target===gs&&(te?confirm("You have unsaved changes. Close without saving?")&&(bi(),Jr()):Jr())}),Qo.addEventListener("click",Uu),ta.addEventListener("click",Zu),ea.addEventListener("click",Ku),na.addEventListener("click",Ju),ia.addEventListener("click",Xu),oa.addEventListener("click",io),ra.addEventListener("click",Nu),sa.addEventListener("click",bi),En&&er&&En.addEventListener("input",function(){er.textContent=this.value+"%"}),Ul()}function zu(){ro=JSON.parse(JSON.stringify(ut)),te=!1,pn(),gs.style.display="block"}function Jr(){if(te)if(confirm("You have unsaved changes. Close without saving?"))bi();else return;gs.style.display="none",io()}function pn(){_i.innerHTML="",ut.forEach(o=>{const t=document.createElement("tr"),e=ut.indexOf(o)===0,n=ut.indexOf(o)===ut.length-1,r=Math.round((1-o.opacity)*100);t.innerHTML=`
       <td>
-        <button class="layer-move-btn" data-id="${o.id}" data-direction="down" ${e?"disabled":""} title="In der Tabelle nach oben (Layer nach vorne)">⬆️</button>
-        <button class="layer-move-btn" data-id="${o.id}" data-direction="up" ${n?"disabled":""} title="In der Tabelle nach unten (Layer nach hinten)">⬇️</button>
+        <button class="layer-move-btn" data-id="${o.id}" data-direction="down" ${e?"disabled":""} title="Layer nach vorne">▲</button>
+        <button class="layer-move-btn" data-id="${o.id}" data-direction="up" ${n?"disabled":""} title="Layer nach hinten">▼</button>
       </td>
-      <td>${o.id}</td>
+      <td style="color:#bbb;font-size:12px;">${o.id}</td>
       <td>
         <input type="text" class="inline-edit" data-field="name" data-id="${o.id}" value="${o.name}" />
       </td>
       <td>
-        <input type="color" class="inline-edit" data-field="color" data-id="${o.id}" value="${o.color}" />
-        <span class="color-preview" style="background-color:${o.color}; margin-left: 5px;"></span>
+        <div class="color-cell">
+          <input type="color" class="inline-edit" data-field="color" data-id="${o.id}" value="${o.color}" />
+        </div>
       </td>
       <td>
-        <input type="range" class="inline-edit opacity-slider" data-field="opacity" data-id="${o.id}" 
-               min="0" max="100" step="5" value="${r}" 
+        <input type="range" class="inline-edit opacity-slider" data-field="opacity" data-id="${o.id}"
+               min="0" max="100" step="5" value="${r}"
                title="Opacity: ${r}%" />
         <span class="opacity-value">${r}%</span>
       </td>
-      <td><input type="checkbox" class="inline-edit" data-field="rectangle" data-id="${o.id}" ${o.tools.rectangle?"checked":""}></td>
-      <td><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${o.id}" ${o.tools.polygon?"checked":""}></td>
-      <td><input type="checkbox" class="inline-edit" data-field="line" data-id="${o.id}" ${o.tools.line?"checked":""}></td>
+      <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="rectangle" data-id="${o.id}" ${o.tools.rectangle?"checked":""}></td>
+      <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${o.id}" ${o.tools.polygon?"checked":""}></td>
+      <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="line" data-id="${o.id}" ${o.tools.line?"checked":""}></td>
       <td>
-        <button class="delete-label-btn" data-id="${o.id}">Delete</button>
+        <button class="delete-label-btn" data-id="${o.id}" title="Label löschen">×</button>
       </td>
     `,_i.appendChild(t)}),document.querySelectorAll(".inline-edit").forEach(o=>{o.addEventListener("input",Wu),o.type==="color"&&o.addEventListener("change",function(){const t=this.nextElementSibling;t&&t.classList.contains("color-preview")&&(t.style.backgroundColor=this.value)}),o.classList.contains("opacity-slider")&&o.addEventListener("input",function(){const t=this.nextElementSibling;t&&t.classList.contains("opacity-value")&&(t.textContent=this.value+"%"),this.title=`Opacity: ${this.value}%`})}),document.querySelectorAll(".delete-label-btn").forEach(o=>{o.addEventListener("click",function(){const t=parseInt(this.dataset.id);Yu(t)})}),document.querySelectorAll(".layer-move-btn").forEach(o=>{o.addEventListener("click",function(){const t=parseInt(this.dataset.id),e=this.dataset.direction;Vu(t,e)})}),Ms()}function Wu(o){const t=o.target,e=parseInt(t.dataset.id),n=t.dataset.field,r=t.type==="checkbox"?t.checked:t.value,s=ut.find(i=>i.id===e);if(s){if(n==="name")s.name=r;else if(n==="color")s.color=r;else if(n==="opacity")s.opacity=1-parseInt(r)/100,Rl();else if(["rectangle","polygon","line"].includes(n)){if(!r){const i=Qu(e,n);if(i.length>0){t.checked=!0,alert(`Cannot disable "${n}" for label "${s.name}" because ${i.length} existing annotation(s) of this type exist. Please delete or change these annotations first:
 

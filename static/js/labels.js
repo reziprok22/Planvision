@@ -178,28 +178,29 @@ function refreshLabelTable() {
 
     row.innerHTML = `
       <td>
-        <button class="layer-move-btn" data-id="${label.id}" data-direction="down" ${isFirst ? 'disabled' : ''} title="In der Tabelle nach oben (Layer nach vorne)">⬆️</button>
-        <button class="layer-move-btn" data-id="${label.id}" data-direction="up" ${isLast ? 'disabled' : ''} title="In der Tabelle nach unten (Layer nach hinten)">⬇️</button>
+        <button class="layer-move-btn" data-id="${label.id}" data-direction="down" ${isFirst ? 'disabled' : ''} title="Layer nach vorne">▲</button>
+        <button class="layer-move-btn" data-id="${label.id}" data-direction="up" ${isLast ? 'disabled' : ''} title="Layer nach hinten">▼</button>
       </td>
-      <td>${label.id}</td>
+      <td style="color:#bbb;font-size:12px;">${label.id}</td>
       <td>
         <input type="text" class="inline-edit" data-field="name" data-id="${label.id}" value="${label.name}" />
       </td>
       <td>
-        <input type="color" class="inline-edit" data-field="color" data-id="${label.id}" value="${label.color}" />
-        <span class="color-preview" style="background-color:${label.color}; margin-left: 5px;"></span>
+        <div class="color-cell">
+          <input type="color" class="inline-edit" data-field="color" data-id="${label.id}" value="${label.color}" />
+        </div>
       </td>
       <td>
-        <input type="range" class="inline-edit opacity-slider" data-field="opacity" data-id="${label.id}" 
-               min="0" max="100" step="5" value="${opacityPercent}" 
+        <input type="range" class="inline-edit opacity-slider" data-field="opacity" data-id="${label.id}"
+               min="0" max="100" step="5" value="${opacityPercent}"
                title="Opacity: ${opacityPercent}%" />
         <span class="opacity-value">${opacityPercent}%</span>
       </td>
-      <td><input type="checkbox" class="inline-edit" data-field="rectangle" data-id="${label.id}" ${label.tools.rectangle ? 'checked' : ''}></td>
-      <td><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${label.id}" ${label.tools.polygon ? 'checked' : ''}></td>
-      <td><input type="checkbox" class="inline-edit" data-field="line" data-id="${label.id}" ${label.tools.line ? 'checked' : ''}></td>
+      <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="rectangle" data-id="${label.id}" ${label.tools.rectangle ? 'checked' : ''}></td>
+      <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${label.id}" ${label.tools.polygon ? 'checked' : ''}></td>
+      <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="line" data-id="${label.id}" ${label.tools.line ? 'checked' : ''}></td>
       <td>
-        <button class="delete-label-btn" data-id="${label.id}">Delete</button>
+        <button class="delete-label-btn" data-id="${label.id}" title="Label löschen">×</button>
       </td>
     `;
     
