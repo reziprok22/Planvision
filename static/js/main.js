@@ -70,6 +70,8 @@ let currentRectangle = null;
 let currentPolygon = null;
 let currentLine = null;
 let rectangleStartPoint = null;
+let clipboard = [];      // serialised annotations ready to paste
+let pasteOffset = 0;     // increases with each paste so copies don't stack
 
 // Event timing control
 let isProcessingClick = false;
@@ -781,6 +783,45 @@ function clearResults() {
   // Results cleared
 }
 
+
+// ── Copy / Paste ──────────────────────────────────────────────────────────────
+
+function copySelectedAnnotations() {
+  const annotations = selectedObjects.filter(o => o.objectType === 'annotation');
+  if (!annotations.length) return;
+  // Serialise with custom properties so paste recreates them faithfully
+  clipboard = annotations.map(o => o.toObject([
+    'objectType', 'annotationType', 'labelId', 'objectLabel',
+  ]));
+  pasteOffset = 0;
+}
+
+async function pasteAnnotations() {
+  if (!clipboard.length) return;
+  pasteOffset += 20;
+
+  const objects = await util.enlivenObjects(JSON.parse(JSON.stringify(clipboard)));
+  for (const obj of objects) {
+    obj.set({
+      left:        (obj.left  || 0) + pasteOffset,
+      top:         (obj.top   || 0) + pasteOffset,
+      objectType:  'annotation',
+      selectable:  currentTool === 'select',
+      evented:     currentTool === 'select',
+    });
+    // Remove stale id/index so createSingleTextLabel assigns fresh ones
+    delete obj.id;
+    obj.displayIndex = undefined;
+    canvas.add(obj);
+    obj.setCoords();
+    createSingleTextLabel(obj);
+  }
+
+  applyLayerOrdering();
+  canvas.requestRenderAll();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * Setup Canvas Events for Editor - Pure Fabric.js approach
@@ -2147,6 +2188,13 @@ async function initApp() {
     // Don't fire when typing in an input, textarea or select
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    // Ctrl / Cmd shortcuts
+    if (e.ctrlKey || e.metaKey) {
+      if (e.key === 'c' || e.key === 'C') { copySelectedAnnotations(); e.preventDefault(); return; }
+      if (e.key === 'v' || e.key === 'V') { pasteAnnotations();        e.preventDefault(); return; }
+      return; // don't let other Ctrl+key combos trigger tool shortcuts
+    }
 
     switch (e.key) {
       case 's': case 'S': setTool('select');    break;
