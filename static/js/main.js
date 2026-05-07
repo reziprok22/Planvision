@@ -263,7 +263,7 @@ function setupContainerScrolling() {
     // If Shift key is held, convert vertical scroll to horizontal
     if (e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
-      imageContainer.scrollLeft += e.deltaY;
+      imageContainer.scrollBy({ left: e.deltaY * 0.5});
     }
     // Normal vertical scrolling happens automatically if no modifiers
     // Ctrl+Wheel is handled by Fabric.js for zooming
