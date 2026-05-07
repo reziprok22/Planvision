@@ -2137,7 +2137,33 @@ async function initApp() {
   
   // Setup tool buttons initially
   setupToolButtons();
-  
+
+  // Keyboard shortcuts for tools
+  document.addEventListener('keydown', function(e) {
+    // Don't fire when typing in an input, textarea or select
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    switch (e.key) {
+      case 's': case 'S': setTool('select');    break;
+      case 'r': case 'R': setTool('rectangle'); break;
+      case 'p': case 'P': setTool('polygon');   break;
+      case 'l': case 'L': setTool('line');      break;
+      case 'Delete':
+      case 'Backspace':   deleteSelectedObjects(); e.preventDefault(); break;
+      case 'Escape':
+        // First Escape cancels in-progress drawing; second Escape switches to select
+        if ((currentTool === 'polygon' || currentTool === 'line') && drawingMode) {
+          cleanupCurrentTool();
+          resetAllDrawingStates();
+          canvas?.renderAll();
+        } else {
+          setTool('select');
+        }
+        break;
+    }
+  });
+
   // Setup recalculate indices button
   const recalculateBtn = document.getElementById('recalculateIndicesBtn');
   if (recalculateBtn) {
