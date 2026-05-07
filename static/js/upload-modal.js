@@ -183,7 +183,11 @@ async function handleFile(file) {
 function showLoading(active) {
     if (!leftLoader) return;
     leftLoader.classList.toggle('active', active);
-    if (dropZone) dropZone.style.display = active ? 'none' : 'block';
+    if (dropZone) {
+        // Only show drop zone when not loading AND file info is not displayed
+        const fileInfoVisible = fileInfo && fileInfo.style.display !== 'none';
+        dropZone.style.display = (!active && !fileInfoVisible) ? 'block' : 'none';
+    }
 }
 
 function showFileInfo(name) {

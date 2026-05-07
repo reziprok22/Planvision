@@ -2015,9 +2015,12 @@ async function initApp() {
       setOriginalPdfBlob(uploadInfo.original_file);
     }
 
-    // Reset per-page state for new upload
+    // Full reset for new upload – clear all previous project state
+    pageCanvasData   = {};
     pageAnalysisData = {};
     setPageSettings({});
+    setOriginalPdfBlob(null);
+    if (canvas) canvas.clear();
 
     // Show results section + enable toolbar
     const resultsSection = document.getElementById('resultsSection');
