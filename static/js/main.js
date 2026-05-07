@@ -797,9 +797,18 @@ function copySelectedAnnotations() {
   const annotations = selectedObjects.filter(o => o.objectType === 'annotation');
   if (!annotations.length) return;
   // Serialise with custom properties so paste recreates them faithfully
-  clipboard = annotations.map(o => o.toObject([
-    'objectType', 'annotationType', 'labelId', 'objectLabel',
-  ]));
+  clipboard = annotations.map(o => {
+    const serialized = o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel']);
+    // When objects are part of an ActiveSelection their left/top are
+    // relative to the selection centre.  Use the absolute transform matrix
+    // to recover canvas-absolute coordinates before serialising.
+    if (o.group) {
+      const m = o.calcTransformMatrix(); // [4],[5] = absolute centre of object
+      serialized.left = m[4] - o.getScaledWidth()  / 2;
+      serialized.top  = m[5] - o.getScaledHeight() / 2;
+    }
+    return serialized;
+  });
   pasteOffset = 0;
 }
 
@@ -974,14 +983,16 @@ function setupCanvasEvents() {
   
   // Selection events
   canvas.on('selection:created', function(e) {
-    selectedObjects = e.selected || [];
+    selectedObjects = canvas.getActiveObjects();
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
     }
   });
-  
+
   canvas.on('selection:updated', function(e) {
-    selectedObjects = e.selected || [];
+    // e.selected contains only the newly added/removed object;
+    // getActiveObjects() returns the full current selection.
+    selectedObjects = canvas.getActiveObjects();
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
     }
