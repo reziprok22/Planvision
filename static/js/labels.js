@@ -513,57 +513,39 @@ function updateCanvasLayerOrder() {
 }
 
 /**
- * Sort canvas objects by label order (low index = back, high index = front)
+ * Sort canvas objects by label order.
+ * Layer groups (back→front): backgrounds → annotations → textLabels.
+ * Within annotations: higher currentLabels index = more behind; lower index = more in front.
+ * Operates directly on canvas._objects to avoid firing object:removed/added events.
  */
 function sortCanvasObjectsByLabelOrder(canvas) {
   if (!canvas) return;
-  
-  // Get all objects by type
-  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  const textLabels = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
-  const backgroundImages = canvas.getObjects().filter(obj => 
-    obj.type === 'image' && !obj.objectType
-  );
-  const otherObjects = canvas.getObjects().filter(obj => 
-    obj.objectType !== 'annotation' && 
-    obj.objectType !== 'textLabel' && 
-    !(obj.type === 'image' && !obj.objectType)
-  );
-  
-  // Sort annotations by label order
-  annotations.sort((a, b) => {
-    const labelIdA = a.labelId || a.objectLabel || 999;
-    const labelIdB = b.labelId || b.objectLabel || 999;
-    
-    const indexA = currentLabels.findIndex(label => label.id === labelIdA);
-    const indexB = currentLabels.findIndex(label => label.id === labelIdB);
-    
-    // If labels are not found, put them at the end
-    const finalIndexA = indexA === -1 ? 999 : indexA;
-    const finalIndexB = indexB === -1 ? 999 : indexB;
-    
-    // UMGEKEHRTE Logik: Lower table index = higher layer (front), higher table index = lower layer (behind)
-    return finalIndexB - finalIndexA;
+
+  const layerRank = obj => {
+    if (obj.objectType === 'textLabel') return 2;   // always front
+    if (obj.objectType === 'annotation') return 1;   // middle
+    return 0;                                         // background / other → back
+  };
+
+  canvas._objects.sort((a, b) => {
+    const ra = layerRank(a);
+    const rb = layerRank(b);
+    if (ra !== rb) return ra - rb;
+
+    // Both annotations: lower currentLabels index → front (later in _objects)
+    if (ra === 1) {
+      const idA = a.labelId || a.objectLabel || 999;
+      const idB = b.labelId || b.objectLabel || 999;
+      const ia = currentLabels.findIndex(l => l.id === idA);
+      const ib = currentLabels.findIndex(l => l.id === idB);
+      const fa = ia === -1 ? 999 : ia;
+      const fb = ib === -1 ? 999 : ib;
+      return fb - fa; // higher index first → lower index last (front)
+    }
+    return 0;
   });
-  
-  // Instead of clearing the entire canvas, just reorder the objects
-  // This preserves all canvas properties and event handlers
-  
-  // Remove all objects temporarily
-  const allObjects = canvas.getObjects().slice();
-  allObjects.forEach(obj => canvas.remove(obj));
-  
-  // Add back in correct order:
-  // 1. Background images - always at the very back
-  // 2. Other objects (if any)
-  // 3. Annotations sorted by label order
-  // 4. Text labels - always at the front
-  backgroundImages.forEach(obj => canvas.add(obj));
-  otherObjects.forEach(obj => canvas.add(obj));
-  annotations.forEach(obj => canvas.add(obj));
-  textLabels.forEach(obj => canvas.add(obj));
-  
-  canvas.renderAll();
+
+  canvas.requestRenderAll();
 }
 
 /**

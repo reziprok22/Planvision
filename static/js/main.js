@@ -7,14 +7,15 @@
 import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util } from 'fabric';
 
 // Import modules
-import { 
-  setupLabels, 
-  getLabelById, 
-  getLabelName, 
+import {
+  setupLabels,
+  getLabelById,
+  getLabelName,
   getLabelColor,
   getCurrentLabels,
   getCurrentLineLabels,
-  getLabelsForTool
+  getLabelsForTool,
+  applyLayerOrdering
 } from './labels.js';
 import {
   resetPdfState,
@@ -182,6 +183,7 @@ function initCanvas() {
   // Improve selection tolerance for thin lines and complex shapes
   canvas.targetFindTolerance = 10;      // 10px tolerance around objects
   canvas.perPixelTargetFind = true;     // More precise hit detection
+  canvas.uniformScaling = false;        // free resize by default; Shift = proportional
   
   // FABRIC.JS NATURAL-SIZE STRATEGY: Canvas = image size, 1:1 coordinates
   const naturalWidth = uploadedImage.naturalWidth;
@@ -352,15 +354,16 @@ function loadCanvasData(canvasData) {
   }
   
   canvas.renderAll();
-  
+
   // Re-setup canvas events
   setupCanvasEvents();
-  
+
   // Update UI
   setTimeout(() => {
+    applyLayerOrdering(); // enforce label z-order after all async enlivenObjects settle
     updateResultsTable();
     updateSummary();
-    
+
     endPerfMeasurement('canvas-data-loading', {
       annotations_loaded: canvasData.canvas_annotations.length,
       success: true
@@ -1633,6 +1636,7 @@ function createSingleTextLabel(annotation) {
   });
   
   canvas.add(textLabel);
+  applyLayerOrdering(); // enforce label z-order after every new annotation
   canvas.renderAll();
 
   updateResultsTable();
