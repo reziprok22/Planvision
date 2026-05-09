@@ -15,7 +15,8 @@ import {
   getCurrentLabels,
   getCurrentLineLabels,
   getLabelsForTool,
-  applyLayerOrdering
+  applyLayerOrdering,
+  closeLabelManager
 } from './labels.js';
 import {
   resetPdfState,
@@ -1111,7 +1112,17 @@ function setTool(toolName) {
 function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   const universalLabelSelect = document.getElementById('universalLabelSelect');
   if (!universalLabelSelect) return;
-  
+
+  // Select tool with no annotation selected: placeholder, disabled
+  if (toolName === 'select' && !selectedObject) {
+    universalLabelSelect.innerHTML = '<option value="">–</option>';
+    universalLabelSelect.disabled = true;
+    universalLabelSelect.classList.add('no-selection');
+    return;
+  }
+  universalLabelSelect.disabled = false;
+  universalLabelSelect.classList.remove('no-selection');
+
   // Determine tool type and get appropriate labels
   let labels;
   
@@ -1131,10 +1142,10 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   
   // Clear and repopulate dropdown
   universalLabelSelect.innerHTML = '';
-  labels.forEach(label => {
+  labels.forEach((label, i) => {
     const option = document.createElement('option');
     option.value = label.id;
-    option.textContent = label.name;
+    option.textContent = i < 9 ? `${i + 1}: ${label.name}` : label.name;
     universalLabelSelect.appendChild(option);
   });
   
@@ -2280,10 +2291,28 @@ async function initApp() {
       case 'q': case 'Q': setTool('rectangle'); break;
       case 'w': case 'W': setTool('polygon');   break;
       case 'e': case 'E': setTool('line');      break;
+      case 'l': case 'L': {
+        const modal = document.getElementById('labelManagerModal');
+        if (modal && modal.style.display === 'block') { closeLabelManager(); }
+        else { document.getElementById('manageLabelBtn')?.click(); }
+        break;
+      }
+      case '1': case '2': case '3': case '4': case '5':
+      case '6': case '7': case '8': case '9': {
+        const idx = parseInt(e.key) - 1;
+        const sel = document.getElementById('universalLabelSelect');
+        if (sel && sel.options[idx]) {
+          sel.value = sel.options[idx].value;
+          sel.dispatchEvent(new Event('change'));
+        }
+        break;
+      }
       case 't': case 'T':
       case 'Delete':
       case 'Backspace':   deleteSelectedObjects(); e.preventDefault(); break;
-      case 'Escape':
+      case 'Escape': {
+        const modal = document.getElementById('labelManagerModal');
+        if (modal && modal.style.display === 'block') { closeLabelManager(); break; }
         // First Escape cancels in-progress drawing; second Escape switches to select
         if ((currentTool === 'polygon' || currentTool === 'line') && drawingMode) {
           cleanupCurrentTool();
@@ -2293,6 +2322,7 @@ async function initApp() {
           setTool('select');
         }
         break;
+      }
     }
   });
 

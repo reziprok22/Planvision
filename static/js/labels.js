@@ -149,7 +149,7 @@ function openLabelManager() {
 /**
  * Close label manager modal
  */
-function closeLabelManager() {
+export function closeLabelManager() {
   if (hasUnsavedChanges) {
     if (confirm('You have unsaved changes. Close without saving?')) {
       cancelChanges();

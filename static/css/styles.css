@@ -826,6 +826,13 @@ input[type="color"].inline-edit {
     box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
 }
 
+.universal-label-select.no-selection {
+    color: #aaa;
+    background-color: #f5f5f5;
+    border-color: #ddd;
+    cursor: default;
+}
+
 /* Fabric.js Canvas Styles */
 #annotationCanvas {
     position: absolute;
