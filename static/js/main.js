@@ -131,15 +131,13 @@ function getLabel(labelId) {
  * Ist damit Werkzeuge nach dem Plan analysieren aktiv sind
  */
 function setupToolButtons() {
-  // Remove existing event listeners to prevent duplicates
-  document.querySelectorAll('.tool-button').forEach(button => {
-    // Clone node to remove all event listeners
+  // Only touch buttons with data-tool — others (shortcuts, recalculate) manage their own listeners
+  document.querySelectorAll('.tool-button[data-tool]').forEach(button => {
     const newButton = button.cloneNode(true);
     button.parentNode.replaceChild(newButton, button);
   });
-  
-  // Add fresh event listeners
-  document.querySelectorAll('.tool-button').forEach(button => {
+
+  document.querySelectorAll('.tool-button[data-tool]').forEach(button => {
     button.addEventListener('click', function() {
       const tool = this.dataset.tool;
       if (tool === 'delete') {
@@ -2297,6 +2295,7 @@ async function initApp() {
         else { document.getElementById('manageLabelBtn')?.click(); }
         break;
       }
+      case '?': toggleShortcutsModal(); break;
       case '1': case '2': case '3': case '4': case '5':
       case '6': case '7': case '8': case '9': {
         const idx = parseInt(e.key) - 1;
@@ -2311,6 +2310,8 @@ async function initApp() {
       case 'Delete':
       case 'Backspace':   deleteSelectedObjects(); e.preventDefault(); break;
       case 'Escape': {
+        const shortcutsModal = document.getElementById('shortcutsModal');
+        if (shortcutsModal && shortcutsModal.style.display === 'block') { toggleShortcutsModal(); break; }
         const modal = document.getElementById('labelManagerModal');
         if (modal && modal.style.display === 'block') { closeLabelManager(); break; }
         // First Escape cancels in-progress drawing; second Escape switches to select
@@ -2324,6 +2325,18 @@ async function initApp() {
         break;
       }
     }
+  });
+
+  // Setup shortcuts modal
+  function toggleShortcutsModal() {
+    const modal = document.getElementById('shortcutsModal');
+    if (!modal) return;
+    modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
+  }
+  document.getElementById('shortcutsBtn')?.addEventListener('click', toggleShortcutsModal);
+  document.getElementById('shortcutsModalClose')?.addEventListener('click', toggleShortcutsModal);
+  document.getElementById('shortcutsModal')?.addEventListener('click', e => {
+    if (e.target === document.getElementById('shortcutsModal')) toggleShortcutsModal();
   });
 
   // Setup recalculate indices button

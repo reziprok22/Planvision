@@ -288,6 +288,47 @@
             pointer-events: none;
         }
 
+        /* --- Shortcuts Modal --- */
+        .shortcuts-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.88em;
+            margin-top: 10px;
+        }
+        .shortcuts-table th {
+            text-align: left;
+            padding: 6px 10px;
+            border-bottom: 2px solid #e0e0e0;
+            color: #555;
+            font-weight: 600;
+        }
+        .shortcuts-table td {
+            padding: 5px 10px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: middle;
+        }
+        .shortcuts-table .shortcuts-section {
+            background: #f5f7fa;
+            color: #888;
+            font-size: 0.78em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 8px 10px 4px;
+            border-bottom: none;
+        }
+        kbd {
+            display: inline-block;
+            padding: 1px 6px;
+            background: #f0f2f5;
+            border: 1px solid #ccc;
+            border-bottom: 2px solid #aaa;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.92em;
+            color: #333;
+        }
+
         /* --- Toolbar separator --- */
         .toolbar-separator {
             width: 1px;
@@ -426,6 +467,7 @@
                         <button class="tool-button" data-tool="line" title="Linie zeichnen [E]">📏</button>
                         <button class="tool-button" data-tool="delete" title="Löschen [T, Del]">🗑️</button>
                         <button id="recalculateIndicesBtn" class="tool-button" title="Nummern neu berechnen">🔢</button>
+                        <button id="shortcutsBtn" class="tool-button" title="Tastaturkürzel anzeigen [?]">⌨️</button>
 
                         <div class="toolbar-separator"></div>
 
@@ -493,6 +535,36 @@
 
 
     <!-- ==================== MODALS ==================== -->
+
+    <!-- Keyboard Shortcuts Modal -->
+    <div id="shortcutsModal" class="modal">
+        <div class="modal-content" style="max-width:480px;">
+            <span class="close" id="shortcutsModalClose">&times;</span>
+            <h3>Tastaturkürzel</h3>
+            <table class="shortcuts-table">
+                <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
+                <tbody>
+                    <tr><td colspan="2" class="shortcuts-section">Werkzeuge</td></tr>
+                    <tr><td><kbd>S</kbd></td><td>Auswählen</td></tr>
+                    <tr><td><kbd>Q</kbd></td><td>Rechteck zeichnen</td></tr>
+                    <tr><td><kbd>W</kbd></td><td>Polygon zeichnen</td></tr>
+                    <tr><td><kbd>E</kbd></td><td>Linie zeichnen</td></tr>
+                    <tr><td><kbd>T</kbd> / <kbd>Del</kbd></td><td>Ausgewählte Annotation löschen</td></tr>
+                    <tr><td><kbd>Esc</kbd></td><td>Zeichnen abbrechen / Auswählen</td></tr>
+                    <tr><td colspan="2" class="shortcuts-section">Labels</td></tr>
+                    <tr><td><kbd>1</kbd> – <kbd>9</kbd></td><td>Label des aktiven Werkzeugs wählen</td></tr>
+                    <tr><td><kbd>L</kbd></td><td>Label-Manager öffnen / schliessen</td></tr>
+                    <tr><td colspan="2" class="shortcuts-section">Bearbeiten</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Annotation kopieren</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Annotation einfügen</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Rückgängig</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Wiederholen</td></tr>
+                    <tr><td colspan="2" class="shortcuts-section">Sonstiges</td></tr>
+                    <tr><td><kbd>?</kbd></td><td>Diese Übersicht öffnen / schliessen</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
 
     <!-- Label Manager Modal -->
     <div id="labelManagerModal" class="modal">
