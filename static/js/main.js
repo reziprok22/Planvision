@@ -948,9 +948,9 @@ function setupCanvasEvents() {
     if (currentTool === 'rectangle' && currentRectangle) {
       updateDrawingRectangle(pointer);
     } else if (currentTool === 'polygon' && currentPolygon) {
-      updatePolygonPreview(pointer);
+      updatePolygonPreview(pointer, options.e.shiftKey);
     } else if (currentTool === 'line' && currentLine) {
-      updateLinePreview(pointer);
+      updateLinePreview(pointer, options.e.shiftKey);
     }
   });
   
@@ -1443,15 +1443,34 @@ window.calculatePolygonAreaFromCanvas = calculatePolygonAreaFromCanvas;
 window.calculatePolylineLength = calculatePolylineLength;
 
 /**
+ * Snaps point `to` to the nearest angle multiple of `stepDeg` from point `from`.
+ * Used when Shift is held during polygon/line drawing.
+ */
+function snapToAngle(from, to, stepDeg = 22.5) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist === 0) return to;
+  const step = stepDeg * Math.PI / 180;
+  const snapped = Math.round(Math.atan2(dy, dx) / step) * step;
+  return { x: from.x + dist * Math.cos(snapped), y: from.y + dist * Math.sin(snapped) };
+}
+
+/**
  * Polygon Drawing Functions
  */
 function addPolygonPoint(pointer, e) {  
   if (!canvas || isProcessingClick) return;
   
   isProcessingClick = true;
-  
+
+  // Shift held → snap to nearest 22.5° angle from last point
+  const pt = (e?.shiftKey && currentPoints.length > 0)
+    ? snapToAngle(currentPoints[currentPoints.length - 1], pointer)
+    : pointer;
+
   // Add point to current polygon
-  currentPoints.push(pointer);
+  currentPoints.push(pt);
   
   if (currentPoints.length === 1) {
     // First point - start polygon
@@ -1513,11 +1532,15 @@ function updatePolygonFromPoints() {
   canvas.renderAll();
 }
 
-function updatePolygonPreview(pointer) {
+function updatePolygonPreview(pointer, shiftKey = false) {
   if (!currentPolygon || currentPoints.length === 0) return;
-  
+
+  const previewEnd = (shiftKey && currentPoints.length > 0)
+    ? snapToAngle(currentPoints[currentPoints.length - 1], pointer)
+    : pointer;
+
   // Add current mouse position as preview point
-  const previewPoints = [...currentPoints, pointer];
+  const previewPoints = [...currentPoints, previewEnd];
   const fabricPoints = previewPoints.map(p => ({ x: p.x, y: p.y }));
   
   currentPolygon.set({
@@ -1694,13 +1717,18 @@ function exitPolygonEditMode() {
 /**
  * Line Drawing Functions - Multi-segment perimeter tool
  */
-function addLinePoint(pointer, e) {  
+function addLinePoint(pointer, e) {
   if (!canvas || isProcessingClick) return;
-  
+
   isProcessingClick = true;
-  
+
+  // Shift held → snap to nearest 22.5° angle from last point
+  const pt = (e?.shiftKey && currentPoints.length > 0)
+    ? snapToAngle(currentPoints[currentPoints.length - 1], pointer)
+    : pointer;
+
   // Add point to current line sequence
-  currentPoints.push(pointer);
+  currentPoints.push(pt);
   
   if (currentPoints.length === 1) {
     // First point - start line sequence
@@ -1762,11 +1790,15 @@ function updateLineFromPoints() {
   canvas.renderAll();
 }
 
-function updateLinePreview(pointer) {
+function updateLinePreview(pointer, shiftKey = false) {
   if (!currentLine || currentPoints.length === 0) return;
-  
+
+  const previewEnd = (shiftKey && currentPoints.length > 0)
+    ? snapToAngle(currentPoints[currentPoints.length - 1], pointer)
+    : pointer;
+
   // Add current mouse position as preview point
-  const previewPoints = [...currentPoints, pointer];
+  const previewPoints = [...currentPoints, previewEnd];
   const fabricPoints = previewPoints.map(p => ({ x: p.x, y: p.y }));
   
   currentLine.set({
