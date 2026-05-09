@@ -2593,6 +2593,8 @@ async function initApp() {
       }
       if (e.key === 'c' || e.key === 'C') { copySelectedAnnotations(); e.preventDefault(); return; }
       if (e.key === 'v' || e.key === 'V') { pasteAnnotations();        e.preventDefault(); return; }
+      if (e.key === 's' || e.key === 'S') { document.getElementById('saveProjectBtn')?.click(); e.preventDefault(); return; }
+      if (e.key === 'o' || e.key === 'O') { document.getElementById('loadProjectBtn')?.click(); e.preventDefault(); return; }
       return; // don't let other Ctrl+key combos trigger tool shortcuts
     }
 
