@@ -71,11 +71,12 @@ let currentRectangle = null;
 let currentPolygon = null;
 let currentLine = null;
 let rectangleStartPoint = null;
-let clipboard = [];           // serialised annotations ready to paste
-let clipboardSourceIds = [];  // canvas IDs of originals at copy time
-let editingPolygon = null;    // polygon currently in vertex-edit mode
-let vertexHandles = [];       // Circle handles shown during vertex editing
-let pasteOffset = 0;          // increases with each paste so copies don't stack
+let clipboard = [];                // serialised annotations ready to paste
+let clipboardSourceIds = [];       // canvas IDs of originals at copy time
+let clipboardSourcePositions = {}; // {id: {left, top}} of originals at copy time
+let editingPolygon = null;         // polygon currently in vertex-edit mode
+let vertexHandles = [];            // Circle handles shown during vertex editing
+let pasteOffset = 0;               // increases with each paste so copies don't stack
 
 // Undo / Redo history
 const HISTORY_LIMIT = 30;
@@ -771,6 +772,7 @@ function copySelectedAnnotations() {
   if (!annotations.length) return;
   // Serialise with custom properties so paste recreates them faithfully
   clipboardSourceIds = annotations.map(o => o.id).filter(Boolean);
+  clipboardSourcePositions = {};
   clipboard = annotations.map(o => {
     const serialized = o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel']);
     // When objects are part of an ActiveSelection their left/top are
@@ -781,17 +783,34 @@ function copySelectedAnnotations() {
       serialized.left = m[4] - o.getScaledWidth()  / 2;
       serialized.top  = m[5] - o.getScaledHeight() / 2;
     }
+    if (o.id) clipboardSourcePositions[o.id] = { left: serialized.left, top: serialized.top };
     return serialized;
   });
   pasteOffset = 0;
 }
 
+function cutSelectedAnnotations() {
+  if (!selectedObjects.filter(o => o.objectType === 'annotation').length) return;
+  copySelectedAnnotations();
+  deleteSelectedObjects();
+}
+
 async function pasteAnnotations() {
   if (!clipboard.length) return;
 
-  const canvasIds = new Set(canvas.getObjects().map(o => o.id).filter(Boolean));
-  const originalsExist = clipboardSourceIds.some(id => canvasIds.has(id));
-  if (originalsExist) {
+  // Apply offset only when the original is still at its copied position (not moved).
+  // This prevents pasting on top of an unmoved original while allowing exact-position
+  // paste when the original has been relocated or deleted.
+  const originalsUnmoved = clipboardSourceIds.some(id => {
+    const obj = canvas.getObjects().find(o => o.id === id);
+    if (!obj) return false;
+    const saved = clipboardSourcePositions[id];
+    if (!saved) return false;
+    const curLeft = obj.group ? obj.calcTransformMatrix()[4] - obj.getScaledWidth()  / 2 : obj.left;
+    const curTop  = obj.group ? obj.calcTransformMatrix()[5] - obj.getScaledHeight() / 2 : obj.top;
+    return Math.abs(curLeft - saved.left) < 1 && Math.abs(curTop - saved.top) < 1;
+  });
+  if (originalsUnmoved) {
     pasteOffset += 20;
   } else {
     pasteOffset = 0;
@@ -2582,8 +2601,9 @@ async function initApp() {
         if (e.shiftKey) { redoHistory(); } else { undoHistory(); }
         e.preventDefault(); return;
       }
-      if (e.key === 'c' || e.key === 'C') { copySelectedAnnotations(); e.preventDefault(); return; }
-      if (e.key === 'v' || e.key === 'V') { pasteAnnotations();        e.preventDefault(); return; }
+      if (e.key === 'c' || e.key === 'C') { copySelectedAnnotations();  e.preventDefault(); return; }
+      if (e.key === 'x' || e.key === 'X') { cutSelectedAnnotations();   e.preventDefault(); return; }
+      if (e.key === 'v' || e.key === 'V') { pasteAnnotations();         e.preventDefault(); return; }
       if (e.key === 's' || e.key === 'S') { document.getElementById('saveProjectBtn')?.click(); e.preventDefault(); return; }
       if (e.key === 'o' || e.key === 'O') { document.getElementById('loadProjectBtn')?.click(); e.preventDefault(); return; }
       return; // don't let other Ctrl+key combos trigger tool shortcuts
