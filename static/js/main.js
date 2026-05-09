@@ -71,10 +71,11 @@ let currentRectangle = null;
 let currentPolygon = null;
 let currentLine = null;
 let rectangleStartPoint = null;
-let clipboard = [];      // serialised annotations ready to paste
-let editingPolygon = null;   // polygon currently in vertex-edit mode
-let vertexHandles = [];      // Circle handles shown during vertex editing
-let pasteOffset = 0;     // increases with each paste so copies don't stack
+let clipboard = [];           // serialised annotations ready to paste
+let clipboardSourceIds = [];  // canvas IDs of originals at copy time
+let editingPolygon = null;    // polygon currently in vertex-edit mode
+let vertexHandles = [];       // Circle handles shown during vertex editing
+let pasteOffset = 0;          // increases with each paste so copies don't stack
 
 // Undo / Redo history
 const HISTORY_LIMIT = 30;
@@ -232,6 +233,11 @@ function initCanvas() {
       if (zoom > 5) zoom = 5;    // Lower max zoom for natural size
       if (zoom < 0.1) zoom = 0.1; // Higher min zoom for natural size
       canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      // Refresh bounding-box cache of the active drawing object so Fabric
+      // doesn't skip it as "off-screen" after the viewport transform changes.
+      if (currentPolygon) currentPolygon.setCoords();
+      if (currentLine) currentLine.setCoords();
+      if (currentRectangle) currentRectangle.setCoords();
       opt.e.preventDefault();
       opt.e.stopPropagation();
     } else {
@@ -773,6 +779,7 @@ function copySelectedAnnotations() {
   const annotations = selectedObjects.filter(o => o.objectType === 'annotation');
   if (!annotations.length) return;
   // Serialise with custom properties so paste recreates them faithfully
+  clipboardSourceIds = annotations.map(o => o.id).filter(Boolean);
   clipboard = annotations.map(o => {
     const serialized = o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel']);
     // When objects are part of an ActiveSelection their left/top are
@@ -790,7 +797,14 @@ function copySelectedAnnotations() {
 
 async function pasteAnnotations() {
   if (!clipboard.length) return;
-  pasteOffset += 20;
+
+  const canvasIds = new Set(canvas.getObjects().map(o => o.id).filter(Boolean));
+  const originalsExist = clipboardSourceIds.some(id => canvasIds.has(id));
+  if (originalsExist) {
+    pasteOffset += 20;
+  } else {
+    pasteOffset = 0;
+  }
 
   const objects = await util.enlivenObjects(JSON.parse(JSON.stringify(clipboard)));
   for (const obj of objects) {
@@ -1550,10 +1564,10 @@ function startPolygonDrawing() {
     strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'polygon',
-    selectable: true,
-    evented: true,
-    hasControls: true,
-    hasBorders: true,
+    selectable: false,
+    evented: false,
+    hasControls: false,
+    hasBorders: false,
     objectCaching: false
   });
   
@@ -1563,17 +1577,11 @@ function startPolygonDrawing() {
 
 function updatePolygonFromPoints() {
   if (!currentPolygon || currentPoints.length < 2) return;
-  
-  // TEMPORARY DRAWING: Use absolute coordinates (incorrect but works for preview)
-  const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
-  
-  // Update polygon points
-  currentPolygon.set({
-    points: fabricPoints,
-    hasBorders: true,
-    hasControls: true,
-  });
 
+  const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
+  currentPolygon.set({ points: fabricPoints, hasBorders: true, hasControls: true });
+  currentPolygon.setBoundingBox(true);
+  currentPolygon.setCoords();
   canvas.renderAll();
 }
 
@@ -1584,14 +1592,10 @@ function updatePolygonPreview(pointer, shiftKey = false) {
     ? snapToAngle(currentPoints[currentPoints.length - 1], pointer)
     : pointer;
 
-  // Add current mouse position as preview point
-  const previewPoints = [...currentPoints, previewEnd];
-  const fabricPoints = previewPoints.map(p => ({ x: p.x, y: p.y }));
-  
-  currentPolygon.set({
-    points: fabricPoints
-  });
-  
+  const fabricPoints = [...currentPoints, previewEnd].map(p => ({ x: p.x, y: p.y }));
+  currentPolygon.set({ points: fabricPoints });
+  currentPolygon.setBoundingBox(true);
+  currentPolygon.setCoords();
   canvas.renderAll();
 }
 
@@ -1916,15 +1920,11 @@ function startLineDrawing() {
 
 function updateLineFromPoints() {
   if (!currentLine || currentPoints.length < 2) return;
-  
-  // TEMPORARY DRAWING: Use absolute coordinates (incorrect but works for preview)
+
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
-  
-  // Update polyline points
-  currentLine.set({
-    points: fabricPoints
-  });
-  
+  currentLine.set({ points: fabricPoints });
+  currentLine.setBoundingBox(true);
+  currentLine.setCoords();
   canvas.renderAll();
 }
 
@@ -1935,14 +1935,10 @@ function updateLinePreview(pointer, shiftKey = false) {
     ? snapToAngle(currentPoints[currentPoints.length - 1], pointer)
     : pointer;
 
-  // Add current mouse position as preview point
-  const previewPoints = [...currentPoints, previewEnd];
-  const fabricPoints = previewPoints.map(p => ({ x: p.x, y: p.y }));
-  
-  currentLine.set({
-    points: fabricPoints
-  });
-  
+  const fabricPoints = [...currentPoints, previewEnd].map(p => ({ x: p.x, y: p.y }));
+  currentLine.set({ points: fabricPoints });
+  currentLine.setBoundingBox(true);
+  currentLine.setCoords();
   canvas.renderAll();
 }
 
