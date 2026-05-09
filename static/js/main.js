@@ -463,6 +463,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         strokeWidth: labelStrokeWidth,
         labelId: labelId,
         objectLabel: labelId,
+        score: pred.score ?? 0,
         displayIndex: index + 1,
         userCreated: false,
         selectable: true,
@@ -482,6 +483,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         strokeWidth: labelStrokeWidth,
         labelId: labelId,
         objectLabel: labelId,
+        score: pred.score ?? 0,
         displayIndex: index + 1,
         userCreated: false,
         selectable: true,
@@ -502,6 +504,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         strokeWidth: labelStrokeWidth,
         labelId: labelId,
         objectLabel: labelId,
+        score: pred.score ?? 0,
         displayIndex: index + 1,
         userCreated: false,
         selectable: true,
@@ -546,9 +549,11 @@ function updateResultsTable() {
   
   resultsBody.innerHTML = '';
   
-  // Get all annotation objects from canvas
-  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  
+  // Get all annotation objects from canvas, sorted ascending by displayIndex
+  const annotations = canvas.getObjects()
+    .filter(obj => obj.objectType === 'annotation')
+    .sort((a, b) => (a.displayIndex ?? Infinity) - (b.displayIndex ?? Infinity));
+
   annotations.forEach((annotation, index) => {
     // Get label info
     const labelId = annotation.labelId || annotation.objectLabel || 1;
@@ -2267,7 +2272,8 @@ function collectCurrentCanvasData(pageNumber = 1) {
       'objectLabel',      // Alternative label field
       'userCreated',      // User vs AI created flag
       'linkedAnnotationId', // Link to text label
-      'annotationType'    // Type: rectangle, polygon, line
+      'annotationType',   // Type: rectangle, polygon, line
+      'score'             // AI confidence score (0–1)
     ];
     
     const fabricObject = annotation.toObject(customProperties);
