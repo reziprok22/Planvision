@@ -22,7 +22,7 @@
         .left-drop-zone {
             border: 2px dashed #c8d0da;
             border-radius: 10px;
-            padding: 18px 12px;
+            padding: 126px 12px;
             text-align: center;
             cursor: pointer;
             transition: border-color 0.2s, background 0.2s;
@@ -352,7 +352,25 @@
 <body>
 
     <header>
-        <h1>Planvision – Fenster-Erkennungstool</h1>
+        <h1>Planvision</h1>
+        <div class="header-actions">
+            <div class="tooltip">
+                <button id="saveProjectBtn" class="header-action-btn">💾 Speichern</button>
+                <span class="tooltiptext">Projekt speichern</span>
+            </div>
+            <div class="tooltip">
+                <button id="loadProjectBtn" class="header-action-btn">📂 Öffnen</button>
+                <span class="tooltiptext">Projekt laden</span>
+            </div>
+            <div class="tooltip">
+                <button id="exportPdfBtn" class="header-action-btn">📄 PDF-Report</button>
+                <span class="tooltiptext">Analysebericht als PDF exportieren</span>
+            </div>
+            <div class="tooltip">
+                <button id="exportAnnotatedPdfBtn" class="header-action-btn">📑 Ann. PDF</button>
+                <span class="tooltiptext">Annotierte Original-PDF exportieren</span>
+            </div>
+        </div>
     </header>
 
     <!-- Hidden file input for left column upload -->
@@ -391,6 +409,18 @@
                 </ul>
             </div>
 
+            <!-- Label Management -->
+            <div class="project-section" style="border-top: 1px solid #eee; padding: 8px 12px 12px 12px;">
+                <h2 class="project-title" style="font-size:0.72em; color:#999; text-transform:uppercase; letter-spacing:0.8px; margin:0 0 6px 0; font-weight:700;">Labels</h2>
+                <div id="labelQuickList" style="margin-bottom:8px;"></div>
+                <div class="project-buttons">
+                    <div class="tooltip">
+                        <button id="manageLabelBtn" class="project-button">🏷️ Labels verwalten</button>
+                        <span class="tooltiptext">Label-Kategorien bearbeiten [L]</span>
+                    </div>
+                </div>
+            </div>
+
             <!-- Analysis Settings (collapsible) -->
             <div class="analysis-settings-section" id="analysisSettingsSection" style="display:none">
                 <button class="analysis-settings-toggle" id="analysisSettingsToggle">
@@ -410,40 +440,6 @@
                     <!-- Hidden format fields (auto from PDF metadata) -->
                     <input type="hidden" id="formatWidth" value="210">
                     <input type="hidden" id="formatHeight" value="297">
-                </div>
-            </div>
-
-            <!-- Project Management Section -->
-            <div class="project-section" style="border-top: 1px solid #eee; padding: 8px 12px;">
-                <h2 class="project-title" style="font-size:0.72em; color:#999; text-transform:uppercase; letter-spacing:0.8px; margin:0 0 6px 0; font-weight:700;">Projekt</h2>
-                <div class="project-buttons">
-                    <div class="tooltip">
-                        <button id="saveProjectBtn" class="project-button">💾 Speichern</button>
-                        <span class="tooltiptext">Projekt speichern</span>
-                    </div>
-                    <div class="tooltip">
-                        <button id="loadProjectBtn" class="project-button">📂 Öffnen</button>
-                        <span class="tooltiptext">Projekt laden</span>
-                    </div>
-                    <div class="tooltip">
-                        <button id="exportPdfBtn" class="project-button">📄 PDF-Report</button>
-                        <span class="tooltiptext">Analysebericht als PDF exportieren</span>
-                    </div>
-                    <div class="tooltip">
-                        <button id="exportAnnotatedPdfBtn" class="project-button">📑 Ann. PDF</button>
-                        <span class="tooltiptext">Annotierte Original-PDF exportieren</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Label Management -->
-            <div class="project-section" style="border-top: 1px solid #eee; padding: 8px 12px 12px 12px;">
-                <h2 class="project-title" style="font-size:0.72em; color:#999; text-transform:uppercase; letter-spacing:0.8px; margin:0 0 6px 0; font-weight:700;">Labels</h2>
-                <div class="project-buttons">
-                    <div class="tooltip">
-                        <button id="manageLabelBtn" class="project-button">🏷️ Labels verwalten</button>
-                        <span class="tooltiptext">Label-Kategorien bearbeiten [L]</span>
-                    </div>
                 </div>
             </div>
 
@@ -469,18 +465,7 @@
                         <button id="recalculateIndicesBtn" class="tool-button" title="Nummern neu berechnen">🔢</button>
                         <button id="shortcutsBtn" class="tool-button" title="Tastaturkürzel anzeigen [?]">⌨️</button>
 
-                        <div class="toolbar-separator"></div>
-
-                        <!-- Label selector -->
-                        <div class="label-selection-group">
-                            <select id="universalLabelSelect" class="universal-label-select">
-                                <option value="1">Fenster</option>
-                                <option value="2">Tür</option>
-                                <option value="3">Wand</option>
-                                <option value="4">Lukarne</option>
-                                <option value="5">Dach</option>
-                            </select>
-                        </div>
+                        <select id="universalLabelSelect" style="display:none;"></select>
 
                         <div class="toolbar-separator"></div>
 

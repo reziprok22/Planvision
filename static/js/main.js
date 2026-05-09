@@ -1146,6 +1146,7 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
     universalLabelSelect.innerHTML = '<option value="">–</option>';
     universalLabelSelect.disabled = true;
     universalLabelSelect.classList.add('no-selection');
+    updateLabelQuickList();
     return;
   }
   universalLabelSelect.disabled = false;
@@ -1179,15 +1180,53 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   
   // Set selection based on context
   if (selectedObject && selectedObject.labelId) {
-    // Use object's current label
     universalLabelSelect.value = selectedObject.labelId;
   } else if (universalLabelSelect.querySelector(`option[value="${currentValue}"]`)) {
-    // Restore previous selection if still valid
     universalLabelSelect.value = currentValue;
   } else {
-    // Default to first option
     universalLabelSelect.value = labels[0].id;
   }
+
+  updateLabelQuickList();
+}
+
+function updateLabelQuickList() {
+  const container = document.getElementById('labelQuickList');
+  const select = document.getElementById('universalLabelSelect');
+  if (!container || !select) return;
+
+  container.innerHTML = '';
+
+  const options = Array.from(select.options);
+  if (options.length === 0 || select.disabled) {
+    const hint = document.createElement('div');
+    hint.className = 'label-quick-disabled-hint';
+    hint.textContent = 'Annotation auswählen';
+    container.appendChild(hint);
+    return;
+  }
+
+  options.forEach((opt, i) => {
+    const id = parseInt(opt.value);
+    const label = getLabelById(id);
+    const color = label ? label.color : '#888';
+    const isActive = opt.value === select.value;
+
+    const item = document.createElement('div');
+    item.className = 'label-quick-item' + (isActive ? ' active' : '');
+    item.dataset.value = opt.value;
+    item.innerHTML = `
+      <span class="label-quick-dot" style="background:${color};"></span>
+      <span class="label-quick-name">${label ? label.name : opt.textContent}</span>
+      ${i < 9 ? `<span class="label-quick-key">${i + 1}</span>` : ''}
+    `;
+    item.addEventListener('click', () => {
+      select.value = opt.value;
+      select.dispatchEvent(new Event('change'));
+      updateLabelQuickList();
+    });
+    container.appendChild(item);
+  });
 }
 
 /**
@@ -2580,6 +2619,7 @@ async function initApp() {
         if (sel && sel.options[idx]) {
           sel.value = sel.options[idx].value;
           sel.dispatchEvent(new Event('change'));
+          updateLabelQuickList();
         }
         break;
       }
