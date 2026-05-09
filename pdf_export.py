@@ -114,9 +114,13 @@ def generate_annotated_pdf(project_id, output_path=None):
     # Projektverzeichnis validieren
     validate_project_directory(project_dir)
     
-    # Prüfen, ob Original-PDF existiert
+    # Prüfen, ob Original-PDF existiert; Fallback auf uploads/document.pdf
     if not os.path.exists(original_pdf_path):
-        raise FileNotFoundError(f"Original-PDF nicht gefunden: {original_pdf_path}")
+        fallback = os.path.join(project_dir, 'uploads', 'document.pdf')
+        if os.path.exists(fallback):
+            original_pdf_path = fallback
+        else:
+            raise FileNotFoundError(f"Original-PDF nicht gefunden: {original_pdf_path}")
     
     # Metadaten laden
     metadata = load_project_metadata(project_dir)
@@ -623,8 +627,10 @@ def generate_report_pdf(project_id, output_path=None):
             f"{page_num}.jpg"
         ]
         
-        # Suche nach dem ersten existierenden Pfad
+        # Suche nach dem ersten existierenden Pfad; Fallback auf uploads/ (frische Sessions)
         page_path = find_file_path(os.path.join(project_dir, 'pages'), possible_page_patterns)
+        if not page_path:
+            page_path = find_file_path(os.path.join(project_dir, 'uploads'), possible_page_patterns)
                 
         # Ähnlich für Analysedateien
         possible_analysis_patterns = [

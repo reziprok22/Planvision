@@ -2837,6 +2837,11 @@ async function initApp() {
   window.initializePageCanvasData = initializePageCanvasData;
   window.collectAllPagesAnalysisData = () => ({ ...pageAnalysisData });
   window.clearImageSessionCache = () => { imageSessionCache = {}; };
+  window.getFirstImageSessionId = () => {
+    const entry = Object.values(imageSessionCache)[0];
+    return entry ? entry.sessionId : null;
+  };
+  window.getCurrentLabels = getCurrentLabels;
 
   // Update all sidebar scale dropdowns at once (called after ZIP load)
   window.syncAllPageScalesInSidebar = function() {

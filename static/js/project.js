@@ -158,14 +158,56 @@ async function handleLoad(file) {
 
 // ── PDF Export ────────────────────────────────────────────────────────────────
 
-export function exportPdf() {
-  const sessionId = pdfModule.getPdfSessionId();
+/**
+ * Returns the best available session ID:
+ * 1. pdfSessionId (set by fresh upload or ZIP re-upload)
+ * 2. any per-page session from imageSessionCache (image projects analyzed on demand)
+ */
+function resolveSessionId() {
+  return pdfModule.getPdfSessionId()
+    || (window.getFirstImageSessionId ? window.getFirstImageSessionId() : null);
+}
+
+/**
+ * Push current analysis data + metadata to the server so PDF export routes
+ * have up-to-date analysis results, labels, settings and page count.
+ */
+async function syncAnalysisToServer(sessionId) {
+  try {
+    const analysisData = window.collectAllPagesAnalysisData ? window.collectAllPagesAnalysisData() : {};
+    const labels       = window.getCurrentLabels           ? window.getCurrentLabels()           : [];
+    const settings     = pdfModule.getPageSettings();
+    const allPages     = pdfModule.getAllPdfPages();
+    const projectName  = document.title.replace('Planvision – ', '') || 'Planvision';
+
+    await fetch(`/restore_analysis/${sessionId}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        analysis: analysisData,
+        labels:   labels,
+        settings: settings,
+        metadata: {
+          project_name: projectName,
+          page_count:   allPages.length,
+          created_at:   new Date().toISOString()
+        }
+      })
+    });
+  } catch (e) {
+    console.warn('Pre-export sync failed:', e);
+  }
+}
+
+export async function exportPdf() {
+  const sessionId = resolveSessionId();
   if (!sessionId) {
-    alert('PDF-Export benötigt eine aktive Sitzung. Bitte laden Sie zuerst eine PDF-Datei hoch.');
+    alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
     return;
   }
 
   const status = showStatus('PDF-Bericht wird erstellt…');
+  await syncAnalysisToServer(sessionId);
   fetch(`/export_pdf/${sessionId}`)
     .then(r => r.json())
     .then(data => {
@@ -179,14 +221,15 @@ export function exportPdf() {
     .catch(err => updateStatus(status, `Fehler: ${err.message}`, 'error'));
 }
 
-export function exportAnnotatedPdf() {
-  const sessionId = pdfModule.getPdfSessionId();
+export async function exportAnnotatedPdf() {
+  const sessionId = resolveSessionId();
   if (!sessionId) {
-    alert('PDF-Export benötigt eine aktive Sitzung. Bitte laden Sie zuerst eine PDF-Datei hoch.');
+    alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
     return;
   }
 
   const status = showStatus('Annotierte PDF wird erstellt…');
+  await syncAnalysisToServer(sessionId);
   fetch(`/export_annotated_pdf/${sessionId}`)
     .then(r => r.json())
     .then(data => {

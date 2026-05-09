@@ -501,16 +501,20 @@ def export_annotated_pdf(project_id):
                 'error': 'Projekt wurde nicht gefunden. Bitte speichern Sie das Projekt zuerst.'
             }), 404
         
-        # Prüfen, ob Original-PDF existiert
+        # Prüfen, ob Original-PDF existiert; Fallback auf uploads/document.pdf
         original_pdf_path = os.path.join(project_dir, 'original.pdf')
-        print(f"Prüfe Original-PDF: {original_pdf_path} (existiert: {os.path.exists(original_pdf_path)})")
-        
         if not os.path.exists(original_pdf_path):
-            print(f"Original-PDF nicht gefunden: {original_pdf_path}")
-            return jsonify({
-                'success': False, 
-                'error': 'Original-PDF wurde nicht gefunden. Diese Funktion ist nur für PDF-Projekte verfügbar.'
-            }), 400
+            fallback_pdf = os.path.join(project_dir, 'uploads', 'document.pdf')
+            if os.path.exists(fallback_pdf):
+                import shutil
+                shutil.copy2(fallback_pdf, original_pdf_path)
+                print(f"original.pdf aus uploads/document.pdf kopiert")
+            else:
+                print(f"Original-PDF nicht gefunden: {original_pdf_path}")
+                return jsonify({
+                    'success': False,
+                    'error': 'Original-PDF wurde nicht gefunden. Diese Funktion ist nur für PDF-Projekte verfügbar.'
+                }), 400
         
         # PDF-Bericht mit Annotationen auf Original-PDF generieren mit besserer Fehlerbehandlung
         try:
