@@ -83,6 +83,7 @@ async function handleLoad(file) {
     pdfModule.setPdfNavigationState(1, metadata.page_count, imageUrls);
     pdfModule.setPageSettings(settings);
     pdfModule.setPdfSessionId(null);
+    if (window.clearImageSessionCache) window.clearImageSessionCache();
 
     if (labels.length > 0) setCurrentLabels(labels);
 

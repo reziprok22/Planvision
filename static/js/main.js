@@ -84,6 +84,10 @@ let undoStack = [];      // serialised states; top = current state
 let redoStack = [];
 let isHistoryAction = false; // true while restoring a state (prevents recursive saves)
 
+// Per-page session cache for projects loaded without a PDF blob (image-only projects).
+// Maps pageNumber → { sessionId, pageNumOnServer } so we avoid re-uploading on every click.
+let imageSessionCache = {};
+
 // Event timing control
 let isProcessingClick = false;
 let isPageSwitching = false; // Prevent canvas events during page switches
@@ -2370,10 +2374,36 @@ function collectAllPagesCanvasData() {
  * Does NOT auto-trigger – only runs when the user clicks the button.
  */
 async function analyzeCurrentPage() {
-  const sessionId = getPdfSessionId() || getUploadSessionId();
+  let sessionId = getPdfSessionId() || getUploadSessionId();
+  let analyzePageNum = currentPageNumber;
+
   if (!sessionId) {
-    alert('Bitte zuerst eine Datei hochladen.');
-    return;
+    // Check per-page cache first (avoids re-uploading on repeated clicks for the same page)
+    const cached = imageSessionCache[currentPageNumber];
+    if (cached) {
+      sessionId    = cached.sessionId;
+      analyzePageNum = cached.pageNumOnServer;
+    } else if (uploadedImage?.src) {
+      // Re-upload the current page image to establish a temporary server session.
+      // This handles projects loaded from ZIP that contained no original PDF blob.
+      try {
+        const blob = await fetch(uploadedImage.src).then(r => r.blob());
+        const fd = new FormData();
+        fd.append('file', new File([blob], 'page.jpg', { type: blob.type || 'image/jpeg' }));
+        const res = await fetch('/upload', { method: 'POST', body: fd });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        sessionId    = data.session_id;
+        analyzePageNum = 1; // single-image upload → always page 1 on server
+        imageSessionCache[currentPageNumber] = { sessionId, pageNumOnServer: 1 };
+      } catch {
+        alert('Bitte zuerst eine Datei hochladen.');
+        return;
+      }
+    } else {
+      alert('Bitte zuerst eine Datei hochladen.');
+      return;
+    }
   }
 
   const btn = document.getElementById('analyzeCurrentPageBtn');
@@ -2391,7 +2421,7 @@ async function analyzeCurrentPage() {
   try {
     const formData = new FormData();
     formData.append('session_id', sessionId);
-    formData.append('page', currentPageNumber);
+    formData.append('page', analyzePageNum);
     formData.append('format_width',  document.getElementById('formatWidth')?.value  || 210);
     formData.append('format_height', document.getElementById('formatHeight')?.value || 297);
     formData.append('dpi',           document.getElementById('dpi')?.value           || 150);
@@ -2457,6 +2487,7 @@ async function initApp() {
 
     // Store session + all pages in PDF handler so navigation and project-save work
     setPdfSessionId(uploadInfo.session_id);
+    imageSessionCache = {}; // clear per-page cache from any previous project
     setPdfNavigationState(1, uploadInfo.page_count, uploadInfo.all_pages);
 
     // Track original PDF blob so it can be included in ZIP saves
@@ -2799,6 +2830,7 @@ async function initApp() {
   window.loadCanvasData = loadCanvasData;
   window.initializePageCanvasData = initializePageCanvasData;
   window.collectAllPagesAnalysisData = () => ({ ...pageAnalysisData });
+  window.clearImageSessionCache = () => { imageSessionCache = {}; };
 
   // Update all sidebar scale dropdowns at once (called after ZIP load)
   window.syncAllPageScalesInSidebar = function() {
