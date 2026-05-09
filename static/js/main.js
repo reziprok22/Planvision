@@ -4,7 +4,7 @@
  */
 
 // Import Fabric.js
-import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util } from 'fabric';
+import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle } from 'fabric';
 
 // Import modules
 import {
@@ -72,6 +72,8 @@ let currentPolygon = null;
 let currentLine = null;
 let rectangleStartPoint = null;
 let clipboard = [];      // serialised annotations ready to paste
+let editingPolygon = null;   // polygon currently in vertex-edit mode
+let vertexHandles = [];      // Circle handles shown during vertex editing
 let pasteOffset = 0;     // increases with each paste so copies don't stack
 
 // Undo / Redo history
@@ -906,11 +908,19 @@ function setupCanvasEvents() {
   canvas.off('selection:cleared');
   
   // Mouse down event - handles all drawing tools
-  canvas.on('mouse:down', function(options) {    
+  canvas.on('mouse:down', function(options) {
     if (isProcessingClick) return;
-    
-    // If there's a target object (user clicked on an existing annotation), don't start drawing
-    if (options.target && options.target.objectType === 'annotation') {
+
+    // Exit vertex edit mode when clicking empty canvas or a non-handle object
+    if (editingPolygon && currentTool === 'select') {
+      if (!options.target || options.target.objectType !== 'vertexHandle') {
+        exitPolygonEditMode();
+        return;
+      }
+    }
+
+    // If there's a target object (user clicked on an existing annotation or handle), don't start drawing
+    if (options.target && (options.target.objectType === 'annotation' || options.target.objectType === 'vertexHandle')) {
       return; // Let Fabric.js handle object selection/manipulation
     }
     
@@ -944,17 +954,37 @@ function setupCanvasEvents() {
     }
   });
   
+  // Vertex handle dragging — update polygon live
+  canvas.on('object:moving', function(e) {
+    const obj = e.target;
+    if (obj.objectType === 'vertexHandle' && editingPolygon) {
+      updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
+    }
+  });
+
   // Mouse up event - finish drawing operations
   canvas.on('mouse:up', function(options) {
-        
+
     if (currentTool === 'rectangle' && drawingMode) {
       finishDrawingRectangle();
     }
   });
   
-  // Double-click event - for polygon and line finishing
+  // Double-click event - polygon/line finishing + vertex edit mode
   canvas.on('mouse:dblclick', function(options) {
-        
+    // Vertex edit mode: toggle on double-click of polygon in select mode
+    if (currentTool === 'select') {
+      const target = options.target;
+      if (target?.annotationType === 'polygon') {
+        if (editingPolygon === target) {
+          exitPolygonEditMode();
+        } else {
+          enterPolygonEditMode(target);
+        }
+        return;
+      }
+    }
+
     if (currentTool === 'polygon' && currentPoints.length >= 3) {
       finishPolygonDrawing();
     } else if (currentTool === 'line' && currentPoints.length >= 2) {
@@ -1050,6 +1080,7 @@ function setupCanvasEvents() {
  * Set Current Tool
  */
 function setTool(toolName) {
+  if (editingPolygon) exitPolygonEditMode();
 
   // Clean up current tool state first
   cleanupCurrentTool();
@@ -1548,6 +1579,110 @@ function resetPolygonDrawing() {
   drawingMode = false;
   currentPolygon = null;
   currentPoints = [];
+}
+
+/**
+ * Polygon Vertex Editing
+ */
+
+// Returns the absolute canvas position of vertex i of a polygon
+function getVertexAbsPosition(polygon, i) {
+  const p = polygon.points[i];
+  return util.transformPoint(
+    { x: p.x - polygon.pathOffset.x, y: p.y - polygon.pathOffset.y },
+    polygon.calcTransformMatrix()
+  );
+}
+
+// Moves vertex i to absolute canvas position (canvasX, canvasY)
+function updatePolygonVertex(polygon, pointIndex, canvasX, canvasY) {
+  const invMatrix = util.invertTransform(polygon.calcTransformMatrix());
+  const local = util.transformPoint({ x: canvasX, y: canvasY }, invMatrix);
+
+  // Save bounding-box top-left BEFORE changing the point.
+  // polygon.left is the LEFT EDGE (not the center), so minX = pathOffset.x - width/2.
+  const oldMinX = polygon.pathOffset.x - polygon.width  / 2;
+  const oldMinY = polygon.pathOffset.y - polygon.height / 2;
+
+  polygon.points[pointIndex] = {
+    x: local.x + polygon.pathOffset.x,
+    y: local.y + polygon.pathOffset.y,
+  };
+
+  // Recalculate bounding box (updates pathOffset/width/height, without repositioning).
+  polygon.setBoundingBox(false);
+
+  // Shift left/top by Δ(minX) — not Δ(pathOffset) — so every unchanged vertex
+  // stays on the same canvas pixel even when the bounding-box width/height changes.
+  const newMinX = polygon.pathOffset.x - polygon.width  / 2;
+  const newMinY = polygon.pathOffset.y - polygon.height / 2;
+  polygon.left += newMinX - oldMinX;
+  polygon.top  += newMinY - oldMinY;
+  polygon.setCoords();
+}
+
+function enterPolygonEditMode(polygon) {
+  if (editingPolygon) exitPolygonEditMode();
+  editingPolygon = polygon;
+
+  polygon.lockMovementX = true;
+  polygon.lockMovementY = true;
+  polygon.hasControls = false;
+  polygon.hasBorders = false;
+
+  // Highlight the polygon border to signal edit mode
+  polygon._origStrokeWidth = polygon.strokeWidth;
+  polygon.set('strokeWidth', polygon.strokeWidth + 1);
+  polygon.set('strokeDashArray', [6, 3]);
+
+  polygon.points.forEach((p, i) => {
+    const abs = getVertexAbsPosition(polygon, i);
+    const handle = new Circle({
+      left: abs.x,
+      top: abs.y,
+      originX: 'center',
+      originY: 'center',
+      radius: 6,
+      fill: '#1976d2',
+      stroke: '#ffffff',
+      strokeWidth: 2,
+      objectType: 'vertexHandle',
+      pointIndex: i,
+      hasBorders: false,
+      hasControls: false,
+      hoverCursor: 'crosshair',
+      moveCursor: 'crosshair',
+      selectable: true,
+      evented: true,
+    });
+    vertexHandles.push(handle);
+    canvas.add(handle);
+  });
+
+  canvas.discardActiveObject();
+  canvas.renderAll();
+}
+
+function exitPolygonEditMode() {
+  if (!editingPolygon) return;
+
+  vertexHandles.forEach(h => canvas.remove(h));
+  vertexHandles = [];
+
+  editingPolygon.lockMovementX = false;
+  editingPolygon.lockMovementY = false;
+  editingPolygon.hasControls = true;
+  editingPolygon.hasBorders = true;
+  editingPolygon.set('strokeWidth', editingPolygon._origStrokeWidth ?? 2);
+  editingPolygon.set('strokeDashArray', null);
+  editingPolygon.setCoords();
+
+  updateLinkedTextLabelPosition(editingPolygon);
+
+  editingPolygon = null;
+
+  saveHistorySnapshot();
+  canvas.renderAll();
 }
 
 /**
@@ -2314,6 +2449,7 @@ async function initApp() {
         if (shortcutsModal && shortcutsModal.style.display === 'block') { toggleShortcutsModal(); break; }
         const modal = document.getElementById('labelManagerModal');
         if (modal && modal.style.display === 'block') { closeLabelManager(); break; }
+        if (editingPolygon) { exitPolygonEditMode(); break; }
         // First Escape cancels in-progress drawing; second Escape switches to select
         if ((currentTool === 'polygon' || currentTool === 'line') && drawingMode) {
           cleanupCurrentTool();
