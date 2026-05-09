@@ -228,11 +228,43 @@ function initCanvas() {
     // Only zoom with Ctrl key, otherwise allow normal scrolling
     if (opt.e.ctrlKey) {
       const delta = opt.e.deltaY;
-      let zoom = canvas.getZoom();
-      zoom *= 0.999 ** delta;
-      if (zoom > 5) zoom = 5;    // Lower max zoom for natural size
-      if (zoom < 0.1) zoom = 0.1; // Higher min zoom for natural size
-      canvas.zoomToPoint({ x: opt.e.offsetX, y: opt.e.offsetY }, zoom);
+      const oldZoom = canvas.getZoom();
+      let newZoom = oldZoom * (0.999 ** delta);
+      if (newZoom > 5) newZoom = 5;
+      // Minimum zoom: unused empty space must not exceed 150 % of the image size.
+      // Constraint: containerSize ≤ 2.5 × (naturalSize × zoom)  →  zoom ≥ containerSize / (2.5 × naturalSize)
+      const minZoom = Math.max(0.02,
+        imageContainer.clientWidth  / (1.5 * uploadedImage.naturalWidth),
+        imageContainer.clientHeight / (1.5 * uploadedImage.naturalHeight)
+      );
+      if (newZoom < minZoom) newZoom = minZoom;
+
+      // offsetX/offsetY are in canvas pixel space (includes scroll offset).
+      // Compute mouse position relative to the visible container viewport.
+      const mouseContainerX = opt.e.offsetX - imageContainer.scrollLeft;
+      const mouseContainerY = opt.e.offsetY - imageContainer.scrollTop;
+
+      // Image coordinate (Fabric units) under the mouse before zoom.
+      const imageX = opt.e.offsetX / oldZoom;
+      const imageY = opt.e.offsetY / oldZoom;
+
+      // Apply pure-scale viewport transform (no translation — scroll handles pan).
+      canvas.setViewportTransform([newZoom, 0, 0, newZoom, 0, 0]);
+
+      // Grow/shrink the canvas element so the container scroll area matches the zoom.
+      const natW = uploadedImage.naturalWidth;
+      const natH = uploadedImage.naturalHeight;
+      canvas.setWidth(natW * newZoom);
+      canvas.setHeight(natH * newZoom);
+      if (canvas.wrapperEl) {
+        canvas.wrapperEl.style.width  = `${natW * newZoom}px`;
+        canvas.wrapperEl.style.height = `${natH * newZoom}px`;
+      }
+
+      // Scroll so the same image point stays under the mouse.
+      imageContainer.scrollLeft = imageX * newZoom - mouseContainerX;
+      imageContainer.scrollTop  = imageY * newZoom - mouseContainerY;
+
       // Refresh bounding-box cache of the active drawing object so Fabric
       // doesn't skip it as "off-screen" after the viewport transform changes.
       if (currentPolygon) currentPolygon.setCoords();
@@ -273,11 +305,26 @@ function initCanvas() {
 }
 
 /**
+ * Clamp the container's scroll position so it never scrolls past the image edge.
+ * Called on every scroll event to enforce the boundary regardless of CSS layout.
+ */
+function clampScrollToImageBounds() {
+  if (!imageContainer || !canvas || !uploadedImage) return;
+  const zoom = canvas.getZoom();
+  const maxX = Math.max(0, Math.round(uploadedImage.naturalWidth  * zoom) - imageContainer.clientWidth);
+  const maxY = Math.max(0, Math.round(uploadedImage.naturalHeight * zoom) - imageContainer.clientHeight);
+  if (imageContainer.scrollLeft > maxX) imageContainer.scrollLeft = maxX;
+  if (imageContainer.scrollTop  > maxY) imageContainer.scrollTop  = maxY;
+}
+
+/**
  * Setup enhanced scrolling for the image container. shift+mousewheel = horizonal scroll
  */
 function setupContainerScrolling() {
   if (!imageContainer) return;
-  
+
+  imageContainer.addEventListener('scroll', clampScrollToImageBounds, { passive: true });
+
   imageContainer.addEventListener('wheel', function(e) {
     // If Shift key is held, convert vertical scroll to horizontal
     if (e.shiftKey && !e.ctrlKey) {
@@ -358,14 +405,18 @@ function loadCanvasData(canvasData) {
     });
   });
   
-  // Restore canvas viewport if saved
-  if (canvasData.canvas_viewport) {
-    canvas.setViewportTransform(canvasData.canvas_viewport);
-  }
-  
-  // Restore zoom if saved
-  if (canvasData.canvas_zoom) {
-    canvas.setZoom(canvasData.canvas_zoom);
+  // Restore zoom and resize canvas element to match.
+  const restoredZoom = canvasData.canvas_zoom || 1;
+  canvas.setViewportTransform([restoredZoom, 0, 0, restoredZoom, 0, 0]);
+  if (uploadedImage) {
+    const rw = uploadedImage.naturalWidth  * restoredZoom;
+    const rh = uploadedImage.naturalHeight * restoredZoom;
+    canvas.setWidth(rw);
+    canvas.setHeight(rh);
+    if (canvas.wrapperEl) {
+      canvas.wrapperEl.style.width  = `${rw}px`;
+      canvas.wrapperEl.style.height = `${rh}px`;
+    }
   }
   
   canvas.renderAll();
