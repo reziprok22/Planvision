@@ -2598,6 +2598,25 @@ async function initApp() {
       return; // don't let other Ctrl+key combos trigger tool shortcuts
     }
 
+    // Arrow keys: move selected annotations, otherwise let browser scroll
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+      if (currentTool === 'select' && selectedObjects.length > 0) {
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp'   ? -step : e.key === 'ArrowDown'  ? step : 0;
+        selectedObjects.forEach(obj => {
+          if (obj.objectType !== 'annotation') return;
+          obj.set({ left: (obj.left || 0) + dx, top: (obj.top || 0) + dy });
+          obj.setCoords();
+          updateLinkedTextLabelPosition(obj);
+        });
+        canvas.requestRenderAll();
+        saveHistorySnapshot();
+        e.preventDefault();
+      }
+      return;
+    }
+
     switch (e.key) {
       case 's': case 'S': setTool('select');    break;
       case 'q': case 'Q': setTool('rectangle'); break;
