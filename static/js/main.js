@@ -398,22 +398,15 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
   // Convert predictions to Fabric.js serializable format
   const canvasAnnotations = predictions.map((pred, index) => {
     const labelId = pred.label || 1;
-    let label, labelColor;
-    
-    if (pred.annotationType === 'line') {
-      const lineLabel = getLabelById ? getLabelById(labelId, 'line') : null;
-      label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
-      labelColor = label.color;
-    } else {
-      label = getLabel(labelId);
-      labelColor = label.color;
-    }
-    
+    const fullLabel = getLabelById ? getLabelById(labelId) : null;
+    const labelColor = fullLabel ? fullLabel.color : getLabel(labelId).color;
+    const labelStrokeWidth = fullLabel ? (fullLabel.strokeWidth || 2) : 2;
+
     if (pred.box || pred.bbox) {
       // Rectangle from bounding box
       const coords = pred.box || pred.bbox;
       const canvasCoords = convertToCanvasCoordinates(coords);
-      
+
       return {
         type: 'rect',
         objectType: 'annotation',
@@ -424,7 +417,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         height: canvasCoords.height,
         fill: getLabelColorWithOpacity(labelColor),
         stroke: labelColor,
-        strokeWidth: 2,
+        strokeWidth: labelStrokeWidth,
         labelId: labelId,
         objectLabel: labelId,
         displayIndex: index + 1,
@@ -435,7 +428,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
     } else if (pred.annotationType === 'polygon' && pred.points) {
       // Polygon from points
       const fabricPoints = convertPointsToFabric(pred.points);
-      
+
       return {
         type: 'polygon',
         objectType: 'annotation',
@@ -443,7 +436,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         points: fabricPoints,
         fill: getLabelColorWithOpacity(labelColor),
         stroke: labelColor,
-        strokeWidth: 2,
+        strokeWidth: labelStrokeWidth,
         labelId: labelId,
         objectLabel: labelId,
         displayIndex: index + 1,
@@ -455,7 +448,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
     } else if (pred.annotationType === 'line' && pred.points) {
       // Line from points
       const fabricPoints = convertPointsToFabric(pred.points);
-      
+
       return {
         type: 'polyline',
         objectType: 'annotation',
@@ -463,7 +456,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         points: fabricPoints,
         fill: '',
         stroke: labelColor,
-        strokeWidth: 3,
+        strokeWidth: labelStrokeWidth,
         labelId: labelId,
         objectLabel: labelId,
         displayIndex: index + 1,
@@ -1241,8 +1234,8 @@ function startDrawingRectangle(pointer) {
   
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel();
-  const label = getLabel(selectedLabelId);
-  
+  const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+
   const rect = new Rect({
     left: pointer.x,
     top: pointer.y,
@@ -1250,7 +1243,7 @@ function startDrawingRectangle(pointer) {
     height: 0,
     fill: label.color + '20', // 20% opacity
     stroke: label.color,
-    strokeWidth: 2,
+    strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'rectangle',
     selectable: currentTool === 'select',
@@ -1496,8 +1489,8 @@ function startPolygonDrawing() {
   
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel();
-  const label = getLabel(selectedLabelId);
-  
+  const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+
   // Create initial polygon with first point duplicated to make it visible
   const firstPoint = currentPoints[0];
   const points = [
@@ -1508,7 +1501,7 @@ function startPolygonDrawing() {
   currentPolygon = new Polygon(points, {
     fill: label.color + '20', // 20% opacity
     stroke: label.color,
-    strokeWidth: 2,
+    strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'polygon',
     selectable: true,
@@ -1575,16 +1568,16 @@ function finishPolygonDrawing() {
   
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel();
-  const label = getLabel(selectedLabelId);
-  
+  const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+
   // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
-  
+
   // Create polygon with original points
   const finalPolygon = new Polygon(fabricPoints, {
     fill: label.color + '20', // 20% opacity
     stroke: label.color,
-    strokeWidth: 2,
+    strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'polygon',
     selectable: true,
@@ -1847,18 +1840,19 @@ function startLineDrawing() {
   const selectedLabelId = getCurrentSelectedLabel();
   const lineLabel = getLabelById ? getLabelById(selectedLabelId) : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
-  
+  const lineSW = lineLabel ? (lineLabel.strokeWidth || 2) : 2;
+
   // Create initial polyline with first point duplicated to make it visible
   const firstPoint = currentPoints[0];
   const points = [
     { x: firstPoint.x, y: firstPoint.y },
     { x: firstPoint.x + 1, y: firstPoint.y + 1 } // Slightly offset to make it visible
   ];
-  
+
   currentLine = new Polyline(points, {
     fill: '',
     stroke: labelColor,
-    strokeWidth: 5, // Increased from 3 to 5 for better selection
+    strokeWidth: lineSW,
     objectType: 'annotation',
     annotationType: 'line',
     selectable: currentTool === 'select',
@@ -1927,15 +1921,15 @@ function finishLineDrawing() {
   const selectedLabelId = getCurrentSelectedLabel();
   const lineLabel = getLabelById ? getLabelById(selectedLabelId) : null;
   const labelColor = lineLabel ? lineLabel.color : '#FF0000';
-  
+
   // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
-  
+
   // Create polyline with original points
   const finalLine = new Polyline(fabricPoints, {
     fill: '',
     stroke: labelColor,
-    strokeWidth: 5,
+    strokeWidth: lineLabel ? (lineLabel.strokeWidth || 2) : 2,
     objectType: 'annotation',
     annotationType: 'line',
     selectable: true,

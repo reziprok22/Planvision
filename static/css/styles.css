@@ -799,6 +799,15 @@ input[type="color"].inline-edit {
     background: #fff0f0;
 }
 
+.stroke-width-input {
+    width: 48px;
+    padding: 2px 4px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 13px;
+    text-align: center;
+}
+
 .save-label-btn {
     background: none;
     border: none;

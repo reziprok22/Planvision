@@ -194,6 +194,10 @@ function refreshLabelTable() {
                title="Opacity: ${opacityPercent}%" />
         <span class="opacity-value">${opacityPercent}%</span>
       </td>
+      <td>
+        <input type="number" class="inline-edit stroke-width-input" data-field="strokeWidth" data-id="${label.id}"
+               min="1" max="20" step="1" value="${label.strokeWidth || 2}" />
+      </td>
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="rectangle" data-id="${label.id}" ${label.tools.rectangle ? 'checked' : ''}></td>
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${label.id}" ${label.tools.polygon ? 'checked' : ''}></td>
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="line" data-id="${label.id}" ${label.tools.line ? 'checked' : ''}></td>
@@ -281,8 +285,9 @@ function handleInlineEdit(event) {
   } else if (field === 'opacity') {
     // Convert percentage back to decimal (0-1 range), umgekehrt: 100% = 0.0, 0% = 1.0
     label.opacity = 1 - (parseInt(value) / 100);
-    
-    // Update canvas immediately to show opacity changes
+    updateCanvasLabels();
+  } else if (field === 'strokeWidth') {
+    label.strokeWidth = Math.max(1, parseInt(value) || 1);
     updateCanvasLabels();
   } else if (['rectangle', 'polygon', 'line'].includes(field)) {
     // Check if disabling a tool that's currently used by existing annotations
@@ -392,6 +397,9 @@ function showAddLabelForm() {
              min="0" max="100" step="5" value="${defaultOpacity}" title="Opacity: ${defaultOpacity}%" />
       <span class="opacity-value" id="newLabel-opacity-val">${defaultOpacity}%</span>
     </td>
+    <td>
+      <input type="number" class="stroke-width-input" id="newLabel-stroke" min="1" max="20" step="1" value="2" />
+    </td>
     <td style="text-align:center;"><input type="checkbox" id="newLabel-rect"></td>
     <td style="text-align:center;"><input type="checkbox" id="newLabel-poly"></td>
     <td style="text-align:center;"><input type="checkbox" id="newLabel-line"></td>
@@ -419,6 +427,7 @@ function saveNewLabel() {
   const nameInput = document.getElementById('newLabel-name');
   const colorInput = document.getElementById('newLabel-color');
   const opacityInput = document.getElementById('newLabel-opacity');
+  const strokeInput = document.getElementById('newLabel-stroke');
   const rectInput = document.getElementById('newLabel-rect');
   const polyInput = document.getElementById('newLabel-poly');
   const lineInput = document.getElementById('newLabel-line');
@@ -428,6 +437,7 @@ function saveNewLabel() {
   const name = nameInput.value.trim();
   const color = colorInput.value;
   const opacity = 1 - (parseInt(opacityInput.value) / 100);
+  const strokeWidth = Math.max(1, parseInt(strokeInput.value) || 2);
   const tools = {
     rectangle: rectInput.checked,
     polygon: polyInput.checked,
@@ -446,7 +456,7 @@ function saveNewLabel() {
   }
 
   const maxId = currentLabels.reduce((max, label) => Math.max(max, label.id), 0);
-  currentLabels.push({ id: maxId + 1, name, color, opacity, tools });
+  currentLabels.push({ id: maxId + 1, name, color, opacity, strokeWidth, tools });
 
   hasUnsavedChanges = true;
   refreshLabelTable();
@@ -493,6 +503,7 @@ function copyLabel(labelId) {
     name: original.name + ' (Kopie)',
     color: original.color,
     opacity: original.opacity,
+    strokeWidth: original.strokeWidth || 2,
     tools: { ...original.tools }
   };
 
@@ -692,7 +703,8 @@ function updateCanvasAnnotations(canvas) {
     const needsFill = annotation.annotationType === 'rectangle' || annotation.annotationType === 'polygon';
     annotation.set({
       stroke: label.color,
-      fill: needsFill ? getLabelColorWithOpacity(label.color, label.opacity) : ''
+      fill: needsFill ? getLabelColorWithOpacity(label.color, label.opacity) : '',
+      strokeWidth: label.strokeWidth || 2
     });
   });
   
