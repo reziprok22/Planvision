@@ -2277,9 +2277,10 @@ async function initApp() {
 
     switch (e.key) {
       case 's': case 'S': setTool('select');    break;
-      case 'r': case 'R': setTool('rectangle'); break;
-      case 'p': case 'P': setTool('polygon');   break;
-      case 'l': case 'L': setTool('line');      break;
+      case 'q': case 'Q': setTool('rectangle'); break;
+      case 'w': case 'W': setTool('polygon');   break;
+      case 'e': case 'E': setTool('line');      break;
+      case 't': case 'T':
       case 'Delete':
       case 'Backspace':   deleteSelectedObjects(); e.preventDefault(); break;
       case 'Escape':

@@ -20,12 +20,22 @@ Planvision is a Flask-based web application for architectural plan analysis that
 python app.py
 ```
 
+### Frontend Build (Vite)
+JavaScript source files are in `static/js/`. Vite bundles them into `dist/js/main.js`, which is what the HTML template loads.
+
+```bash
+# After any change to static/js/*.js:
+npm run build
+```
+
+**Important:** `dist/js/main.js` is committed to git (intentional — solo project, no CI/CD). Do not add it to `.gitignore`.
+
 ### Python Environment
 The project uses a virtual environment located at `env/` with dependencies listed in `requirements.txt`. Key dependencies include:
 - Flask 3.1.0 for web framework
 - PyTorch 2.6.0 for machine learning
 - OpenCV for image processing
-- Fabric.js (CDN) for canvas interactions
+- Fabric.js v6 (ES6 modules, bundled via Vite)
 
 ### Model Requirements
 The application requires a pre-trained Faster R-CNN model at:

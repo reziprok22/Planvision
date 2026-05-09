@@ -344,6 +344,30 @@ button:hover {
     color: white;
 }
 
+.tool-button {
+    background: #f0f2f5;
+    color: #333;
+    border: 1px solid #d0d4db;
+    padding: 5px 9px;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 1.1em;
+    line-height: 1;
+    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+.tool-button:hover {
+    background: #e2e6ea;
+    border-color: #adb5bd;
+}
+
+.tool-button.active {
+    background: #1976d2;
+    border-color: #1565c0;
+    color: white;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.25);
+}
+
 /* Legende */
 .save-button {
     background-color: #4CAF50;
