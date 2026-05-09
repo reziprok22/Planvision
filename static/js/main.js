@@ -975,7 +975,7 @@ function setupCanvasEvents() {
     // Vertex edit mode: toggle on double-click of polygon in select mode
     if (currentTool === 'select') {
       const target = options.target;
-      if (target?.annotationType === 'polygon') {
+      if (target?.annotationType === 'polygon' || target?.annotationType === 'line') {
         if (editingPolygon === target) {
           exitPolygonEditMode();
         } else {
@@ -1528,6 +1528,10 @@ function updatePolygonPreview(pointer) {
 }
 
 function finishPolygonDrawing() {
+  // The dblclick always fires AFTER two mouse:down events, so the second click
+  // of the double-click has already added an unwanted extra point — remove it.
+  currentPoints.pop();
+
   if (!currentPolygon || currentPoints.length < 3) {
     console.warn('Need at least 3 points to create polygon');
     if (currentPolygon) {
@@ -1630,10 +1634,12 @@ function enterPolygonEditMode(polygon) {
   polygon.hasControls = false;
   polygon.hasBorders = false;
 
-  // Highlight the polygon border to signal edit mode
+  // Visual edit-mode indicator (dashed only for closed shapes, not lines)
   polygon._origStrokeWidth = polygon.strokeWidth;
   polygon.set('strokeWidth', polygon.strokeWidth + 1);
-  polygon.set('strokeDashArray', [6, 3]);
+  if (polygon.annotationType === 'polygon') {
+    polygon.set('strokeDashArray', [6, 3]);
+  }
 
   polygon.points.forEach((p, i) => {
     const abs = getVertexAbsPosition(polygon, i);
@@ -1771,6 +1777,10 @@ function updateLinePreview(pointer) {
 }
 
 function finishLineDrawing() {
+  // Same as finishPolygonDrawing: dblclick fires after two mouse:down events,
+  // so the second click always adds an unwanted extra point — remove it.
+  currentPoints.pop();
+
   if (!currentLine || currentPoints.length < 2) {
     console.warn('Need at least 2 points to create line sequence');
     if (currentLine) {
