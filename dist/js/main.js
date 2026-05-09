@@ -540,7 +540,7 @@ ${zl(o)}`);return}}r.tools[n]=s,!r.tools.rectangle&&!r.tools.polygon&&!r.tools.l
     </td>
     <td>
       <div class="color-cell">
-        <input type="color" class="inline-edit" id="newLabel-color" value="${i}" />
+        <input type="color" id="newLabel-color" value="${i}" />
       </div>
     </td>
     <td>

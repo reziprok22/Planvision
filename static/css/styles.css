@@ -783,7 +783,8 @@ input[type="color"].inline-edit {
 }
 
 /* Delete button in label table */
-.delete-label-btn {
+.delete-label-btn,
+.copy-label-btn {
     background: none;
     border: none;
     color: #ccc;
@@ -798,6 +799,12 @@ input[type="color"].inline-edit {
     color: #e74c3c;
     background: #fff0f0;
 }
+
+.copy-label-btn:hover {
+    color: #1976d2;
+    background: #e3f2fd;
+}
+
 
 .stroke-width-input {
     width: 48px;

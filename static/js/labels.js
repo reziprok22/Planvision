@@ -389,7 +389,7 @@ function showAddLabelForm() {
     </td>
     <td>
       <div class="color-cell">
-        <input type="color" class="inline-edit" id="newLabel-color" value="${randomColor}" />
+        <input type="color" id="newLabel-color" value="${randomColor}" />
       </div>
     </td>
     <td>
@@ -414,6 +414,7 @@ function showAddLabelForm() {
     tr.querySelector('#newLabel-opacity-val').textContent = this.value + '%';
     this.title = `Opacity: ${this.value}%`;
   });
+
   tr.querySelector('.save-label-btn').addEventListener('click', saveNewLabel);
   tr.querySelector('.delete-label-btn').addEventListener('click', hideForm);
 
