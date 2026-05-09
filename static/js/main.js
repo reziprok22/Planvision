@@ -1351,24 +1351,31 @@ function deleteSelectedObjects() {
 /**
  * Calculate optimal position for text label based on annotation's REAL Fabric.js coordinates
  */
+function getContrastTextColor(hex) {
+  const c = hex.replace('#', '');
+  const r = parseInt(c.substring(0, 2), 16);
+  const g = parseInt(c.substring(2, 4), 16);
+  const b = parseInt(c.substring(4, 6), 16);
+  // Perceived luminance (sRGB coefficients)
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? '#222222' : 'white';
+}
+
 function calculateLabelPosition(annotationObject) {
-  // Use REAL Fabric.js coordinates instead of calculated bounds
-  const actualLeft = annotationObject.left || 0;
-  const actualTop = annotationObject.top || 0;
-  
-  // For polygons, position text at center of actual object
-  if (annotationObject.type === 'polygon') {
-    return {
-      x: actualLeft,  // Center of polygon
-      y: actualTop    // Center of polygon
-    };
+  // Rectangle: top-left corner is the first vertex
+  if (annotationObject.type === 'rect') {
+    return { x: annotationObject.left, y: annotationObject.top };
   }
-  
-  // For rectangles and lines, position slightly above and to the left of actual position
-  return {
-    x: actualLeft + 10,
-    y: actualTop - 5
-  };
+
+  // Polygon / Polyline: transform first point to absolute canvas coordinates
+  if ((annotationObject.type === 'polygon' || annotationObject.type === 'polyline') &&
+      annotationObject.points && annotationObject.points.length > 0 &&
+      annotationObject.pathOffset) {
+    return getVertexAbsPosition(annotationObject, 0);
+  }
+
+  // Fallback
+  return { x: annotationObject.left || 0, y: annotationObject.top || 0 };
 }
 
 /**
@@ -2005,16 +2012,16 @@ function createSingleTextLabel(annotation) {
   
   // Get annotation color
   const labelColor = annotation.stroke || annotation.fill || '#000000';
-  
+
   // Calculate position
   const labelPosition = calculateLabelPosition(annotation);
-  
+
   // Create text label with number and area/length (no inverse scaling)
   const textLabel = new Text(displayNumber.toString() + measurement, {
     left: labelPosition.x,
     top: labelPosition.y,
     fontSize: 14, // Fixed font size - let Canvas handle zoom scaling
-    fill: 'white',
+    fill: getContrastTextColor(labelColor),
     backgroundColor: labelColor,
     padding: 4, // Fixed padding - let Canvas handle zoom scaling
     textAlign: 'center',
@@ -2076,7 +2083,8 @@ function updateLinkedTextLabelPosition(annotation) {
       left: newPosition.x,
       top: newPosition.y,
       text: displayNumber.toString() + measurement,
-      backgroundColor: annotationColor
+      backgroundColor: annotationColor,
+      fill: getContrastTextColor(annotationColor)
     });
   }
 }
