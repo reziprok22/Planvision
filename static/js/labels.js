@@ -118,7 +118,6 @@ export async function setupLabels(elements) {
   addLabelBtn.addEventListener('click', showAddLabelForm);
   importLabelsBtn.addEventListener('click', importLabels);
   exportLabelsBtn.addEventListener('click', exportLabels);
-  resetLabelsBtn.addEventListener('click', resetLabels);
   saveLabelBtn.addEventListener('click', saveNewLabel);
   cancelLabelBtn.addEventListener('click', hideForm);
   applyChangesBtn.addEventListener('click', applyAllChanges);
@@ -181,7 +180,6 @@ function refreshLabelTable() {
         <button class="layer-move-btn" data-id="${label.id}" data-direction="down" ${isFirst ? 'disabled' : ''} title="Layer nach vorne">▲</button>
         <button class="layer-move-btn" data-id="${label.id}" data-direction="up" ${isLast ? 'disabled' : ''} title="Layer nach hinten">▼</button>
       </td>
-      <td style="color:#bbb;font-size:12px;">${label.id}</td>
       <td>
         <input type="text" class="inline-edit" data-field="name" data-id="${label.id}" value="${label.name}" />
       </td>
@@ -200,6 +198,7 @@ function refreshLabelTable() {
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${label.id}" ${label.tools.polygon ? 'checked' : ''}></td>
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="line" data-id="${label.id}" ${label.tools.line ? 'checked' : ''}></td>
       <td>
+        <button class="copy-label-btn" data-id="${label.id}" title="Label kopieren">⧉</button>
         <button class="delete-label-btn" data-id="${label.id}" title="Label löschen">×</button>
       </td>
     `;
@@ -233,6 +232,14 @@ function refreshLabelTable() {
     }
   });
   
+  // Event listeners for Copy buttons
+  document.querySelectorAll('.copy-label-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const labelId = parseInt(this.dataset.id);
+      copyLabel(labelId);
+    });
+  });
+
   // Event listeners for Delete buttons
   document.querySelectorAll('.delete-label-btn').forEach(btn => {
     btn.addEventListener('click', function() {
@@ -344,10 +351,6 @@ function applyAllChanges() {
   originalLabels = JSON.parse(JSON.stringify(currentLabels));
   hasUnsavedChanges = false;
   updateBatchActionVisibility();
-  
-  alert('Changes applied successfully!');
-  
-  // Close the modal after successful apply
   closeLabelManager();
 }
 
@@ -363,62 +366,90 @@ function cancelChanges() {
 }
 
 /**
- * Show form to add a new label
+ * Show form to add a new label — inserts a row at the bottom of the table
  */
 function showAddLabelForm() {
-  labelFormTitle.textContent = 'Add Label';
-  labelIdInput.value = '';
-  labelNameInput.value = '';
-  labelColorInput.value = '#' + Math.floor(Math.random()*16777215).toString(16);
-  
-  // Set default opacity (70% opaque = 30% transparent in internal storage)
-  if (labelOpacityInput && opacityValueDisplay) {
-    labelOpacityInput.value = 70; // 70% opaque wird angezeigt
-    opacityValueDisplay.textContent = '70%';
-  }
-  
-  toolRectangleInput.checked = false;
-  toolPolygonInput.checked = false;
-  toolLineInput.checked = false;
-  labelForm.style.display = 'block';
+  if (document.getElementById('newLabelRow')) return; // already open
+
+  const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+  const defaultOpacity = 70;
+
+  const tr = document.createElement('tr');
+  tr.id = 'newLabelRow';
+  tr.style.background = '#f0f7ff';
+  tr.innerHTML = `
+    <td></td>
+    <td>
+      <input type="text" class="inline-edit" id="newLabel-name" placeholder="Name…" style="width:100%;" />
+    </td>
+    <td>
+      <div class="color-cell">
+        <input type="color" class="inline-edit" id="newLabel-color" value="${randomColor}" />
+      </div>
+    </td>
+    <td>
+      <input type="range" class="inline-edit opacity-slider" id="newLabel-opacity"
+             min="0" max="100" step="5" value="${defaultOpacity}" title="Opacity: ${defaultOpacity}%" />
+      <span class="opacity-value" id="newLabel-opacity-val">${defaultOpacity}%</span>
+    </td>
+    <td style="text-align:center;"><input type="checkbox" id="newLabel-rect"></td>
+    <td style="text-align:center;"><input type="checkbox" id="newLabel-poly"></td>
+    <td style="text-align:center;"><input type="checkbox" id="newLabel-line"></td>
+    <td>
+      <button class="save-label-btn" title="Speichern">✓</button>
+      <button class="delete-label-btn" title="Abbrechen">×</button>
+    </td>
+  `;
+  labelTableBody.appendChild(tr);
+
+  tr.querySelector('.opacity-slider').addEventListener('input', function() {
+    tr.querySelector('#newLabel-opacity-val').textContent = this.value + '%';
+    this.title = `Opacity: ${this.value}%`;
+  });
+  tr.querySelector('.save-label-btn').addEventListener('click', saveNewLabel);
+  tr.querySelector('.delete-label-btn').addEventListener('click', hideForm);
+
+  tr.querySelector('#newLabel-name').focus();
 }
 
 /**
- * Save a new label from the form
+ * Save a new label from the inline table row
  */
 function saveNewLabel() {
-  const name = labelNameInput.value.trim();
-  const color = labelColorInput.value;
-  const opacity = 1 - (parseInt(labelOpacityInput.value) / 100);
+  const nameInput = document.getElementById('newLabel-name');
+  const colorInput = document.getElementById('newLabel-color');
+  const opacityInput = document.getElementById('newLabel-opacity');
+  const rectInput = document.getElementById('newLabel-rect');
+  const polyInput = document.getElementById('newLabel-poly');
+  const lineInput = document.getElementById('newLabel-line');
+
+  if (!nameInput) return;
+
+  const name = nameInput.value.trim();
+  const color = colorInput.value;
+  const opacity = 1 - (parseInt(opacityInput.value) / 100);
   const tools = {
-    rectangle: toolRectangleInput.checked,
-    polygon: toolPolygonInput.checked,
-    line: toolLineInput.checked
+    rectangle: rectInput.checked,
+    polygon: polyInput.checked,
+    line: lineInput.checked
   };
-  
+
   if (!name) {
-    alert('Please enter a name.');
+    alert('Bitte einen Namen eingeben.');
+    nameInput.focus();
     return;
   }
-  
+
   if (!tools.rectangle && !tools.polygon && !tools.line) {
-    alert('Please select at least one tool.');
+    alert('Bitte mindestens ein Werkzeug auswählen.');
     return;
   }
-  
-  // Add new label at the end (highest layer priority - most in front)
+
   const maxId = currentLabels.reduce((max, label) => Math.max(max, label.id), 0);
-  currentLabels.push({
-    id: maxId + 1,
-    name: name,
-    color: color,
-    opacity: opacity,
-    tools: tools
-  });
-  
+  currentLabels.push({ id: maxId + 1, name, color, opacity, tools });
+
   hasUnsavedChanges = true;
   refreshLabelTable();
-  hideForm();
 }
 
 /**
@@ -446,6 +477,28 @@ function deleteLabel(labelId) {
     hasUnsavedChanges = true;
     refreshLabelTable();
   }
+}
+
+/**
+ * Duplicate a label and insert it directly below the original
+ */
+function copyLabel(labelId) {
+  const index = currentLabels.findIndex(l => l.id === labelId);
+  if (index === -1) return;
+
+  const original = currentLabels[index];
+  const maxId = currentLabels.reduce((max, l) => Math.max(max, l.id), 0);
+  const copy = {
+    id: maxId + 1,
+    name: original.name + ' (Kopie)',
+    color: original.color,
+    opacity: original.opacity,
+    tools: { ...original.tools }
+  };
+
+  currentLabels.splice(index + 1, 0, copy);
+  hasUnsavedChanges = true;
+  refreshLabelTable();
 }
 
 /**
@@ -550,10 +603,11 @@ function sortCanvasObjectsByLabelOrder(canvas) {
 }
 
 /**
- * Hide the label form
+ * Hide/remove the new-label row
  */
 function hideForm() {
-  labelForm.style.display = 'none';
+  const row = document.getElementById('newLabelRow');
+  if (row) row.remove();
 }
 
 /**

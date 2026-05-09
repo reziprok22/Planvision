@@ -799,6 +799,22 @@ input[type="color"].inline-edit {
     background: #fff0f0;
 }
 
+.save-label-btn {
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 16px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    line-height: 1;
+}
+
+.save-label-btn:hover {
+    color: #27ae60;
+    background: #f0fff4;
+}
+
 /* Vereinfachte Label-Auswahl im Editor */
 .label-selection-group {
     display: flex;
