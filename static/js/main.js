@@ -337,25 +337,6 @@ function setupContainerScrolling() {
 }
 
 /**
- * Calculate correct area for API prediction based on coordinates
- */
-function calculatePredictionArea(coords) {
-  const [x1, y1, x2, y2] = coords;
-  const pixelToMeter = getPixelToMeterFactor();
-  
-  // Calculate width and height in natural pixels
-  const widthPixels = Math.abs(x2 - x1);
-  const heightPixels = Math.abs(y2 - y1);
-  
-  // Convert to real world dimensions
-  const widthM = widthPixels * pixelToMeter;
-  const heightM = heightPixels * pixelToMeter;
-  const area = widthM * heightM;
-  
-  return area;
-}
-
-/**
  * Load Canvas data directly into the canvas (Single Source of Truth approach)
  * @param {Object} canvasData - Canvas data from saved project
  */
@@ -782,47 +763,6 @@ function updateSummary() {
 
   summary.innerHTML = summaryHtml || '<p><em>Keine Annotationen.</em></p>';
 }
-
-/**
- * Clear all results
- */
-function clearResults() {  
-  window.data = null;
-  
-  // Reset PDF state
-  resetPdfState();
-  
-  if (uploadedImage) {
-    uploadedImage.src = '';
-  }
-  const resultsSection = document.getElementById('resultsSection');
-  if (resultsSection) resultsSection.style.display = 'none';
-  const summary = document.getElementById('summary');
-  const resultsBody = document.getElementById('resultsBody');
-  if (summary) summary.innerHTML = '<p><em>Keine Analyse durchgeführt.</em></p>';
-  if (resultsBody) {
-    resultsBody.innerHTML = `
-      <tr>
-        <td colspan="5" style="text-align: center; color: #666; font-style: italic;">
-          Lade eine Datei hoch und starte die Analyse, um Ergebnisse zu sehen.
-        </td>
-      </tr>
-    `;
-  }
-  
-  // Clear canvas
-  if (canvas) {
-    canvas.clear();
-  }
-  
-  // Reset canvas zoom to 1.0
-  if (canvas) {
-    canvas.setZoom(1.0);
-  }
-  
-  // Results cleared
-}
-
 
 // ── Copy / Paste ──────────────────────────────────────────────────────────────
 

@@ -168,19 +168,6 @@ button:hover {
     background: #357abd;
 }
 
-/* Spezielle Buttons */
-#analyzeBtn {
-    background: #4CAF50;
-    width: 100%;
-    padding: 10px;
-    font-size: 16px;
-    margin-top: 10px;
-}
-
-#analyzeBtn:hover {
-    background: #45a049;
-}
-
 
 /* Bild-Container und Annotation-Stile */
 #imageContainer {
@@ -420,20 +407,6 @@ button:hover {
     100% { transform: rotate(360deg); }
 }
 
-#cancelProcessingBtn {
-    margin-left: 10px;
-    padding: 3px 8px;
-    background: #f44336;
-    border: none;
-    color: white;
-    cursor: pointer;
-    border-radius: 3px;
-    font-size: 12px;
-}
-
-#cancelProcessingBtn:hover {
-    background: #d32f2f;
-}
 
 .object-type-select {
     flex: 0 0 120px;
