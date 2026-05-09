@@ -911,17 +911,22 @@ function setupCanvasEvents() {
   canvas.on('mouse:down', function(options) {
     if (isProcessingClick) return;
 
-    // Exit vertex edit mode when clicking empty canvas or a non-handle object
+    // Vertex edit mode interactions
     if (editingPolygon && currentTool === 'select') {
-      if (!options.target || options.target.objectType !== 'vertexHandle') {
+      const targetType = options.target?.objectType;
+      if (targetType === 'midpointHandle') {
+        insertVertexAtMidpoint(options.target);
+        return;
+      }
+      if (targetType !== 'vertexHandle') {
         exitPolygonEditMode();
         return;
       }
     }
 
     // If there's a target object (user clicked on an existing annotation or handle), don't start drawing
-    if (options.target && (options.target.objectType === 'annotation' || options.target.objectType === 'vertexHandle')) {
-      return; // Let Fabric.js handle object selection/manipulation
+    if (options.target && (options.target.objectType === 'annotation' || options.target.objectType === 'vertexHandle' || options.target.objectType === 'midpointHandle')) {
+      return;
     }
     
     const pointer = canvas.getPointer(options.e);
@@ -954,11 +959,12 @@ function setupCanvasEvents() {
     }
   });
   
-  // Vertex handle dragging — update polygon live
+  // Vertex handle dragging — update polygon + adjacent midpoint handles live
   canvas.on('object:moving', function(e) {
     const obj = e.target;
     if (obj.objectType === 'vertexHandle' && editingPolygon) {
       updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
+      updateAdjacentMidpoints(obj.pointIndex);
     }
   });
 
@@ -1664,30 +1670,7 @@ function enterPolygonEditMode(polygon) {
     polygon.set('strokeDashArray', [6, 3]);
   }
 
-  polygon.points.forEach((p, i) => {
-    const abs = getVertexAbsPosition(polygon, i);
-    const handle = new Circle({
-      left: abs.x,
-      top: abs.y,
-      originX: 'center',
-      originY: 'center',
-      radius: 6,
-      fill: '#1976d2',
-      stroke: '#ffffff',
-      strokeWidth: 2,
-      objectType: 'vertexHandle',
-      pointIndex: i,
-      hasBorders: false,
-      hasControls: false,
-      hoverCursor: 'crosshair',
-      moveCursor: 'crosshair',
-      selectable: true,
-      evented: true,
-    });
-    vertexHandles.push(handle);
-    canvas.add(handle);
-  });
-
+  refreshVertexHandles();
   canvas.discardActiveObject();
   canvas.renderAll();
 }
@@ -1712,6 +1695,121 @@ function exitPolygonEditMode() {
 
   saveHistorySnapshot();
   canvas.renderAll();
+}
+
+// Rebuild all vertex + midpoint handles for the current editingPolygon
+function refreshVertexHandles() {
+  if (!editingPolygon) return;
+  vertexHandles.forEach(h => canvas.remove(h));
+  vertexHandles = [];
+
+  const pts = editingPolygon.points;
+  const isClosedShape = editingPolygon.annotationType === 'polygon';
+  const n = pts.length;
+
+  pts.forEach((p, i) => {
+    const abs = getVertexAbsPosition(editingPolygon, i);
+
+    // Full vertex handle (draggable)
+    const handle = new Circle({
+      left: abs.x, top: abs.y,
+      originX: 'center', originY: 'center',
+      radius: 6,
+      fill: '#1976d2', stroke: '#ffffff', strokeWidth: 2,
+      objectType: 'vertexHandle', pointIndex: i,
+      hasBorders: false, hasControls: false,
+      hoverCursor: 'crosshair', moveCursor: 'crosshair',
+      selectable: true, evented: true,
+    });
+    vertexHandles.push(handle);
+    canvas.add(handle);
+
+    // Midpoint handle between vertex i and i+1
+    const hasNext = isClosedShape ? true : i < n - 1;
+    if (hasNext) {
+      const nextI = isClosedShape ? (i + 1) % n : i + 1;
+      const nextAbs = getVertexAbsPosition(editingPolygon, nextI);
+      const mid = new Circle({
+        left: (abs.x + nextAbs.x) / 2,
+        top:  (abs.y + nextAbs.y) / 2,
+        originX: 'center', originY: 'center',
+        radius: 4,
+        fill: '#ffffff', stroke: '#1976d2', strokeWidth: 1.5,
+        opacity: 0.4,
+        objectType: 'midpointHandle', midIndex: i,
+        hasBorders: false, hasControls: false,
+        lockMovementX: true, lockMovementY: true,
+        hoverCursor: 'copy',
+        selectable: true, evented: true,
+      });
+      vertexHandles.push(mid);
+      canvas.add(mid);
+    }
+  });
+
+  canvas.renderAll();
+}
+
+// Reposition the midpoint handles adjacent to a moved vertex (avoids full refresh during drag)
+function updateAdjacentMidpoints(pointIndex) {
+  if (!editingPolygon) return;
+  const pts = editingPolygon.points;
+  const n   = pts.length;
+  const isPolygon = editingPolygon.annotationType === 'polygon';
+
+  vertexHandles.forEach(h => {
+    if (h.objectType !== 'midpointHandle') return;
+    const mi    = h.midIndex;
+    const nextI = isPolygon ? (mi + 1) % n : mi + 1;
+    if (mi === pointIndex || nextI === pointIndex) {
+      const a = getVertexAbsPosition(editingPolygon, mi);
+      const b = getVertexAbsPosition(editingPolygon, nextI);
+      h.set({ left: (a.x + b.x) / 2, top: (a.y + b.y) / 2 });
+      h.setCoords();
+    }
+  });
+}
+
+// Shared helper to adjust left/top after points array changed and setBoundingBox was called
+function _applyBoundingBoxShift(obj, oldMinX, oldMinY) {
+  const newMinX = obj.pathOffset.x - obj.width  / 2;
+  const newMinY = obj.pathOffset.y - obj.height / 2;
+  obj.left += newMinX - oldMinX;
+  obj.top  += newMinY - oldMinY;
+  obj.setCoords();
+}
+
+// Insert a new vertex at the midpoint handle position
+function insertVertexAtMidpoint(midHandle) {
+  const insertIndex = midHandle.midIndex + 1;
+  const oldMinX = editingPolygon.pathOffset.x - editingPolygon.width  / 2;
+  const oldMinY = editingPolygon.pathOffset.y - editingPolygon.height / 2;
+
+  const invMatrix = util.invertTransform(editingPolygon.calcTransformMatrix());
+  const local = util.transformPoint({ x: midHandle.left, y: midHandle.top }, invMatrix);
+  editingPolygon.points.splice(insertIndex, 0, {
+    x: local.x + editingPolygon.pathOffset.x,
+    y: local.y + editingPolygon.pathOffset.y,
+  });
+
+  editingPolygon.setBoundingBox(false);
+  _applyBoundingBoxShift(editingPolygon, oldMinX, oldMinY);
+  refreshVertexHandles();
+}
+
+// Delete vertex at pointIndex (respects minimum vertex count)
+function deleteVertex(pointIndex) {
+  const minPts = editingPolygon.annotationType === 'polygon' ? 3 : 2;
+  if (editingPolygon.points.length <= minPts) return;
+
+  const oldMinX = editingPolygon.pathOffset.x - editingPolygon.width  / 2;
+  const oldMinY = editingPolygon.pathOffset.y - editingPolygon.height / 2;
+
+  editingPolygon.points.splice(pointIndex, 1);
+
+  editingPolygon.setBoundingBox(false);
+  _applyBoundingBoxShift(editingPolygon, oldMinX, oldMinY);
+  refreshVertexHandles();
 }
 
 /**
@@ -2485,7 +2583,18 @@ async function initApp() {
       }
       case 't': case 'T':
       case 'Delete':
-      case 'Backspace':   deleteSelectedObjects(); e.preventDefault(); break;
+      case 'Backspace':
+        if (editingPolygon) {
+          const activeHandle = canvas.getActiveObject();
+          if (activeHandle?.objectType === 'vertexHandle') {
+            deleteVertex(activeHandle.pointIndex);
+            e.preventDefault();
+            break;
+          }
+        }
+        deleteSelectedObjects();
+        e.preventDefault();
+        break;
       case 'Escape': {
         const shortcutsModal = document.getElementById('shortcutsModal');
         if (shortcutsModal && shortcutsModal.style.display === 'block') { toggleShortcutsModal(); break; }
