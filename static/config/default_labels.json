@@ -34,7 +34,7 @@
   },
   {
     "id": 4,
-    "name": "Lukarne",
+    "name": "Boden",
     "color": "#FFA500",
     "opacity": 0.3,
     "tools": {
@@ -67,30 +67,8 @@
   },
   {
     "id": 7,
-    "name": "Höhe",
+    "name": "Umfang",
     "color": "#00AAFF",
-    "opacity": 0.0,
-    "tools": {
-      "rectangle": false,
-      "polygon": false,
-      "line": true
-    }
-  },
-  {
-    "id": 8,
-    "name": "Breite",
-    "color": "#4CAF50",
-    "opacity": 0.0,
-    "tools": {
-      "rectangle": false,
-      "polygon": false,
-      "line": true
-    }
-  },
-  {
-    "id": 9,
-    "name": "Abstand",
-    "color": "#9C27B0",
     "opacity": 0.0,
     "tools": {
       "rectangle": false,

@@ -17,9 +17,9 @@ node_modules
 
 # Einzelne Datei ignorieren
 Notizen_FL.md
-requirements.txt
 after_preprocessing.png
 before_preprocessing.png
+Gechäftsmodell.md
 
 
 # Alle temporären Dateien ignorieren
