@@ -83,6 +83,9 @@ let crosshairCanvas = null;
 let crosshairCtx = null;
 let crosshairVisible = false;
 
+// Currently held drawing-tool key (q/w/e) for scroll-to-cycle
+let heldDrawingKey = null;
+
 // Label cursor tooltip
 let labelTooltipEl = null;
 let labelTooltipTimer = null;
@@ -241,6 +244,19 @@ function initCanvas() {
   
   // Enable Fabric.js zoom functionality with Ctrl+Wheel, allow normal scrolling
   canvas.on('mouse:wheel', function(opt) {
+    // Drawing-key held + scroll → cycle through labels
+    if (heldDrawingKey && !opt.e.ctrlKey) {
+      const sel = document.getElementById('universalLabelSelect');
+      if (sel && sel.options.length > 1) {
+        const dir = opt.e.deltaY > 0 ? 1 : -1;
+        const next = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
+        sel.selectedIndex = next;
+        sel.dispatchEvent(new Event('change'));
+      }
+      opt.e.preventDefault();
+      opt.e.stopPropagation();
+      return;
+    }
     // Only zoom with Ctrl key, otherwise allow normal scrolling
     if (opt.e.ctrlKey) {
       const delta = opt.e.deltaY;
@@ -2759,6 +2775,18 @@ async function initApp() {
   
   // Setup tool buttons initially
   setupToolButtons();
+
+  // Track held drawing-tool keys for scroll-to-cycle
+  document.addEventListener('keydown', function(e) {
+    const key = e.key.toLowerCase();
+    if ((key === 'q' || key === 'w' || key === 'e') && !e.ctrlKey && !e.metaKey) {
+      heldDrawingKey = key;
+    }
+  });
+  document.addEventListener('keyup', function(e) {
+    const key = e.key.toLowerCase();
+    if (key === heldDrawingKey) heldDrawingKey = null;
+  });
 
   // Keyboard shortcuts for tools
   document.addEventListener('keydown', function(e) {
