@@ -83,6 +83,12 @@ let crosshairCanvas = null;
 let crosshairCtx = null;
 let crosshairVisible = false;
 
+// Label cursor tooltip
+let labelTooltipEl = null;
+let labelTooltipTimer = null;
+let lastMouseClientX = 0;
+let lastMouseClientY = 0;
+
 // Undo / Redo history
 const HISTORY_LIMIT = 30;
 let undoStack = [];      // serialised states; top = current state
@@ -977,6 +983,54 @@ function clearCrosshair() {
   if (crosshairCtx && crosshairCanvas) {
     crosshairCtx.clearRect(0, 0, crosshairCanvas.width, crosshairCanvas.height);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Label cursor tooltip — appears near the cursor for ~1.5 s after a label change.
+ */
+function createLabelTooltip() {
+  if (document.getElementById('labelCursorTooltip')) return;
+  labelTooltipEl = document.createElement('div');
+  labelTooltipEl.id = 'labelCursorTooltip';
+  Object.assign(labelTooltipEl.style, {
+    position: 'fixed',
+    pointerEvents: 'none',
+    zIndex: '10000',
+    background: 'rgba(20, 20, 20, 0.52)',
+    color: '#fff',
+    padding: '4px 10px 4px 8px',
+    borderRadius: '5px',
+    fontSize: '12px',
+    fontWeight: '600',
+    whiteSpace: 'nowrap',
+    display: 'none',
+    opacity: '0',
+    transition: 'opacity 0.12s ease',
+    borderLeft: '4px solid #fff',
+    letterSpacing: '0.02em',
+  });
+  document.body.appendChild(labelTooltipEl);
+}
+
+function showLabelTooltip(labelName, labelColor) {
+  if (!labelTooltipEl) return;
+  clearTimeout(labelTooltipTimer);
+
+  labelTooltipEl.textContent = labelName;
+  labelTooltipEl.style.borderLeftColor = labelColor || '#888';
+  labelTooltipEl.style.left = `${lastMouseClientX + 18}px`;
+  labelTooltipEl.style.top  = `${lastMouseClientY - 28}px`;
+  labelTooltipEl.style.display = 'block';
+  // Force reflow so the transition fires
+  labelTooltipEl.offsetHeight;
+  labelTooltipEl.style.opacity = '1';
+
+  labelTooltipTimer = setTimeout(() => {
+    labelTooltipEl.style.opacity = '0';
+    setTimeout(() => { labelTooltipEl.style.display = 'none'; }, 130);
+  }, 1500);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2559,6 +2613,13 @@ async function initApp() {
   // Get DOM elements
   imageContainer = document.getElementById('imageContainer');
   uploadedImage = document.getElementById('uploadedImage');
+
+  // Label tooltip setup
+  createLabelTooltip();
+  document.addEventListener('mousemove', (e) => {
+    lastMouseClientX = e.clientX;
+    lastMouseClientY = e.clientY;
+  });
   
    // ── New upload flow: called by upload-modal.js after successful /upload ──
   window.onUploadReady = function(uploadInfo) {
@@ -2830,6 +2891,10 @@ async function initApp() {
       if (currentTool === 'select' && selectedObjects.length > 0) {
         applyLabelChangeToSelectedObject();
       }
+      // Show label name near cursor
+      const labelId = parseInt(universalLabelSelect.value);
+      const label = getLabel(labelId);
+      if (label) showLabelTooltip(label.name, label.color);
     });
   }
     
