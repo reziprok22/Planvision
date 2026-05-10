@@ -78,6 +78,11 @@ let editingPolygon = null;         // polygon currently in vertex-edit mode
 let vertexHandles = [];            // Circle handles shown during vertex editing
 let pasteOffset = 0;               // increases with each paste so copies don't stack
 
+// Crosshair overlay for drawing tools
+let crosshairCanvas = null;
+let crosshairCtx = null;
+let crosshairVisible = false;
+
 // Undo / Redo history
 const HISTORY_LIMIT = 30;
 let undoStack = [];      // serialised states; top = current state
@@ -299,6 +304,7 @@ function initCanvas() {
   // Ensure tool buttons and canvas events work after initialization
   setupToolButtons();
   setupCanvasEvents();
+  createCrosshairOverlay();
 
   endPerfMeasurement('canvas-initialization', {
     canvas_width: naturalWidth,
@@ -916,6 +922,66 @@ async function redoHistory() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Crosshair overlay — a separate <canvas> with pointer-events:none drawn on top
+ * of the Fabric canvas. Completely independent of Fabric objects / undo history.
+ */
+function createCrosshairOverlay() {
+  const existing = document.getElementById('crosshairCanvas');
+  if (existing) existing.remove();
+
+  crosshairCanvas = document.createElement('canvas');
+  crosshairCanvas.id = 'crosshairCanvas';
+  crosshairCanvas.width = canvas.getWidth();
+  crosshairCanvas.height = canvas.getHeight();
+  Object.assign(crosshairCanvas.style, {
+    position: 'absolute',
+    top: '0',
+    left: '0',
+    width: '100%',
+    height: '100%',
+    pointerEvents: 'none',
+    zIndex: '200',
+  });
+
+  canvas.wrapperEl.appendChild(crosshairCanvas);
+  crosshairCtx = crosshairCanvas.getContext('2d');
+
+  canvas.upperCanvasEl.addEventListener('mouseleave', clearCrosshair);
+}
+
+function drawCrosshair(x, y) {
+  if (!crosshairCtx || !crosshairCanvas) return;
+  const w = crosshairCanvas.width;
+  const h = crosshairCanvas.height;
+  crosshairCtx.clearRect(0, 0, w, h);
+
+  crosshairCtx.save();
+  crosshairCtx.strokeStyle = 'rgba(30, 80, 200, 0.65)';
+  crosshairCtx.lineWidth = 1;
+  crosshairCtx.setLineDash([5, 5]);
+
+  crosshairCtx.beginPath();
+  crosshairCtx.moveTo(0, y);
+  crosshairCtx.lineTo(w, y);
+  crosshairCtx.stroke();
+
+  crosshairCtx.beginPath();
+  crosshairCtx.moveTo(x, 0);
+  crosshairCtx.lineTo(x, h);
+  crosshairCtx.stroke();
+
+  crosshairCtx.restore();
+}
+
+function clearCrosshair() {
+  if (crosshairCtx && crosshairCanvas) {
+    crosshairCtx.clearRect(0, 0, crosshairCanvas.width, crosshairCanvas.height);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
  * Setup Canvas Events for Editor - Pure Fabric.js approach
  */
 function setupCanvasEvents() {
@@ -970,12 +1036,16 @@ function setupCanvasEvents() {
     // For 'select' tool, let Fabric.js handle selection naturally
   });
   
-  // Mouse move event - for drawing previews
+  // Mouse move event - for drawing previews and crosshair
   canvas.on('mouse:move', function(options) {
-    if (!drawingMode) return;
-    
     const pointer = canvas.getPointer(options.e);
-    
+
+    if (crosshairVisible) {
+      drawCrosshair(pointer.x, pointer.y);
+    }
+
+    if (!drawingMode) return;
+
     if (currentTool === 'rectangle' && currentRectangle) {
       updateDrawingRectangle(pointer);
     } else if (currentTool === 'polygon' && currentPolygon) {
@@ -1152,6 +1222,8 @@ function setTool(toolName) {
           obj.evented = false;
         }
       });
+      crosshairVisible = false;
+      clearCrosshair();
     } else {
       canvas.selection = false;
       canvas.defaultCursor = 'crosshair';
@@ -1162,6 +1234,7 @@ function setTool(toolName) {
         obj.evented = false;
       });
       // Clear selection when switching away from select tool
+      crosshairVisible = true;
     }
     canvas.renderAll();
   }
