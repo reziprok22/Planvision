@@ -211,7 +211,7 @@ function initCanvas() {
   
   // Improve selection tolerance for thin lines and complex shapes
   canvas.targetFindTolerance = 10;      // 10px tolerance around objects
-  canvas.perPixelTargetFind = true;     // More precise hit detection
+  canvas.perPixelTargetFind = false;    // Bounding-box hit detection — perPixel scans every pixel of every object on each mousemove, kills perf with many annotations
   canvas.uniformScaling = false;        // free resize by default; Shift = proportional
   
   // FABRIC.JS NATURAL-SIZE STRATEGY: Canvas = image size, 1:1 coordinates
@@ -222,22 +222,19 @@ function initCanvas() {
   canvas.setWidth(naturalWidth);
   canvas.setHeight(naturalHeight);
   
-  // Add image as Fabric.js v6 background at 1:1 scale
-  Image.fromURL(uploadedImage.src).then(img => {
-    img.set({
-      left: 0,
-      top: 0,
-      scaleX: 1.0,  // No scaling - natural size
-      scaleY: 1.0,  // No scaling - natural size
-      selectable: false,
-      evented: false,
-      excludeFromExport: true
-    });
-    
-    // Set as background image - v6 direct property assignment
-    canvas.backgroundImage = img;
-    canvas.renderAll();
+  // Add image as Fabric.js v6 background at 1:1 scale.
+  // Use the already-loaded HTMLImageElement directly to avoid a redundant network fetch/decode.
+  const bgImg = new Image(uploadedImage, {
+    left: 0,
+    top: 0,
+    scaleX: 1.0,
+    scaleY: 1.0,
+    selectable: false,
+    evented: false,
+    excludeFromExport: true
   });
+  canvas.backgroundImage = bgImg;
+  canvas.renderAll();
   
   // Hide the HTML image since we're using Fabric.js background
   uploadedImage.style.display = 'none';
@@ -393,30 +390,18 @@ function loadCanvasData(canvasData) {
   initCanvas();
   
   console.log(`Loading ${canvasData.canvas_annotations.length} annotations from canvas data`);
-  
-  // Load each annotation from saved canvas data
-  canvasData.canvas_annotations.forEach((annotationData, index) => {
-    // Use Fabric.js enlivenObjects to recreate objects from saved data
-    util.enlivenObjects([annotationData]).then(objects => {
-      const annotation = objects[0];
-      
-      if (annotation) {
-        // Ensure our custom properties are set
-        annotation.set({
-          objectType: 'annotation',
-          selectable: true,
-          evented: true
-        });
-        
-        // Add to canvas
-        canvas.add(annotation);
-        
-        // Create text label for this annotation
-        setTimeout(() => {
-          createSingleTextLabel(annotation);
-        }, 10);
-      }
+
+  // Load all annotations in one batch instead of N individual promises.
+  util.enlivenObjects(canvasData.canvas_annotations).then(objects => {
+    canvas.renderOnAddRemove = false;
+    objects.forEach(annotation => {
+      if (!annotation) return;
+      annotation.set({ objectType: 'annotation', selectable: true, evented: true });
+      canvas.add(annotation);
     });
+    canvas.renderOnAddRemove = true;
+    canvas.requestRenderAll();
+    objects.filter(Boolean).forEach(annotation => createSingleTextLabel(annotation, { batch: true }));
   });
   
   // Restore zoom and resize canvas element to match.
@@ -516,7 +501,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         userCreated: false,
         selectable: true,
         evented: true,
-        objectCaching: false
+        objectCaching: true
       };
     } else if (pred.annotationType === 'line' && pred.points) {
       // Line from points
@@ -537,7 +522,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         userCreated: false,
         selectable: true,
         evented: true,
-        objectCaching: false
+        objectCaching: true
       };
     }
   }).filter(Boolean);
@@ -854,6 +839,7 @@ async function pasteAnnotations() {
   }
 
   const objects = await util.enlivenObjects(JSON.parse(JSON.stringify(clipboard)));
+  canvas.renderOnAddRemove = false;
   for (const obj of objects) {
     obj.set({
       left:        (obj.left  || 0) + pasteOffset,
@@ -867,11 +853,14 @@ async function pasteAnnotations() {
     obj.displayIndex = undefined;
     canvas.add(obj);
     obj.setCoords();
-    createSingleTextLabel(obj);
+    createSingleTextLabel(obj, { batch: true });
   }
+  canvas.renderOnAddRemove = true;
 
   applyLayerOrdering();
   canvas.requestRenderAll();
+  updateResultsTable();
+  updateSummary();
   saveHistorySnapshot();
 }
 
@@ -904,6 +893,7 @@ function saveHistorySnapshot() {
 async function applyHistoryState(stateJson) {
   isHistoryAction = true;
   // Remove all annotation objects and their text labels
+  canvas.renderOnAddRemove = false;
   canvas.getObjects()
     .filter(o => o.objectType === 'annotation' || o.objectType === 'textLabel')
     .forEach(o => canvas.remove(o));
@@ -916,8 +906,9 @@ async function applyHistoryState(stateJson) {
       canvas.add(obj);
       obj.setCoords();
     }
+    canvas.renderOnAddRemove = true;
     applyLayerOrdering();
-    for (const obj of objects) createSingleTextLabel(obj);
+    for (const obj of objects) createSingleTextLabel(obj, { batch: true });
   }
 
   canvas.discardActiveObject();
@@ -953,29 +944,39 @@ function createCrosshairOverlay() {
 
   crosshairCanvas = document.createElement('canvas');
   crosshairCanvas.id = 'crosshairCanvas';
-  crosshairCanvas.width = canvas.getWidth();
-  crosshairCanvas.height = canvas.getHeight();
+  // Size to the visible viewport, not the full (possibly zoomed) image — avoids
+  // allocating e.g. 20 000 × 15 000 px buffers at high zoom levels.
+  crosshairCanvas.width  = imageContainer.clientWidth;
+  crosshairCanvas.height = imageContainer.clientHeight;
   Object.assign(crosshairCanvas.style, {
     position: 'absolute',
     top: '0',
     left: '0',
-    width: '100%',
-    height: '100%',
+    width:  `${imageContainer.clientWidth}px`,
+    height: `${imageContainer.clientHeight}px`,
     pointerEvents: 'none',
     zIndex: '200',
   });
 
-  canvas.wrapperEl.appendChild(crosshairCanvas);
+  // Attach to the scroll container so it stays in the visible area.
+  imageContainer.appendChild(crosshairCanvas);
   crosshairCtx = crosshairCanvas.getContext('2d');
 
   canvas.upperCanvasEl.addEventListener('mouseleave', clearCrosshair);
 }
 
-function drawCrosshair(x, y) {
+function drawCrosshair(imageX, imageY) {
   if (!crosshairCtx || !crosshairCanvas) return;
   const w = crosshairCanvas.width;
   const h = crosshairCanvas.height;
   crosshairCtx.clearRect(0, 0, w, h);
+
+  // Convert image coordinates to screen/viewport coordinates.
+  const zoom = canvas.getZoom();
+  const x = imageX * zoom - imageContainer.scrollLeft;
+  const y = imageY * zoom - imageContainer.scrollTop;
+
+  if (x < 0 || x > w || y < 0 || y > h) return;
 
   crosshairCtx.save();
   crosshairCtx.strokeStyle = 'rgba(30, 80, 200, 0.65)';
@@ -1471,20 +1472,20 @@ function startDrawingRectangle(pointer) {
 
 function updateDrawingRectangle(pointer) {
   if (!currentRectangle || !rectangleStartPoint) return;
-  
+
   const startX = rectangleStartPoint.x;
   const startY = rectangleStartPoint.y;
   const width = pointer.x - startX;
   const height = pointer.y - startY;
-    
+
   currentRectangle.set({
     width: Math.abs(width),
     height: Math.abs(height),
     left: width < 0 ? pointer.x : startX,
     top: height < 0 ? pointer.y : startY
   });
-    
-  canvas.renderAll();
+
+  canvas.requestRenderAll();
 }
 
 function finishDrawingRectangle() {
@@ -1758,7 +1759,7 @@ function updatePolygonPreview(pointer, shiftKey = false) {
   currentPolygon.set({ points: fabricPoints });
   currentPolygon.setBoundingBox(true);
   currentPolygon.setCoords();
-  canvas.renderAll();
+  canvas.requestRenderAll();
 }
 
 function finishPolygonDrawing() {
@@ -1798,9 +1799,9 @@ function finishPolygonDrawing() {
     objectLabel: selectedLabelId,
     hasControls: true,
     hasBorders: true,
-    objectCaching: false
+    objectCaching: true
   });
-    
+
   canvas.add(finalPolygon);
   canvas.renderAll();
   
@@ -2101,7 +2102,7 @@ function updateLinePreview(pointer, shiftKey = false) {
   currentLine.set({ points: fabricPoints });
   currentLine.setBoundingBox(true);
   currentLine.setCoords();
-  canvas.renderAll();
+  canvas.requestRenderAll();
 }
 
 function finishLineDrawing() {
@@ -2142,10 +2143,9 @@ function finishLineDrawing() {
     objectLabel: selectedLabelId,
     hasControls: true,
     hasBorders: true,
-    objectCaching: false
+    objectCaching: true
   });
-  
-  
+
   canvas.add(finalLine);
   canvas.renderAll();
   
@@ -2167,7 +2167,7 @@ function resetLineDrawing() {
 /**
  * Create a text label for a single new annotation without affecting others
  */
-function createSingleTextLabel(annotation) {
+function createSingleTextLabel(annotation, { batch = false } = {}) {
   if (!annotation || !canvas) return;
   
   // Generate unique ID for linking
@@ -2232,11 +2232,12 @@ function createSingleTextLabel(annotation) {
   });
   
   canvas.add(textLabel);
-  applyLayerOrdering(); // enforce label z-order after every new annotation
-  canvas.renderAll();
-
-  updateResultsTable();
-  updateSummary();
+  if (!batch) {
+    applyLayerOrdering();
+    canvas.renderAll();
+    updateResultsTable();
+    updateSummary();
+  }
 
   return textLabel;
 }

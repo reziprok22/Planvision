@@ -564,6 +564,6 @@ if __name__ == '__main__':
     # Versuche, das Modell zu Beginn zu laden
     try:
         load_model()
-        app.run(debug=True)
+        app.run(host='::', port=5000, debug=False)
     except Exception as e:
         print(f"Error loading model: {e}")
