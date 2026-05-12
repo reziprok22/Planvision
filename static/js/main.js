@@ -214,13 +214,24 @@ function initCanvas() {
   canvas.perPixelTargetFind = false;    // Bounding-box hit detection — perPixel scans every pixel of every object on each mousemove, kills perf with many annotations
   canvas.uniformScaling = false;        // free resize by default; Shift = proportional
   
-  // FABRIC.JS NATURAL-SIZE STRATEGY: Canvas = image size, 1:1 coordinates
-  const naturalWidth = uploadedImage.naturalWidth;
+  const naturalWidth  = uploadedImage.naturalWidth;
   const naturalHeight = uploadedImage.naturalHeight;
-   
-  // Canvas-Größe = Natural Image Size (für 1:1 Koordinaten)
-  canvas.setWidth(naturalWidth);
-  canvas.setHeight(naturalHeight);
+
+  // Canvas buffer = viewport size (fixed). A #scrollSpacer div drives the scroll area.
+  // viewportTransform handles both zoom and pan translation — no more mega-buffers at high zoom.
+  const containerW = imageContainer.clientWidth  || naturalWidth;
+  const containerH = imageContainer.clientHeight || naturalHeight;
+  canvas.setWidth(containerW);
+  canvas.setHeight(containerH);
+
+  // Scroll spacer: invisible div that creates the virtual scroll area for the container.
+  // Sized to natW × natH initially; zoom handler resizes it.
+  const existingSpacer = document.getElementById('scrollSpacer');
+  if (existingSpacer) existingSpacer.remove();
+  const scrollSpacer = document.createElement('div');
+  scrollSpacer.id = 'scrollSpacer';
+  scrollSpacer.style.cssText = `flex-shrink:0;width:${naturalWidth}px;height:${naturalHeight}px;pointer-events:none;`;
+  imageContainer.appendChild(scrollSpacer);
   
   // Add image as Fabric.js v6 background at 1:1 scale.
   // Use the already-loaded HTMLImageElement directly to avoid a redundant network fetch/decode.
@@ -268,31 +279,32 @@ function initCanvas() {
       );
       if (newZoom < minZoom) newZoom = minZoom;
 
-      // offsetX/offsetY are in canvas pixel space (includes scroll offset).
-      // Compute mouse position relative to the visible container viewport.
-      const mouseContainerX = opt.e.offsetX - imageContainer.scrollLeft;
-      const mouseContainerY = opt.e.offsetY - imageContainer.scrollTop;
+      // Canvas is viewport-sized: offsetX/Y are already viewport-relative (0..containerW).
+      const mouseContainerX = opt.e.offsetX;
+      const mouseContainerY = opt.e.offsetY;
 
-      // Image coordinate (Fabric units) under the mouse before zoom.
-      const imageX = opt.e.offsetX / oldZoom;
-      const imageY = opt.e.offsetY / oldZoom;
-
-      // Apply pure-scale viewport transform (no translation — scroll handles pan).
-      canvas.setViewportTransform([newZoom, 0, 0, newZoom, 0, 0]);
-
-      // Grow/shrink the canvas element so the container scroll area matches the zoom.
+      // Image coordinate under the mouse before zoom (viewport pos + current scroll → image space).
       const natW = uploadedImage.naturalWidth;
       const natH = uploadedImage.naturalHeight;
-      canvas.setWidth(natW * newZoom);
-      canvas.setHeight(natH * newZoom);
-      if (canvas.wrapperEl) {
-        canvas.wrapperEl.style.width  = `${natW * newZoom}px`;
-        canvas.wrapperEl.style.height = `${natH * newZoom}px`;
+      const imageX = (opt.e.offsetX + imageContainer.scrollLeft) / oldZoom;
+      const imageY = (opt.e.offsetY + imageContainer.scrollTop)  / oldZoom;
+
+      // Resize the scroll spacer (drives scroll bars) — canvas buffer stays viewport-sized.
+      const spacer = document.getElementById('scrollSpacer');
+      if (spacer) {
+        spacer.style.width  = `${natW * newZoom}px`;
+        spacer.style.height = `${natH * newZoom}px`;
       }
 
       // Scroll so the same image point stays under the mouse.
       imageContainer.scrollLeft = imageX * newZoom - mouseContainerX;
       imageContainer.scrollTop  = imageY * newZoom - mouseContainerY;
+
+      // Sync wrapperEl position and Fabric viewportTransform (scale + pan translation).
+      const sl = imageContainer.scrollLeft;
+      const st = imageContainer.scrollTop;
+      if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl}px,${st}px)`;
+      canvas.setViewportTransform([newZoom, 0, 0, newZoom, -sl, -st]);
 
       // Refresh bounding-box cache of the active drawing object so Fabric
       // doesn't skip it as "off-screen" after the viewport transform changes.
@@ -307,14 +319,15 @@ function initCanvas() {
     }
   });
   
-  // Position canvas at natural size (scrollable in container)
+  // WrapperEl: viewport-sized and absolute. On scroll, a transform keeps it in the visible area.
   const canvasWrapper = canvas.wrapperEl;
   if (canvasWrapper) {
-    canvasWrapper.style.position = 'absolute';
-    canvasWrapper.style.top = '0';
-    canvasWrapper.style.left = '0';
-    canvasWrapper.style.width = `${naturalWidth}px`;
-    canvasWrapper.style.height = `${naturalHeight}px`;
+    canvasWrapper.style.position  = 'absolute';
+    canvasWrapper.style.top       = '0';
+    canvasWrapper.style.left      = '0';
+    canvasWrapper.style.width     = `${containerW}px`;
+    canvasWrapper.style.height    = `${containerH}px`;
+    canvasWrapper.style.transform = '';
   }
   
   // Setup enhanced scrolling for container
@@ -353,13 +366,24 @@ function clampScrollToImageBounds() {
 function setupContainerScrolling() {
   if (!imageContainer) return;
 
-  imageContainer.addEventListener('scroll', clampScrollToImageBounds, { passive: true });
+  imageContainer.addEventListener('scroll', () => {
+    clampScrollToImageBounds();
+    if (!canvas) return;
+    const sl = imageContainer.scrollLeft;
+    const st = imageContainer.scrollTop;
+    // Keep the viewport-sized wrapperEl visually in the top-left of the container.
+    if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl}px,${st}px)`;
+    // Update Fabric's pan so objects render at the correct scroll position.
+    const zoom = canvas.getZoom();
+    canvas.setViewportTransform([zoom, 0, 0, zoom, -sl, -st]);
+    canvas.requestRenderAll();
+  }, { passive: true });
 
   imageContainer.addEventListener('wheel', function(e) {
     // If Shift key is held, convert vertical scroll to horizontal
     if (e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
-      imageContainer.scrollBy({ left: e.deltaY * 0.5});
+      imageContainer.scrollBy({ left: e.deltaY * 0.5 });
     }
     // Normal vertical scrolling happens automatically if no modifiers
     // Ctrl+Wheel is handled by Fabric.js for zooming
@@ -404,19 +428,19 @@ function loadCanvasData(canvasData) {
     objects.filter(Boolean).forEach(annotation => createSingleTextLabel(annotation, { batch: true }));
   });
   
-  // Restore zoom and resize canvas element to match.
+  // Restore zoom: resize scroll spacer (not the canvas buffer).
   const restoredZoom = canvasData.canvas_zoom || 1;
-  canvas.setViewportTransform([restoredZoom, 0, 0, restoredZoom, 0, 0]);
   if (uploadedImage) {
-    const rw = uploadedImage.naturalWidth  * restoredZoom;
-    const rh = uploadedImage.naturalHeight * restoredZoom;
-    canvas.setWidth(rw);
-    canvas.setHeight(rh);
-    if (canvas.wrapperEl) {
-      canvas.wrapperEl.style.width  = `${rw}px`;
-      canvas.wrapperEl.style.height = `${rh}px`;
+    const spacer = document.getElementById('scrollSpacer');
+    if (spacer) {
+      spacer.style.width  = `${uploadedImage.naturalWidth  * restoredZoom}px`;
+      spacer.style.height = `${uploadedImage.naturalHeight * restoredZoom}px`;
     }
   }
+  imageContainer.scrollLeft = 0;
+  imageContainer.scrollTop  = 0;
+  canvas.setViewportTransform([restoredZoom, 0, 0, restoredZoom, 0, 0]);
+  if (canvas.wrapperEl) canvas.wrapperEl.style.transform = '';
   
   canvas.renderAll();
 
@@ -944,22 +968,21 @@ function createCrosshairOverlay() {
 
   crosshairCanvas = document.createElement('canvas');
   crosshairCanvas.id = 'crosshairCanvas';
-  // Size to the visible viewport, not the full (possibly zoomed) image — avoids
-  // allocating e.g. 20 000 × 15 000 px buffers at high zoom levels.
-  crosshairCanvas.width  = imageContainer.clientWidth;
-  crosshairCanvas.height = imageContainer.clientHeight;
+  // Canvas buffer = viewport size (same as the Fabric canvas buffer).
+  crosshairCanvas.width  = canvas.getWidth();
+  crosshairCanvas.height = canvas.getHeight();
   Object.assign(crosshairCanvas.style, {
     position: 'absolute',
     top: '0',
     left: '0',
-    width:  `${imageContainer.clientWidth}px`,
-    height: `${imageContainer.clientHeight}px`,
+    width:  `${canvas.getWidth()}px`,
+    height: `${canvas.getHeight()}px`,
     pointerEvents: 'none',
     zIndex: '200',
   });
 
-  // Attach to the scroll container so it stays in the visible area.
-  imageContainer.appendChild(crosshairCanvas);
+  // Inside wrapperEl: moves as one unit with the Fabric canvases when scroll-transform fires.
+  canvas.wrapperEl.appendChild(crosshairCanvas);
   crosshairCtx = crosshairCanvas.getContext('2d');
 
   canvas.upperCanvasEl.addEventListener('mouseleave', clearCrosshair);
