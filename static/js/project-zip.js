@@ -14,7 +14,71 @@
 
 import JSZip from 'jszip';
 
-const FORMAT = 'planvision_zip_v1';
+// ── Format versioning ─────────────────────────────────────────────────────────
+// Increment CURRENT_VERSION whenever the ZIP schema changes, and add a
+// migration step in migrateCanvasData() below.
+//
+// Version history:
+//   1 – original format (metadata.format = 'planvision_zip_v1', no numeric version)
+//       canvas_annotations only; no canvas_text_labels; no id/labelText on annotations
+//   2 – canvas_text_labels per page added; id + labelText serialised on annotations
+//
+const CURRENT_VERSION = 2;
+
+// ── Migration layer ───────────────────────────────────────────────────────────
+
+/**
+ * Detect the numeric format version from a loaded metadata object.
+ * Old ZIPs used a string 'planvision_zip_v1' instead of a number.
+ */
+function detectVersion(metadata) {
+  if (typeof metadata.format_version === 'number') return metadata.format_version;
+  // Legacy: string format field means version 1
+  if (metadata.format === 'planvision_zip_v1') return 1;
+  return 1; // safe default for unknown old files
+}
+
+/**
+ * Apply all necessary migrations to bring canvasData up to CURRENT_VERSION.
+ * Each "if (v < N)" block is idempotent — safe to run multiple times.
+ */
+function migrateCanvasData(canvasData, fromVersion) {
+  if (fromVersion >= CURRENT_VERSION) return canvasData;
+
+  console.log(`[ZIP migration] upgrading from v${fromVersion} to v${CURRENT_VERSION}`);
+  let data = { ...canvasData };
+
+  // ── v1 → v2 ────────────────────────────────────────────────────────────────
+  // canvas_text_labels did not exist. The loader already handles this via the
+  // createSingleTextLabel fallback, so no data transform is needed here.
+  // We do ensure every annotation has a stable displayIndex so the fallback
+  // can assign correct numbers.
+  if (fromVersion < 2) {
+    data = Object.fromEntries(
+      Object.entries(data).map(([pageNum, pageData]) => {
+        if (!pageData?.canvas_annotations) return [pageNum, pageData];
+
+        let nextIndex = 1;
+        const patched = pageData.canvas_annotations.map(ann => {
+          if (ann.objectType !== 'annotation') return ann;
+          if (ann.displayIndex) {
+            nextIndex = Math.max(nextIndex, ann.displayIndex + 1);
+            return ann;
+          }
+          return { ...ann, displayIndex: nextIndex++ };
+        });
+
+        return [pageNum, { ...pageData, canvas_annotations: patched }];
+      })
+    );
+    console.log('[ZIP migration] v1→v2: displayIndex assigned where missing');
+  }
+
+  // ── v2 → v3 (placeholder) ──────────────────────────────────────────────────
+  // if (fromVersion < 3) { ... }
+
+  return data;
+}
 
 /**
  * Download the current project as a ZIP file.
@@ -32,10 +96,10 @@ export async function saveProjectAsZip({ projectName, canvasData, labels, settin
   const zip = new JSZip();
 
   zip.file('metadata.json', JSON.stringify({
-    project_name: projectName,
-    page_count:   pageImageUrls.length,
-    saved_at:     new Date().toISOString(),
-    format:       FORMAT
+    project_name:   projectName,
+    page_count:     pageImageUrls.length,
+    saved_at:       new Date().toISOString(),
+    format_version: CURRENT_VERSION,
   }, null, 2));
 
   zip.file('canvas_data.json', JSON.stringify(canvasData, null, 2));
@@ -99,8 +163,15 @@ export async function loadProjectFromZip(file) {
   const metadata   = await readJson('metadata.json');
   if (!metadata) throw new Error('Ungültige ZIP-Datei: metadata.json fehlt.');
 
-  const canvasData = await readJson('canvas_data.json');
+  const version = detectVersion(metadata);
+  if (version !== CURRENT_VERSION) {
+    console.log(`[ZIP] Format v${version} erkannt (aktuell: v${CURRENT_VERSION}) – Migration wird ausgeführt`);
+  }
+
+  let canvasData = await readJson('canvas_data.json');
   if (!canvasData) throw new Error('Ungültige ZIP-Datei: canvas_data.json fehlt.');
+
+  canvasData = migrateCanvasData(canvasData, version);
 
   const labels   = (await readJson('labels.json'))   || [];
   const settings = (await readJson('settings.json')) || {};

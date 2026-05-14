@@ -116,4 +116,27 @@ When modifying the annotation editor:
 When changing PDF processing:
 1. Update `app.py` route handlers for new parameters
 2. Ensure `pdf-handler.js` manages navigation state correctly
-3. Verify export functions in `pdf_export.py` handle new data formats
+3. PDF export is fully frontend-based via `static/js/pdf-export-client.js` (pdf-lib) — no backend involved
+
+## ZIP Format Versioning
+
+The ZIP save/load system in `static/js/project-zip.js` uses a numeric `format_version` in `metadata.json` to ensure old ZIP files always load correctly.
+
+**Current version: 2**
+
+Version history:
+- **v1** – original format (`metadata.format = 'planvision_zip_v1'`); canvas_annotations only, no canvas_text_labels, no id/labelText on annotations
+- **v2** – canvas_text_labels per page added; id + labelText serialised on annotations
+
+### When changing the ZIP schema:
+
+1. Increment `CURRENT_VERSION` in `project-zip.js`
+2. Add a migration block in `migrateCanvasData()`:
+   ```js
+   if (fromVersion < N) {
+     // transform data from v(N-1) to vN
+   }
+   ```
+3. Update the version history comment in `project-zip.js` and here
+
+Migration functions are applied sequentially — a v1 ZIP automatically runs through all steps up to the current version.
