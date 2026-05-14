@@ -37,7 +37,6 @@ import {
   setOnPageClick,
   setOnScaleChange,
   setActivePageInList,
-  setPageStatus,
   setPageScaleInSidebar,
   getSessionId as getUploadSessionId,
   getPageSizes
@@ -2584,12 +2583,11 @@ async function analyzeCurrentPage() {
   const errorMessage = document.getElementById('errorMessage');
 
   // UI: busy state
-  if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.textContent = '⏳ Analysiert…'; }
+  if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.innerHTML = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> Analysiert…'; }
   if (loader) loader.style.display = 'block';
   if (errorMessage) errorMessage.style.display = 'none';
 
   // Mark page as "analyzing" in sidebar
-  setPageStatus(currentPageNumber, 'analyzing');
 
   try {
     const formData = new FormData();
@@ -2624,7 +2622,6 @@ async function analyzeCurrentPage() {
     updateSummary();
 
     // Mark as done in sidebar
-    setPageStatus(currentPageNumber, 'analyzed');
 
   } catch (err) {
     console.error('Analyse-Fehler:', err);
@@ -2632,12 +2629,11 @@ async function analyzeCurrentPage() {
       errorMessage.textContent = 'Fehler: ' + err.message;
       errorMessage.style.display = 'block';
     }
-    setPageStatus(currentPageNumber, 'none');
   } finally {
     if (btn) {
       btn.disabled = false;
       btn.classList.remove('analyzing');
-      btn.textContent = '🔍 Fenster erkennen';
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="5.5" cy="5.5" r="3.5"/><line x1="8.5" y1="8.5" x2="11.5" y2="11.5"/></svg> Fenster erkennen';
     }
     if (loader) loader.style.display = 'none';
   }

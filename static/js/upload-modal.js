@@ -242,7 +242,6 @@ function buildPageList(count) {
                            min="1" value="100" style="display:none">
                 </span>
             </span>
-            <span class="page-status-dot" id="pageStatusDot_${i}"></span>
         `;
 
         // Scale dropdown logic (stop propagation so page click isn't triggered)
@@ -321,15 +320,3 @@ export function setActivePageInList(pageNumber) {
     });
 }
 
-/**
- * Mark a page as analyzed (green dot) or analyzing (orange pulsing dot).
- * @param {number}  pageNumber
- * @param {'analyzing'|'analyzed'|'none'} status
- */
-export function setPageStatus(pageNumber, status) {
-    const dot = document.getElementById(`pageStatusDot_${pageNumber}`);
-    if (!dot) return;
-    dot.className = 'page-status-dot';
-    if (status === 'analyzing') dot.classList.add('analyzing');
-    else if (status === 'analyzed') dot.classList.add('analyzed');
-}

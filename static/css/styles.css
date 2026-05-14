@@ -8,10 +8,11 @@ body {
 }
 
 header {
-    background-color: #4a90e2;
-    color: white;
+    background-color: #ffffff;
+    color: #111;
     padding: 0.5rem 1rem;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    box-shadow: none;
+    border-bottom: 1px solid #e0e0e0;
     display: flex;
     align-items: center;
     gap: 16px;
@@ -30,19 +31,23 @@ header h1 {
 }
 
 .header-action-btn {
-    background: rgba(255,255,255,0.15);
-    color: white;
-    border: 1px solid rgba(255,255,255,0.35);
+    background: transparent;
+    color: #333;
+    border: 1px solid #d0d0d0;
     border-radius: 5px;
     padding: 4px 10px;
     font-size: 0.82em;
     cursor: pointer;
     white-space: nowrap;
-    transition: background 0.15s;
+    transition: background 0.15s, border-color 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
 }
 
 .header-action-btn:hover {
-    background: rgba(255,255,255,0.28);
+    background: #f0f0f0;
+    border-color: #aaa;
 }
 
 h1, h2 {
@@ -74,11 +79,11 @@ h2 {
     flex-direction: column;
     gap: 20px;
     overflow-y: auto;
-    background: #f8f9fa;
+    background: #ffffff;
     padding: 20px;
     border-radius: 12px;
-    border: 1px solid #dee2e6;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid #e0e0e0;
+    box-shadow: none;
 }
 
 .middle-column {
@@ -87,19 +92,19 @@ h2 {
     background: white;
     border-radius: 12px;
     overflow: hidden;
-    border: 1px solid #dee2e6;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    border: 1px solid #e0e0e0;
+    box-shadow: none;
 }
 
 .right-column {
     display: flex;
     flex-direction: column;
     background: white;
-    border: 1px solid #dee2e6;
+    border: 1px solid #e0e0e0;
     border-radius: 12px;
     padding: 20px;
     overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    box-shadow: none;
 }
 
 .image-section {
@@ -216,21 +221,21 @@ button:hover {
 
 .results-table-section h2 {
     margin: 0 0 20px 0;
-    color: #495057;
+    color: #111;
     font-size: 1.5rem;
     font-weight: 600;
     text-align: center;
     padding-bottom: 15px;
-    border-bottom: 2px solid #e9ecef;
+    border-bottom: 1px solid #e0e0e0;
 }
 
 .results-table-section .summary {
     margin-bottom: 20px;
     padding: 12px 15px;
-    background: #f8f9fa;
+    background: #f8f8f8;
     border-radius: 8px;
     font-size: 0.9rem;
-    border-left: 4px solid #4a90e2;
+    border-left: 3px solid #888;
 }
 
 .summary-row {
@@ -276,8 +281,9 @@ button:hover {
 }
 
 .results-table-section thead {
-    background: #4a90e2;
-    color: white;
+    background: #ffffff;
+    color: #111;
+    border-bottom: 2px solid #e0e0e0;
 }
 
 .results-table-section tbody {
@@ -339,9 +345,19 @@ button:hover {
 /* Steuerelemente für Annotationen */
 .annotation-controls {
     display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin-bottom: 15px;
+    flex-wrap: nowrap;
+    gap: 2px;
+    align-items: center;
+    padding: 5px 8px;
+    border-bottom: 1px solid #e8e8e8;
+    margin-bottom: 0;
+}
+
+#resultsSection {
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
+    background: transparent;
 }
 
 .toggle-button {
@@ -362,44 +378,54 @@ button:hover {
 }
 
 .tool-button {
-    background: #f0f2f5;
-    color: #333;
-    border: 1px solid #d0d4db;
-    padding: 5px 9px;
+    background: transparent;
+    color: #666;
+    border: none;
+    padding: 0;
     cursor: pointer;
-    border-radius: 6px;
-    font-size: 1.1em;
-    line-height: 1;
-    transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    transition: background 0.1s, color 0.1s;
+    flex-shrink: 0;
 }
 
 .tool-button:hover {
-    background: #e2e6ea;
-    border-color: #adb5bd;
+    background: #ebebeb;
+    color: #111;
 }
 
 .tool-button.active {
-    background: #1976d2;
-    border-color: #1565c0;
-    color: white;
-    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.25);
+    background: #1a1c23;
+    color: #fff;
 }
 
 /* Legende */
 .save-button {
-    background-color: #4CAF50;
+    background-color: #111;
+    color: #fff;
+    border: 1px solid #111;
+    transition: background 0.12s;
 }
 
 .save-button:hover {
-    background-color: #45a049;
+    background-color: #333;
+    border-color: #333;
 }
 
 .cancel-button {
-    background-color: #f44336;
+    background-color: #fff;
+    color: #555;
+    border: 1px solid #d0d0d0;
+    transition: background 0.12s, border-color 0.12s;
 }
 
 .cancel-button:hover {
-    background-color: #d32f2f;
+    background-color: #f0f0f0;
+    border-color: #999;
 }
 
 @keyframes spin {
@@ -488,19 +514,23 @@ button:hover {
 
 .project-button {
     flex: 1 0 calc(50% - 10px);
-    background-color: #607d8b;
-    color: white;
+    background-color: #ffffff;
+    color: #111;
     padding: 10px;
-    border: none;
+    border: 1px solid #d0d0d0;
     border-radius: 4px;
     cursor: pointer;
     min-width: 150px;
     text-align: center;
     font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
 }
 
 .project-button:hover {
-    background-color: #455a64;
+    background-color: #f0f0f0;
+    border-color: #999;
 }
 
 /* Spezielle Stile für PDF-Export-Buttons */
@@ -628,6 +658,16 @@ button:hover {
     border-bottom: 1px solid #e8e8e8;
 }
 
+#labelTable th svg {
+    display: block;
+    margin: 0 auto;
+    color: #888;
+}
+
+input[type="checkbox"] {
+    accent-color: #333;
+}
+
 #labelTable td {
     padding: 5px 8px;
     vertical-align: middle;
@@ -681,7 +721,7 @@ input[type="text"].inline-edit:hover {
 }
 
 input[type="text"].inline-edit:focus {
-    border-bottom-color: #4a90e2;
+    border-bottom-color: #555;
     outline: none;
 }
 
@@ -710,7 +750,7 @@ input[type="color"].inline-edit {
 .opacity-slider {
     width: 70px;
     vertical-align: middle;
-    accent-color: #4a90e2;
+    accent-color: #333;
 }
 
 .opacity-value {
@@ -758,8 +798,8 @@ input[type="color"].inline-edit {
 }
 
 .label-tab.active {
-    background: #4a90e2;
-    color: white;
+    background: #111;
+    color: #fff;
 }
 
 /* Line type dropdown */
@@ -768,21 +808,23 @@ input[type="color"].inline-edit {
     background-color: #fff8f0; /* Light orange background to distinguish from area type */
 }
 
-/* Label-Manger = editor */
+/* Label-Manager = editor */
 /* Editor button styling */
 .editor-button {
-    background-color: #6c757d;
-    color: white;
-    border: none;
-    padding: 8px 12px;
+    background-color: #ffffff;
+    color: #333;
+    border: 1px solid #d0d0d0;
+    padding: 7px 12px;
     border-radius: 4px;
     cursor: pointer;
     font-size: 14px;
     margin: 2px;
+    transition: background 0.12s, border-color 0.12s;
 }
 
 .editor-button:hover {
-    background-color: #5a6268;
+    background-color: #f0f0f0;
+    border-color: #999;
 }
 
 /* Delete button in label table */
@@ -804,8 +846,8 @@ input[type="color"].inline-edit {
 }
 
 .copy-label-btn:hover {
-    color: #1976d2;
-    background: #e3f2fd;
+    color: #111;
+    background: #ebebeb;
 }
 
 
@@ -846,9 +888,9 @@ input[type="color"].inline-edit {
 }
 
 .label-quick-item.active {
-    background: #e3f2fd;
-    border-color: #90caf9;
-    color: #1565c0;
+    background: #ebebeb;
+    border-color: #999;
+    color: #111;
     font-weight: 600;
 }
 
@@ -884,8 +926,8 @@ input[type="color"].inline-edit {
 }
 
 .label-quick-item.active .label-quick-key {
-    background: #bbdefb;
-    color: #1565c0;
+    background: #d8d8d8;
+    color: #333;
 }
 
 .label-quick-disabled-hint {
