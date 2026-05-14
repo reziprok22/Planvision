@@ -3029,6 +3029,24 @@ async function initApp() {
   };
   window.getCurrentLabels = getCurrentLabels;
 
+  // Resize canvas when container size changes (e.g. right panel collapse/expand)
+  window.addEventListener('resize', function() {
+    if (!canvas || !imageContainer) return;
+    const w = imageContainer.clientWidth;
+    const h = imageContainer.clientHeight;
+    if (w > 0 && h > 0) {
+      canvas.setWidth(w);
+      canvas.setHeight(h);
+      canvas.renderAll();
+      if (crosshairCanvas) {
+        crosshairCanvas.width  = w;
+        crosshairCanvas.height = h;
+        crosshairCanvas.style.width  = w + 'px';
+        crosshairCanvas.style.height = h + 'px';
+      }
+    }
+  });
+
   // Update all sidebar scale dropdowns at once (called after ZIP load)
   window.syncAllPageScalesInSidebar = function() {
     const settings = getPageSettings();

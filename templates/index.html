@@ -544,6 +544,15 @@
                             </svg>
                             Fenster erkennen
                         </button>
+
+                        <div class="toolbar-spacer"></div>
+
+                        <!-- Toggle right panel -->
+                        <button id="toggleRightPanel" class="tool-button" title="Ergebnisse einklappen">
+                            <svg id="toggleRightPanelIcon" width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                                <polyline points="5.5,3.5 9.5,7 5.5,10.5"/>
+                            </svg>
+                        </button>
                     </div>
 
                 </div>
@@ -730,6 +739,25 @@
     <script src="static/js/performance-monitor.js"></script>
     <script src="dist/js/main.js"></script>
     <script src="static/js/smoke-tests.js"></script>
+
+    <script>
+    (function () {
+        var btn = document.getElementById('toggleRightPanel');
+        var icon = document.getElementById('toggleRightPanelIcon');
+        var main = document.querySelector('.main-container');
+
+        var svgClose = '<polyline points="5.5,3.5 9.5,7 5.5,10.5"/>';  // › collapse
+        var svgOpen  = '<polyline points="8.5,3.5 4.5,7 8.5,10.5"/>';  // ‹ expand
+
+        btn.addEventListener('click', function () {
+            var collapsed = main.classList.toggle('right-collapsed');
+            icon.innerHTML = collapsed ? svgOpen : svgClose;
+            btn.title = collapsed ? 'Ergebnisse einblenden' : 'Ergebnisse einklappen';
+            // After CSS reflow, notify canvas to resize to new container dimensions
+            setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 30);
+        });
+    })();
+    </script>
 
     <!-- Dev performance controls -->
     <div id="perfControls" style="position:fixed; top:10px; right:10px; background:#f0f0f0; padding:8px 10px; border-radius:5px; z-index:9999; font-family:Arial; font-size:11px;">
