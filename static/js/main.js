@@ -422,9 +422,25 @@ function loadCanvasData(canvasData) {
       annotation.set({ objectType: 'annotation', selectable: true, evented: true });
       canvas.add(annotation);
     });
+
+    const savedLabels = canvasData.canvas_text_labels;
+    if (savedLabels?.length > 0) {
+      // Restore text labels at their saved positions (preserves user moves)
+      util.enlivenObjects(savedLabels).then(textLabels => {
+        textLabels.filter(Boolean).forEach(tl => {
+          tl.set({ objectType: 'textLabel', selectable: false, evented: false });
+          canvas.add(tl);
+        });
+        applyLayerOrdering();
+        canvas.requestRenderAll();
+      });
+    } else {
+      // Fallback for old saves without canvas_text_labels
+      objects.filter(Boolean).forEach(annotation => createSingleTextLabel(annotation, { batch: true }));
+    }
+
     canvas.renderOnAddRemove = true;
     canvas.requestRenderAll();
-    objects.filter(Boolean).forEach(annotation => createSingleTextLabel(annotation, { batch: true }));
   });
   
   // Restore zoom: resize scroll spacer (not the canvas buffer).
@@ -2232,6 +2248,9 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
   // Get annotation color
   const labelColor = annotation.stroke || annotation.fill || '#000000';
 
+  // Store label text on annotation so PDF export can access it
+  annotation.set('labelText', displayNumber.toString() + measurement);
+
   // Calculate position
   const labelPosition = calculateLabelPosition(annotation);
 
@@ -2299,6 +2318,7 @@ function updateLinkedTextLabelPosition(annotation) {
     const annotationColor = annotation.stroke || annotation.fill || '#000000';
     
     // Update position, text content, and color
+    annotation.set('labelText', displayNumber.toString() + measurement);
     textLabel.set({
       left: newPosition.x,
       top: newPosition.y,
@@ -2427,33 +2447,38 @@ function collectCurrentCanvasData(pageNumber = 1) {
   
   // Get all annotations from canvas (exclude background image and text labels)
   const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  
+
   // Convert canvas objects to serializable format with all custom properties
   const canvasAnnotations = annotations.map(annotation => {
-    // Use Fabric.js toObject method to get serializable data
-    // Include our custom properties that need to be preserved
     const customProperties = [
-      'displayIndex',      // Our stable index system
+      'id',               // Stable ID used to link text labels
+      'displayIndex',     // Our stable index system
       'labelId',          // Label assignment
       'objectLabel',      // Alternative label field
       'userCreated',      // User vs AI created flag
-      'linkedAnnotationId', // Link to text label
+      'linkedAnnotationId',
       'annotationType',   // Type: rectangle, polygon, line
-      'score'             // AI confidence score (0–1)
+      'score',            // AI confidence score (0–1)
+      'labelText',        // Text label content (number + area) for PDF export
     ];
-    
+
     const fabricObject = annotation.toObject(customProperties);
-    
-    // Add our metadata
     fabricObject.objectType = 'annotation';
     fabricObject.saved_at = new Date().toISOString();
-    
+
     return fabricObject;
   });
-  
+
+  // Serialize text labels with their current positions (supports user-moved labels later)
+  const textLabelObjects = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
+  const canvasTextLabels = textLabelObjects.map(tl =>
+    tl.toObject(['objectType', 'linkedAnnotationId', 'text', 'backgroundColor', 'fill'])
+  );
+
   return {
     page_number: pageNumber,
     canvas_annotations: canvasAnnotations,
+    canvas_text_labels: canvasTextLabels,
     annotation_count: annotations.length,
     canvas_available: true,
     canvas_zoom: canvas.getZoom(),
@@ -2666,16 +2691,16 @@ async function initApp() {
     imageSessionCache = {}; // clear per-page cache from any previous project
     setPdfNavigationState(1, uploadInfo.page_count, uploadInfo.all_pages);
 
-    // Track original PDF blob so it can be included in ZIP saves
-    if (uploadInfo.is_pdf && uploadInfo.original_file) {
-      setOriginalPdfBlob(uploadInfo.original_file);
-    }
-
     // Full reset for new upload – clear all previous project state
     pageCanvasData   = {};
     pageAnalysisData = {};
     setPageSettings({});
     setOriginalPdfBlob(null);
+
+    // Track original PDF blob so it can be included in ZIP saves and PDF export
+    if (uploadInfo.is_pdf && uploadInfo.original_file) {
+      setOriginalPdfBlob(uploadInfo.original_file);
+    }
     if (canvas) canvas.clear();
 
     // Show results section + enable toolbar
@@ -3027,7 +3052,15 @@ async function initApp() {
     const entry = Object.values(imageSessionCache)[0];
     return entry ? entry.sessionId : null;
   };
+  window.getUploadModalSessionId = () => getUploadSessionId();
   window.getCurrentLabels = getCurrentLabels;
+
+  // Used by pdf-export-client.js via project.js
+  window.getPageCanvasData = () => {
+    saveCurrentPageCanvasData(currentPageNumber);
+    return { ...pageCanvasData };
+  };
+  window.saveCurrentPageCanvas = () => saveCurrentPageCanvasData(currentPageNumber);
 
   // Resize canvas when container size changes (e.g. right panel collapse/expand)
   window.addEventListener('resize', function() {

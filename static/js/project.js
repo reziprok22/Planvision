@@ -5,6 +5,7 @@
 import { setCurrentLabels, getAllLabels } from './labels.js';
 import { initSidebarFromProject }          from './upload-modal.js';
 import { saveProjectAsZip, loadProjectFromZip } from './project-zip.js';
+import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-client.js';
 
 let saveProjectBtn, loadProjectBtn, exportPdfBtn, exportAnnotatedPdfBtn;
 let zipFileInput;
@@ -87,39 +88,9 @@ async function handleLoad(file) {
 
     if (labels.length > 0) setCurrentLabels(labels);
 
-    // Re-establish server session so PDF export buttons work
+    // Store the original PDF blob for frontend export
     if (pdfBlob) {
-      updateStatus(status, 'Server-Session wird wiederhergestellt…');
-      try {
-        const fd = new FormData();
-        fd.append('file', new File([pdfBlob], 'project.pdf', { type: 'application/pdf' }));
-        const res = await fetch('/upload', { method: 'POST', body: fd });
-        if (res.ok) {
-          const uploadData = await res.json();
-          pdfModule.setPdfSessionId(uploadData.session_id);
-          pdfModule.setOriginalPdfBlob(pdfBlob);
-
-          // Restore analysis results on server so PDF reports have data
-          if (Object.keys(analysisData).length > 0) {
-            await fetch(`/restore_analysis/${uploadData.session_id}`, {
-              method:  'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body:    JSON.stringify({
-                analysis: analysisData,
-                labels:   labels,
-                settings: settings,
-                metadata: {
-                  project_name: metadata.project_name,
-                  page_count:   metadata.page_count,
-                  created_at:   metadata.saved_at
-                }
-              })
-            });
-          }
-        }
-      } catch (e) {
-        console.warn('ZIP load: could not re-establish server session:', e);
-      }
+      pdfModule.setOriginalPdfBlob(pdfBlob);
     }
 
     // Build page sizes from settings
@@ -165,82 +136,59 @@ async function handleLoad(file) {
  */
 function resolveSessionId() {
   return pdfModule.getPdfSessionId()
-    || (window.getFirstImageSessionId ? window.getFirstImageSessionId() : null);
+    || (window.getUploadModalSessionId ? window.getUploadModalSessionId() : null)
+    || (window.getFirstImageSessionId  ? window.getFirstImageSessionId()  : null);
 }
 
-/**
- * Push current analysis data + metadata to the server so PDF export routes
- * have up-to-date analysis results, labels, settings and page count.
- */
-async function syncAnalysisToServer(sessionId) {
-  try {
-    const analysisData = window.collectAllPagesAnalysisData ? window.collectAllPagesAnalysisData() : {};
-    const labels       = window.getCurrentLabels           ? window.getCurrentLabels()           : [];
-    const settings     = pdfModule.getPageSettings();
-    const allPages     = pdfModule.getAllPdfPages();
-    const projectName  = document.title.replace('Planvision – ', '') || 'Planvision';
-
-    await fetch(`/restore_analysis/${sessionId}`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        analysis: analysisData,
-        labels:   labels,
-        settings: settings,
-        metadata: {
-          project_name: projectName,
-          page_count:   allPages.length,
-          created_at:   new Date().toISOString()
-        }
-      })
-    });
-  } catch (e) {
-    console.warn('Pre-export sync failed:', e);
-  }
-}
 
 export async function exportPdf() {
-  const sessionId = resolveSessionId();
-  if (!sessionId) {
+  if (!pdfModule.getAllPdfPages().length) {
     alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
     return;
   }
 
-  const status = showStatus('PDF-Bericht wird erstellt…');
-  await syncAnalysisToServer(sessionId);
-  fetch(`/export_pdf/${sessionId}`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.success) {
-        updateStatus(status, 'PDF erstellt ✓', 'success');
-        window.open(data.pdf_url, '_blank');
-      } else {
-        updateStatus(status, `Fehler: ${data.error}`, 'error');
-      }
-    })
-    .catch(err => updateStatus(status, `Fehler: ${err.message}`, 'error'));
+  const status = showStatus('Bericht wird erstellt…');
+  try {
+    // Save current page canvas data before collecting
+    if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
+
+    const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
+    await exportReportPdfClient({
+      pageImageUrls: pdfModule.getAllPdfPages(),
+      pageCanvasData,
+      labels:      getAllLabels(),
+      projectName: document.title.replace('Planvision – ', '') || 'Planvision',
+    });
+    updateStatus(status, 'Bericht erstellt ✓', 'success');
+  } catch (err) {
+    console.error('exportPdf error:', err);
+    updateStatus(status, `Fehler: ${err.message}`, 'error');
+  }
 }
 
 export async function exportAnnotatedPdf() {
-  const sessionId = resolveSessionId();
-  if (!sessionId) {
+  if (!pdfModule.getAllPdfPages().length) {
     alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
     return;
   }
 
-  const status = showStatus('Annotierte PDF wird erstellt…');
-  await syncAnalysisToServer(sessionId);
-  fetch(`/export_annotated_pdf/${sessionId}`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.success) {
-        updateStatus(status, 'Annotierte PDF erstellt ✓', 'success');
-        window.open(data.pdf_url, '_blank');
-      } else {
-        updateStatus(status, `Fehler: ${data.error}`, 'error');
-      }
-    })
-    .catch(err => updateStatus(status, `Fehler: ${err.message}`, 'error'));
+  const status = showStatus('Annotierter Plan wird erstellt…');
+  try {
+    if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
+
+    const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
+    await exportAnnotatedPdfClient({
+      pdfBlob:       pdfModule.getOriginalPdfBlob(),
+      pageImageUrls: pdfModule.getAllPdfPages(),
+      pageCanvasData,
+      labels:        getAllLabels(),
+      projectName:   document.title.replace('Planvision – ', '') || 'Planvision',
+    });
+    updateStatus(status, 'Plan erstellt ✓', 'success');
+  } catch (err) {
+    console.error('exportAnnotatedPdf error:', err);
+    updateStatus(status, `Fehler: ${err.message}`, 'error');
+  }
 }
 
 // ── Status helper ─────────────────────────────────────────────────────────────
