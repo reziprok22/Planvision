@@ -9,7 +9,7 @@ body {
 
 header {
     background-color: #ffffff;
-    color: #111;
+    color: #444;
     padding: 0.5rem 1rem;
     box-shadow: none;
     border-bottom: 1px solid #e0e0e0;
@@ -32,7 +32,7 @@ header h1 {
 
 .header-action-btn {
     background: transparent;
-    color: #333;
+    color: #444;
     border: 1px solid #d0d0d0;
     border-radius: 5px;
     padding: 4px 10px;
@@ -221,7 +221,7 @@ button:hover {
 
 .results-table-section h2 {
     margin: 0 0 20px 0;
-    color: #111;
+    color: #444;
     font-size: 1.5rem;
     font-weight: 600;
     text-align: center;
@@ -255,7 +255,7 @@ button:hover {
 }
 .summary-name {
     flex: 1;
-    color: #333;
+    color: #444;
 }
 .summary-count {
     color: #555;
@@ -282,7 +282,7 @@ button:hover {
 
 .results-table-section thead {
     background: #ffffff;
-    color: #111;
+    color: #444;
     border-bottom: 2px solid #e0e0e0;
 }
 
@@ -362,7 +362,7 @@ button:hover {
 
 .toggle-button {
     background: #e9ecef;
-    color: #333;
+    color: #444;
     border: none;
     padding: 5px 10px;
     cursor: pointer;
@@ -395,25 +395,25 @@ button:hover {
 
 .tool-button:hover {
     background: #ebebeb;
-    color: #111;
+    color: #444;
 }
 
 .tool-button.active {
-    background: #1a1c23;
+    background: #444; 
     color: #fff;
 }
 
 /* Legende */
 .save-button {
-    background-color: #111;
+    background-color: #444;
     color: #fff;
-    border: 1px solid #111;
+    border: 1px solid #444;
     transition: background 0.12s;
 }
 
 .save-button:hover {
-    background-color: #333;
-    border-color: #333;
+    background-color: #444;
+    border-color: #444;
 }
 
 .cancel-button {
@@ -534,7 +534,7 @@ button:hover {
 .project-button {
     flex: 1 0 calc(50% - 10px);
     background-color: #ffffff;
-    color: #111;
+    color: #444;
     padding: 10px;
     border: 1px solid #d0d0d0;
     border-radius: 4px;
@@ -684,7 +684,7 @@ button:hover {
 }
 
 input[type="checkbox"] {
-    accent-color: #333;
+    accent-color: #444;
 }
 
 #labelTable td {
@@ -769,7 +769,7 @@ input[type="color"].inline-edit {
 .opacity-slider {
     width: 70px;
     vertical-align: middle;
-    accent-color: #333;
+    accent-color: #444;
 }
 
 .opacity-value {
@@ -817,7 +817,7 @@ input[type="color"].inline-edit {
 }
 
 .label-tab.active {
-    background: #111;
+    background: #444;
     color: #fff;
 }
 
@@ -831,7 +831,7 @@ input[type="color"].inline-edit {
 /* Editor button styling */
 .editor-button {
     background-color: #ffffff;
-    color: #333;
+    color: #444;
     border: 1px solid #d0d0d0;
     padding: 7px 12px;
     border-radius: 4px;
@@ -865,7 +865,7 @@ input[type="color"].inline-edit {
 }
 
 .copy-label-btn:hover {
-    color: #111;
+    color: #444;
     background: #ebebeb;
 }
 
@@ -899,7 +899,7 @@ input[type="color"].inline-edit {
     transition: background 0.12s, border-color 0.12s;
     user-select: none;
     font-size: 0.85em;
-    color: #333;
+    color: #444;
 }
 
 .label-quick-item:hover {
@@ -909,7 +909,7 @@ input[type="color"].inline-edit {
 .label-quick-item.active {
     background: #ebebeb;
     border-color: #999;
-    color: #111;
+    color: #444;
     font-weight: 600;
 }
 
@@ -946,7 +946,7 @@ input[type="color"].inline-edit {
 
 .label-quick-item.active .label-quick-key {
     background: #d8d8d8;
-    color: #333;
+    color: #444;
 }
 
 .label-quick-disabled-hint {
@@ -957,19 +957,21 @@ input[type="color"].inline-edit {
 }
 
 .save-label-btn {
-    background: none;
-    border: none;
-    color: #ccc;
+    background: #27ae60;
+    border: 1px solid #219a52;
+    color: #fff;
     cursor: pointer;
-    font-size: 16px;
-    padding: 1px 5px;
-    border-radius: 3px;
-    line-height: 1;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 4px;
+    line-height: 1.4;
+    white-space: nowrap;
 }
 
 .save-label-btn:hover {
-    color: #27ae60;
-    background: #f0fff4;
+    background: #219a52;
+    color: #fff;
 }
 
 /* Vereinfachte Label-Auswahl im Editor */
@@ -1120,7 +1122,7 @@ background-color: #2a70c2;
 }
 
 .upload-modal-header h2 {
-    color: #333;
+    color: #444;
     margin: 0 0 0.5rem;
     font-size: 1.5rem;
 }
@@ -1171,7 +1173,7 @@ background-color: #2a70c2;
 }
 
 .drop-zone-text {
-    color: #333;
+    color: #444;
 }
 
 .drop-zone-text p {
@@ -1223,7 +1225,7 @@ background-color: #2a70c2;
 
 .file-name {
     font-weight: 500;
-    color: #333;
+    color: #444;
     flex: 1;
 }
 
@@ -1238,7 +1240,7 @@ background-color: #2a70c2;
 }
 
 .pages-table h3 {
-    color: #333;
+    color: #444;
     margin: 0 0 1rem;
     font-size: 1.2rem;
 }
@@ -1316,7 +1318,7 @@ background-color: #2a70c2;
 }
 
 .analysis-parameters h3 {
-    color: #333;
+    color: #444;
     margin: 0 0 1.5rem;
     font-size: 1.2rem;
 }
@@ -1335,7 +1337,7 @@ background-color: #2a70c2;
 .parameter-grid label {
     margin-bottom: 0.5rem;
     font-weight: 500;
-    color: #333;
+    color: #444;
 }
 
 .parameter-grid input,
@@ -1419,7 +1421,7 @@ background-color: #2a70c2;
 }
 
 .modal-loading-text {
-    color: #333;
+    color: #444;
     font-size: 1rem;
     font-weight: 500;
     text-align: center;

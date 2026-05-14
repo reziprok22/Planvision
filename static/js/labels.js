@@ -376,7 +376,8 @@ function cancelChanges() {
 function showAddLabelForm() {
   if (document.getElementById('newLabelRow')) return; // already open
 
-  const randomColor = '#' + Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0');
+  const PALETTE = ['#e74c3c','#3498db','#2ecc71','#f39c12','#9b59b6','#1abc9c','#e67e22','#34495e'];
+  const randomColor = PALETTE[Math.floor(Math.random() * PALETTE.length)];
   const defaultOpacity = 70;
 
   const tr = document.createElement('tr');
@@ -400,11 +401,11 @@ function showAddLabelForm() {
     <td>
       <input type="number" class="stroke-width-input" id="newLabel-stroke" min="1" max="20" step="1" value="2" />
     </td>
-    <td style="text-align:center;"><input type="checkbox" id="newLabel-rect"></td>
-    <td style="text-align:center;"><input type="checkbox" id="newLabel-poly"></td>
-    <td style="text-align:center;"><input type="checkbox" id="newLabel-line"></td>
+    <td style="text-align:center;"><input type="checkbox" id="newLabel-rect" checked></td>
+    <td style="text-align:center;"><input type="checkbox" id="newLabel-poly" checked></td>
+    <td style="text-align:center;"><input type="checkbox" id="newLabel-line" checked></td>
     <td>
-      <button class="save-label-btn" title="Speichern">✓</button>
+      <button class="save-label-btn" title="Speichern (Enter)">✓ Speichern</button>
       <button class="delete-label-btn" title="Abbrechen">×</button>
     </td>
   `;
@@ -417,6 +418,10 @@ function showAddLabelForm() {
 
   tr.querySelector('.save-label-btn').addEventListener('click', saveNewLabel);
   tr.querySelector('.delete-label-btn').addEventListener('click', hideForm);
+
+  tr.querySelector('#newLabel-name').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') saveNewLabel();
+  });
 
   tr.querySelector('#newLabel-name').focus();
 }
