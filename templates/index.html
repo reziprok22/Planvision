@@ -1,10 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Planvision – Fenster-Erkennungstool</title>
-    <link rel="stylesheet" href="static/css/styles.css">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
     <style>
         /* =============================================
            REDESIGN OVERRIDES & NEW COMPONENTS
@@ -736,9 +737,9 @@
     </div>
 
     <!-- ==================== SCRIPTS ==================== -->
-    <script src="static/js/performance-monitor.js"></script>
-    <script src="dist/js/main.js"></script>
-    <script src="static/js/smoke-tests.js"></script>
+    <script src="{% static 'js/performance-monitor.js' %}"></script>
+    <script src="{% static 'dist/js/main.js' %}"></script>
+    <script src="{% static 'js/smoke-tests.js' %}"></script>
 
     <script>
     (function () {
