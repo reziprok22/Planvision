@@ -141,6 +141,21 @@ function resolveSessionId() {
 }
 
 
+function sendTrainingData(pageCanvasData) {
+  const sessionId = window.getUploadModalSessionId ? window.getUploadModalSessionId() : null;
+  if (!sessionId) return;
+  fetch('/save_training_data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: sessionId,
+      page_canvas_data: pageCanvasData,
+      labels: getAllLabels(),
+      exported_at: new Date().toISOString(),
+    }),
+  }).catch(err => console.warn('Training data save failed:', err));
+}
+
 export async function exportPdf() {
   if (!pdfModule.getAllPdfPages().length) {
     alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
@@ -149,10 +164,10 @@ export async function exportPdf() {
 
   const status = showStatus('Bericht wird erstellt…');
   try {
-    // Save current page canvas data before collecting
     if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
 
     const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
+    sendTrainingData(pageCanvasData);
     await exportReportPdfClient({
       pageImageUrls: pdfModule.getAllPdfPages(),
       pageCanvasData,
@@ -177,6 +192,7 @@ export async function exportAnnotatedPdf() {
     if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
 
     const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
+    sendTrainingData(pageCanvasData);
     await exportAnnotatedPdfClient({
       pdfBlob:       pdfModule.getOriginalPdfBlob(),
       pageImageUrls: pdfModule.getAllPdfPages(),

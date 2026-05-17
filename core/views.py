@@ -2,6 +2,7 @@ import os
 import uuid
 import gc
 import time
+import json
 import logging
 
 from django.shortcuts import render
@@ -10,6 +11,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
+
+from .models import Project
 
 from pdf2image import convert_from_path
 from PyPDF2 import PdfReader
@@ -41,9 +44,13 @@ def impressum(request):
 
 
 def serve_project_file(request, project_id, filename):
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+    try:
+        Project.objects.get(id=project_id, user=request.user)
+    except Project.DoesNotExist:
+        raise Http404
     project_dir = PROJECTS_DIR / project_id
-    if not project_dir.exists():
-        raise Http404("Project not found")
     file_path = project_dir / filename
     if not file_path.exists():
         raise Http404("File not found")
@@ -105,6 +112,8 @@ MAX_UPLOAD_SIZE = 40 * 1024 * 1024  # 40 MB
 @csrf_exempt
 @require_POST
 def upload_file(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
     try:
         if 'file' not in request.FILES:
             return JsonResponse({'error': 'No file part'}, status=400)
@@ -124,6 +133,11 @@ def upload_file(request):
 
         try:
             pdf_info = _convert_pdf_to_images(file)
+            Project.objects.create(
+                id=pdf_info["session_id"],
+                user=request.user,
+                original_filename=file.name,
+            )
             return JsonResponse({
                 'is_pdf': True,
                 'session_id': pdf_info["session_id"],
@@ -144,11 +158,20 @@ def upload_file(request):
 @csrf_exempt
 @require_POST
 def analyze_page(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+
     request_start = time.time()
     performance_metrics = {}
 
     try:
         session_id = request.POST.get('session_id')
+
+        try:
+            Project.objects.get(id=session_id, user=request.user)
+        except Project.DoesNotExist:
+            return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+
         page = int(request.POST.get('page', 1))
         format_size = (
             float(request.POST.get('format_width', 210)),
@@ -232,4 +255,39 @@ def analyze_page(request):
     except Exception as e:
         import traceback
         logger.error(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_POST
+def save_training_data(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+    try:
+        body = json.loads(request.body)
+        session_id = body.get('session_id')
+        if not session_id:
+            return JsonResponse({'error': 'session_id fehlt'}, status=400)
+
+        try:
+            Project.objects.get(id=session_id, user=request.user)
+        except Project.DoesNotExist:
+            return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+
+        training_data = {
+            'session_id': session_id,
+            'page_canvas_data': body.get('page_canvas_data', {}),
+            'labels': body.get('labels', []),
+            'exported_at': body.get('exported_at'),
+        }
+
+        project_dir = PROJECTS_DIR / session_id
+        training_path = project_dir / 'training_data.json'
+        with open(training_path, 'w', encoding='utf-8') as f:
+            json.dump(training_data, f, ensure_ascii=False, indent=2)
+
+        return JsonResponse({'status': 'ok'})
+
+    except Exception as e:
+        logger.exception("save_training_data error")
         return JsonResponse({'error': str(e)}, status=500)
