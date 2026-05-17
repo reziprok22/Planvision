@@ -2483,6 +2483,8 @@ function collectCurrentCanvasData(pageNumber = 1) {
     canvas_available: true,
     canvas_zoom: canvas.getZoom(),
     canvas_viewport: canvas.viewportTransform,
+    image_width: uploadedImage?.naturalWidth ?? null,
+    image_height: uploadedImage?.naturalHeight ?? null,
     saved_at: new Date().toISOString()
   };
 }
