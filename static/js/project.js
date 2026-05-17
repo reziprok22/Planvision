@@ -141,12 +141,17 @@ function resolveSessionId() {
 }
 
 
+function getCsrfToken() {
+  return document.cookie.split(';').map(c => c.trim())
+    .find(c => c.startsWith('csrftoken='))?.split('=')[1] ?? '';
+}
+
 function sendTrainingData(pageCanvasData) {
   const sessionId = window.getUploadModalSessionId ? window.getUploadModalSessionId() : null;
   if (!sessionId) return;
   fetch('/save_training_data', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
     body: JSON.stringify({
       session_id: sessionId,
       page_canvas_data: pageCanvasData,

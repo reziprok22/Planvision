@@ -1,6 +1,6 @@
 /**
  * upload-modal.js (Redesigned)
- * 
+ *
  * Handles the left-column drag-and-drop upload zone.
  * No overlay modal – the PDF is uploaded immediately and the main app
  * is ready to use. Analysis is triggered manually per page.
@@ -10,6 +10,11 @@
  *   showUploadModal()    – show drop zone / reset to "ready for new file"
  *   resetUploadModal()   – reset internal state
  */
+
+function getCsrfToken() {
+  return document.cookie.split(';').map(c => c.trim())
+    .find(c => c.startsWith('csrftoken='))?.split('=')[1] ?? '';
+}
 
 // ── Internal state ──────────────────────────────────────────────────
 let currentSessionId = null;
@@ -142,7 +147,7 @@ async function handleFile(file) {
         const formData = new FormData();
         formData.append('file', file);
 
-        const response = await fetch('/upload', { method: 'POST', body: formData });
+        const response = await fetch('/upload', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
         if (!response.ok) {
             const err = await response.json().catch(() => ({}));
             throw new Error(err.error || 'Upload fehlgeschlagen');

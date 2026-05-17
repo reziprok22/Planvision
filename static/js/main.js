@@ -3,6 +3,11 @@
  * Core functionality: Upload, Predict, Annotation Display, Drawing Tools, Zoom
  */
 
+function getCsrfToken() {
+  return document.cookie.split(';').map(c => c.trim())
+    .find(c => c.startsWith('csrftoken='))?.split('=')[1] ?? '';
+}
+
 // Import Fabric.js
 import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle } from 'fabric';
 
@@ -2589,7 +2594,7 @@ async function analyzeCurrentPage() {
         const blob = await fetch(uploadedImage.src).then(r => r.blob());
         const fd = new FormData();
         fd.append('file', new File([blob], 'page.jpg', { type: blob.type || 'image/jpeg' }));
-        const res = await fetch('/upload', { method: 'POST', body: fd });
+        const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
         if (!res.ok) throw new Error();
         const data = await res.json();
         sessionId    = data.session_id;
@@ -2626,7 +2631,7 @@ async function analyzeCurrentPage() {
     formData.append('plan_scale',    document.getElementById('planScale')?.value     || 100);
     formData.append('threshold',     document.getElementById('threshold')?.value     || 0.5);
 
-    const response = await fetch('/analyze_page', { method: 'POST', body: formData });
+    const response = await fetch('/analyze_page', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.error || 'Analyse fehlgeschlagen');

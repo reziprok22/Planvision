@@ -7,7 +7,6 @@ import logging
 
 from django.shortcuts import render
 from django.http import JsonResponse, FileResponse, Http404
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
@@ -109,7 +108,6 @@ def _convert_pdf_to_images(pdf_file, project_id=None):
 MAX_UPLOAD_SIZE = 40 * 1024 * 1024  # 40 MB
 
 
-@csrf_exempt
 @require_POST
 def upload_file(request):
     if not request.user.is_authenticated:
@@ -155,7 +153,6 @@ def upload_file(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@csrf_exempt
 @require_POST
 def analyze_page(request):
     if not request.user.is_authenticated:
@@ -258,7 +255,6 @@ def analyze_page(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@csrf_exempt
 @require_POST
 def save_training_data(request):
     if not request.user.is_authenticated:
