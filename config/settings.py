@@ -80,7 +80,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 PROJECTS_DIR = BASE_DIR / 'projects'
 
 LOGIN_URL = '/accounts/login/'
-LOGIN_REDIRECT_URL = '/'
+LOGIN_REDIRECT_URL = '/app/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 PDF_DPI = 150

@@ -8,6 +8,7 @@ from django.shortcuts import render
 from django.http import JsonResponse, FileResponse, Http404
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
+from django.contrib.auth.decorators import login_required
 from django.conf import settings
 
 from pdf2image import convert_from_path
@@ -22,8 +23,21 @@ PDF_DPI = settings.PDF_DPI
 JPEG_QUALITY = settings.JPEG_QUALITY
 
 
-def index(request):
-    return render(request, 'index.html')
+def landing(request):
+    return render(request, 'landing.html')
+
+
+@login_required
+def app(request):
+    return render(request, 'app.html')
+
+
+def datenschutz(request):
+    return render(request, 'datenschutz.html')
+
+
+def impressum(request):
+    return render(request, 'impressum.html')
 
 
 def serve_project_file(request, project_id, filename):
@@ -85,6 +99,9 @@ def _convert_pdf_to_images(pdf_file, project_id=None):
     }
 
 
+MAX_UPLOAD_SIZE = 40 * 1024 * 1024  # 40 MB
+
+
 @csrf_exempt
 @require_POST
 def upload_file(request):
@@ -95,37 +112,29 @@ def upload_file(request):
         if not file.name:
             return JsonResponse({'error': 'No selected file'}, status=400)
 
-        if file.name.lower().endswith('.pdf'):
-            try:
-                pdf_info = _convert_pdf_to_images(file)
-                return JsonResponse({
-                    'is_pdf': True,
-                    'session_id': pdf_info["session_id"],
-                    'page_count': int(pdf_info["page_count"]),
-                    'all_pages': pdf_info["image_paths"],
-                    'page_sizes': pdf_info["page_sizes"],
-                    'filename': file.name,
-                })
-            except Exception as e:
-                logger.exception("PDF processing error")
-                return JsonResponse({'error': f'Error converting PDF: {str(e)}'}, status=500)
-        else:
-            project_id = str(uuid.uuid4())
-            ext = file.name.rsplit('.', 1)[-1]
-            output_dir = PROJECTS_DIR / project_id / 'uploads'
-            output_dir.mkdir(parents=True, exist_ok=True)
-            image_path = output_dir / f"image.{ext}"
-            with open(image_path, 'wb') as f:
-                for chunk in file.chunks():
-                    f.write(chunk)
+        if not file.name.lower().endswith('.pdf'):
+            return JsonResponse({'error': 'Nur PDF-Dateien sind erlaubt.'}, status=400)
+
+        if file.size > MAX_UPLOAD_SIZE:
+            return JsonResponse({'error': 'Datei zu gross. Maximum: 40 MB.'}, status=400)
+
+        if file.read(4) != b'%PDF':
+            return JsonResponse({'error': 'Ungültige PDF-Datei.'}, status=400)
+        file.seek(0)
+
+        try:
+            pdf_info = _convert_pdf_to_images(file)
             return JsonResponse({
-                'is_pdf': False,
-                'session_id': project_id,
-                'page_count': 1,
-                'all_pages': [f"/project_files/{project_id}/uploads/image.{ext}"],
-                'page_sizes': [],
+                'is_pdf': True,
+                'session_id': pdf_info["session_id"],
+                'page_count': int(pdf_info["page_count"]),
+                'all_pages': pdf_info["image_paths"],
+                'page_sizes': pdf_info["page_sizes"],
                 'filename': file.name,
             })
+        except Exception as e:
+            logger.exception("PDF processing error")
+            return JsonResponse({'error': f'Error converting PDF: {str(e)}'}, status=500)
 
     except Exception as e:
         logger.exception("Upload error")
