@@ -616,19 +616,40 @@ function debouncedTableUpdate() {
 function updateResultsTable() {
   const resultsBody = document.getElementById('resultsBody');
   if (!resultsBody || !canvas) return;
-  
+
   resultsBody.innerHTML = '';
-  
+
   // Get all annotation objects from canvas, sorted ascending by displayIndex
   const annotations = canvas.getObjects()
     .filter(obj => obj.objectType === 'annotation')
     .sort((a, b) => (a.displayIndex ?? Infinity) - (b.displayIndex ?? Infinity));
 
+  // Score column only when AI detections are present on this page.
+  // Check for an actual score: manually drawn annotations (incl. those from
+  // old projects without the userCreated flag) never carry one.
+  const showScore = annotations.some(a => typeof a.score === 'number' && a.score > 0 && !a.userCreated);
+
+  // Header is dynamic because the column set varies
+  const headRow = document.querySelector('#resultsTable thead tr');
+  if (headRow) {
+    headRow.innerHTML = `
+      <th>Nr.</th>
+      <th>Klasse</th>
+      <th>Typ</th>
+      <th>Breite</th>
+      <th>Höhe</th>
+      <th>Messwert</th>
+      ${showScore ? '<th>Wahrsch.</th>' : ''}
+    `;
+  }
+
+  const pixelToMeter = getPixelToMeterFactor();
+
   annotations.forEach((annotation, index) => {
     // Get label info
     const labelId = annotation.labelId || annotation.objectLabel || 1;
     let label;
-    
+
     if (annotation.annotationType === 'line') {
       // Use line labels for line annotations
       const lineLabel = getLabelById ? getLabelById(labelId, 'line') : null;
@@ -637,48 +658,61 @@ function updateResultsTable() {
       // Use area labels for rectangles and polygons
       label = getLabel(labelId);
     }
-    
-    // Determine annotation type and calculate measurement
-    let annotationType = 'Rechteck';
+
+    // Determine annotation type, dimensions and measurement
+    let typeKey = 'rectangle';
+    let typeName = 'Rechteck';
     let measurement = 'N/A';
-    
+    let widthCell = '–';
+    let heightCell = '–';
+
     if (annotation.type === 'rect') {
-      annotationType = 'Rechteck';
       const area = calculateRectangleAreaFromCanvas(annotation);
       measurement = `${area.toFixed(2)} m²`;
+      const widthM  = annotation.width  * (annotation.scaleX || 1) * pixelToMeter;
+      const heightM = annotation.height * (annotation.scaleY || 1) * pixelToMeter;
+      widthCell  = `${widthM.toFixed(2)} m`;
+      heightCell = `${heightM.toFixed(2)} m`;
     } else if (annotation.type === 'polygon') {
-      annotationType = 'Polygon';
+      typeKey = 'polygon';
+      typeName = 'Polygon';
       const area = calculatePolygonAreaFromCanvas(annotation);
       measurement = `${area.toFixed(2)} m²`;
     } else if (annotation.type === 'polyline') {
-      annotationType = 'Linie';
+      typeKey = 'line';
+      typeName = 'Linie';
       const length = calculatePolylineLength(annotation.points || []);
       measurement = `${length.toFixed(2)} m`;
     }
-    
-    // Determine confidence score
-    const confidence = annotation.userCreated ? 100 : (annotation.score || 0) * 100;
-    
+
     const row = document.createElement('tr');
     const displayNumber = annotation.displayIndex || (index + 1);
+    // Type as icon (same SVGs as the toolbar buttons), name via tooltip
+    const typeIcon = `<span title="${typeName}" style="display:inline-flex; vertical-align:middle; color:#666;">${LABEL_TOOL_INDICATORS[typeKey].svg}</span>`;
+    const hasScore = typeof annotation.score === 'number' && annotation.score > 0 && !annotation.userCreated;
+    const scoreCell = showScore
+      ? `<td>${hasScore ? (annotation.score * 100).toFixed(1) + '%' : '–'}</td>`
+      : '';
     row.innerHTML = `
       <td>${displayNumber}</td>
       <td>${label.name}</td>
-      <td>${annotationType}</td>
-      <td>${confidence.toFixed(1)}%</td>
+      <td>${typeIcon}</td>
+      <td>${widthCell}</td>
+      <td>${heightCell}</td>
       <td>${measurement}</td>
+      ${scoreCell}
     `;
-    
+
     // Add visual indicator for user-created annotations
     if (annotation.userCreated) {
       row.style.fontStyle = 'italic';
       row.title = 'Benutzer-erstellt';
     }
-    
+
     // Add hover functionality to highlight annotation on canvas
     row.addEventListener('mouseenter', () => highlightAnnotation(index));
     row.addEventListener('mouseleave', () => removeHighlight());
-    
+
     resultsBody.appendChild(row);
   });
 }
@@ -1228,8 +1262,18 @@ function createLabelTooltip() {
   document.body.appendChild(labelTooltipEl);
 }
 
+/** True when the cursor is actually over the canvas area (not over toolbar,
+ *  dropdowns or panels that may overlap it). */
+function isCursorOverCanvas() {
+  if (!imageContainer) return false;
+  const el = document.elementFromPoint(lastMouseClientX, lastMouseClientY);
+  return !!el && imageContainer.contains(el);
+}
+
 function showLabelTooltip(labelName, labelColor) {
   if (!labelTooltipEl) return;
+  // Tooltip follows the crosshair workflow — only show it on the canvas itself
+  if (!isCursorOverCanvas()) return;
   clearTimeout(labelTooltipTimer);
 
   labelTooltipEl.textContent = labelName;
@@ -1508,6 +1552,36 @@ function setTool(toolName) {
   }
 }
 
+// Same icons as the toolbar tool buttons — shown next to the "Labels" title
+// so it's clear which shape type the label list currently applies to.
+const LABEL_TOOL_INDICATORS = {
+  rectangle: {
+    name: 'Rechteck',
+    svg: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><rect x="1.5" y="3" width="11" height="8"/></svg>',
+  },
+  polygon: {
+    name: 'Polygon',
+    svg: '<svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><polygon points="7,1.5 12.5,5.5 10.5,12.5 3.5,12.5 1.5,5.5"/></svg>',
+  },
+  line: {
+    name: 'Linie',
+    svg: '<svg width="12" height="12" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><line x1="12" y1="2" x2="2" y2="12" stroke-width="1.5"/><circle cx="12" cy="2" r="1.5" stroke="none"/><circle cx="2" cy="12" r="1.5" stroke="none"/></svg>',
+  },
+};
+
+function updateLabelToolIndicator(type) {
+  const el = document.getElementById('labelToolIndicator');
+  if (!el) return;
+  const indicator = LABEL_TOOL_INDICATORS[type];
+  if (!indicator) {
+    el.innerHTML = '';
+    el.title = '';
+    return;
+  }
+  el.innerHTML = `${indicator.svg}<span>${indicator.name}</span>`;
+  el.title = `Labels gelten für: ${indicator.name}`;
+}
+
 /**
  * Update universal label dropdown based on current tool and selection
  */
@@ -1520,6 +1594,7 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
     universalLabelSelect.innerHTML = '<option value="">–</option>';
     universalLabelSelect.disabled = true;
     universalLabelSelect.classList.add('no-selection');
+    updateLabelToolIndicator(null);
     updateLabelQuickList();
     return;
   }
@@ -1528,17 +1603,22 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
 
   // Determine tool type and get appropriate labels
   let labels;
-  
+  let indicatorType;
+
   if (toolName === 'line' || (selectedObject && selectedObject.annotationType === 'line')) {
     // Line tool - use line labels
     labels = getCurrentLineLabels();
+    indicatorType = 'line';
   } else if (toolName === 'polygon' || (selectedObject && selectedObject.annotationType === 'polygon')) {
-    // Polygon tool - use polygon labels  
+    // Polygon tool - use polygon labels
     labels = getLabelsForTool('polygon');
+    indicatorType = 'polygon';
   } else {
     // Rectangle tool or other - use rectangle labels
     labels = getCurrentLabels();
+    indicatorType = 'rectangle';
   }
+  updateLabelToolIndicator(indicatorType);
   
   // Remember current selection
   const currentValue = universalLabelSelect.value;
@@ -1659,6 +1739,7 @@ function startDrawingRectangle(pointer) {
     strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'rectangle',
+    userCreated: true,
     selectable: currentTool === 'select',
     evented: currentTool === 'select'
   });
@@ -1990,6 +2071,7 @@ function finishPolygonDrawing() {
     strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'polygon',
+    userCreated: true,
     selectable: true,
     evented: true,
     labelId: selectedLabelId,
@@ -2269,6 +2351,7 @@ function startLineDrawing() {
     strokeWidth: lineSW,
     objectType: 'annotation',
     annotationType: 'line',
+    userCreated: true,
     selectable: currentTool === 'select',
     evented: currentTool === 'select',
     objectCaching: false, // true = verbessert performance und objekte werden schneller gerendert

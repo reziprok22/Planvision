@@ -433,7 +433,10 @@
 
             <!-- Label Management -->
             <div class="project-section" style="border-top: 1px solid #eee; padding: 8px 12px 12px 12px;">
-                <h2 class="project-title" style="font-size:0.72em; color:#999; text-transform:uppercase; letter-spacing:0.8px; margin:0 0 6px 0; font-weight:700;">Labels</h2>
+                <h2 class="project-title" style="font-size:0.72em; color:#999; text-transform:uppercase; letter-spacing:0.8px; margin:0 0 6px 0; font-weight:700; display:flex; align-items:center;">
+                    Labels
+                    <span id="labelToolIndicator" style="display:inline-flex; align-items:center; gap:4px; margin-left:auto; color:#777;"></span>
+                </h2>
                 <div id="labelQuickList" style="margin-bottom:8px;"></div>
                 <div class="project-buttons">
                     <div class="tooltip">
@@ -594,13 +597,14 @@
                             <th>Nr.</th>
                             <th>Klasse</th>
                             <th>Typ</th>
-                            <th>Wahrsch.</th>
+                            <th>Breite</th>
+                            <th>Höhe</th>
                             <th>Messwert</th>
                         </tr>
                     </thead>
                     <tbody id="resultsBody">
                         <tr>
-                            <td colspan="5" style="text-align:center; color:#999; font-style:italic; padding:20px;">
+                            <td colspan="6" style="text-align:center; color:#999; font-style:italic; padding:20px;">
                                 Laden Sie eine Datei hoch und analysieren Sie eine Seite.
                             </td>
                         </tr>
