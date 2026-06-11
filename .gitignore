@@ -15,6 +15,7 @@ static/js/mainone_file.js
 performance_optimierung
 node_modules
 UI
+db.sqlite3
 
 # Einzelne Datei ignorieren
 Notizen_FL.md
