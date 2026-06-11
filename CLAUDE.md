@@ -4,14 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Planvision is a Django-based web application for architectural plan analysis that uses computer vision to detect and annotate building elements (windows, doors, walls, roofs, etc.) in PDF and image files. The application provides:
+Planvision (live as **onlyplans.tools**) is a Django-based web application for architectural plan analysis that uses computer vision to detect and annotate building elements (windows, doors, walls, roofs, etc.) in PDF files. The application provides:
 
-- AI-powered object detection using a Faster R-CNN model
-- Multi-page PDF support with individual page analysis
-- Interactive annotation editor using Fabric.js
-- Project management with save/load functionality
-- PDF report generation with bounding box overlays
-- User authentication (login/register/logout) via Django's built-in auth system
+- AI-powered object detection using a Faster R-CNN model (target label selectable via "Erkennen als")
+- Multi-page PDF support with individual page analysis (server accepts **PDF only**; images are rejected)
+- Interactive annotation editor using Fabric.js (rectangles, polygons, line measurements, vertex editing)
+- Project management with client-side ZIP save/load
+- Frontend PDF exports (annotated plan + report) via pdf-lib, incl. placeable on-plan legend
+- Bug reports from testers (header button → Django admin)
+- User authentication (login/register/logout) via Django's built-in auth system; can be disabled via `NO_LOGIN_MODE` for the beta phase
 
 ## Development Commands
 
@@ -66,19 +67,21 @@ The application requires a pre-trained Faster R-CNN model at:
 - **manage.py**: Django management entry point
 
 ### Backend (Python)
-- **core/views.py**: Django views for file upload, AI analysis, file serving, and index page
+- **core/views.py**: Django views for file upload, AI analysis, file serving, bug reports, landing/app pages; central auth helpers `_access_denied()` / `_get_project()`
+- **core/models.py**: `Project` (session ownership, user nullable for NO_LOGIN_MODE) and `BugReport` (visible in Django admin)
 - **core/apps.py**: `CoreConfig.ready()` loads the ML model at startup
 - **model_handler.py**: PyTorch model loading and inference logic
 - **image_preprocessing.py**: OpenCV-based image preprocessing
 - **utils.py**: Scale calculations and non-maximum suppression utilities
 
-### Frontend (JavaScript ES6 Modules)
-- **main.js**: Primary application controller, coordinates all modules and handles form submission
-- **fabric-handler.js**: Fabric.js canvas management for interactive annotations
-- **zoom-manager.js**: Image zoom and pan functionality
-- **pdf-handler.js**: Multi-page PDF navigation and state management
-- **project.js**: Project save/load operations
-- **labels.js**: Label management system for object categories
+### Frontend (JavaScript ES6 Modules, in `static/js/`)
+- **main.js**: Primary application controller AND all canvas logic — Fabric.js setup, zoom/pan, drawing tools, vertex editing, text labels, on-plan legend, results table, undo/redo, page switching (there is no separate fabric-handler/zoom-manager module)
+- **labels.js**: Label management (Label-Manager modal, colors/opacity/stroke, tool dropdowns)
+- **pdf-handler.js**: Session and page state (session id, page URLs, per-page settings, original PDF blob)
+- **upload-modal.js**: Left sidebar — drop zone, upload, page list with per-page scale
+- **project.js**: Save/load/export button handlers + bug report modal
+- **project-zip.js**: ZIP build/load incl. format versioning and migrations
+- **pdf-export-client.js**: pdf-lib exports (annotated plan + report), page-rotation aware
 
 ### Static Files
 - `static/` and `dist/` are both in `STATICFILES_DIRS` — both served under `/static/`
@@ -86,7 +89,7 @@ The application requires a pre-trained Faster R-CNN model at:
 - Templates use `{% load static %}` and `{% static 'path' %}` for all asset references
 
 ### Data Flow
-1. User uploads PDF/image via HTML form
+1. User uploads a PDF via the left-sidebar drop zone (server rejects non-PDF)
 2. `core/views.py` converts PDF to images if needed, extracts page dimensions
 3. `model_handler.py` runs AI inference using the Faster R-CNN model
 4. Results return to frontend with bounding boxes and confidence scores
@@ -96,7 +99,7 @@ The application requires a pre-trained Faster R-CNN model at:
 
 ### File Structure Patterns
 - `projects/`: All session data — uploaded images, saved projects (subdirectory per project UUID)
-- `templates/`: Django HTML templates (index.html, accounts/login.html, accounts/register.html)
+- `templates/`: Django HTML templates (landing.html, app.html, datenschutz.html, impressum.html, accounts/)
 - `staticfiles/`: Collected static files for production (`python manage.py collectstatic`)
 
 ## Key Technical Details
@@ -122,15 +125,18 @@ The application requires a pre-trained Faster R-CNN model at:
 ### Authentication
 - Django's built-in `django.contrib.auth` handles users, sessions, and password hashing
 - Login: `/accounts/login/` — Logout: `/accounts/logout/` — Register: `/accounts/register/`
-- Admin panel available at `/admin/` (requires superuser)
-- API endpoints (`/upload`, `/analyze_page`) are currently `@csrf_exempt` — tighten when adding per-user data
+- Admin panel available at `/admin/` (requires superuser) — includes the bug report list
+- All API endpoints are CSRF-protected; the frontend sends `X-CSRFToken` from the cookie (set via `@ensure_csrf_cookie` on the app view)
+- `NO_LOGIN_MODE` (settings, env-overridable): when True (beta default), all endpoints work without login and projects are stored with `user=NULL`; access is then guarded only by the unguessable session UUID
 
 ### Django Settings (config/settings.py)
 - `SECRET_KEY`: reads from env var `DJANGO_SECRET_KEY` (falls back to insecure dev key)
 - `DEBUG`: reads from env var `DJANGO_DEBUG` (default `True`)
 - `ALLOWED_HOSTS`: reads from env var `DJANGO_ALLOWED_HOSTS`
-- `PROJECTS_DIR`: `BASE_DIR / 'projects'`
-- `PDF_DPI = 150`, `JPEG_QUALITY = 70`
+- `SECURE_PROXY_SSL_HEADER` + `CSRF_TRUSTED_ORIGINS`: HTTPS/CSRF behind the nginx proxy (onlyplans.tools)
+- `NO_LOGIN_MODE`: beta switch, default True; env var `NO_LOGIN_MODE=False` re-enables login
+- `PROJECTS_DIR`: `BASE_DIR / 'projects'` — `BUG_REPORTS_DIR`: `BASE_DIR / 'bug_reports'` (both gitignored)
+- `PDF_DPI = 150` (server always renders at 150 DPI — frontend has no DPI input, only a hidden field), `JPEG_QUALITY = 70`
 
 ### Project Data Format
 Projects store JSON files containing:
@@ -141,6 +147,15 @@ Projects store JSON files containing:
 - `pages/`: Original image files
 - `original.pdf`: Original PDF file if applicable
 
+## Deployment (onlyplans.tools)
+
+Production runs on a Debian server (Hetzner) at `/opt/Planvision`: gunicorn (systemd service `planvision`, `--timeout 300`) behind nginx with Let's Encrypt. nginx proxies **everything** to Django — the landing page is a Django template, never serve it as a static file. Only `/static/` is an nginx alias to `staticfiles/`; do **not** alias `/project_files/` (it would bypass the ownership check in `serve_project_file`).
+
+After every `git pull` on the server:
+1. `env/bin/python manage.py migrate`
+2. `env/bin/python manage.py collectstatic --noinput` — otherwise nginx keeps serving the old JS bundle (symptom: CSRF 403 on POSTs)
+3. `sudo systemctl restart planvision`
+
 ## Common Development Tasks
 
 When adding new object detection classes, update:
@@ -149,8 +164,8 @@ When adding new object detection classes, update:
 3. Color mappings and UI elements in HTML template
 
 When modifying the annotation editor:
-1. Update `fabric-handler.js` for canvas interactions
-2. Coordinate changes with `main.js` for state management
+1. All canvas interactions live in `main.js` (setupCanvasEvents, drawing functions, vertex editing)
+2. Mind Fabric's object cache: direct mutation of e.g. `points` requires `obj.dirty = true`
 3. Test zoom synchronization between image and canvas
 
 When changing PDF processing:
