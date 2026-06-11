@@ -115,10 +115,13 @@ let updateTableTimeout = null;
 
 // Utility Functions
 /**
- * Convert hex color to color with opacity
+ * Convert hex color to color with opacity.
+ * `opacity` is the label's fill alpha (0–1) managed in the Label-Manager;
+ * labels without one fall back to the classic '20' hex alpha (≈ 12.5 %).
  */
-function getLabelColorWithOpacity(color, opacity = '20') {
-  return color + opacity;
+function getLabelColorWithOpacity(color, opacity) {
+  const alpha = (typeof opacity === 'number') ? Math.min(1, Math.max(0, opacity)) : 0x20 / 255;
+  return color + Math.round(alpha * 255).toString(16).padStart(2, '0');
 }
 
 /**
@@ -515,7 +518,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         top: canvasCoords.y1,
         width: canvasCoords.width,
         height: canvasCoords.height,
-        fill: getLabelColorWithOpacity(labelColor),
+        fill: getLabelColorWithOpacity(labelColor, fullLabel?.opacity),
         stroke: labelColor,
         strokeWidth: labelStrokeWidth,
         labelId: labelId,
@@ -535,7 +538,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
         objectType: 'annotation',
         annotationType: 'polygon',
         points: fabricPoints,
-        fill: getLabelColorWithOpacity(labelColor),
+        fill: getLabelColorWithOpacity(labelColor, fullLabel?.opacity),
         stroke: labelColor,
         strokeWidth: labelStrokeWidth,
         labelId: labelId,
@@ -1500,7 +1503,7 @@ function startDrawingRectangle(pointer) {
     top: pointer.y,
     width: 0,
     height: 0,
-    fill: label.color + '20', // 20% opacity
+    fill: getLabelColorWithOpacity(label.color, label.opacity),
     stroke: label.color,
     strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
@@ -1540,15 +1543,15 @@ function finishDrawingRectangle() {
   } else {
     // Get selected label
     const selectedLabelId = getCurrentSelectedLabel();
-    const label = getLabel(selectedLabelId);
-    
+    const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+
     // Update rectangle with correct label and colors
     currentRectangle.set({
       selectable: true,
       evented: true,
       labelId: selectedLabelId,
       objectLabel: selectedLabelId,
-      fill: getLabelColorWithOpacity(label.color),
+      fill: getLabelColorWithOpacity(label.color, label.opacity),
       stroke: label.color
     });
     currentRectangle.setCoords(); // sync hit-detection bounds after resize via set()
@@ -1670,7 +1673,7 @@ function applyLabelChangeToSelectedObject() {
     const lineLabel = getLabelById(newLabelId, 'line');
     label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
   } else {
-    label = getLabel(newLabelId);
+    label = (typeof getLabelById !== 'undefined' && getLabelById(newLabelId)) || getLabel(newLabelId);
   }
   
   // Update visual appearance
@@ -1680,7 +1683,7 @@ function applyLabelChangeToSelectedObject() {
     });
   } else {
     selectedObject.set({
-      fill: label.color + '20', // 20% opacity
+      fill: getLabelColorWithOpacity(label.color, label.opacity),
       stroke: label.color
     });
   }
@@ -1765,7 +1768,7 @@ function startPolygonDrawing() {
   ];
   
   currentPolygon = new Polygon(points, {
-    fill: label.color + '20', // 20% opacity
+    fill: getLabelColorWithOpacity(label.color, label.opacity),
     stroke: label.color,
     strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
@@ -1831,7 +1834,7 @@ function finishPolygonDrawing() {
 
   // Create polygon with original points
   const finalPolygon = new Polygon(fabricPoints, {
-    fill: label.color + '20', // 20% opacity
+    fill: getLabelColorWithOpacity(label.color, label.opacity),
     stroke: label.color,
     strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',

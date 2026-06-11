@@ -24,6 +24,27 @@ function hexToRgb(hex) {
     );
 }
 
+/**
+ * Parse a Fabric fill value into { color, opacity } exactly as the canvas
+ * renders it. Canvas fills are '#rrggbbaa' strings (default alpha 0x20 ≈ 12.5 %);
+ * lines use '' (no fill).
+ */
+function parseFill(fill, fallbackHex) {
+    if (typeof fill === 'string') {
+        const m = fill.match(/^#?([0-9a-f]{6})([0-9a-f]{2})?$/i);
+        if (m) return { color: hexToRgb(m[1]), opacity: m[2] ? parseInt(m[2], 16) / 255 : 1 };
+        // Label-Manager updates write 'rgba(r, g, b, a)' fills
+        const ra = fill.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+)\s*)?\)$/i);
+        if (ra) {
+            const alpha = ra[4] !== undefined ? parseFloat(ra[4]) : 1;
+            if (alpha <= 0) return { color: null, opacity: 0 };
+            return { color: rgb(+ra[1] / 255, +ra[2] / 255, +ra[3] / 255), opacity: alpha };
+        }
+        if (fill === '' || fill === 'transparent') return { color: null, opacity: 0 };
+    }
+    return { color: hexToRgb(fallbackHex), opacity: 0x20 / 255 };
+}
+
 function contrastColor(hex) {
     if (!hex || typeof hex !== 'string') return rgb(1, 1, 1);
     const match = hex.match(/^#?([0-9a-f]{6})/i);
@@ -159,6 +180,7 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
         const labelId  = ann.labelId ?? ann.objectLabel ?? 0;
         const colorHex = labelMap[labelId]?.color || '#888888';
         const color    = hexToRgb(colorHex);
+        const fill     = parseFill(ann.fill, colorHex);
         const strokeW  = Math.max(0.5, (ann.strokeWidth || 2) * Math.min(sx, sy));
 
         const coords = fabricToAbsolute(ann);
@@ -174,7 +196,7 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
                 page.drawRectangle({
                     x: Math.min(p1.x, p2.x), y: Math.min(p1.y, p2.y), width: w, height: h,
                     borderColor: color, borderWidth: strokeW, borderOpacity: 1,
-                    color, opacity: 0.10 });
+                    ...(fill.color ? { color: fill.color, opacity: fill.opacity } : {}) });
                 drawn++;
             }
 
@@ -185,7 +207,7 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
                 pts.slice(1).map(p => `L ${p.x} ${T.H - p.y}`).join(' ') + ' Z';
             page.drawSvgPath(path, { x: 0, y: T.H,
                 borderColor: color, borderWidth: strokeW, borderOpacity: 1,
-                color, opacity: 0.10 });
+                ...(fill.color ? { color: fill.color, opacity: fill.opacity } : {}) });
             drawn++;
 
         } else if (coords.kind === 'polyline' && coords.points.length >= 2) {
@@ -473,7 +495,9 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
 
                 for (const ann of annotations) {
                     const labelId  = ann.labelId ?? ann.objectLabel ?? 0;
-                    const color    = hexToRgb(labelMap[labelId]?.color || '#888888');
+                    const colorHex = labelMap[labelId]?.color || '#888888';
+                    const color    = hexToRgb(colorHex);
+                    const fill     = parseFill(ann.fill, colorHex);
                     const strokeW  = Math.max(0.3, (ann.strokeWidth || 2) * Math.min(sx, sy));
                     const coords   = fabricToAbsolute(ann);
                     if (!coords) continue;
@@ -487,7 +511,7 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
                                 y: thumbY + thumbH - coords.y2 * sy,
                                 width: w, height: h,
                                 borderColor: color, borderWidth: strokeW, borderOpacity: 1,
-                                color, opacity: 0.10,
+                                ...(fill.color ? { color: fill.color, opacity: fill.opacity } : {}),
                             });
                         }
                     } else if (coords.kind === 'polygon' && coords.points.length >= 3) {
@@ -497,7 +521,7 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
                         page.drawSvgPath(path, {
                             x: thumbX, y: thumbY + thumbH,
                             borderColor: color, borderWidth: strokeW, borderOpacity: 1,
-                            color, opacity: 0.10,
+                            ...(fill.color ? { color: fill.color, opacity: fill.opacity } : {}),
                         });
                     } else if (coords.kind === 'polyline' && coords.points.length >= 2) {
                         for (let j = 0; j < coords.points.length - 1; j++) {
