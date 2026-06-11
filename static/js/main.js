@@ -498,9 +498,14 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
     };
   }
   
+  // Target label from the "Erkennen als" select in the Analyse-Einstellungen;
+  // falls back to the model's class id if the select is missing/empty
+  const aiSelect = document.getElementById('aiLabelSelect');
+  const targetLabelId = aiSelect?.value ? parseInt(aiSelect.value) : null;
+
   // Convert predictions to Fabric.js serializable format
   const canvasAnnotations = predictions.map((pred, index) => {
-    const labelId = pred.label || 1;
+    const labelId = targetLabelId ?? (pred.label || 1);
     const fullLabel = getLabelById ? getLabelById(labelId) : null;
     const labelColor = fullLabel ? fullLabel.color : getLabel(labelId).color;
     const labelStrokeWidth = fullLabel ? (fullLabel.strokeWidth || 2) : 2;
@@ -2592,30 +2597,25 @@ async function analyzeCurrentPage() {
   let analyzePageNum = currentPageNumber;
 
   if (!sessionId) {
-    // Check per-page cache first (avoids re-uploading on repeated clicks for the same page)
-    const cached = imageSessionCache[currentPageNumber];
-    if (cached) {
-      sessionId    = cached.sessionId;
-      analyzePageNum = cached.pageNumOnServer;
-    } else if (uploadedImage?.src) {
-      // Re-upload the current page image to establish a temporary server session.
-      // This handles projects loaded from ZIP that contained no original PDF blob.
+    // Re-establish a server session for projects loaded from ZIP by
+    // re-uploading the original PDF. The server only accepts PDFs, so this is
+    // the only fallback that can work; page numbering matches the ZIP pages.
+    const pdfBlob = getOriginalPdfBlob();
+    if (pdfBlob) {
       try {
-        const blob = await fetch(uploadedImage.src).then(r => r.blob());
         const fd = new FormData();
-        fd.append('file', new File([blob], 'page.jpg', { type: blob.type || 'image/jpeg' }));
+        fd.append('file', new File([pdfBlob], 'document.pdf', { type: 'application/pdf' }));
         const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
         if (!res.ok) throw new Error();
         const data = await res.json();
-        sessionId    = data.session_id;
-        analyzePageNum = 1; // single-image upload → always page 1 on server
-        imageSessionCache[currentPageNumber] = { sessionId, pageNumOnServer: 1 };
+        sessionId = data.session_id;
+        setPdfSessionId(sessionId); // reuse for subsequent analyses of any page
       } catch {
-        alert('Bitte zuerst eine Datei hochladen.');
+        alert('Analyse nicht möglich: Das Projekt-PDF konnte nicht erneut hochgeladen werden.');
         return;
       }
     } else {
-      alert('Bitte zuerst eine Datei hochladen.');
+      alert('Analyse nicht möglich: Dieses Projekt enthält kein Original-PDF. Bitte das PDF neu hochladen.');
       return;
     }
   }
@@ -2739,7 +2739,8 @@ async function initApp() {
       format_width:  parseFloat(document.getElementById('formatWidth')?.value)  || 210,
       format_height: parseFloat(document.getElementById('formatHeight')?.value) || 297,
       dpi:           parseFloat(document.getElementById('dpi')?.value)           || 150,
-      plan_scale:    parseFloat(document.getElementById('planScale')?.value)     || 100
+      plan_scale:    parseFloat(document.getElementById('planScale')?.value)     || 100,
+      ai_label:      parseInt(document.getElementById('aiLabelSelect')?.value)   || null
     };
     setPageSettings(current);
   }
@@ -2757,6 +2758,11 @@ async function initApp() {
     if (fh    && s.format_height != null) fh.value    = s.format_height;
     if (dpi   && s.dpi           != null) dpi.value   = s.dpi;
     if (scale && s.plan_scale    != null) scale.value = s.plan_scale;
+    // Restore AI target label if it still exists in the label list
+    const aiSel = document.getElementById('aiLabelSelect');
+    if (aiSel && s.ai_label != null && aiSel.querySelector(`option[value="${s.ai_label}"]`)) {
+      aiSel.value = s.ai_label;
+    }
     // Keep sidebar dropdown in sync
     if (s.plan_scale != null) setPageScaleInSidebar(pageNum, s.plan_scale);
   }
@@ -2835,6 +2841,23 @@ async function initApp() {
   // Editor is always active - setup canvas events when canvas is ready
   // Canvas events will be set up in initCanvas() when editor is active
   
+  // Erkennungs-Einstellungen: Pfeil-Button öffnet/schliesst das Popover
+  const analyzeSettingsToggle  = document.getElementById('analyzeSettingsToggle');
+  const analyzeSettingsPopover = document.getElementById('analyzeSettingsPopover');
+  if (analyzeSettingsToggle && analyzeSettingsPopover) {
+    analyzeSettingsToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = analyzeSettingsPopover.classList.toggle('open');
+      analyzeSettingsToggle.classList.toggle('open', open);
+    });
+    document.addEventListener('click', (e) => {
+      if (!analyzeSettingsPopover.classList.contains('open')) return;
+      if (analyzeSettingsPopover.contains(e.target) || analyzeSettingsToggle.contains(e.target)) return;
+      analyzeSettingsPopover.classList.remove('open');
+      analyzeSettingsToggle.classList.remove('open');
+    });
+  }
+
   // Setup tool buttons initially
   setupToolButtons();
 

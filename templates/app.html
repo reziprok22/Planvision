@@ -194,55 +194,55 @@
             width: 52px;
             color: #444;
         }
-/* --- Analysis Settings (compact, collapsible) --- */
-        .analysis-settings-section {
-            border-top: 1px solid #eee;
-            flex-shrink: 0;
-            padding: 8px 12px;
-        }
-        .analysis-settings-toggle {
-            background: none;
-            border: none;
-            cursor: pointer;
-            font-size: 0.78em;
-            color: #666;
-            padding: 0;
-            display: flex;
+/* --- Erkennungs-Einstellungen: Pfeil-Button + Popover neben "Fenster erkennen" --- */
+        .analyze-settings-wrap {
+            display: none; /* nach Upload via JS auf flex gesetzt */
+            position: relative;
             align-items: center;
-            gap: 5px;
-            width: 100%;
-            text-align: left;
-            font-weight: 600;
         }
-        .analysis-settings-toggle .toggle-arrow { transition: transform 0.2s; }
-        .analysis-settings-toggle.open .toggle-arrow { transform: rotate(90deg); }
-        .analysis-settings-body {
-            display: none;
-            padding-top: 8px;
-            gap: 6px;
-            display: none;
+        .analyze-caret {
+            padding: 5px 6px;
+            margin-left: 2px;
         }
-        .analysis-settings-body.open { display: flex; flex-direction: column; }
-        .analysis-settings-body .form-group {
-            display: flex;
-            align-items: center;
+        .analyze-caret.open { background: #f0f0f0; border-color: #999; }
+        .analyze-settings-popover {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            z-index: 1200;
+            flex-direction: column;
             gap: 8px;
-            margin: 0;
+            min-width: 215px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+            padding: 10px 12px;
         }
-        .analysis-settings-body label {
+        .analyze-settings-popover.open { display: flex; }
+        .popover-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+        .popover-row label {
             font-size: 0.78em;
             color: #666;
-            width: 110px;
-            flex-shrink: 0;
+            white-space: nowrap;
         }
-        .analysis-settings-body input {
-            flex: 1;
-            padding: 3px 6px;
+        .popover-row select,
+        .popover-row input {
+            padding: 4px 6px;
             font-size: 0.82em;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            min-width: 0;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background: #fff;
+            color: #444;
         }
+        .popover-row input[type="number"] { width: 60px; }
+        .popover-row select { max-width: 130px; }
 
         /* --- Analyze Button in Toolbar --- */
         .analyze-page-btn {
@@ -449,27 +449,12 @@
                 </div>
             </div>
 
-            <!-- Analysis Settings (collapsible) -->
-            <div class="analysis-settings-section" id="analysisSettingsSection" style="display:none">
-                <button class="analysis-settings-toggle" id="analysisSettingsToggle">
-                    <span class="toggle-arrow">▶</span> Analyse-Einstellungen
-                </button>
-                <div class="analysis-settings-body" id="analysisSettingsBody">
-                    <div class="form-group">
-                        <label for="dpi">DPI:</label>
-                        <input type="number" id="dpi" name="dpi" value="150" min="72" max="600">
-                    </div>
-                    <!-- planScale is now set per page in the sidebar; kept as hidden sync target -->
-                    <input type="hidden" id="planScale" name="plan_scale" value="100">
-                    <div class="form-group">
-                        <label for="threshold">Schwellenwert:</label>
-                        <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05">
-                    </div>
-                    <!-- Hidden format fields (auto from PDF metadata) -->
-                    <input type="hidden" id="formatWidth" value="210">
-                    <input type="hidden" id="formatHeight" value="297">
-                </div>
-            </div>
+            <!-- Hidden analysis sync fields: planScale (per-page sidebar dropdown),
+                 dpi (server renders PDFs fixed at 150), format (auto from PDF metadata) -->
+            <input type="hidden" id="planScale" name="plan_scale" value="100">
+            <input type="hidden" id="dpi" name="dpi" value="150">
+            <input type="hidden" id="formatWidth" value="210">
+            <input type="hidden" id="formatHeight" value="297">
 
             <!-- Error + loader for legacy form (kept for API calls) -->
             <div class="loader" id="loader" style="display:none"></div>
@@ -545,6 +530,25 @@
                             </svg>
                             Fenster erkennen
                         </button>
+
+                        <!-- Erkennungs-Einstellungen: Pfeil öffnet Popover (sichtbar nach Upload) -->
+                        <div class="analyze-settings-wrap" id="analysisSettingsSection">
+                            <button id="analyzeSettingsToggle" class="analyze-page-btn analyze-caret" title="Erkennungs-Einstellungen">
+                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                                    <polyline points="2,3.5 5,6.5 8,3.5"/>
+                                </svg>
+                            </button>
+                            <div class="analyze-settings-popover" id="analyzeSettingsPopover">
+                                <div class="popover-row">
+                                    <label for="aiLabelSelect">Erkennen als</label>
+                                    <select id="aiLabelSelect" title="Label, das erkannte Objekte erhalten"></select>
+                                </div>
+                                <div class="popover-row">
+                                    <label for="threshold">Schwelle</label>
+                                    <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05" title="Mindest-Konfidenz der Erkennung (0.1–1)">
+                                </div>
+                            </div>
+                        </div>
 
                         <div class="toolbar-spacer"></div>
 

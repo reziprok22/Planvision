@@ -960,6 +960,24 @@ export function updateUIForLabels() {
       universalLabelSelect.value = selectedValue;
     }
   }
+
+  // Update AI analysis target-label select ("Erkennen als" in Analyse-Einstellungen)
+  const aiLabelSelect = document.getElementById('aiLabelSelect');
+  if (aiLabelSelect) {
+    const selectedValue = aiLabelSelect.value;
+
+    aiLabelSelect.innerHTML = '';
+    getLabelsForTool('rectangle').forEach(label => {
+      const option = document.createElement('option');
+      option.value = label.id;
+      option.textContent = label.name;
+      aiLabelSelect.appendChild(option);
+    });
+
+    if (selectedValue && aiLabelSelect.querySelector(`option[value="${selectedValue}"]`)) {
+      aiLabelSelect.value = selectedValue;
+    }
+  }
 }
 
 /**

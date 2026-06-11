@@ -86,15 +86,6 @@ export function setupUploadModal() {
         fileInput.click();
     });
 
-    // ── Analysis settings toggle ──
-    const toggle = document.getElementById('analysisSettingsToggle');
-    const body   = document.getElementById('analysisSettingsBody');
-    if (toggle && body) {
-        toggle.addEventListener('click', () => {
-            const open = body.classList.toggle('open');
-            toggle.classList.toggle('open', open);
-        });
-    }
 }
 
 /** Show the upload area (e.g. after "New file" action) */
@@ -204,7 +195,7 @@ function showFileInfo(name) {
 }
 
 function showAnalysisSettings() {
-    if (analysisSettingsSection) analysisSettingsSection.style.display = 'block';
+    if (analysisSettingsSection) analysisSettingsSection.style.display = 'flex';
 }
 
 /**
@@ -289,6 +280,9 @@ function buildPageList(count) {
  * Mirrors what handleFile() does after a successful upload.
  */
 export function initSidebarFromProject(projectName, imageUrls, pageSizes) {
+  // Drop any session from a previously uploaded file — otherwise analyses of
+  // the loaded project would run against the old project's server session
+  currentSessionId  = null;
   uploadedPages     = imageUrls || [];
   uploadedPageSizes = pageSizes  || [];
   currentFileName   = projectName;
