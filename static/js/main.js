@@ -1903,6 +1903,9 @@ function updatePolygonVertex(polygon, pointIndex, canvasX, canvasY) {
   const newMinY = polygon.pathOffset.y - polygon.height / 2;
   polygon.left += newMinX - oldMinX;
   polygon.top  += newMinY - oldMinY;
+  // Direct points mutation bypasses Fabric's cache invalidation — without this
+  // the polygon only re-renders when the bounding box happens to change size.
+  polygon.dirty = true;
   polygon.setCoords();
 }
 
@@ -2028,6 +2031,7 @@ function _applyBoundingBoxShift(obj, oldMinX, oldMinY) {
   const newMinY = obj.pathOffset.y - obj.height / 2;
   obj.left += newMinX - oldMinX;
   obj.top  += newMinY - oldMinY;
+  obj.dirty = true; // points were mutated directly — invalidate Fabric's object cache
   obj.setCoords();
 }
 
