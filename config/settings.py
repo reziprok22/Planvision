@@ -79,6 +79,13 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PROJECTS_DIR = BASE_DIR / 'projects'
+BUG_REPORTS_DIR = BASE_DIR / 'bug_reports'
+
+# Beta-Phase: komplette Nutzung ohne Login (App, Upload, Analyse, Bug-Reports).
+# Projekte werden dann anonym (user=NULL) gespeichert; Zugriff per Session-UUID.
+# Default True (Beta). Für Produktivbetrieb mit Accounts: Umgebungsvariable
+# NO_LOGIN_MODE=False setzen oder den Default hier auf 'False' ändern.
+NO_LOGIN_MODE = os.environ.get('NO_LOGIN_MODE', 'False') == 'True'
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'

@@ -8,10 +8,12 @@ import logging
 from django.shortcuts import render
 from django.http import JsonResponse, FileResponse, Http404
 from django.views.decorators.http import require_POST
-from django.contrib.auth.decorators import login_required
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.contrib.auth.views import redirect_to_login
+from django.core.exceptions import ValidationError
 from django.conf import settings
 
-from .models import Project
+from .models import Project, BugReport
 
 from pdf2image import convert_from_path
 from PyPDF2 import PdfReader
@@ -29,8 +31,30 @@ def landing(request):
     return render(request, 'landing.html')
 
 
-@login_required
+def _access_denied(request):
+    """Zentrale Zugriffsprüfung: None wenn erlaubt, sonst 401-Response.
+    Im NO_LOGIN_MODE (Beta) ist jeder Zugriff erlaubt."""
+    if settings.NO_LOGIN_MODE or request.user.is_authenticated:
+        return None
+    return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+
+
+def _get_project(request, project_id):
+    """Projekt mit Ownership-Prüfung holen (im NO_LOGIN_MODE nur per ID).
+    Gibt None zurück, wenn nicht gefunden, kein Zugriff oder ungültige ID."""
+    try:
+        qs = Project.objects.filter(id=project_id)
+        if not settings.NO_LOGIN_MODE:
+            qs = qs.filter(user=request.user)
+        return qs.first()
+    except (ValueError, ValidationError):
+        return None
+
+
+@ensure_csrf_cookie  # CSRF-Cookie immer setzen — nötig für die API-POSTs des Frontends
 def app(request):
+    if not settings.NO_LOGIN_MODE and not request.user.is_authenticated:
+        return redirect_to_login(request.get_full_path())
     return render(request, 'app.html')
 
 
@@ -43,11 +67,10 @@ def impressum(request):
 
 
 def serve_project_file(request, project_id, filename):
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
-    try:
-        Project.objects.get(id=project_id, user=request.user)
-    except Project.DoesNotExist:
+    denied = _access_denied(request)
+    if denied:
+        return denied
+    if _get_project(request, project_id) is None:
         raise Http404
     project_dir = PROJECTS_DIR / project_id
     file_path = project_dir / filename
@@ -110,8 +133,9 @@ MAX_UPLOAD_SIZE = 40 * 1024 * 1024  # 40 MB
 
 @require_POST
 def upload_file(request):
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+    denied = _access_denied(request)
+    if denied:
+        return denied
     try:
         if 'file' not in request.FILES:
             return JsonResponse({'error': 'No file part'}, status=400)
@@ -133,7 +157,7 @@ def upload_file(request):
             pdf_info = _convert_pdf_to_images(file)
             Project.objects.create(
                 id=pdf_info["session_id"],
-                user=request.user,
+                user=request.user if request.user.is_authenticated else None,
                 original_filename=file.name,
             )
             return JsonResponse({
@@ -155,8 +179,9 @@ def upload_file(request):
 
 @require_POST
 def analyze_page(request):
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+    denied = _access_denied(request)
+    if denied:
+        return denied
 
     request_start = time.time()
     performance_metrics = {}
@@ -164,9 +189,7 @@ def analyze_page(request):
     try:
         session_id = request.POST.get('session_id')
 
-        try:
-            Project.objects.get(id=session_id, user=request.user)
-        except Project.DoesNotExist:
+        if _get_project(request, session_id) is None:
             return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
 
         page = int(request.POST.get('page', 1))
@@ -255,19 +278,70 @@ def analyze_page(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
+MAX_BUG_ZIP_SIZE        = 40 * 1024 * 1024  # wie Upload-Limit
+MAX_BUG_SCREENSHOT_SIZE = 10 * 1024 * 1024
+
+
+@require_POST
+def report_bug(request):
+    denied = _access_denied(request)
+    if denied:
+        return denied
+    try:
+        text = (request.POST.get('text') or '').strip()
+        if not text:
+            return JsonResponse({'error': 'Beschreibung fehlt'}, status=400)
+
+        try:
+            page_number = int(request.POST.get('page', ''))
+        except (TypeError, ValueError):
+            page_number = None
+
+        report = BugReport.objects.create(
+            user=request.user if request.user.is_authenticated else None,
+            text=text[:5000],
+            page_number=page_number,
+            user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+        )
+
+        report_dir = settings.BUG_REPORTS_DIR / str(report.pk)
+
+        zip_file = request.FILES.get('project_zip')
+        if zip_file and zip_file.size <= MAX_BUG_ZIP_SIZE:
+            report_dir.mkdir(parents=True, exist_ok=True)
+            with open(report_dir / 'project.zip', 'wb') as f:
+                for chunk in zip_file.chunks():
+                    f.write(chunk)
+            report.project_zip = f'{report.pk}/project.zip'
+
+        screenshot = request.FILES.get('screenshot')
+        if screenshot and screenshot.size <= MAX_BUG_SCREENSHOT_SIZE:
+            report_dir.mkdir(parents=True, exist_ok=True)
+            with open(report_dir / 'screenshot.jpg', 'wb') as f:
+                for chunk in screenshot.chunks():
+                    f.write(chunk)
+            report.screenshot = f'{report.pk}/screenshot.jpg'
+
+        report.save()
+        return JsonResponse({'status': 'ok', 'id': report.pk})
+
+    except Exception as e:
+        logger.exception("report_bug error")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
 @require_POST
 def save_training_data(request):
-    if not request.user.is_authenticated:
-        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+    denied = _access_denied(request)
+    if denied:
+        return denied
     try:
         body = json.loads(request.body)
         session_id = body.get('session_id')
         if not session_id:
             return JsonResponse({'error': 'session_id fehlt'}, status=400)
 
-        try:
-            Project.objects.get(id=session_id, user=request.user)
-        except Project.DoesNotExist:
+        if _get_project(request, session_id) is None:
             return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
 
         training_data = {

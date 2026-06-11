@@ -89,7 +89,7 @@ function migrateCanvasData(canvasData, fromVersion) {
 }
 
 /**
- * Download the current project as a ZIP file.
+ * Build the project ZIP as a Blob (shared by "save as file" and bug reports).
  * @param {Object} p
  * @param {string}   p.projectName
  * @param {Object}   p.canvasData       – output of collectAllPagesCanvasData()
@@ -100,7 +100,7 @@ function migrateCanvasData(canvasData, fromVersion) {
  * @param {Object}   p.analysisData     – raw AI predictions per page { "1": [...], "2": [...] }
  * @param {Function} p.onProgress       – optional (percent: number) => void
  */
-export async function saveProjectAsZip({ projectName, canvasData, labels, settings, pageImageUrls, originalPdfBlob, analysisData, onProgress }) {
+export async function buildProjectZipBlob({ projectName, canvasData, labels, settings, pageImageUrls, originalPdfBlob, analysisData, onProgress }) {
   const zip = new JSZip();
 
   zip.file('metadata.json', JSON.stringify({
@@ -139,15 +139,22 @@ export async function saveProjectAsZip({ projectName, canvasData, labels, settin
     }
   }
 
-  const blob = await zip.generateAsync(
+  return zip.generateAsync(
     { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
     ({ percent }) => { if (onProgress) onProgress(75 + Math.round(percent * 0.25)); }
   );
+}
+
+/**
+ * Download the current project as a ZIP file (params: see buildProjectZipBlob).
+ */
+export async function saveProjectAsZip(params) {
+  const blob = await buildProjectZipBlob(params);
 
   const url = URL.createObjectURL(blob);
   const a   = document.createElement('a');
   a.href     = url;
-  a.download = `${projectName || 'planvision'}.zip`;
+  a.download = `${params.projectName || 'planvision'}.zip`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

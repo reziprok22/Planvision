@@ -4,7 +4,7 @@
 
 import { setCurrentLabels, getAllLabels } from './labels.js';
 import { initSidebarFromProject }          from './upload-modal.js';
-import { saveProjectAsZip, loadProjectFromZip } from './project-zip.js';
+import { saveProjectAsZip, buildProjectZipBlob, loadProjectFromZip } from './project-zip.js';
 import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-client.js';
 
 let saveProjectBtn, loadProjectBtn, exportPdfBtn, exportAnnotatedPdfBtn;
@@ -34,6 +34,92 @@ export function setupProject(elements, modules) {
     if (zipFileInput.files[0]) handleLoad(zipFileInput.files[0]);
     zipFileInput.value = '';
   });
+
+  setupBugReport();
+}
+
+// ── Bug report ───────────────────────────────────────────────────────────────
+
+function setupBugReport() {
+  const btn      = document.getElementById('reportBugBtn');
+  const modal    = document.getElementById('bugReportModal');
+  const closeBtn = document.getElementById('bugReportModalClose');
+  const cancel   = document.getElementById('bugReportCancel');
+  const submit   = document.getElementById('bugReportSubmit');
+  if (!btn || !modal || !submit) return;
+
+  const close = () => { modal.style.display = 'none'; };
+  btn.addEventListener('click', () => {
+    modal.style.display = 'block';
+    document.getElementById('bugReportText')?.focus();
+  });
+  closeBtn?.addEventListener('click', close);
+  cancel?.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  submit.addEventListener('click', () => handleBugReportSubmit(close));
+}
+
+async function handleBugReportSubmit(closeModal) {
+  const textarea         = document.getElementById('bugReportText');
+  const attachProject    = document.getElementById('bugReportAttachProject');
+  const attachScreenshot = document.getElementById('bugReportAttachScreenshot');
+  const submit           = document.getElementById('bugReportSubmit');
+
+  const text = (textarea?.value || '').trim();
+  if (!text) {
+    alert('Bitte eine kurze Beschreibung eingeben.');
+    return;
+  }
+
+  submit.disabled = true;
+  submit.textContent = 'Wird gesendet…';
+
+  try {
+    const fd = new FormData();
+    fd.append('text', text);
+    if (window.getCurrentPageNumber) fd.append('page', window.getCurrentPageNumber());
+
+    // Attach the current project as ZIP (same content as the save button)
+    if (attachProject?.checked && pdfModule.getAllPdfPages().length && window.collectAllPagesCanvasData) {
+      const blob = await buildProjectZipBlob({
+        projectName:     'bug-report',
+        canvasData:      window.collectAllPagesCanvasData(),
+        labels:          getAllLabels(),
+        settings:        pdfModule.getPageSettings(),
+        pageImageUrls:   pdfModule.getAllPdfPages(),
+        originalPdfBlob: pdfModule.getOriginalPdfBlob(),
+        analysisData:    window.collectAllPagesAnalysisData ? window.collectAllPagesAnalysisData() : {},
+      });
+      fd.append('project_zip', new File([blob], 'project.zip', { type: 'application/zip' }));
+    }
+
+    if (attachScreenshot?.checked && window.getCanvasScreenshotBlob) {
+      const shot = await window.getCanvasScreenshotBlob();
+      if (shot) fd.append('screenshot', new File([shot], 'screenshot.jpg', { type: 'image/jpeg' }));
+    }
+
+    const res = await fetch('/report_bug', {
+      method: 'POST',
+      body: fd,
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}`);
+    }
+
+    if (textarea) textarea.value = '';
+    closeModal();
+    const status = showStatus('Danke! Problem wurde gemeldet ✓');
+    updateStatus(status, 'Danke! Problem wurde gemeldet ✓', 'success');
+  } catch (err) {
+    console.error('Bug report error:', err);
+    alert('Senden fehlgeschlagen: ' + err.message);
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Senden';
+  }
 }
 
 // ── Save ─────────────────────────────────────────────────────────────────────

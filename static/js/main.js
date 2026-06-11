@@ -3324,6 +3324,18 @@ async function initApp() {
   window.initializePageCanvasData = initializePageCanvasData;
   window.collectAllPagesAnalysisData = () => ({ ...pageAnalysisData });
   window.setPageAnalysisData = (data) => { pageAnalysisData = { ...(data || {}) }; };
+  window.getCurrentPageNumber = () => currentPageNumber;
+  // JPEG of the currently visible canvas viewport (used by bug reports)
+  window.getCanvasScreenshotBlob = async () => {
+    if (!canvas) return null;
+    try {
+      const dataUrl = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
+      return await (await fetch(dataUrl)).blob();
+    } catch (e) {
+      console.warn('Canvas screenshot failed:', e);
+      return null;
+    }
+  };
   window.clearImageSessionCache = () => { imageSessionCache = {}; };
   window.getFirstImageSessionId = () => {
     const entry = Object.values(imageSessionCache)[0];
