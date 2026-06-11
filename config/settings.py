@@ -9,6 +9,15 @@ DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
 ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# Hinter nginx: HTTPS anhand des X-Forwarded-Proto-Headers erkennen
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Erlaubte Origins für CSRF-geschützte POSTs (Upload, Analyse, Bug-Report)
+CSRF_TRUSTED_ORIGINS = os.environ.get(
+    'DJANGO_CSRF_TRUSTED_ORIGINS',
+    'https://onlyplans.tools,https://www.onlyplans.tools'
+).split(',')
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -85,7 +94,7 @@ BUG_REPORTS_DIR = BASE_DIR / 'bug_reports'
 # Projekte werden dann anonym (user=NULL) gespeichert; Zugriff per Session-UUID.
 # Default True (Beta). Für Produktivbetrieb mit Accounts: Umgebungsvariable
 # NO_LOGIN_MODE=False setzen oder den Default hier auf 'False' ändern.
-NO_LOGIN_MODE = os.environ.get('NO_LOGIN_MODE', 'False') == 'True'
+NO_LOGIN_MODE = os.environ.get('NO_LOGIN_MODE', 'True') == 'True'
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'
