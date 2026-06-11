@@ -46,6 +46,9 @@ function migrateCanvasData(canvasData, fromVersion) {
   if (fromVersion >= CURRENT_VERSION) return canvasData;
 
   console.log(`[ZIP migration] upgrading from v${fromVersion} to v${CURRENT_VERSION}`);
+  // canvasData is the multi_page_canvas_v1 wrapper:
+  // { format, total_pages, pages: { "1": {...}, ... }, current_page, saved_at }
+  // Migrations operate on the per-page entries inside .pages.
   let data = { ...canvasData };
 
   // ── v1 → v2 ────────────────────────────────────────────────────────────────
@@ -54,8 +57,8 @@ function migrateCanvasData(canvasData, fromVersion) {
   // We do ensure every annotation has a stable displayIndex so the fallback
   // can assign correct numbers.
   if (fromVersion < 2) {
-    data = Object.fromEntries(
-      Object.entries(data).map(([pageNum, pageData]) => {
+    data.pages = Object.fromEntries(
+      Object.entries(data.pages || {}).map(([pageNum, pageData]) => {
         if (!pageData?.canvas_annotations) return [pageNum, pageData];
 
         let nextIndex = 1;

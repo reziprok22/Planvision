@@ -2547,7 +2547,10 @@ function setCurrentPage(pageNum) {
 function initializePageCanvasData(projectCanvasData) {
   // Multi-page format: load all pages
   pageCanvasData = { ...projectCanvasData.pages };
-  currentPageNumber = projectCanvasData.current_page || 1;
+  currentPageNumber = 1;
+  // Clear the previous project's canvas immediately (mirrors onUploadReady):
+  // its annotations must never linger visibly or be collected into the new data.
+  if (canvas) canvas.clear();
   console.log(`Initialized ${Object.keys(pageCanvasData).length} pages of canvas data`);
 }
 
@@ -3054,6 +3057,7 @@ async function initApp() {
   window.loadCanvasData = loadCanvasData;
   window.initializePageCanvasData = initializePageCanvasData;
   window.collectAllPagesAnalysisData = () => ({ ...pageAnalysisData });
+  window.setPageAnalysisData = (data) => { pageAnalysisData = { ...(data || {}) }; };
   window.clearImageSessionCache = () => { imageSessionCache = {}; };
   window.getFirstImageSessionId = () => {
     const entry = Object.values(imageSessionCache)[0];
@@ -3062,11 +3066,12 @@ async function initApp() {
   window.getUploadModalSessionId = () => getUploadSessionId();
   window.getCurrentLabels = getCurrentLabels;
 
-  // Used by pdf-export-client.js via project.js
-  window.getPageCanvasData = () => {
-    saveCurrentPageCanvasData(currentPageNumber);
-    return { ...pageCanvasData };
-  };
+  // Used by pdf-export-client.js via project.js and labels.js.
+  // Read-only: callers that need the live canvas included must call
+  // window.saveCurrentPageCanvas() first (the exports in project.js do).
+  // A save side effect here would leak the previous project's canvas into
+  // freshly loaded page data when labels.js queries during a ZIP load.
+  window.getPageCanvasData = () => ({ ...pageCanvasData });
   window.saveCurrentPageCanvas = () => saveCurrentPageCanvasData(currentPageNumber);
 
   // Resize canvas when container size changes (e.g. right panel collapse/expand)

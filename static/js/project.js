@@ -81,6 +81,9 @@ async function handleLoad(file) {
 
     // Restore state
     if (window.initializePageCanvasData) window.initializePageCanvasData(canvasData);
+    // Restore raw AI predictions (or reset, so the previous project's data
+    // can't leak into the next ZIP save)
+    if (window.setPageAnalysisData) window.setPageAnalysisData(analysisData);
     pdfModule.setPdfNavigationState(1, metadata.page_count, imageUrls);
     pdfModule.setPageSettings(settings);
     pdfModule.setPdfSessionId(null);

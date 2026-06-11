@@ -6,7 +6,7 @@
  * (pageCanvasData) — no backend predictions format needed.
  */
 
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -57,14 +57,29 @@ function fabricToAbsolute(ann) {
     const sx = ann.scaleX || 1;
     const sy = ann.scaleY || 1;
     const t  = (ann.type || '').toLowerCase();
+    // Fabric angle is clockwise in canvas (y-down) coordinates; rotation
+    // happens around the object's origin point (left, top for origin left/top).
+    const rad = ((ann.angle || 0) * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
 
     if (t === 'rect') {
+        const w = ann.width  * sx;
+        const h = ann.height * sy;
+        if (ann.angle) {
+            // Rotated rect → emit its 4 corners as a polygon
+            const corner = (dx, dy) => ({
+                x: ann.left + dx * cos - dy * sin,
+                y: ann.top  + dx * sin + dy * cos,
+            });
+            return { kind: 'polygon', points: [corner(0, 0), corner(w, 0), corner(w, h), corner(0, h)] };
+        }
         return {
             kind: 'rect',
             x1: ann.left,
             y1: ann.top,
-            x2: ann.left + ann.width  * sx,
-            y2: ann.top  + ann.height * sy,
+            x2: ann.left + w,
+            y2: ann.top  + h,
         };
     }
 
@@ -75,13 +90,19 @@ function fabricToAbsolute(ann) {
         // pathOffset = center of the points' bounding box (Fabric.js internal)
         const pox = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0;
         const poy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
-        // Object center in canvas pixels
-        const cx = ann.left + (ann.width  || 0) * sx / 2;
-        const cy = ann.top  + (ann.height || 0) * sy / 2;
-        const points = pts.map(p => ({
-            x: cx + (p.x - pox) * sx,
-            y: cy + (p.y - poy) * sy,
-        }));
+        // Object center in canvas pixels: origin (left, top) + rotated offset to center
+        const hw = (ann.width  || 0) * sx / 2;
+        const hh = (ann.height || 0) * sy / 2;
+        const cx = ann.left + hw * cos - hh * sin;
+        const cy = ann.top  + hw * sin + hh * cos;
+        const points = pts.map(p => {
+            const dx = (p.x - pox) * sx;
+            const dy = (p.y - poy) * sy;
+            return {
+                x: cx + dx * cos - dy * sin,
+                y: cy + dx * sin + dy * cos,
+            };
+        });
         return { kind: t, points };
     }
 
@@ -89,12 +110,46 @@ function fabricToAbsolute(ann) {
 }
 
 /**
- * Draw all annotations from canvas data onto a pdf-lib page.
- * sx = pdfPageWidth  / imageNaturalWidth
- * sy = pdfPageHeight / imageNaturalHeight
+ * Build the display→user-space transform for a pdf-lib page.
+ *
+ * Pages can carry a /Rotate flag (90/180/270): page.getSize() then returns the
+ * UNROTATED media box, while the rendered page image (and thus all canvas
+ * coordinates) is in the rotated *display* orientation. pdf-lib always draws
+ * in unrotated user space, so every display-space point must be mapped back.
  */
-function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, sx, sy, labelMap, font) {
-    const pH = page.getHeight();
+function makeDisplayTransform(page) {
+    const { width: W, height: H } = page.getSize();
+    const rotation = ((page.getRotation().angle % 360) + 360) % 360;
+    const swapped  = rotation === 90 || rotation === 270;
+
+    // Page size as displayed (= orientation of the rendered image)
+    const displayW = swapped ? H : W;
+    const displayH = swapped ? W : H;
+
+    // Map a display-space point (top-left origin, y down, PDF points)
+    // to unrotated user space (bottom-left origin, y up).
+    let toUser;
+    switch (rotation) {
+        case 90:  toUser = (xd, yd) => ({ x: yd,     y: xd     }); break;
+        case 180: toUser = (xd, yd) => ({ x: W - xd, y: yd     }); break;
+        case 270: toUser = (xd, yd) => ({ x: W - yd, y: H - xd }); break;
+        default:  toUser = (xd, yd) => ({ x: xd,     y: H - yd }); break;
+    }
+
+    // Display-space unit vectors expressed in user space (for text layout)
+    const right = { 0: { x: 1, y: 0 }, 90: { x: 0, y: 1 }, 180: { x: -1, y: 0 }, 270: { x: 0, y: -1 } }[rotation];
+    const down  = { 0: { x: 0, y: -1 }, 90: { x: 1, y: 0 }, 180: { x: 0, y: 1 }, 270: { x: -1, y: 0 } }[rotation];
+
+    return { rotation, swapped, displayW, displayH, H, toUser, right, down };
+}
+
+/**
+ * Draw all annotations from canvas data onto a pdf-lib page.
+ * T  = makeDisplayTransform(page)
+ * sx = displayPageWidth  / imageNaturalWidth
+ * sy = displayPageHeight / imageNaturalHeight
+ */
+function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx, sy, labelMap, font) {
     let drawn = 0;
 
     // Pass 1: draw annotation shapes
@@ -110,32 +165,35 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, sx, sy
         if (!coords) continue;
 
         if (coords.kind === 'rect') {
-            const x = coords.x1 * sx;
-            const y = pH - coords.y2 * sy;
-            const w = (coords.x2 - coords.x1) * sx;
-            const h = (coords.y2 - coords.y1) * sy;
+            // Both corners through the transform; 90°-multiples keep rects axis-aligned
+            const p1 = T.toUser(coords.x1 * sx, coords.y1 * sy);
+            const p2 = T.toUser(coords.x2 * sx, coords.y2 * sy);
+            const w  = Math.abs(p2.x - p1.x);
+            const h  = Math.abs(p2.y - p1.y);
             if (w > 0 && h > 0) {
-                page.drawRectangle({ x, y, width: w, height: h,
+                page.drawRectangle({
+                    x: Math.min(p1.x, p2.x), y: Math.min(p1.y, p2.y), width: w, height: h,
                     borderColor: color, borderWidth: strokeW, borderOpacity: 1,
                     color, opacity: 0.10 });
                 drawn++;
             }
 
         } else if (coords.kind === 'polygon' && coords.points.length >= 3) {
-            const pts  = coords.points;
-            const path = `M ${pts[0].x * sx} ${pts[0].y * sy} ` +
-                pts.slice(1).map(p => `L ${p.x * sx} ${p.y * sy}`).join(' ') + ' Z';
-            page.drawSvgPath(path, { x: 0, y: pH,
+            // drawSvgPath measures path y downward from the anchor (0, T.H)
+            const pts  = coords.points.map(p => T.toUser(p.x * sx, p.y * sy));
+            const path = `M ${pts[0].x} ${T.H - pts[0].y} ` +
+                pts.slice(1).map(p => `L ${p.x} ${T.H - p.y}`).join(' ') + ' Z';
+            page.drawSvgPath(path, { x: 0, y: T.H,
                 borderColor: color, borderWidth: strokeW, borderOpacity: 1,
                 color, opacity: 0.10 });
             drawn++;
 
         } else if (coords.kind === 'polyline' && coords.points.length >= 2) {
-            const pts = coords.points;
+            const pts = coords.points.map(p => T.toUser(p.x * sx, p.y * sy));
             for (let i = 0; i < pts.length - 1; i++) {
                 page.drawLine({
-                    start: { x: pts[i].x   * sx, y: pH - pts[i].y   * sy },
-                    end:   { x: pts[i+1].x * sx, y: pH - pts[i+1].y * sy },
+                    start: { x: pts[i].x,   y: pts[i].y },
+                    end:   { x: pts[i+1].x, y: pts[i+1].y },
                     color, thickness: strokeW,
                 });
             }
@@ -159,21 +217,31 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, sx, sy
             const textW    = Math.max(...lines.map(l => font.widthOfTextAtSize(l, fontSize)));
 
             // tl.left/top is the center of the badge (originX/Y: 'center')
-            const cx = tl.left * sx;
-            const cy = pH - tl.top * sy;
+            const c = T.toUser(tl.left * sx, tl.top * sy);
 
+            // Badge is axis-aligned in *display* space → swap w/h on rotated pages
+            const wBadge = textW + 6;
+            const hBadge = textH + 4;
             page.drawRectangle({
-                x: cx - textW / 2 - 3, y: cy - textH / 2 - 2,
-                width: textW + 6, height: textH + 4,
+                x: c.x - (T.swapped ? hBadge : wBadge) / 2,
+                y: c.y - (T.swapped ? wBadge : hBadge) / 2,
+                width:  T.swapped ? hBadge : wBadge,
+                height: T.swapped ? wBadge : hBadge,
                 color: bgColor, opacity: 0.9,
             });
 
             lines.forEach((line, i) => {
                 const lineW = font.widthOfTextAtSize(line, fontSize);
+                // Offsets in display space from the badge center …
+                const dxd = -lineW / 2;
+                const dyd = (i + 1) * lineH - textH / 2 - 2;
+                // … mapped to user space via the display unit vectors
+                const px = c.x + dxd * T.right.x + dyd * T.down.x;
+                const py = c.y + dxd * T.right.y + dyd * T.down.y;
                 page.drawText(line, {
-                    x: cx - lineW / 2,
-                    y: cy + textH / 2 - (i + 1) * lineH + 2,
+                    x: px, y: py,
                     size: fontSize, font, color: textColor,
+                    rotate: degrees(T.rotation), // keeps text upright in the displayed orientation
                 });
             });
         }
@@ -315,18 +383,20 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         if (!annotations.length) continue;
 
         const page = pdfPages[i];
-        const { width: pdfW, height: pdfH } = page.getSize();
+        const T = makeDisplayTransform(page);
 
-        const imgDim = pageImageUrls[i] ? await loadImgDimensions(pageImageUrls[i]) : null;
-        const imgW   = imgDim?.w || pdfW;
-        const imgH   = imgDim?.h || pdfH;
-        const sx = pdfW / imgW;
-        const sy = pdfH / imgH;
+        // pageImageUrls is 0-based: original page `pageNum` → index pageNum - 1
+        // The rendered image is in display orientation → scale against display size
+        const imgDim = pageImageUrls[pageNum - 1] ? await loadImgDimensions(pageImageUrls[pageNum - 1]) : null;
+        const imgW   = imgDim?.w || T.displayW;
+        const imgH   = imgDim?.h || T.displayH;
+        const sx = T.displayW / imgW;
+        const sy = T.displayH / imgH;
 
-        console.log(`[PDF export] page ${pageNum}: pdfSize=${pdfW}x${pdfH}, imgSize=${imgW}x${imgH}, scale=${sx.toFixed(3)}x${sy.toFixed(3)}`);
+        console.log(`[PDF export] page ${pageNum}: displaySize=${T.displayW}x${T.displayH}, rotation=${T.rotation}, imgSize=${imgW}x${imgH}, scale=${sx.toFixed(3)}x${sy.toFixed(3)}`);
 
         const textLabels = canvasData?.canvas_text_labels || [];
-        const n = drawAnnotationsOnPage(page, annotations, textLabels, sx, sy, labelMap, labelFont);
+        const n = drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont);
         console.log(`[PDF export] page ${pageNum}: drew ${n} annotations`);
     }
 
