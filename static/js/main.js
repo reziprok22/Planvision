@@ -9,7 +9,7 @@ function getCsrfToken() {
 }
 
 // Import Fabric.js
-import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle } from 'fabric';
+import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle, Group } from 'fabric';
 
 // Import modules
 import {
@@ -475,6 +475,11 @@ function loadCanvasData(canvasData) {
     applyLayerOrdering(); // enforce label z-order after all async enlivenObjects settle
     updateResultsTable();
     updateSummary();
+    // Restore on-plan legend at its saved position (after annotations are live,
+    // so the rebuilt content reflects the loaded page)
+    if (canvasData.legend_position) {
+      buildCanvasLegend(canvasData.legend_position);
+    }
     saveHistorySnapshot();
 
     endPerfMeasurement('canvas-data-loading', {
@@ -788,17 +793,13 @@ function removeTableRowHighlight(index) {
 }
 
 /**
- * Update summary - reads directly from canvas objects
+ * Collect per-label summary data (count, area, color, unit) from canvas objects.
+ * Shared by the results summary and the on-plan legend.
  */
-function updateSummary() {
-  const summary = document.getElementById('summary');
-  if (!summary || !canvas) return;
-  
-  const counts = {};
-  const areas  = {};
-  const colors = {};
-  const units  = {};
+function collectSummaryData() {
+  if (!canvas) return [];
 
+  const items = new Map();
   const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
 
   annotations.forEach(annotation => {
@@ -806,37 +807,182 @@ function updateSummary() {
     const label   = getLabel(labelId);
     const key     = label.name;
 
-    if (!counts[key]) {
-      counts[key] = 0;
-      areas[key]  = 0;
-      colors[key] = annotation.stroke || label.color || '#888';
-      units[key]  = annotation.type === 'polyline' ? 'm' : 'm²';
+    if (!items.has(key)) {
+      items.set(key, {
+        name:  key,
+        count: 0,
+        area:  0,
+        color: annotation.stroke || label.color || '#888',
+        unit:  annotation.type === 'polyline' ? 'm' : 'm²',
+      });
     }
-    counts[key]++;
+    const item = items.get(key);
+    item.count++;
 
     if (annotation.type === 'rect') {
-      areas[key] += calculateRectangleAreaFromCanvas(annotation);
+      item.area += calculateRectangleAreaFromCanvas(annotation);
     } else if (annotation.type === 'polygon') {
-      areas[key] += calculatePolygonAreaFromCanvas(annotation);
+      item.area += calculatePolygonAreaFromCanvas(annotation);
     } else if (annotation.type === 'polyline') {
-      areas[key] += calculatePolylineLength(annotation.points || []);
+      item.area += calculatePolylineLength(annotation.points || []);
     }
   });
 
+  return [...items.values()];
+}
+
+/**
+ * Update summary - reads directly from canvas objects
+ */
+function updateSummary() {
+  const summary = document.getElementById('summary');
+  if (!summary || !canvas) return;
+
+  const items = collectSummaryData();
+
   let summaryHtml = '';
-  Object.entries(counts).forEach(([name, count]) => {
-    const color = colors[name];
-    const unit  = units[name];
+  items.forEach(({ name, count, area, color, unit }) => {
     summaryHtml += `
       <div class="summary-row">
         <span class="summary-color" style="background:${color}"></span>
         <span class="summary-name">${name}</span>
         <span class="summary-count"><strong>${count}</strong></span>
-        <span class="summary-area">${areas[name].toFixed(2)} ${unit}</span>
+        <span class="summary-area">${area.toFixed(2)} ${unit}</span>
       </div>`;
   });
 
   summary.innerHTML = summaryHtml || '<p><em>Keine Annotationen.</em></p>';
+
+  // Keep the on-plan legend (if placed) in sync with the data
+  refreshCanvasLegend();
+  syncLegendButton();
+}
+
+// ── On-plan legend ────────────────────────────────────────────────────────────
+// A Fabric Group on the canvas showing the label summary. Content is derived
+// from the annotations on every updateSummary(); only its POSITION is state
+// (persisted per page as legend_position in the canvas data).
+
+const LEGEND_STYLE = { font: 14, titleFont: 15, rowH: 24, pad: 14, swatch: 14, gap: 8 };
+
+function getCanvasLegend() {
+  return canvas ? canvas.getObjects().find(o => o.objectType === 'legend') : null;
+}
+
+function buildCanvasLegend(position) {
+  if (!canvas) return;
+  const old = getCanvasLegend();
+  if (old) canvas.remove(old);
+
+  const items = collectSummaryData();
+  const S = LEGEND_STYLE;
+
+  const textOpts = { fontSize: S.font, fill: '#222', fontFamily: 'Arial', selectable: false, evented: false };
+  const title = new Text('Legende', {
+    ...textOpts, fontSize: S.titleFont, fontWeight: 'bold',
+  });
+  // Table columns: swatch | name | count (right) | area (right)
+  const nameTexts  = items.map(it => new Text(it.name, { ...textOpts }));
+  const countTexts = items.map(it => new Text(String(it.count), { ...textOpts }));
+  const areaTexts  = items.map(it => new Text(`${it.area.toFixed(2)} ${it.unit}`, { ...textOpts }));
+  const emptyText = items.length ? null : new Text('Keine Annotationen', {
+    ...textOpts, fill: '#888', fontStyle: 'italic',
+  });
+
+  const colGap = 18;
+  const nameW  = Math.max(emptyText?.width || 0, ...nameTexts.map(t => t.width), 0);
+  const countW = Math.max(...countTexts.map(t => t.width), 0);
+  const areaW  = Math.max(...areaTexts.map(t => t.width), 0);
+
+  const nameX      = S.pad + S.swatch + S.gap;
+  const countRight = nameX + nameW + (items.length ? colGap + countW : 0);
+  const areaRight  = countRight + (items.length ? colGap + areaW : 0);
+
+  const rowCount = Math.max(items.length, 1);
+  const boxW = Math.max(areaRight + S.pad, S.pad * 2 + title.width);
+  const boxH = S.pad * 2 + S.titleFont + 10 + rowCount * S.rowH;
+
+  const children = [
+    new Rect({
+      left: 0, top: 0, width: boxW, height: boxH,
+      fill: 'rgba(255,255,255,0.92)', stroke: '#999', strokeWidth: 1, rx: 6, ry: 6,
+      selectable: false, evented: false,
+    }),
+  ];
+  title.set({ left: S.pad, top: S.pad });
+  children.push(title);
+
+  const rowsTop = S.pad + S.titleFont + 10;
+  if (emptyText) {
+    emptyText.set({ left: nameX, top: rowsTop });
+    children.push(emptyText);
+  }
+  items.forEach((it, i) => {
+    const rowY = rowsTop + i * S.rowH;
+    children.push(new Rect({
+      left: S.pad, top: rowY + (S.font - S.swatch) / 2 + 2,
+      width: S.swatch, height: S.swatch,
+      fill: it.color, stroke: '#666', strokeWidth: 0.5,
+      selectable: false, evented: false,
+    }));
+    nameTexts[i].set({ left: nameX, top: rowY });
+    children.push(nameTexts[i]);
+    countTexts[i].set({ left: countRight, top: rowY, originX: 'right' });
+    children.push(countTexts[i]);
+    areaTexts[i].set({ left: areaRight, top: rowY, originX: 'right' });
+    children.push(areaTexts[i]);
+  });
+
+  const legend = new Group(children, {
+    left: position.left,
+    top: position.top,
+    objectType: 'legend',
+    selectable: true,
+    evented: true,
+    hasControls: false,
+    hasBorders: true,
+    lockRotation: true,
+    hoverCursor: 'move',
+  });
+
+  canvas.add(legend);
+  canvas.bringObjectToFront(legend);
+  canvas.requestRenderAll();
+  syncLegendButton();
+}
+
+function removeCanvasLegend() {
+  const legend = getCanvasLegend();
+  if (legend) {
+    canvas.remove(legend);
+    canvas.requestRenderAll();
+  }
+  syncLegendButton();
+}
+
+/** Rebuild the legend in place so its content follows annotation changes. */
+function refreshCanvasLegend() {
+  const legend = getCanvasLegend();
+  if (legend) buildCanvasLegend({ left: legend.left, top: legend.top });
+}
+
+function toggleCanvasLegend() {
+  if (!canvas) return;
+  if (getCanvasLegend()) {
+    removeCanvasLegend();
+  } else {
+    // Place at the top-left of the currently visible viewport area
+    const zoom = canvas.getZoom() || 1;
+    buildCanvasLegend({
+      left: (imageContainer.scrollLeft + 40) / zoom,
+      top:  (imageContainer.scrollTop  + 40) / zoom,
+    });
+  }
+}
+
+function syncLegendButton() {
+  const btn = document.getElementById('legendBtn');
+  if (btn) btn.classList.toggle('toggled', !!getCanvasLegend());
 }
 
 // ── Copy / Paste ──────────────────────────────────────────────────────────────
@@ -2492,10 +2638,14 @@ function collectCurrentCanvasData(pageNumber = 1) {
     tl.toObject(['objectType', 'linkedAnnotationId', 'text', 'backgroundColor', 'fill'])
   );
 
+  // On-plan legend: persist position only — content is derived from annotations
+  const legendObj = canvas.getObjects().find(obj => obj.objectType === 'legend');
+
   return {
     page_number: pageNumber,
     canvas_annotations: canvasAnnotations,
     canvas_text_labels: canvasTextLabels,
+    legend_position: legendObj ? { left: legendObj.left, top: legendObj.top } : null,
     annotation_count: annotations.length,
     canvas_available: true,
     canvas_zoom: canvas.getZoom(),
@@ -2841,6 +2991,9 @@ async function initApp() {
   // Editor is always active - setup canvas events when canvas is ready
   // Canvas events will be set up in initCanvas() when editor is active
   
+  // Legende auf dem Plan ein-/ausblenden
+  document.getElementById('legendBtn')?.addEventListener('click', toggleCanvasLegend);
+
   // Erkennungs-Einstellungen: Pfeil-Button öffnet/schliesst das Popover
   const analyzeSettingsToggle  = document.getElementById('analyzeSettingsToggle');
   const analyzeSettingsPopover = document.getElementById('analyzeSettingsPopover');

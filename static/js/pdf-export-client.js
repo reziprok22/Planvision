@@ -272,6 +272,107 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
     return drawn;
 }
 
+/**
+ * Draw the on-plan legend at its saved canvas position.
+ * Mirrors the Fabric legend in main.js: title + one row per used label with
+ * swatch, name, count and summed area (parsed from the annotations' labelText).
+ */
+function drawLegendOnPdfPage(page, T, sx, sy, legendPos, annotations, labelMap, font, fontB) {
+    // Collect per-label rows from the serialized annotations
+    const itemMap = new Map();
+    for (const ann of annotations) {
+        if (ann.objectType !== 'annotation') continue;
+        const labelId = ann.labelId ?? ann.objectLabel ?? 0;
+        const label   = labelMap[labelId];
+        const name    = label?.name || `Label ${labelId}`;
+        if (!itemMap.has(name)) {
+            itemMap.set(name, {
+                name,
+                color: label?.color || ann.stroke || '#888888',
+                count: 0,
+                area:  0,
+                unit:  ann.annotationType === 'line' ? 'm' : 'm²',
+            });
+        }
+        const item = itemMap.get(name);
+        item.count++;
+        // labelText = "<nr>\n<area> m²" — same measurement shown on the canvas
+        const measurement = typeof ann.labelText === 'string' ? ann.labelText.split('\n')[1] : null;
+        if (measurement) item.area += parseFloat(measurement) || 0;
+    }
+    const items = [...itemMap.values()];
+    if (!items.length) return;
+
+    // Layout in display space, scaled like the canvas legend (LEGEND_STYLE in main.js)
+    const s = Math.min(sx, sy);
+    const fontSize  = 14 * s;
+    const titleSize = 15 * s;
+    const rowH      = 24 * s;
+    const pad       = 14 * s;
+    const swatch    = 14 * s;
+    const gap       = 8  * s;
+
+    // Table columns: swatch | name | count (right-aligned) | area (right-aligned)
+    const nameStrings  = items.map(it => it.name);
+    const countStrings = items.map(it => String(it.count));
+    const areaStrings  = items.map(it => `${it.area.toFixed(2)} ${it.unit}`);
+
+    const colGap = 18 * s;
+    const nameW  = Math.max(...nameStrings.map(t => font.widthOfTextAtSize(t, fontSize)));
+    const countW = Math.max(...countStrings.map(t => font.widthOfTextAtSize(t, fontSize)));
+    const areaW  = Math.max(...areaStrings.map(t => font.widthOfTextAtSize(t, fontSize)));
+
+    const nameX      = pad + swatch + gap;
+    const countRight = nameX + nameW + colGap + countW;
+    const areaRight  = countRight + colGap + areaW;
+
+    const boxW = Math.max(areaRight + pad, pad * 2 + fontB.widthOfTextAtSize('Legende', titleSize));
+    const boxH = pad * 2 + titleSize + 10 * s + items.length * rowH;
+
+    // Display-space top-left anchor of the legend box
+    const x0 = legendPos.left * sx;
+    const y0 = legendPos.top  * sy;
+
+    // Axis-aligned rect from two display-space corners (90°-multiples keep rects axis-aligned)
+    const rectAt = (dx, dy, w, h, opts) => {
+        const a = T.toUser(x0 + dx,     y0 + dy);
+        const b = T.toUser(x0 + dx + w, y0 + dy + h);
+        page.drawRectangle({
+            x: Math.min(a.x, b.x), y: Math.min(a.y, b.y),
+            width: Math.abs(b.x - a.x), height: Math.abs(b.y - a.y),
+            ...opts,
+        });
+    };
+    const textAt = (dx, dyBaseline, text, f, size, color) => {
+        const p = T.toUser(x0 + dx, y0 + dyBaseline);
+        page.drawText(text, { x: p.x, y: p.y, size, font: f, color, rotate: degrees(T.rotation) });
+    };
+
+    // Background
+    rectAt(0, 0, boxW, boxH, {
+        color: rgb(1, 1, 1), opacity: 0.92,
+        borderColor: rgb(0.6, 0.6, 0.6), borderWidth: Math.max(0.5, s),
+    });
+
+    // Title
+    textAt(pad, pad + titleSize, 'Legende', fontB, titleSize, rgb(0.13, 0.13, 0.13));
+
+    // Rows
+    const textColor = rgb(0.13, 0.13, 0.13);
+    const rowsTop = pad + titleSize + 10 * s;
+    items.forEach((it, i) => {
+        const rowY = rowsTop + i * rowH;
+        const baseline = rowY + fontSize;
+        rectAt(pad, rowY + (fontSize - swatch) / 2 + 2 * s, swatch, swatch, {
+            color: hexToRgb(it.color),
+            borderColor: rgb(0.4, 0.4, 0.4), borderWidth: Math.max(0.3, 0.5 * s),
+        });
+        textAt(nameX, baseline, nameStrings[i], font, fontSize, textColor);
+        textAt(countRight - font.widthOfTextAtSize(countStrings[i], fontSize), baseline, countStrings[i], font, fontSize, textColor);
+        textAt(areaRight - font.widthOfTextAtSize(areaStrings[i], fontSize), baseline, areaStrings[i], font, fontSize, textColor);
+    });
+}
+
 function triggerDownload(bytes, filename) {
     const blob = new Blob([bytes], { type: 'application/pdf' });
     const url  = URL.createObjectURL(blob);
@@ -285,66 +386,6 @@ function triggerDownload(bytes, filename) {
 }
 
 // ── Plan erstellen (annotated PDF) ────────────────────────────────────────────
-
-function insertLegendPage(pdfDoc, labels, usedIds, projectName, font, fontB, dateStr) {
-    const W = 595, H = 842, M = 50, INNER = W - 2 * M;
-    const legendPage = pdfDoc.insertPage(0, [W, H]);
-    let y = H - M;
-
-    // Title
-    legendPage.drawText(projectName || 'Planvision', {
-        x: M, y, size: 16, font: fontB, color: rgb(0, 0, 0),
-    });
-    y -= 20;
-    legendPage.drawText(`Legende  |  ${dateStr}`, {
-        x: M, y, size: 9, font, color: rgb(0.4, 0.4, 0.4),
-    });
-    y -= 14;
-    legendPage.drawLine({
-        start: { x: M, y }, end: { x: W - M, y },
-        color: rgb(0.8, 0.8, 0.8), thickness: 0.5,
-    });
-    y -= 24;
-
-    // Filter to used labels (or all if nothing used)
-    const visibleLabels = labels.filter(l => usedIds.size === 0 || usedIds.has(l.id));
-    if (visibleLabels.length === 0) {
-        legendPage.drawText('Keine Labels definiert.', {
-            x: M, y, size: 9, font, color: rgb(0.5, 0.5, 0.5),
-        });
-        return;
-    }
-
-    // Two-column layout
-    const COL_W = INNER / 2;
-    const ROW_H = 22;
-    const SWATCH = 14;
-
-    visibleLabels.forEach((label, i) => {
-        const col = i % 2;
-        const row = Math.floor(i / 2);
-        const x   = M + col * COL_W;
-        const rowY = y - row * ROW_H;
-
-        if (rowY < M + ROW_H) return; // page overflow guard
-
-        const color = hexToRgb(label.color || '#888888');
-
-        // Color swatch
-        legendPage.drawRectangle({
-            x, y: rowY - SWATCH,
-            width: SWATCH, height: SWATCH,
-            color, borderColor: rgb(0.6, 0.6, 0.6), borderWidth: 0.5,
-        });
-
-        // Label name
-        const name = (label.name || `Label ${label.id}`).slice(0, 40);
-        legendPage.drawText(name, {
-            x: x + SWATCH + 6, y: rowY - SWATCH + 3,
-            size: 10, font, color: rgb(0, 0, 0),
-        });
-    });
-}
 
 export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCanvasData, labels, projectName }) {
     const labelMap = Object.fromEntries((labels || []).map(l => [l.id, l]));
@@ -380,24 +421,12 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
 
     labelFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const labelFontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-    const dateStr = new Date().toLocaleDateString('de-DE');
-
-    // Collect label IDs actually used across all pages
-    const usedIds = new Set();
-    for (const data of Object.values(pageCanvasData)) {
-        for (const ann of (data?.canvas_annotations || [])) {
-            if (ann.objectType === 'annotation') usedIds.add(ann.labelId ?? ann.objectLabel ?? 0);
-        }
-    }
-
-    insertLegendPage(pdfDoc, labels || [], usedIds, projectName, labelFont, labelFontB, dateStr);
 
     const pdfPages = pdfDoc.getPages();
     console.log('[PDF export] PDF pages:', pdfPages.length);
 
-    // Start from page index 1 — index 0 is the legend page
-    for (let i = 1; i < pdfPages.length; i++) {
-        const pageNum     = i; // original page 1 is now at index 1
+    for (let i = 0; i < pdfPages.length; i++) {
+        const pageNum     = i + 1;
         const canvasData  = pageCanvasData[pageNum] || pageCanvasData[String(pageNum)];
         const annotations = canvasData?.canvas_annotations || [];
 
@@ -420,6 +449,11 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         const textLabels = canvasData?.canvas_text_labels || [];
         const n = drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont);
         console.log(`[PDF export] page ${pageNum}: drew ${n} annotations`);
+
+        // On-plan legend (placed by the user on the canvas)
+        if (canvasData?.legend_position) {
+            drawLegendOnPdfPage(page, T, sx, sy, canvasData.legend_position, annotations, labelMap, labelFont, labelFontB);
+        }
     }
 
     triggerDownload(await pdfDoc.save(), 'annotierter-plan.pdf');

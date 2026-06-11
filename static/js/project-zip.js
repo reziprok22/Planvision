@@ -22,8 +22,9 @@ import JSZip from 'jszip';
 //   1 – original format (metadata.format = 'planvision_zip_v1', no numeric version)
 //       canvas_annotations only; no canvas_text_labels; no id/labelText on annotations
 //   2 – canvas_text_labels per page added; id + labelText serialised on annotations
+//   3 – legend_position per page added (optional; null when no on-plan legend placed)
 //
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
 
@@ -77,8 +78,12 @@ function migrateCanvasData(canvasData, fromVersion) {
     console.log('[ZIP migration] v1→v2: displayIndex assigned where missing');
   }
 
-  // ── v2 → v3 (placeholder) ──────────────────────────────────────────────────
-  // if (fromVersion < 3) { ... }
+  // ── v2 → v3 ────────────────────────────────────────────────────────────────
+  // legend_position is a new OPTIONAL per-page field; older files simply lack
+  // it (= no legend placed), so no data transform is needed.
+
+  // ── v3 → v4 (placeholder) ──────────────────────────────────────────────────
+  // if (fromVersion < 4) { ... }
 
   return data;
 }

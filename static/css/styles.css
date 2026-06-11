@@ -399,7 +399,13 @@ button:hover {
 }
 
 .tool-button.active {
-    background: #444; 
+    background: #444;
+    color: #fff;
+}
+
+/* Eigene Zustandsklasse für Toggle-Buttons (setTool() räumt .active ab) */
+.tool-button.toggled {
+    background: #444;
     color: #fff;
 }
 

@@ -162,11 +162,12 @@ When changing PDF processing:
 
 The ZIP save/load system in `static/js/project-zip.js` uses a numeric `format_version` in `metadata.json` to ensure old ZIP files always load correctly.
 
-**Current version: 2**
+**Current version: 3**
 
 Version history:
 - **v1** – original format (`metadata.format = 'planvision_zip_v1'`); canvas_annotations only, no canvas_text_labels, no id/labelText on annotations
 - **v2** – canvas_text_labels per page added; id + labelText serialised on annotations
+- **v3** – legend_position per page added (optional; null when no on-plan legend placed)
 
 ### When changing the ZIP schema:
 
