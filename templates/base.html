@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}OnlyPlans{% endblock %}</title>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --primary: #FF6B00;
+            --primary-hover: #E05E00;
+            --notice: #EAB308;
+
+            --slate-50:  #F1F5F9;
+            --slate-100: #E2E8F0;
+            --slate-200: #CBD5E1;
+            --slate-400: #94A3B8;
+            --slate-600: #475569;
+            --slate-800: #1E293B;
+            --slate-900: #0B0F19;
+
+            --white: #ffffff;
+            --radius: 6px;
+            --font: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+        }
+
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: var(--font);
+            color: var(--slate-600);
+            background: var(--white);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* ── NAV ── */
+        nav {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 48px;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--slate-100);
+        }
+
+        .nav-logo {
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            color: var(--slate-900);
+            text-decoration: none;
+            text-transform: uppercase;
+        }
+
+        .nav-logo span { color: var(--primary); }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            font-size: 0.88rem;
+            font-weight: 500;
+            color: var(--slate-600);
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+
+        .nav-links a:hover { color: var(--primary); }
+
+        /* ── BUTTONS ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            padding: 10px 22px;
+            border-radius: var(--radius);
+            font-size: 0.88rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
+            cursor: pointer;
+            text-decoration: none;
+            border: 1px solid transparent;
+            transition: all 0.15s ease-in-out;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: var(--white);
+            border-color: var(--primary);
+        }
+
+        .btn-primary:hover {
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
+        }
+
+        .btn-outline-dark {
+            background: transparent;
+            color: var(--slate-900);
+            border-color: var(--slate-200);
+        }
+
+        .btn-outline-dark:hover {
+            background: var(--slate-50);
+            border-color: var(--slate-400);
+        }
+
+        /* ── PAGE CONTENT ── */
+        .page {
+            flex: 1 0 auto;
+            width: 100%;
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 72px 48px 96px;
+        }
+
+        .page-header { margin-bottom: 2.5rem; }
+
+        .page-header h1 {
+            font-size: clamp(2rem, 3.5vw, 2.6rem);
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            color: var(--slate-900);
+            margin-bottom: 0.4rem;
+        }
+
+        .page-header p { color: var(--slate-400); font-size: 0.9rem; }
+
+        .error-code {
+            font-size: clamp(4rem, 11vw, 6rem);
+            font-weight: 900;
+            letter-spacing: -0.04em;
+            line-height: 1;
+            color: var(--primary);
+            margin-bottom: 0.5rem;
+        }
+
+        .page h2 {
+            font-size: 1.1rem;
+            color: var(--slate-900);
+            font-weight: 800;
+            margin: 2rem 0 0.6rem;
+            padding-bottom: 0.3rem;
+            border-bottom: 1px solid var(--slate-100);
+        }
+
+        .page p, .page li { font-size: 0.95rem; line-height: 1.7; color: var(--slate-600); }
+        .page ul { padding-left: 1.4rem; margin-top: 0.4rem; }
+        .page li { margin-bottom: 0.3rem; }
+        .page a:not(.btn) { color: var(--primary); }
+
+        .back-link { margin-top: 2.5rem; }
+
+        /* ── FOOTER ── */
+        footer {
+            flex-shrink: 0;
+            background: var(--slate-900);
+            color: var(--slate-400);
+            padding: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        .footer-brand {
+            font-size: 1rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            color: var(--white);
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .footer-brand span { color: var(--primary); }
+
+        .footer-copy {
+            font-size: 0.8rem;
+            color: var(--slate-600);
+        }
+
+        .footer-links {
+            display: flex;
+            gap: 24px;
+            position: static;
+            height: auto;
+            padding: 0;
+            background: none;
+            backdrop-filter: none;
+            border: none;
+        }
+
+        .footer-links a {
+            font-size: 0.82rem;
+            color: var(--white);
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+
+        .footer-links a:hover { color: var(--slate-200); }
+
+        /* ── RESPONSIVE ── */
+        @media (max-width: 768px) {
+            nav { padding: 0 20px; }
+            .nav-links { display: none; }
+            .page { padding: 48px 20px 72px; }
+            footer { padding: 36px 20px; }
+        }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav>
+    <a href="/" class="nav-logo">Only<span>Plans</span></a>
+    <ul class="nav-links">
+        <li><a href="/#features">Features</a></li>
+        <li><a href="/#pricing">Preise</a></li>
+        <li><a href="/#faq">FAQ</a></li>
+    </ul>
+    <a href="{% url 'app' %}" class="btn btn-primary">Jetzt starten</a>
+</nav>
+
+{% block body %}
+<main class="page">
+    <div class="page-header">
+        {% block header %}
+        <h1>{% block heading %}{% endblock %}</h1>
+        {% block subheading %}{% endblock %}
+        {% endblock %}
+    </div>
+
+    {% block content %}{% endblock %}
+
+    {% block back_link %}<a href="/" class="btn btn-outline-dark back-link">← Zurück zur Startseite</a>{% endblock %}
+</main>
+{% endblock %}
+
+<!-- ── FOOTER ── -->
+<footer>
+    <div>
+        <div class="footer-brand">Only<span>Plans</span></div>
+        <div class="footer-copy">© 2026 OnlyPlans. Alle Rechte vorbehalten.</div>
+    </div>
+    <nav class="footer-links">
+        <a href="{% url 'impressum' %}">Impressum</a>
+        <a href="{% url 'datenschutz' %}">Datenschutz</a>
+    </nav>
+</footer>
+
+</body>
+</html>

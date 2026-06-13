@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Zugriff verweigert – OnlyPlans{% endblock %}
+
+{% block header %}
+            <div class="error-code">403</div>
+            <h1>Zugriff verweigert</h1>
+{% endblock %}
+
+{% block content %}
+        <p>
+            Sie haben keine Berechtigung, diese Seite oder Ressource aufzurufen.
+            Falls Sie meinen, dies sei ein Fehler, kehren Sie zur Startseite zurück.
+        </p>
+{% endblock %}
+
+{% block back_link %}<a href="/" class="btn btn-primary back-link">← Zurück zur Startseite</a>{% endblock %}

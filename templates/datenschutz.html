@@ -1,61 +1,14 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Datenschutzerklärung – Planvision</title>
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #f7f9fc;
-            color: #1a1a2e;
-            min-height: 100vh;
-            padding: 2rem 1rem;
-        }
-        .container {
-            max-width: 780px;
-            margin: 0 auto;
-            background: #fff;
-            border-radius: 12px;
-            padding: 3rem 3.5rem;
-            box-shadow: 0 2px 16px rgba(0,0,0,0.07);
-        }
-        header { margin-bottom: 2.5rem; }
-        header h1 { font-size: 1.9rem; color: #1a3a5c; margin-bottom: 0.4rem; }
-        header p { color: #666; font-size: 0.9rem; }
-        h2 {
-            font-size: 1.1rem;
-            color: #1a3a5c;
-            margin: 2rem 0 0.6rem;
-            padding-bottom: 0.3rem;
-            border-bottom: 1px solid #e8eef5;
-        }
-        p, li { font-size: 0.95rem; line-height: 1.7; color: #333; }
-        ul { padding-left: 1.4rem; margin-top: 0.4rem; }
-        li { margin-bottom: 0.3rem; }
-        a { color: #1565c0; }
-        .back-link {
-            display: inline-block;
-            margin-top: 2.5rem;
-            color: #1565c0;
-            text-decoration: none;
-            font-size: 0.9rem;
-        }
-        .back-link:hover { text-decoration: underline; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Datenschutzerklärung</h1>
-            <p>Stand: Mai 2026</p>
-        </header>
+{% extends "base.html" %}
 
+{% block title %}Datenschutzerklärung – OnlyPlans{% endblock %}
+{% block heading %}Datenschutzerklärung{% endblock %}
+{% block subheading %}<p>Stand: Mai 2026</p>{% endblock %}
+
+{% block content %}
         <h2>1. Verantwortlicher</h2>
         <p>
             Bauphysik Lengg<br>
-            Rathausgasse 8<br> 
+            Rathausgasse 8<br>
             5000 Aarau, Schweiz<br>
             E-Mail: <a href="mailto:gruezi@bauphysiklengg.ch">gruezi@bauphysiklengg.ch</a>
         </p>
@@ -72,7 +25,7 @@
         <h2>3. Zweck der Datenverarbeitung</h2>
         <p>Ihre Daten werden für folgende Zwecke verarbeitet:</p>
         <ul>
-            <li>Bereitstellung und Verbesserung der von Ihnen genutzten Dienstleistungen.</li> 
+            <li>Bereitstellung und Verbesserung der von Ihnen genutzten Dienstleistungen.</li>
             <li>Technischer Betrieb und Sicherheit der Plattform</li>
             <li>Verbesserung des KI-Modells: Hochgeladene Pläne sowie die von Ihnen erstellten Annotationen (Markierungen von Bauelementen wie Fenstern, Türen, Wänden etc.) können in anonymisierter Form für das Training und die Weiterentwicklung unserer KI verwendet werden. Dabei werden die Pläne nicht mit Ihrem Konto verknüpft.</li>
 
@@ -87,8 +40,8 @@
         <p>
             Ihre Daten werden nicht an Dritte verkauft oder vermietet. Ihre Daten werden zur Bereitstellung der Dienstleitung an folgende Dritte weitergeben:
         <ul>
-            <li><strong>Matomo: </strong>Open Source Webanalysedienst</li> 
-  
+            <li><strong>Matomo: </strong>Open Source Webanalysedienst</li>
+
         </ul>
 
         </p>
@@ -109,8 +62,4 @@
             Wir behalten uns vor, diese Datenschutzerklärung bei Bedarf anzupassen. Die jeweils
             aktuelle Version ist auf dieser Seite abrufbar.
         </p>
-
-        <a href="/" class="back-link">← Zurück zu Planvision</a>
-    </div>
-</body>
-</html>
+{% endblock %}

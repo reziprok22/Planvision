@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Fehler – OnlyPlans{% endblock %}
+
+{% block header %}
+            <div class="error-code">500</div>
+            <h1>Ein Fehler ist aufgetreten</h1>
+{% endblock %}
+
+{% block content %}
+        <p>
+            Auf dem Server ist ein unerwarteter Fehler aufgetreten. Wir wurden darüber
+            informiert und kümmern uns darum. Bitte versuchen Sie es in ein paar Minuten
+            erneut.
+        </p>
+{% endblock %}
+
+{% block back_link %}<a href="/" class="btn btn-primary back-link">← Zurück zur Startseite</a>{% endblock %}

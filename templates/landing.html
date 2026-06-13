@@ -1,111 +1,11 @@
+{% extends "base.html" %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OnlyPlans – Just Measure. Done in seconds.</title>
+
+{% block title %}OnlyPlans – Just Measure. Done in seconds.{% endblock %}
+
+{% block extra_head %}
     <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-            --primary: #FF6B00;
-            --primary-hover: #E05E00;
-            --notice: #EAB308;
-
-            --slate-50:  #F1F5F9;
-            --slate-100: #E2E8F0;
-            --slate-200: #CBD5E1;
-            --slate-400: #94A3B8;
-            --slate-600: #475569;
-            --slate-800: #1E293B;
-            --slate-900: #0B0F19;
-
-            --white: #ffffff;
-            --radius: 6px;
-            --font: system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
-        }
-
-        html { scroll-behavior: smooth; }
-
-        body {
-            font-family: var(--font);
-            color: var(--slate-600);
-            background: var(--white);
-            line-height: 1.6;
-            -webkit-font-smoothing: antialiased;
-        }
-
-        /* ── NAV ── */
-        nav {
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 48px;
-            height: 60px;
-            background: rgba(255, 255, 255, 0.92);
-            backdrop-filter: blur(12px);
-            border-bottom: 1px solid var(--slate-100);
-        }
-
-        .nav-logo {
-            font-size: 1.1rem;
-            font-weight: 800;
-            letter-spacing: -0.03em;
-            color: var(--slate-900);
-            text-decoration: none;
-            text-transform: uppercase;
-        }
-
-        .nav-logo span { color: var(--primary); }
-
-        .nav-links {
-            display: flex;
-            align-items: center;
-            gap: 32px;
-            list-style: none;
-        }
-
-        .nav-links a {
-            font-size: 0.88rem;
-            font-weight: 500;
-            color: var(--slate-600);
-            text-decoration: none;
-            transition: color 0.15s;
-        }
-
-        .nav-links a:hover { color: var(--primary); }
-
-        /* ── BUTTONS ── */
-        .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 7px;
-            padding: 10px 22px;
-            border-radius: var(--radius);
-            font-size: 0.88rem;
-            font-weight: 700;
-            letter-spacing: -0.01em;
-            cursor: pointer;
-            text-decoration: none;
-            border: 1px solid transparent;
-            transition: all 0.15s ease-in-out;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: var(--white);
-            border-color: var(--primary);
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-hover);
-            border-color: var(--primary-hover);
-        }
-
+        /* ── BUTTON VARIANTS ── */
         .btn-outline {
             background: transparent;
             color: var(--slate-900);
@@ -113,17 +13,6 @@
         }
 
         .btn-outline:hover {
-            background: var(--slate-50);
-            border-color: var(--slate-400);
-        }
-
-        .btn-outline-dark {
-            background: transparent;
-            color: var(--slate-900);
-            border-color: var(--slate-200);
-        }
-
-        .btn-outline-dark:hover {
             background: var(--slate-50);
             border-color: var(--slate-400);
         }
@@ -533,48 +422,6 @@
             max-width: 580px;
         }
 
-        /* ── FOOTER ── */
-        footer {
-            background: var(--slate-900);
-            color: var(--slate-400);
-            padding: 48px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 20px;
-        }
-
-        .footer-brand {
-            font-size: 1rem;
-            font-weight: 800;
-            letter-spacing: -0.02em;
-            color: var(--white);
-            text-transform: uppercase;
-            margin-bottom: 4px;
-        }
-
-        .footer-brand span { color: var(--primary); }
-
-        .footer-copy {
-            font-size: 0.8rem;
-            color: var(--slate-600);
-        }
-
-        .footer-links {
-            display: flex;
-            gap: 24px;
-        }
-
-        .footer-links a {
-            font-size: 0.82rem;
-            color: var(--slate-600);
-            text-decoration: none;
-            transition: color 0.15s;
-        }
-
-        .footer-links a:hover { color: var(--white); }
-
         /* ── RESPONSIVE ── */
         @media (max-width: 900px) {
             .hero-inner {
@@ -596,28 +443,13 @@
         }
 
         @media (max-width: 768px) {
-            nav { padding: 0 20px; }
-            .nav-links { display: none; }
             .hero { padding: 64px 20px 80px; }
             section { padding: 72px 20px; }
-            footer { padding: 36px 20px; }
         }
     </style>
-</head>
-<body>
+{% endblock %}
 
-<!-- ── NAV ── -->
-<nav>
-    <a href="/" class="nav-logo">Only<span>Plans</span></a>
-    <ul class="nav-links">
-        <li><a href="#features">Features</a></li>
-        <li><a href="#pricing">Preise</a></li>
-        <li><a href="#faq">FAQ</a></li>
-    </ul>
-    <a href="{% url 'app' %}" class="btn btn-primary">Jetzt starten</a>
-</nav>
-
-
+{% block body %}
 <!-- ── HERO ── -->
 <section class="hero">
     <div class="hero-inner">
@@ -849,19 +681,4 @@
 
     </div>
 </section>
-
-
-<!-- ── FOOTER ── -->
-<footer>
-    <div>
-        <div class="footer-brand">Only<span>Plans</span></div>
-        <div class="footer-copy">© 2026 OnlyPlans. Alle Rechte vorbehalten.</div>
-    </div>
-    <nav class="footer-links">
-        <a href="{% url 'impressum' %}">Impressum</a>
-        <a href="{% url 'datenschutz' %}">Datenschutz</a>
-    </nav>
-</footer>
-
-</body>
-</html>
+{% endblock %}
