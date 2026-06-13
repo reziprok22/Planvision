@@ -52,6 +52,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.analytics',
             ],
         },
     },
@@ -102,6 +103,10 @@ BETA_MODE = True
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+# Plausible-Analytics: Domain wie im Plausible-Dashboard angelegt (z. B. 'onlyplans.tools').
+# Leer = deaktiviert; sobald gesetzt, wird das Tracking-Snippet auf allen Seiten geladen.
+PLAUSIBLE_DOMAIN = ''
 
 PDF_DPI = 150
 JPEG_QUALITY = 70

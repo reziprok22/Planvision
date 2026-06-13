@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block title %}Statistik – OnlyPlans{% endblock %}
+{% block heading %}Statistik{% endblock %}
+{% block subheading %}<p>Interne Beta-Auswertung · Stand: {{ now|date:"d.m.Y H:i" }}</p>{% endblock %}
+
+{% block extra_head %}
+    <style>
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin: 1rem 0 2.2rem;
+        }
+        .stat {
+            border: 1px solid var(--slate-100);
+            border-radius: var(--radius);
+            padding: 16px 18px;
+        }
+        .stat .num { font-size: 1.9rem; font-weight: 900; color: var(--slate-900); line-height: 1; }
+        .stat .lbl { font-size: 0.8rem; color: var(--slate-400); margin-top: 6px; }
+        .stat-table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+        .stat-table th, .stat-table td {
+            text-align: left;
+            padding: 6px 10px;
+            border-bottom: 1px solid var(--slate-100);
+            font-size: 0.9rem;
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+        <h2>Uploads (Pläne)</h2>
+        <div class="stat-grid">
+            <div class="stat"><div class="num">{{ uploads_total }}</div><div class="lbl">Total</div></div>
+            <div class="stat"><div class="num">{{ uploads_30 }}</div><div class="lbl">letzte 30 Tage</div></div>
+            <div class="stat"><div class="num">{{ uploads_7 }}</div><div class="lbl">letzte 7 Tage</div></div>
+            <div class="stat"><div class="num">{{ uploads_registered }}</div><div class="lbl">mit Konto</div></div>
+            <div class="stat"><div class="num">{{ uploads_anon }}</div><div class="lbl">anonym (Beta)</div></div>
+        </div>
+
+        <h2>Analysen</h2>
+        <div class="stat-grid">
+            <div class="stat"><div class="num">{{ analyses_total }}</div><div class="lbl">Total</div></div>
+            <div class="stat"><div class="num">{{ analyses_30 }}</div><div class="lbl">letzte 30 Tage</div></div>
+            <div class="stat"><div class="num">{{ analyses_7 }}</div><div class="lbl">letzte 7 Tage</div></div>
+        </div>
+
+        <h2>Besucher &amp; Wiederkehr</h2>
+        <p style="font-size:0.85rem; color:var(--slate-400); margin-bottom:0;">
+            Schätzung über die anonyme Session — eine Session, die an mindestens zwei
+            verschiedenen Tagen analysiert hat, gilt als wiedergekehrt.
+        </p>
+        <div class="stat-grid">
+            <div class="stat"><div class="num">{{ distinct_sessions }}</div><div class="lbl">Sessions mit Analyse</div></div>
+            <div class="stat"><div class="num">{{ returning_sessions }}</div><div class="lbl">davon wiedergekehrt (≥ 2 Tage)</div></div>
+        </div>
+
+        <h2>Uploads pro Tag (14 Tage)</h2>
+        <table class="stat-table">
+            <thead><tr><th>Datum</th><th>Uploads</th></tr></thead>
+            <tbody>
+                {% for row in daily_uploads %}
+                <tr><td>{{ row.day|date:"d.m.Y" }}</td><td>{{ row.n }}</td></tr>
+                {% empty %}
+                <tr><td colspan="2">Noch keine Uploads.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <h2>Bug-Reports</h2>
+        <div class="stat-grid">
+            <div class="stat"><div class="num">{{ bugs_total }}</div><div class="lbl">Total</div></div>
+            <div class="stat"><div class="num">{{ bugs_open }}</div><div class="lbl">offen</div></div>
+        </div>
+{% endblock %}
+
+{% block back_link %}<a href="/admin/" class="btn btn-outline-dark back-link">← Zum Admin</a>{% endblock %}

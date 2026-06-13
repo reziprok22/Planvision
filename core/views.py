@@ -5,15 +5,22 @@ import time
 import json
 import logging
 
+from datetime import timedelta
+from collections import defaultdict
+
 from django.shortcuts import render
 from django.http import JsonResponse, FileResponse, Http404
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.contrib.auth.views import redirect_to_login
+from django.contrib.admin.views.decorators import staff_member_required
 from django.core.exceptions import ValidationError
+from django.db.models import Count
+from django.db.models.functions import TruncDate
+from django.utils import timezone
 from django.conf import settings
 
-from .models import Project, BugReport
+from .models import Project, BugReport, AnalysisEvent
 
 from pdf2image import convert_from_path
 from PyPDF2 import PdfReader
@@ -68,6 +75,50 @@ def impressum(request):
 
 def agb(request):
     return render(request, 'agb.html')
+
+
+@staff_member_required
+def statistik(request):
+    """Interne Beta-Auswertung (nur für Staff/Superuser)."""
+    now = timezone.now()
+    d7 = now - timedelta(days=7)
+    d30 = now - timedelta(days=30)
+
+    projects = Project.objects.all()
+    events = AnalysisEvent.objects.all()
+
+    uploads_total = projects.count()
+    uploads_registered = projects.filter(user__isnull=False).count()
+
+    # Wiederkehr-Schätzung: Sessions mit Analysen an >= 2 verschiedenen Tagen
+    session_days = defaultdict(set)
+    for sk, dt in events.exclude(session_key='').values_list('session_key', 'created_at'):
+        session_days[sk].add(timezone.localtime(dt).date())
+    returning_sessions = sum(1 for days in session_days.values() if len(days) >= 2)
+
+    daily_uploads = (
+        projects.filter(created_at__gte=now - timedelta(days=14))
+        .annotate(day=TruncDate('created_at'))
+        .values('day').annotate(n=Count('id')).order_by('day')
+    )
+
+    context = {
+        'now': now,
+        'uploads_total': uploads_total,
+        'uploads_30': projects.filter(created_at__gte=d30).count(),
+        'uploads_7': projects.filter(created_at__gte=d7).count(),
+        'uploads_registered': uploads_registered,
+        'uploads_anon': uploads_total - uploads_registered,
+        'analyses_total': events.count(),
+        'analyses_30': events.filter(created_at__gte=d30).count(),
+        'analyses_7': events.filter(created_at__gte=d7).count(),
+        'distinct_sessions': len(session_days),
+        'returning_sessions': returning_sessions,
+        'daily_uploads': daily_uploads,
+        'bugs_total': BugReport.objects.count(),
+        'bugs_open': BugReport.objects.filter(resolved=False).count(),
+    }
+    return render(request, 'statistik.html', context)
 
 
 def serve_project_file(request, project_id, filename):
@@ -261,6 +312,18 @@ def analyze_page(request):
 
         performance_metrics['total_request_time'] = time.time() - request_start
         cleanup_memory()
+
+        # Beta-Tracking (nicht-fatal): eine durchgeführte Analyse protokollieren
+        try:
+            if not request.session.session_key:
+                request.session.save()
+            AnalysisEvent.objects.create(
+                session_key=request.session.session_key or '',
+                user=request.user if request.user.is_authenticated else None,
+                page_number=page,
+            )
+        except Exception:
+            logger.exception('AnalysisEvent konnte nicht gespeichert werden')
 
         return JsonResponse({
             'predictions': results,

@@ -1,9 +1,16 @@
 from django.contrib import admin
 
-from .models import Project, BugReport
+from .models import Project, BugReport, AnalysisEvent
 
 
 admin.site.register(Project)
+
+
+@admin.register(AnalysisEvent)
+class AnalysisEventAdmin(admin.ModelAdmin):
+    list_display = ('id', 'created_at', 'user', 'session_key', 'page_number')
+    list_filter = ('created_at',)
+    readonly_fields = ('created_at', 'session_key', 'user', 'page_number')
 
 
 @admin.register(BugReport)

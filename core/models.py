@@ -31,3 +31,18 @@ class BugReport(models.Model):
     def __str__(self):
         username = self.user.username if self.user else 'unbekannt'
         return f"#{self.pk} {username}: {self.text[:50]}"
+
+
+class AnalysisEvent(models.Model):
+    """Serverseitiges Beta-Tracking: ein Eintrag pro durchgeführter Seitenanalyse.
+    session_key dient als anonymer Besucher-Proxy für die Wiederkehr-Schätzung."""
+    created_at = models.DateTimeField(auto_now_add=True)
+    session_key = models.CharField(max_length=40, blank=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='analysis_events')
+    page_number = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Analyse {self.created_at:%Y-%m-%d %H:%M} (Seite {self.page_number})"
