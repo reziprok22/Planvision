@@ -66,6 +66,10 @@ def impressum(request):
     return render(request, 'impressum.html')
 
 
+def agb(request):
+    return render(request, 'agb.html')
+
+
 def serve_project_file(request, project_id, filename):
     denied = _access_denied(request)
     if denied:
