@@ -28,23 +28,23 @@ JPEG_QUALITY = settings.JPEG_QUALITY
 
 
 def landing(request):
-    return render(request, 'landing.html')
+    return render(request, 'landing.html', {'beta_mode': settings.BETA_MODE})
 
 
 def _access_denied(request):
     """Zentrale Zugriffsprüfung: None wenn erlaubt, sonst 401-Response.
-    Im NO_LOGIN_MODE (Beta) ist jeder Zugriff erlaubt."""
-    if settings.NO_LOGIN_MODE or request.user.is_authenticated:
+    Im BETA_MODE ist jeder Zugriff erlaubt."""
+    if settings.BETA_MODE or request.user.is_authenticated:
         return None
     return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
 
 
 def _get_project(request, project_id):
-    """Projekt mit Ownership-Prüfung holen (im NO_LOGIN_MODE nur per ID).
+    """Projekt mit Ownership-Prüfung holen (im BETA_MODE nur per ID).
     Gibt None zurück, wenn nicht gefunden, kein Zugriff oder ungültige ID."""
     try:
         qs = Project.objects.filter(id=project_id)
-        if not settings.NO_LOGIN_MODE:
+        if not settings.BETA_MODE:
             qs = qs.filter(user=request.user)
         return qs.first()
     except (ValueError, ValidationError):
@@ -53,9 +53,9 @@ def _get_project(request, project_id):
 
 @ensure_csrf_cookie  # CSRF-Cookie immer setzen — nötig für die API-POSTs des Frontends
 def app(request):
-    if not settings.NO_LOGIN_MODE and not request.user.is_authenticated:
+    if not settings.BETA_MODE and not request.user.is_authenticated:
         return redirect_to_login(request.get_full_path())
-    return render(request, 'app.html')
+    return render(request, 'app.html', {'beta_mode': settings.BETA_MODE})
 
 
 def datenschutz(request):

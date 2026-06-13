@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planvision – Fenster-Erkennungstool</title>
+    <title>OnlyPlans – Aufmass-Tool</title>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
     <style>
         /* =============================================
@@ -339,12 +339,29 @@
             display: none;
         }
         .left-loader.active { display: block; }
+
+        /* --- Brand & Beta-Badge --- */
+        header h1 .brand-accent { color: #FF6B00; }
+        .beta-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 1px 8px;
+            font-size: 0.62rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #c04000;
+            background: #fff3e0;
+            border: 1px solid #f0a060;
+            border-radius: 999px;
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body>
 
     <header>
-        <h1>Planvision</h1>
+        <h1>Only<span class="brand-accent">Plans</span>{% if beta_mode %}<span class="beta-badge" title="Kostenlose Beta-Phase">Beta</span>{% endif %}</h1>
         <div class="header-actions">
             <div class="tooltip">
                 <button id="saveProjectBtn" class="header-action-btn">

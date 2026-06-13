@@ -90,11 +90,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 PROJECTS_DIR = BASE_DIR / 'projects'
 BUG_REPORTS_DIR = BASE_DIR / 'bug_reports'
 
-# Beta-Phase: komplette Nutzung ohne Login (App, Upload, Analyse, Bug-Reports).
-# Projekte werden dann anonym (user=NULL) gespeichert; Zugriff per Session-UUID.
-# Default True (Beta). Für Produktivbetrieb mit Accounts: Umgebungsvariable
-# NO_LOGIN_MODE=False setzen oder den Default hier auf 'False' ändern.
-NO_LOGIN_MODE = os.environ.get('NO_LOGIN_MODE', 'True') == 'True'
+# BETA_MODE: zentraler Schalter für die Beta-Phase. Wenn True, löst er aus:
+#   - Kein Login nötig: alle Endpunkte (App, Upload, Analyse, Bug-Reports)
+#     funktionieren ohne Anmeldung.
+#   - Projekte werden anonym gespeichert (user=NULL); Zugriff nur per
+#     unerratbarer Session-UUID statt per Ownership-Prüfung.
+#   - In der App erscheint das "Beta"-Badge, auf der Landingpage der Beta-Banner.
+# Für den Produktivbetrieb mit Accounts: auf False setzen (beendet die Beta-Phase).
+BETA_MODE = True
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'

@@ -215,6 +215,29 @@
         /* ── PRICING ── */
         .pricing { background: var(--slate-50); }
 
+        .beta-notice {
+            max-width: 960px;
+            margin-bottom: 32px;
+            padding: 14px 20px;
+            background: rgba(234, 179, 8, 0.12);
+            border: 1px solid var(--notice);
+            border-radius: var(--radius);
+            font-size: 0.9rem;
+            color: var(--slate-800);
+        }
+
+        .beta-notice strong { color: var(--slate-900); }
+
+        .plan-note {
+            font-size: 0.8rem;
+            color: var(--slate-400);
+            margin-top: 14px;
+            text-align: center;
+        }
+
+        .plan-note a { color: var(--primary); text-decoration: none; }
+        .plan-note a:hover { text-decoration: underline; }
+
         .pricing-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -464,13 +487,13 @@
                 PDF hochladen, Massstab setzen, Flächen ausmessen.
                 Plan exportieren — in wenigen Klicks.
                 <br><br>
-                Das Jahres-Abo kostet CHF 249.-.
+                Das Jahres-Abo kostet CHF 240.-.
             </p>
             <div class="hero-cta">
                 <a href="{% url 'app' %}" class="btn btn-primary btn-lg">Kostenlos testen</a>
                 <a href="#features" class="btn btn-outline btn-lg">Mehr erfahren</a>
             </div>
-            <p class="hero-note">14 Tage kostenlos testen &nbsp;·&nbsp; Keine Kreditkarte erforderlich</p>
+            <p class="hero-note">30 Tage kostenlos testen &nbsp;·&nbsp; Keine Kreditkarte erforderlich</p>
         </div>
 
         <div class="hero-video-wrap">
@@ -579,57 +602,56 @@
 <section class="pricing" id="pricing">
     <div class="section-label">Preismodell</div>
     <h2 class="section-title">Kaufe Onlyplans</h2>
-    <p class="section-sub">Starte kostenlos. Wechsle wenn du mehr brauchst. Kündige jederzeit.</p>
+    <p class="section-sub">Ein Tool, voller Funktionsumfang. Je grösser das Team, desto günstiger pro Nutzer.</p>
+
+    {% if beta_mode %}
+    <div class="beta-notice">
+        <strong>Während der Beta-Phase ist die Nutzung kostenlos.</strong>
+        Die unten gezeigten Preise gelten ab dem offiziellen Start.
+    </div>
+    {% endif %}
 
     <div class="pricing-grid">
 
-        <div class="plan-card">
-            <div class="plan-name">Starter</div>
-            <div class="plan-price">Gratis</div>
-            <div class="plan-period">Für immer kostenlos</div>
-            <hr class="plan-divider">
-            <ul class="plan-features">
-                <li>Bis zu 3 Projekte</li>
-                <li>5 Seiten pro Monat</li>
-                <li>PDF-Export</li>
-                <li>Rechteck- und Polygon-Tool</li>
-                <li class="muted">KI-Objekterkennung</li>
-                <li class="muted">Prioritäts-Support</li>
-            </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline-dark" style="width:100%; justify-content:center;">Kostenlos starten</a>
-        </div>
-
         <div class="plan-card popular">
             <div class="popular-badge">Empfohlen</div>
-            <div class="plan-name">Pro</div>
-            <div class="plan-price"><sup>CHF</sup>19</div>
-            <div class="plan-period">pro Monat, jährlich abgerechnet</div>
+            <div class="plan-name">Einzel</div>
+            <div class="plan-price"><sup>CHF</sup>240</div>
+            <div class="plan-period">pro Nutzer / Jahr</div>
             <hr class="plan-divider">
             <ul class="plan-features">
-                <li>Unbegrenzte Projekte</li>
-                <li>Unbegrenzte Seiten</li>
-                <li>PDF-Export &amp; Annotierter Plan</li>
+                <li>30 Tage kostenlos testen</li>
+                <li>Unbegrenzte Projekte &amp; Seiten</li>
                 <li>Alle Zeichenwerkzeuge</li>
                 <li>KI-Objekterkennung</li>
-                <li class="muted">Team-Funktionen</li>
+                <li>PDF-Export &amp; annotierter Plan</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-primary" style="width:100%; justify-content:center;">Pro starten</a>
+            <a href="{% url 'app' %}" class="btn btn-primary" style="width:100%; justify-content:center;">Kostenlos starten</a>
         </div>
 
         <div class="plan-card">
             <div class="plan-name">Team</div>
-            <div class="plan-price"><sup>CHF</sup>59</div>
-            <div class="plan-period">pro Monat, bis 5 Nutzer</div>
+            <div class="plan-price"><sup>CHF</sup>210</div>
+            <div class="plan-period">pro Nutzer / Jahr, ab 5 Nutzern</div>
             <hr class="plan-divider">
             <ul class="plan-features">
-                <li>Alles aus Pro</li>
-                <li>5 Team-Mitglieder</li>
-                <li>Gemeinsame Projekte</li>
-                <li>Eigenes Logo auf Reports</li>
-                <li>API-Zugang</li>
-                <li>Dedizierter Support</li>
+                <li>Alle Funktionen aus Einzel</li>
+                <li>Organisations-Konto mit Sitzplatzverwaltung</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline-dark" style="width:100%; justify-content:center;">Team starten</a>
+            <a href="{% url 'app' %}" class="btn btn-outline-dark" style="width:100%; justify-content:center;">Kostenlos starten</a>
+        </div>
+
+        <div class="plan-card">
+            <div class="plan-name">Grosses Team</div>
+            <div class="plan-price"><sup>CHF</sup>180</div>
+            <div class="plan-period">pro Nutzer / Jahr, ab 10 Nutzern</div>
+            <hr class="plan-divider">
+            <ul class="plan-features">
+                <li>Alle Funktionen aus Einzel</li>
+                <li>Organisations-Konto mit Sitzplatzverwaltung</li>
+            </ul>
+            <a href="{% url 'app' %}" class="btn btn-outline-dark" style="width:100%; justify-content:center;">Kostenlos starten</a>
+            <p class="plan-note">Mehr als 20 Nutzer? <a href="mailto:gruezi@bauphysiklengg.ch?subject=OnlyPlans%20Team-Angebot">Individuelles Angebot anfragen</a></p>
         </div>
 
     </div>
@@ -676,7 +698,7 @@
 
         <details>
             <summary>Gibt es eine kostenlose Testphase?</summary>
-            <p class="faq-answer">Das Tool kann 14 Tage kostenlos getestet werden. Für die Testphase muss keine Kreditkarte angegeben werden.</p>
+            <p class="faq-answer">Das Tool kann 30 Tage kostenlos getestet werden. Für die Testphase muss keine Kreditkarte angegeben werden. Während der laufenden Beta-Phase ist die Nutzung generell kostenlos.</p>
         </details>
 
     </div>

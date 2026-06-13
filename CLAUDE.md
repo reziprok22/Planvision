@@ -12,7 +12,7 @@ Planvision (live as **onlyplans.tools**) is a Django-based web application for a
 - Project management with client-side ZIP save/load
 - Frontend PDF exports (annotated plan + report) via pdf-lib, incl. placeable on-plan legend
 - Bug reports from testers (header button → Django admin)
-- User authentication (login/register/logout) via Django's built-in auth system; can be disabled via `NO_LOGIN_MODE` for the beta phase
+- User authentication (login/register/logout) via Django's built-in auth system; can be disabled via `BETA_MODE` for the beta phase
 
 ## Development Commands
 
@@ -68,7 +68,7 @@ The application requires a pre-trained Faster R-CNN model at:
 
 ### Backend (Python)
 - **core/views.py**: Django views for file upload, AI analysis, file serving, bug reports, landing/app pages; central auth helpers `_access_denied()` / `_get_project()`
-- **core/models.py**: `Project` (session ownership, user nullable for NO_LOGIN_MODE) and `BugReport` (visible in Django admin)
+- **core/models.py**: `Project` (session ownership, user nullable for BETA_MODE) and `BugReport` (visible in Django admin)
 - **core/apps.py**: `CoreConfig.ready()` loads the ML model at startup
 - **model_handler.py**: PyTorch model loading and inference logic
 - **image_preprocessing.py**: OpenCV-based image preprocessing
@@ -127,14 +127,14 @@ The application requires a pre-trained Faster R-CNN model at:
 - Login: `/accounts/login/` — Logout: `/accounts/logout/` — Register: `/accounts/register/`
 - Admin panel available at `/admin/` (requires superuser) — includes the bug report list
 - All API endpoints are CSRF-protected; the frontend sends `X-CSRFToken` from the cookie (set via `@ensure_csrf_cookie` on the app view)
-- `NO_LOGIN_MODE` (settings, env-overridable): when True (beta default), all endpoints work without login and projects are stored with `user=NULL`; access is then guarded only by the unguessable session UUID
+- `BETA_MODE` (settings, env-overridable): when True (beta default), all endpoints work without login, projects are stored with `user=NULL` (access guarded only by the unguessable session UUID), and the "Beta" badge shows next to the app logo
 
 ### Django Settings (config/settings.py)
 - `SECRET_KEY`: reads from env var `DJANGO_SECRET_KEY` (falls back to insecure dev key)
 - `DEBUG`: reads from env var `DJANGO_DEBUG` (default `True`)
 - `ALLOWED_HOSTS`: reads from env var `DJANGO_ALLOWED_HOSTS`
 - `SECURE_PROXY_SSL_HEADER` + `CSRF_TRUSTED_ORIGINS`: HTTPS/CSRF behind the nginx proxy (onlyplans.tools)
-- `NO_LOGIN_MODE`: beta switch, default True; env var `NO_LOGIN_MODE=False` re-enables login
+- `BETA_MODE`: beta switch, default True; env var `BETA_MODE=False` re-enables login
 - `PROJECTS_DIR`: `BASE_DIR / 'projects'` — `BUG_REPORTS_DIR`: `BASE_DIR / 'bug_reports'` (both gitignored)
 - `PDF_DPI = 150` (server always renders at 150 DPI — frontend has no DPI input, only a hidden field), `JPEG_QUALITY = 70`
 

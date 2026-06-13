@@ -5,7 +5,7 @@ from django.contrib.auth.models import User
 
 class Project(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # Nullable: im NO_LOGIN_MODE (Beta) werden Projekte anonym gespeichert
+    # Nullable: im BETA_MODE werden Projekte anonym gespeichert
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='projects', null=True, blank=True)
     original_filename = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
