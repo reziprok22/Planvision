@@ -2,22 +2,22 @@
   {
     "id": 1,
     "name": "Fenster",
-    "color": "#0000FF",
+    "color": "#0000ff",
     "opacity": 0.3,
     "tools": {
       "rectangle": true,
-      "polygon": true,
+      "polygon": false,
       "line": false
     }
   },
   {
     "id": 2,
     "name": "Tür",
-    "color": "#FF0000",
+    "color": "#ff6600",
     "opacity": 0.4,
     "tools": {
       "rectangle": true,
-      "polygon": true,
+      "polygon": false,
       "line": false
     }
   },
@@ -33,20 +33,9 @@
     }
   },
   {
-    "id": 4,
-    "name": "Boden",
-    "color": "#FFA500",
-    "opacity": 0.3,
-    "tools": {
-      "rectangle": true,
-      "polygon": true,
-      "line": false
-    }
-  },
-  {
     "id": 5,
     "name": "Dach",
-    "color": "#800080",
+    "color": "#734a4a",
     "opacity": 0.1,
     "tools": {
       "rectangle": true,
@@ -55,10 +44,21 @@
     }
   },
   {
-    "id": 6,
-    "name": "Strecke",
-    "color": "#FF9500",
-    "opacity": 0.0,
+    "id": 4,
+    "name": "Boden",
+    "color": "#00b303",
+    "opacity": 0.3,
+    "tools": {
+      "rectangle": true,
+      "polygon": true,
+      "line": false
+    }
+  },
+  {
+    "id": 7,
+    "name": "Umfang",
+    "color": "#bb00ff",
+    "opacity": 0,
     "tools": {
       "rectangle": false,
       "polygon": false,
@@ -66,14 +66,15 @@
     }
   },
   {
-    "id": 7,
-    "name": "Umfang",
-    "color": "#00AAFF",
-    "opacity": 0.0,
+    "id": 8,
+    "name": "Energiebezugsfläche EBF",
+    "color": "#ff0000",
+    "opacity": 0.30000000000000004,
+    "strokeWidth": 2,
     "tools": {
       "rectangle": false,
-      "polygon": false,
-      "line": true
+      "polygon": true,
+      "line": false
     }
   }
 ]
