@@ -364,8 +364,14 @@ def report_bug(request):
         except (TypeError, ValueError):
             page_number = None
 
+        valid_types = {choice[0] for choice in BugReport.REPORT_TYPES}
+        report_type = request.POST.get('report_type', 'bug')
+        if report_type not in valid_types:
+            report_type = 'bug'
+
         report = BugReport.objects.create(
             user=request.user if request.user.is_authenticated else None,
+            report_type=report_type,
             text=text[:5000],
             page_number=page_number,
             user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],

@@ -50,6 +50,57 @@ header h1 {
     border-color: #aaa;
 }
 
+/* Header "3-Strich"-Menü (Anleitung & Bug melden) */
+.header-menu {
+    position: relative;
+    display: inline-flex;
+}
+
+.header-menu-dropdown {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 1300;
+    min-width: 184px;
+    flex-direction: column;
+    gap: 2px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    padding: 6px;
+}
+
+.header-menu-dropdown.open {
+    display: flex;
+}
+
+.header-menu-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.85em;
+    color: #444;
+    cursor: pointer;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.header-menu-item:hover {
+    background: #f0f0f0;
+}
+
+.header-menu-item svg {
+    flex-shrink: 0;
+    color: #666;
+}
+
 h1, h2 {
     margin: 0;
     color: inherit;

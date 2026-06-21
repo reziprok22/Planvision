@@ -40,19 +40,51 @@ export function setupProject(elements, modules) {
 
 // ── Bug report ───────────────────────────────────────────────────────────────
 
+// Modal-Texte/Defaults je Report-Typ. Das Modal wird für Bug-Meldungen und
+// Verbesserungsvorschläge wiederverwendet (gemeinsamer Endpoint /report_bug).
+const REPORT_PRESETS = {
+  bug: {
+    title:       'Problem melden',
+    intro:       'Beschreibe kurz, was passiert ist und was du erwartet hättest.',
+    placeholder: 'Was ist passiert?',
+    attach:      true,   // Projekt/Screenshot standardmäßig anhängen
+    success:     'Danke! Problem wurde gemeldet ✓',
+  },
+  suggestion: {
+    title:       'Verbesserung vorschlagen',
+    intro:       'Was würdest du dir wünschen? Beschreibe deine Idee – je konkreter, desto besser.',
+    placeholder: 'Deine Idee…',
+    attach:      false,  // bei Vorschlägen selten nötig, aber optional zuschaltbar
+    success:     'Danke für deinen Vorschlag ✓',
+  },
+};
+
 function setupBugReport() {
-  const btn      = document.getElementById('reportBugBtn');
-  const modal    = document.getElementById('bugReportModal');
-  const closeBtn = document.getElementById('bugReportModalClose');
-  const cancel   = document.getElementById('bugReportCancel');
-  const submit   = document.getElementById('bugReportSubmit');
-  if (!btn || !modal || !submit) return;
+  const reportBtn  = document.getElementById('reportBugBtn');
+  const suggestBtn = document.getElementById('suggestBtn');
+  const modal      = document.getElementById('bugReportModal');
+  const closeBtn   = document.getElementById('bugReportModalClose');
+  const cancel     = document.getElementById('bugReportCancel');
+  const submit     = document.getElementById('bugReportSubmit');
+  if (!modal || !submit) return;
 
   const close = () => { modal.style.display = 'none'; };
-  btn.addEventListener('click', () => {
+
+  const open = (type) => {
+    const preset = REPORT_PRESETS[type] || REPORT_PRESETS.bug;
+    const set = (id, prop, val) => { const el = document.getElementById(id); if (el) el[prop] = val; };
+    set('bugReportType', 'value', type);
+    set('bugReportTitle', 'textContent', preset.title);
+    set('bugReportIntro', 'textContent', preset.intro);
+    set('bugReportText', 'placeholder', preset.placeholder);
+    set('bugReportAttachProject', 'checked', preset.attach);
+    set('bugReportAttachScreenshot', 'checked', preset.attach);
     modal.style.display = 'block';
     document.getElementById('bugReportText')?.focus();
-  });
+  };
+
+  reportBtn?.addEventListener('click', () => open('bug'));
+  suggestBtn?.addEventListener('click', () => open('suggestion'));
   closeBtn?.addEventListener('click', close);
   cancel?.addEventListener('click', close);
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
@@ -66,6 +98,9 @@ async function handleBugReportSubmit(closeModal) {
   const attachScreenshot = document.getElementById('bugReportAttachScreenshot');
   const submit           = document.getElementById('bugReportSubmit');
 
+  const reportType = document.getElementById('bugReportType')?.value || 'bug';
+  const preset = REPORT_PRESETS[reportType] || REPORT_PRESETS.bug;
+
   const text = (textarea?.value || '').trim();
   if (!text) {
     alert('Bitte eine kurze Beschreibung eingeben.');
@@ -78,6 +113,7 @@ async function handleBugReportSubmit(closeModal) {
   try {
     const fd = new FormData();
     fd.append('text', text);
+    fd.append('report_type', reportType);
     if (window.getCurrentPageNumber) fd.append('page', window.getCurrentPageNumber());
 
     // Attach the current project as ZIP (same content as the save button)
@@ -111,8 +147,8 @@ async function handleBugReportSubmit(closeModal) {
 
     if (textarea) textarea.value = '';
     closeModal();
-    const status = showStatus('Danke! Problem wurde gemeldet ✓');
-    updateStatus(status, 'Danke! Problem wurde gemeldet ✓', 'success');
+    const status = showStatus(preset.success);
+    updateStatus(status, preset.success, 'success');
   } catch (err) {
     console.error('Bug report error:', err);
     alert('Senden fehlgeschlagen: ' + err.message);

@@ -16,7 +16,12 @@ class Project(models.Model):
 
 
 class BugReport(models.Model):
+    REPORT_TYPES = [
+        ('bug', 'Bug'),
+        ('suggestion', 'Verbesserung'),
+    ]
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='bug_reports')
+    report_type = models.CharField(max_length=20, choices=REPORT_TYPES, default='bug')
     text = models.TextField()
     page_number = models.IntegerField(null=True, blank=True)
     user_agent = models.CharField(max_length=500, blank=True)
@@ -30,7 +35,7 @@ class BugReport(models.Model):
 
     def __str__(self):
         username = self.user.username if self.user else 'unbekannt'
-        return f"#{self.pk} {username}: {self.text[:50]}"
+        return f"#{self.pk} [{self.get_report_type_display()}] {username}: {self.text[:50]}"
 
 
 class AnalysisEvent(models.Model):
