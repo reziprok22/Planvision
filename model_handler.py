@@ -6,7 +6,7 @@ from PIL import Image
 import io
 import os
 import numpy as np
-from utils import calculate_scale_factor, apply_nms
+from utils import calculate_scale_factor, apply_nms, refine_boxes_to_lines
 from image_preprocessing import preprocess_image
 
 # Base directory für absolute Pfade
@@ -18,6 +18,10 @@ MODEL_PATH = os.path.join(BASE_DIR, 'fasterrcnn_model', 'fasterrcnn_model_2025-0
 # Globale Variable für das Modell
 model = None
 device = None
+
+# Schalter zum Vergleichen: True = Snap-to-Line-Nachbearbeitung aktiv,
+# False = altes Verhalten (rohe Netz-Boxen ohne Einrasten auf die Planlinien).
+AFTERPROCESS = True
 
 def get_model(num_classes=6):
     """
@@ -137,9 +141,13 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         
         # Vorverarbeitung mit OpenCV
         processed_image = preprocess_image(image_bytes)
-        
-        # Bild verkleinern falls zu groß
-        processed_image, coord_scale = resize_image_if_large(processed_image, max_size=1024)
+
+        # Vollauflösungs-Graustufen für die Snap-to-Line-Verfeinerung sichern
+        # (vor dem Verkleinern – die Boxen werden später in diese Auflösung zurückskaliert)
+        full_res_gray = np.array(processed_image.convert('L'))
+
+        # Bild verkleinern falls zu groß (höhere Inferenz-Auflösung = präzisere Boxen)
+        processed_image, coord_scale = resize_image_if_large(processed_image, max_size=2048)
         
         # Bild transformieren und direkt auf GPU verschieben
         transform = transforms.Compose([transforms.ToTensor()])
@@ -171,7 +179,12 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         boxes = boxes[valid_detections]
         labels = labels[valid_detections]
         scores = scores[valid_detections]
-        
+
+        # Snap-to-Line: Box-Kanten auf die echten Planlinien einrasten
+        # (per AFTERPROCESS-Schalter abschaltbar, um mit dem alten Verhalten zu vergleichen)
+        if AFTERPROCESS:
+            boxes = refine_boxes_to_lines(boxes, full_res_gray, search=12, min_darkness=25)
+
         # Flächen berechnen
         areas = []
         for box in boxes:

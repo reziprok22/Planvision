@@ -163,5 +163,111 @@ def apply_nms(boxes, labels, scores, areas, iou_threshold=0.5, overlap_ratio_thr
     filtered_labels = [labels[i] for i in keep_indices]
     filtered_scores = [scores[i] for i in keep_indices]
     filtered_areas = [areas[i] for i in keep_indices]
-    
+
     return filtered_boxes, filtered_labels, filtered_scores, filtered_areas
+
+
+def _snap_edge(profile, orig_offset, min_darkness, outward, peak_ratio=0.8):
+    """
+    Bestimmt für ein 1D-Helligkeitsprofil senkrecht zu einer Box-Kante die
+    Position der maßgeblichen Planlinie und gibt deren Index zurück.
+
+    Fenster werden meist mit 2-3 nahe beieinander liegenden parallelen Linien
+    gezeichnet; die *äußere* ist die korrekte. Unter allen ausreichend starken
+    Linien im Suchband wird daher die am weitesten außen liegende gewählt.
+
+    Args:
+        profile: 1D-Array der "Tinten-Dunkelheit" (255 - Grauwert) quer zum Suchband
+        orig_offset: Index der ursprünglichen Kantenposition innerhalb des Bandes
+        min_darkness: Mindest-Dunkelheit, damit überhaupt eine echte Linie angenommen wird
+        outward: Richtung "nach außen" als Vorzeichen bzgl. des Profil-Index:
+                 -1 = kleinere Indizes liegen außen (obere/linke Kante),
+                 +1 = größere Indizes liegen außen (untere/rechte Kante).
+        peak_ratio: Anteil des Maximums, ab dem eine Position als "starke Linie" gilt
+
+    Returns:
+        Index der eingerasteten Position – oder orig_offset, wenn keine
+        ausreichend dunkle Linie im Suchband liegt (Box bleibt dann unverändert).
+    """
+    peak = profile.max()
+    # Keine echte Linie im Suchband -> Originalkante behalten (nie verschlechtern)
+    if peak < min_darkness:
+        return orig_offset
+    # Alle Positionen nahe am Maximum gelten als gleich starke (parallele) Linie ...
+    candidates = np.where(profile >= peak_ratio * peak)[0]
+    # ... davon die am weitesten außen liegende wählen (äußere Fensterlinie).
+    chosen = candidates.min() if outward < 0 else candidates.max()
+    return int(chosen)
+
+
+def refine_boxes_to_lines(boxes, gray, search=6, min_darkness=25):
+    """
+    Rastet die Kanten erkannter Bounding Boxes auf die tatsächlichen (dunklen)
+    Planlinien ein. Nachgelagerter, deterministischer Prozess ohne Retraining –
+    nutzt aus, dass Baupläne klare Linien auf hellem Grund sind.
+
+    Pro Box wird jede Kante in einem schmalen Suchband (+/- search px) auf die
+    dominante waagrechte bzw. senkrechte Linie verschoben. Findet sich keine
+    ausreichend dunkle Linie, bleibt die Kante unverändert.
+
+    Args:
+        boxes: numpy-Array der Boxen [x1, y1, x2, y2] in Pixeln der Vollauflösung
+        gray: Graustufenbild (numpy uint8) in genau dieser Vollauflösung
+        search: maximaler Versatz in Pixeln, um den eine Kante einrasten darf
+        min_darkness: Schwelle (0-255), ab der eine Linie als real gilt
+
+    Returns:
+        numpy-Array der verfeinerten Boxen (gleiche Reihenfolge).
+    """
+    if boxes is None or len(boxes) == 0:
+        return boxes
+
+    h, w = gray.shape[:2]
+    # Dunkle Linien -> hohe Werte
+    ink = 255.0 - gray.astype(np.float32)
+
+    refined = []
+    for box in boxes:
+        x1, y1, x2, y2 = (float(v) for v in box)
+        ix1, iy1, ix2, iy2 = int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))
+
+        # Box-Spanne für die Profilbildung (geklippt auf das Bild)
+        cx1, cx2 = max(0, ix1), min(w, ix2)
+        cy1, cy2 = max(0, iy1), min(h, iy2)
+        if cx2 - cx1 < 2 or cy2 - cy1 < 2:
+            refined.append(np.asarray(box, dtype=np.float32))
+            continue
+
+        # Obere Kante: waagrechte Linie -> Profil über die Box-Breite, je Zeile
+        # (außen = kleinerer y-Wert = kleinerer Index -> outward=-1)
+        r0, r1 = max(0, iy1 - search), min(h, iy1 + search + 1)
+        if r1 - r0 >= 1:
+            prof = ink[r0:r1, cx1:cx2].mean(axis=1)
+            y1 = r0 + _snap_edge(prof, iy1 - r0, min_darkness, outward=-1)
+
+        # Untere Kante (außen = größerer y-Wert -> outward=+1)
+        r0, r1 = max(0, iy2 - search), min(h, iy2 + search + 1)
+        if r1 - r0 >= 1:
+            prof = ink[r0:r1, cx1:cx2].mean(axis=1)
+            y2 = r0 + _snap_edge(prof, iy2 - r0, min_darkness, outward=+1)
+
+        # Linke Kante: senkrechte Linie -> Profil über die Box-Höhe, je Spalte
+        # (außen = kleinerer x-Wert -> outward=-1)
+        c0, c1 = max(0, ix1 - search), min(w, ix1 + search + 1)
+        if c1 - c0 >= 1:
+            prof = ink[cy1:cy2, c0:c1].mean(axis=0)
+            x1 = c0 + _snap_edge(prof, ix1 - c0, min_darkness, outward=-1)
+
+        # Rechte Kante (außen = größerer x-Wert -> outward=+1)
+        c0, c1 = max(0, ix2 - search), min(w, ix2 + search + 1)
+        if c1 - c0 >= 1:
+            prof = ink[cy1:cy2, c0:c1].mean(axis=0)
+            x2 = c0 + _snap_edge(prof, ix2 - c0, min_darkness, outward=+1)
+
+        # Nur übernehmen, wenn die Box gültig bleibt – sonst Original behalten
+        if x2 - x1 >= 2 and y2 - y1 >= 2:
+            refined.append(np.array([x1, y1, x2, y2], dtype=np.float32))
+        else:
+            refined.append(np.asarray(box, dtype=np.float32))
+
+    return np.array(refined, dtype=np.float32)
