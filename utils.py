@@ -167,14 +167,49 @@ def apply_nms(boxes, labels, scores, areas, iou_threshold=0.5, overlap_ratio_thr
     return filtered_boxes, filtered_labels, filtered_scores, filtered_areas
 
 
-def _snap_edge(profile, orig_offset, min_darkness, outward, peak_ratio=0.8):
+def _find_lines(profile, min_darkness):
+    """
+    Findet im 1D-Helligkeitsprofil die einzelnen Planlinien als zusammenhängende
+    dunkle Bereiche (durch hellere Lücken voneinander getrennt).
+
+    Args:
+        profile: 1D-Array der "Tinten-Dunkelheit" (255 - Grauwert) quer zum Suchband
+        min_darkness: Schwelle, ab der ein Pixel als Linien-Tinte zählt
+
+    Returns:
+        Liste der Linien-Mittelpositionen (Profil-Index, dunkelheitsgewichteter
+        Schwerpunkt), aufsteigend sortiert. Leer, wenn keine Linie gefunden wurde.
+    """
+    mask = profile >= min_darkness
+    lines = []
+    n = len(profile)
+    i = 0
+    while i < n:
+        if not mask[i]:
+            i += 1
+            continue
+        # zusammenhängenden dunklen Abschnitt (eine Linie) einsammeln
+        j = i
+        while j < n and mask[j]:
+            j += 1
+        seg = profile[i:j]
+        center = i + float(np.average(np.arange(j - i), weights=seg))
+        lines.append(center)
+        i = j
+    return lines
+
+
+def _snap_edge(profile, orig_offset, min_darkness, outward):
     """
     Bestimmt für ein 1D-Helligkeitsprofil senkrecht zu einer Box-Kante die
     Position der maßgeblichen Planlinie und gibt deren Index zurück.
 
     Fenster werden meist mit 2-3 nahe beieinander liegenden parallelen Linien
-    gezeichnet; die *äußere* ist die korrekte. Unter allen ausreichend starken
-    Linien im Suchband wird daher die am weitesten außen liegende gewählt.
+    gezeichnet. Auswahlregel nach Anzahl gefundener Linien:
+      - 1 Linie  -> diese Linie
+      - 2 Linien -> die *äußere* (Rahmen-/Wandkante)
+      - 3 Linien -> die *mittlere* (Glas-/Mittellinie)
+      - >3 Linien-> Fallback: die äußerste (konservativ)
 
     Args:
         profile: 1D-Array der "Tinten-Dunkelheit" (255 - Grauwert) quer zum Suchband
@@ -183,21 +218,29 @@ def _snap_edge(profile, orig_offset, min_darkness, outward, peak_ratio=0.8):
         outward: Richtung "nach außen" als Vorzeichen bzgl. des Profil-Index:
                  -1 = kleinere Indizes liegen außen (obere/linke Kante),
                  +1 = größere Indizes liegen außen (untere/rechte Kante).
-        peak_ratio: Anteil des Maximums, ab dem eine Position als "starke Linie" gilt
 
     Returns:
         Index der eingerasteten Position – oder orig_offset, wenn keine
         ausreichend dunkle Linie im Suchband liegt (Box bleibt dann unverändert).
     """
-    peak = profile.max()
+    lines = _find_lines(profile, min_darkness)
     # Keine echte Linie im Suchband -> Originalkante behalten (nie verschlechtern)
-    if peak < min_darkness:
+    if not lines:
         return orig_offset
-    # Alle Positionen nahe am Maximum gelten als gleich starke (parallele) Linie ...
-    candidates = np.where(profile >= peak_ratio * peak)[0]
-    # ... davon die am weitesten außen liegende wählen (äußere Fensterlinie).
-    chosen = candidates.min() if outward < 0 else candidates.max()
-    return int(chosen)
+
+    n = len(lines)
+    if n == 2:
+        # äußere der beiden parallelen Linien
+        chosen = lines[0] if outward < 0 else lines[-1]
+    elif n == 3:
+        # mittlere Linie (Glas-/Mittellinie)
+        chosen = lines[1]
+    elif n == 1:
+        chosen = lines[0]
+    else:
+        # >3 Linien: konservativ die äußerste wählen
+        chosen = lines[0] if outward < 0 else lines[-1]
+    return int(round(chosen))
 
 
 def refine_boxes_to_lines(boxes, gray, search=6, min_darkness=25):

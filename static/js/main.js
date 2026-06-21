@@ -404,6 +404,9 @@ function setupContainerScrolling() {
       let dy = e.deltaY;
       if (e.deltaMode === 1) dy *= 16;                       // lines
       else if (e.deltaMode === 2) dy *= imageContainer.clientHeight; // pages
+      // Overall step size per notch. Pre-d4d4065 used deltaY * 0.5; keeping that
+      // factor restores the finer, more incremental feel (tune to taste).
+      dy *= H_SCROLL_SPEED;
 
       // Accumulate onto a target so rapid notches add up smoothly.
       if (hScrollTarget === null) hScrollTarget = imageContainer.scrollLeft;
@@ -423,6 +426,9 @@ function setupContainerScrolling() {
 // handler can cancel an in-flight animation before it fights the zoom's own
 // scroll positioning. Easing toward a target matches the feel of the browser's
 // native vertical scrolling; the 'scroll' handler keeps the canvas in sync. ---
+// Horizontal scroll speed factor per wheel notch (after line/page normalisation).
+// 0.5 ≈ the pre-d4d4065 feel (deltaY * 0.5); lower = finer/slower, higher = faster.
+const H_SCROLL_SPEED = 0.3;
 let hScrollTarget = null;
 let hScrollRAF = 0;
 
