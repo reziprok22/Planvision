@@ -37,6 +37,7 @@ import {
   getOriginalPdfBlob
 } from './pdf-handler.js';
 import { setupProject } from './project.js';
+import { setupOnboarding } from './onboarding.js';
 import {
   setupUploadModal,
   setOnPageClick,
@@ -3316,7 +3317,10 @@ async function initApp() {
       setOriginalPdfBlob
     }
   });
-  
+
+  // Einführungs-Modal (zeigt sich beim ersten Besuch automatisch)
+  setupOnboarding();
+
   // Make essential functions globally available for inter-module communication
   window.collectCurrentCanvasData = collectCurrentCanvasData;
   window.collectAllPagesCanvasData = collectAllPagesCanvasData;

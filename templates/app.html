@@ -410,6 +410,17 @@
                 <span class="tooltiptext">Annotierte Original-PDF exportieren</span>
             </div>
             <div class="tooltip">
+                <button id="onboardingBtn" class="header-action-btn">
+                    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 1.5 C4.5 1.5 3 3.2 3 5.2 c0 1.4 .8 2.2 1.5 3 .4 .5 .5 .9 .5 1.5 h4 c0-.6 .1-1 .5-1.5 .7-.8 1.5-1.6 1.5-3 C11 3.2 9.5 1.5 7 1.5 Z"/>
+                        <line x1="5.5" y1="12" x2="8.5" y2="12"/>
+                        <line x1="6" y1="13" x2="8" y2="13"/>
+                    </svg>
+                    Anleitung
+                </button>
+                <span class="tooltiptext">Einführung / Anleitung anzeigen</span>
+            </div>
+            <div class="tooltip">
                 <button id="reportBugBtn" class="header-action-btn">
                     <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg">
                         <ellipse cx="7" cy="8" rx="3" ry="4"/>
@@ -644,6 +655,56 @@
 
 
     <!-- ==================== MODALS ==================== -->
+
+    <!-- Onboarding / Einführungs-Modal -->
+    <div id="onboardingModal" class="modal">
+        <div class="modal-content onboarding-content">
+            <span class="close" id="onboardingClose">&times;</span>
+            <div class="onboarding-header">
+                <h3>Willkommen bei Only<span class="brand-accent">Plans</span></h3>
+                <span class="onboarding-counter" id="onboardingCounter">Schritt 1/4</span>
+            </div>
+            <div class="onboarding-media" id="onboardingMedia"><!-- gefüllt per JS --></div>
+            <h4 class="onboarding-title" id="onboardingTitle"></h4>
+            <p class="onboarding-body" id="onboardingBody"></p>
+            <div class="onboarding-dots" id="onboardingDots"></div>
+            <div class="onboarding-footer">
+                <button type="button" class="onboarding-skip" id="onboardingSkip">Überspringen</button>
+                <div class="onboarding-nav">
+                    <button type="button" class="modal-btn secondary" id="onboardingPrev">Zurück</button>
+                    <button type="button" class="modal-btn primary" id="onboardingNext">Weiter →</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script id="onboardingData" type="application/json">
+    {
+      "version": 1,
+      "steps": [
+        {
+          "title": "Plan hochladen & Maßstab setzen",
+          "body": "Zieh deine PDF links in die Ablagefläche – oder klicke hinein, um sie auszuwählen. Wähle danach pro Seite den Maßstab (z. B. 1:100), damit Flächen und Längen korrekt berechnet werden.",
+          "media": "{% static 'media/onboarding/01-upload.png' %}"
+        },
+        {
+          "title": "Labels definieren oder importieren",
+          "body": "Öffne den Label-Manager und lege fest, was du erfassen willst – z. B. Fenster, Türen, Wände – jeweils mit Farbe und ob es für das Rechteck-, Polygon, oder Linie-Tool zur Verfügng stehen soll. Ein bestehendes Label-Set kannst du auch importieren.",
+          "media": "{% static 'media/onboarding/02-labels.png' %}"
+        },
+        {
+          "title": "Zeichnen & messen",
+          "body": "Wähle zunächst ein Werkzeug (Rechtecke, Polygone oder Linien) aus, dann das passende Label und zeichne direkt auf den Plan. Lerne die Hotkeys (z. B. Q + Mausrad) kennen, um schnell die relevanten Flächen zu erfassen. Auf Wunsch schlägt die KI Objekte automatisch vor – du korrigierst nur noch.",
+          "media": "{% static 'media/onboarding/03-draw.png' %}"
+        },
+        {
+          "title": "Speichern & exportieren",
+          "body": "Speichere dein Projekt jederzeit als Datei – oder exportiere den annotierten Plan und einen Bericht direkt als PDF.",
+          "media": "{% static 'media/onboarding/04-export.png' %}"
+        }
+      ]
+    }
+    </script>
 
     <!-- Keyboard Shortcuts Modal -->
     <!-- Bug Report Modal -->

@@ -1507,5 +1507,146 @@ background-color: #2a70c2;
     border-left: 3px solid #ffc107;
 }
 
+/* =============================================
+   Onboarding / Einführungs-Modal
+   ============================================= */
+.onboarding-content {
+    max-width: 560px;
+    margin: 6vh auto;
+    padding: 22px 24px 20px;
+    /* Feste Höhe → Dots/Buttons springen beim Durchklicken nicht mehr.
+       Die Medienzone (flex:1) fängt die Höhenunterschiede ab. */
+    display: flex;
+    flex-direction: column;
+    height: 600px;
+    max-height: 86vh;
+}
+
+.onboarding-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.onboarding-header h3 {
+    margin: 0;
+    font-size: 1.25rem;
+}
+
+.onboarding-header h3 .brand-accent {
+    color: #FF6B00;
+}
+
+.onboarding-counter {
+    flex-shrink: 0;
+    font-size: 0.78rem;
+    color: #888;
+    background: #f1f3f5;
+    padding: 2px 9px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+/* Medienzone füllt den freien Platz im fest hohen Modal (flex:1) und reserviert
+   ihn auch, wenn kein Medium da ist – so springt das Layout nicht. Rahmen/
+   Hintergrund nur bei vorhandenem Medium (.has-media, per JS gesetzt). Das
+   Bild wird vollständig eingepasst (object-fit: contain, kein Crop). */
+.onboarding-media {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    box-sizing: border-box; /* Rahmen in die 100%-Breite einrechnen → kein 2px-Überlauf */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 16px;
+}
+
+.onboarding-media.has-media {
+    background: #eef4fc;
+    border: 1px solid #dce6f2;
+}
+
+.onboarding-media img,
+.onboarding-media video {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+.onboarding-title {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+    color: #222;
+}
+
+.onboarding-body {
+    margin: 0 0 18px;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    color: #555;
+    min-height: 3em;
+}
+
+.onboarding-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 18px;
+}
+
+.onboarding-dot {
+    width: 9px;
+    height: 9px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: #d3dae2;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.onboarding-dot:hover {
+    background: #aebccb;
+}
+
+.onboarding-dot.active {
+    background: #5b9bd5;
+    transform: scale(1.25);
+}
+
+.onboarding-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.onboarding-skip {
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 6px 4px;
+}
+
+.onboarding-skip:hover {
+    color: #555;
+    text-decoration: underline;
+}
+
+.onboarding-nav {
+    display: flex;
+    gap: 8px;
+}
+
 
 
