@@ -83,6 +83,12 @@ let editingPolygon = null;         // polygon currently in vertex-edit mode
 let vertexHandles = [];            // Circle handles shown during vertex editing
 let pasteOffset = 0;               // increases with each paste so copies don't stack
 
+// Overscan: render this many px beyond the viewport on each side so the canvas
+// already holds content where a scroll-edge would otherwise flicker for one frame
+// (compositor scroll vs. main-thread redraw). Set to 0 to fully disable (then the
+// math below reduces exactly to the viewport-sized buffer behaviour).
+const OVERSCAN = 96;
+
 // Crosshair overlay for drawing tools
 let crosshairCanvas = null;
 let crosshairCtx = null;
@@ -229,8 +235,9 @@ function initCanvas() {
   // viewportTransform handles both zoom and pan translation — no more mega-buffers at high zoom.
   const containerW = imageContainer.clientWidth  || naturalWidth;
   const containerH = imageContainer.clientHeight || naturalHeight;
-  canvas.setWidth(containerW);
-  canvas.setHeight(containerH);
+  // Buffer = viewport + overscan margin on all sides (see OVERSCAN).
+  canvas.setWidth(containerW  + 2 * OVERSCAN);
+  canvas.setHeight(containerH + 2 * OVERSCAN);
 
   // Scroll spacer: invisible div that creates the virtual scroll area for the container.
   // Sized to natW × natH initially; zoom handler resizes it.
@@ -275,6 +282,9 @@ function initCanvas() {
     }
     // Only zoom with Ctrl key, otherwise allow normal scrolling
     if (opt.e.ctrlKey) {
+      // Cancel any in-flight Shift+wheel horizontal animation: its target is in
+      // pre-zoom scroll coordinates and would otherwise yank the view sideways.
+      stopHorizontalScrollAnim();
       const delta = opt.e.deltaY;
       const oldZoom = canvas.getZoom();
       let newZoom = oldZoom * (0.999 ** delta);
@@ -287,15 +297,16 @@ function initCanvas() {
       );
       if (newZoom < minZoom) newZoom = minZoom;
 
-      // Canvas is viewport-sized: offsetX/Y are already viewport-relative (0..containerW).
-      const mouseContainerX = opt.e.offsetX;
-      const mouseContainerY = opt.e.offsetY;
+      // offsetX/Y are relative to the (overscanned) canvas top-left, which sits
+      // OVERSCAN px above/left of the viewport → subtract it to get viewport coords.
+      const mouseContainerX = opt.e.offsetX - OVERSCAN;
+      const mouseContainerY = opt.e.offsetY - OVERSCAN;
 
       // Image coordinate under the mouse before zoom (viewport pos + current scroll → image space).
       const natW = uploadedImage.naturalWidth;
       const natH = uploadedImage.naturalHeight;
-      const imageX = (opt.e.offsetX + imageContainer.scrollLeft) / oldZoom;
-      const imageY = (opt.e.offsetY + imageContainer.scrollTop)  / oldZoom;
+      const imageX = (mouseContainerX + imageContainer.scrollLeft) / oldZoom;
+      const imageY = (mouseContainerY + imageContainer.scrollTop)  / oldZoom;
 
       // Resize the scroll spacer (drives scroll bars) — canvas buffer stays viewport-sized.
       const spacer = document.getElementById('scrollSpacer');
@@ -311,8 +322,8 @@ function initCanvas() {
       // Sync wrapperEl position and Fabric viewportTransform (scale + pan translation).
       const sl = imageContainer.scrollLeft;
       const st = imageContainer.scrollTop;
-      if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl}px,${st}px)`;
-      canvas.setViewportTransform([newZoom, 0, 0, newZoom, -sl, -st]);
+      if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl - OVERSCAN}px,${st - OVERSCAN}px)`;
+      canvas.setViewportTransform([newZoom, 0, 0, newZoom, OVERSCAN - sl, OVERSCAN - st]);
 
       // Refresh bounding-box cache of the active drawing object so Fabric
       // doesn't skip it as "off-screen" after the viewport transform changes.
@@ -333,9 +344,10 @@ function initCanvas() {
     canvasWrapper.style.position  = 'absolute';
     canvasWrapper.style.top       = '0';
     canvasWrapper.style.left      = '0';
-    canvasWrapper.style.width     = `${containerW}px`;
-    canvasWrapper.style.height    = `${containerH}px`;
-    canvasWrapper.style.transform = '';
+    canvasWrapper.style.width     = `${containerW + 2 * OVERSCAN}px`;
+    canvasWrapper.style.height    = `${containerH + 2 * OVERSCAN}px`;
+    // Initial transform offsets the overscan margin off the top-left (scroll = 0).
+    canvasWrapper.style.transform = `translate(${-OVERSCAN}px, ${-OVERSCAN}px)`;
   }
   
   // Setup enhanced scrolling for container
@@ -379,23 +391,68 @@ function setupContainerScrolling() {
     if (!canvas) return;
     const sl = imageContainer.scrollLeft;
     const st = imageContainer.scrollTop;
-    // Keep the viewport-sized wrapperEl visually in the top-left of the container.
-    if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl}px,${st}px)`;
+    // Keep the wrapperEl in the visible area; the OVERSCAN offset keeps the extra
+    // margin off-screen on the top-left so it can absorb the scroll-edge.
+    if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl - OVERSCAN}px,${st - OVERSCAN}px)`;
     // Update Fabric's pan so objects render at the correct scroll position.
     const zoom = canvas.getZoom();
-    canvas.setViewportTransform([zoom, 0, 0, zoom, -sl, -st]);
-    canvas.requestRenderAll();
+    canvas.setViewportTransform([zoom, 0, 0, zoom, OVERSCAN - sl, OVERSCAN - st]);
+    // Render synchronously (not requestRenderAll): the wrapperEl CSS transform
+    // above is applied immediately, so deferring the redraw to the next frame
+    // leaves the newly exposed edge blank for one frame → visible flicker.
+    // Drawing in the same frame keeps the canvas and the transform in sync.
+    canvas.renderAll();
   }, { passive: true });
 
   imageContainer.addEventListener('wheel', function(e) {
     // If Shift key is held, convert vertical scroll to horizontal
     if (e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
-      imageContainer.scrollBy({ left: e.deltaY * 0.5 });
+      // Normalise wheel units to pixels (line/page mode → approx. pixels).
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 16;                       // lines
+      else if (e.deltaMode === 2) dy *= imageContainer.clientHeight; // pages
+
+      // Accumulate onto a target so rapid notches add up smoothly.
+      if (hScrollTarget === null) hScrollTarget = imageContainer.scrollLeft;
+      const maxLeft = imageContainer.scrollWidth - imageContainer.clientWidth;
+      hScrollTarget = Math.max(0, Math.min(maxLeft, hScrollTarget + dy));
+
+      if (!hScrollRAF) {
+        hScrollRAF = requestAnimationFrame(animateHorizontalScroll);
+      }
     }
     // Normal vertical scrolling happens automatically if no modifiers
     // Ctrl+Wheel is handled by Fabric.js for zooming
   }, { passive: false });
+}
+
+// --- Smooth horizontal scroll state (Shift+wheel), module-level so the zoom
+// handler can cancel an in-flight animation before it fights the zoom's own
+// scroll positioning. Easing toward a target matches the feel of the browser's
+// native vertical scrolling; the 'scroll' handler keeps the canvas in sync. ---
+let hScrollTarget = null;
+let hScrollRAF = 0;
+
+function animateHorizontalScroll() {
+  if (!imageContainer || hScrollTarget === null) { hScrollRAF = 0; return; }
+  const cur = imageContainer.scrollLeft;
+  const diff = hScrollTarget - cur;
+  if (Math.abs(diff) < 0.5) {
+    imageContainer.scrollLeft = hScrollTarget;
+    hScrollRAF = 0;
+    hScrollTarget = null;
+    return;
+  }
+  imageContainer.scrollLeft = cur + diff * 0.25; // easing toward target
+  hScrollRAF = requestAnimationFrame(animateHorizontalScroll);
+}
+
+// Cancels any in-flight horizontal scroll animation. Called by the zoom handler
+// so a stale target (in pre-zoom scroll coordinates) can't yank the view sideways.
+function stopHorizontalScrollAnim() {
+  if (hScrollRAF) { cancelAnimationFrame(hScrollRAF); hScrollRAF = 0; }
+  hScrollTarget = null;
 }
 
 /**
@@ -463,8 +520,8 @@ function loadCanvasData(canvasData) {
   }
   imageContainer.scrollLeft = 0;
   imageContainer.scrollTop  = 0;
-  canvas.setViewportTransform([restoredZoom, 0, 0, restoredZoom, 0, 0]);
-  if (canvas.wrapperEl) canvas.wrapperEl.style.transform = '';
+  canvas.setViewportTransform([restoredZoom, 0, 0, restoredZoom, OVERSCAN, OVERSCAN]);
+  if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${-OVERSCAN}px, ${-OVERSCAN}px)`;
   
   canvas.renderAll();
 
@@ -1203,10 +1260,11 @@ function drawCrosshair(imageX, imageY) {
   const h = crosshairCanvas.height;
   crosshairCtx.clearRect(0, 0, w, h);
 
-  // Convert image coordinates to screen/viewport coordinates.
+  // Convert image coordinates to canvas-local coordinates. The crosshair canvas
+  // shares the overscanned buffer, so add OVERSCAN to the viewport position.
   const zoom = canvas.getZoom();
-  const x = imageX * zoom - imageContainer.scrollLeft;
-  const y = imageY * zoom - imageContainer.scrollTop;
+  const x = imageX * zoom - imageContainer.scrollLeft + OVERSCAN;
+  const y = imageY * zoom - imageContainer.scrollTop  + OVERSCAN;
 
   if (x < 0 || x > w || y < 0 || y > h) return;
 
@@ -3333,7 +3391,15 @@ async function initApp() {
   window.getCanvasScreenshotBlob = async () => {
     if (!canvas) return null;
     try {
-      const dataUrl = canvas.toDataURL({ format: 'jpeg', quality: 0.8 });
+      // Crop away the overscan margin so the screenshot shows just the viewport.
+      const dataUrl = canvas.toDataURL({
+        format: 'jpeg',
+        quality: 0.8,
+        left: OVERSCAN,
+        top: OVERSCAN,
+        width:  canvas.getWidth()  - 2 * OVERSCAN,
+        height: canvas.getHeight() - 2 * OVERSCAN,
+      });
       return await (await fetch(dataUrl)).blob();
     } catch (e) {
       console.warn('Canvas screenshot failed:', e);
@@ -3362,14 +3428,20 @@ async function initApp() {
     const w = imageContainer.clientWidth;
     const h = imageContainer.clientHeight;
     if (w > 0 && h > 0) {
-      canvas.setWidth(w);
-      canvas.setHeight(h);
+      const bw = w + 2 * OVERSCAN;
+      const bh = h + 2 * OVERSCAN;
+      canvas.setWidth(bw);
+      canvas.setHeight(bh);
+      if (canvas.wrapperEl) {
+        canvas.wrapperEl.style.width  = bw + 'px';
+        canvas.wrapperEl.style.height = bh + 'px';
+      }
       canvas.renderAll();
       if (crosshairCanvas) {
-        crosshairCanvas.width  = w;
-        crosshairCanvas.height = h;
-        crosshairCanvas.style.width  = w + 'px';
-        crosshairCanvas.style.height = h + 'px';
+        crosshairCanvas.width  = bw;
+        crosshairCanvas.height = bh;
+        crosshairCanvas.style.width  = bw + 'px';
+        crosshairCanvas.style.height = bh + 'px';
       }
     }
   });
