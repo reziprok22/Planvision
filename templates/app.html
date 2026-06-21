@@ -427,6 +427,10 @@
                 </button>
                 <span class="tooltiptext">Projekt laden</span>
             </div>
+            {% comment %} Vorübergehend deaktiviert – Report-Funktion wird überarbeitet.
+               Handler (exportPdf) und Logik (exportReportPdfClient) bleiben im Code.
+               Zum Reaktivieren einfach die comment/endcomment-Tags entfernen. {% endcomment %}
+            {% comment %}
             <div class="tooltip">
                 <button id="exportPdfBtn" class="header-action-btn">
                     <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -440,6 +444,7 @@
                 </button>
                 <span class="tooltiptext">Analysebericht als PDF exportieren</span>
             </div>
+            {% endcomment %}
             <div class="tooltip">
                 <button id="exportAnnotatedPdfBtn" class="header-action-btn">
                     <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
@@ -895,9 +900,7 @@
     </div>
 
     <!-- ==================== SCRIPTS ==================== -->
-    <script src="{% static 'js/performance-monitor.js' %}"></script>
     <script src="{% static 'dist/js/main.js' %}"></script>
-    <script src="{% static 'js/smoke-tests.js' %}"></script>
 
     <script>
     (function () {
@@ -945,13 +948,6 @@
         });
     })();
     </script>
-
-    <!-- Dev performance controls -->
-    <div id="perfControls" style="position:fixed; top:10px; right:10px; background:#f0f0f0; padding:8px 10px; border-radius:5px; z-index:9999; font-family:Arial; font-size:11px;">
-        <strong>🚀 Perf</strong>
-        <button onclick="showPerfDashboard()" style="margin:2px 2px 0; font-size:11px;">Dashboard</button>
-        <button onclick="exportPerfData()" style="margin:2px 2px 0; font-size:11px;">Export</button>
-    </div>
 
 
 </body>

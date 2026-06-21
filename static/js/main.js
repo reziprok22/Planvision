@@ -189,8 +189,6 @@ function setupToolButtons() {
  * Initialize canvas
  */
 function initCanvas() {
-  startPerfMeasurement('canvas-initialization', 'canvas');
-  
   if (!uploadedImage || !uploadedImage.complete || uploadedImage.naturalWidth === 0) {
     console.warn("Image not loaded yet, retrying...");
     setTimeout(initCanvas, 100);
@@ -358,12 +356,6 @@ function initCanvas() {
   setupCanvasEvents();
   createCrosshairOverlay();
 
-  endPerfMeasurement('canvas-initialization', {
-    canvas_width: naturalWidth,
-    canvas_height: naturalHeight,
-    image_size_mb: (naturalWidth * naturalHeight * 4) / (1024 * 1024) // Rough estimate
-  });
-  
   return canvas;
 }
 
@@ -460,15 +452,12 @@ function stopHorizontalScrollAnim() {
  * @param {Object} canvasData - Canvas data from saved project
  */
 function loadCanvasData(canvasData) {
-  startPerfMeasurement('canvas-data-loading', 'canvas');
-  
   if (!canvas) {
     initCanvas();
   }
-  
+
   if (!canvas || !canvasData || !canvasData.canvas_annotations) {
     console.error("Cannot load canvas data: missing canvas or data");
-    endPerfMeasurement('canvas-data-loading', { success: false });
     return;
   }
   
@@ -539,11 +528,6 @@ function loadCanvasData(canvasData) {
       buildCanvasLegend(canvasData.legend_position);
     }
     saveHistorySnapshot();
-
-    endPerfMeasurement('canvas-data-loading', {
-      annotations_loaded: canvasData.canvas_annotations.length,
-      success: true
-    });
   }, 100);
 }
 
