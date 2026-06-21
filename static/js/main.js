@@ -1873,8 +1873,20 @@ function getPixelToMeterFactor() {
 /**
  * Delete selected objects
  */
+// Brief visual confirmation on an action tool-button (e.g. delete) that has no
+// persistent active state: apply the active look for a moment. Works for both
+// click and hotkey since it lives in the shared action handler below.
+function flashToolButton(tool) {
+  const btn = document.querySelector(`.tool-button[data-tool="${tool}"]`);
+  if (!btn) return;
+  btn.classList.add('flash-active');
+  setTimeout(() => btn.classList.remove('flash-active'), 180);
+}
+
 function deleteSelectedObjects() {
   if (!canvas || selectedObjects.length === 0) return;
+
+  flashToolButton('delete');
 
   selectedObjects.forEach(obj => {
     canvas.remove(obj);
@@ -3086,6 +3098,9 @@ async function initApp() {
 
     // Load image into canvas
     uploadedImage.style.display = 'block';
+    // Empty-State ausblenden, sobald ein Plan angezeigt wird
+    const emptyState = document.getElementById('canvasEmptyState');
+    if (emptyState) emptyState.style.display = 'none';
     uploadedImage.onload = function() {
       // Check if we already have canvas data for this page (e.g. after analysis)
       if (pageCanvasData[pageNumber]) {
