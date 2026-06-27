@@ -17,6 +17,7 @@ performance_optimierung
 node_modules
 UI
 db.sqlite3
+core/management/commands/Ergebnisse
 
 # Einzelne Datei ignorieren
 Notizen_FL.md

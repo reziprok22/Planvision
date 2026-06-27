@@ -5,6 +5,7 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from PIL import Image
 import io
 import os
+import cv2
 import numpy as np
 from utils import calculate_scale_factor, apply_nms, refine_boxes_to_lines
 from image_preprocessing import preprocess_image
@@ -139,13 +140,18 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         # Modell laden (nur einmal)
         model = load_model()
         
-        # Vorverarbeitung mit OpenCV
+        # Vorverarbeitung mit OpenCV (NUR für die KI – das Modell ist auf genau
+        # diese Vorverarbeitung trainiert, siehe image_preprocessing.preprocess_image)
         processed_image = preprocess_image(image_bytes)
 
-        # Vollauflösungs-Farbbild für die Snap-to-Line-Verfeinerung sichern
-        # (vor dem Verkleinern – die Boxen werden später in diese Auflösung zurückskaliert).
-        # Farbe statt Grau, damit auch gesättigte Linienfarben (Gelb, Cyan ...) als Tinte zählen.
-        full_res_rgb = np.array(processed_image.convert('RGB'))
+        # Sauberes Vollauflösungs-Farbbild NUR für den Snap-to-Line: das Original
+        # ohne CLAHE/GaussianBlur (die verfälschen die Tinten-/Schwellenwerte, auf
+        # die `min_darkness='auto'` relativ reagiert) und in echter Farbe (damit der
+        # ink_mode bunte Hilfslinien wie gelbe Abbruchlinien aussortieren kann).
+        # So snappt die Produktion auf demselben Bild wie `manage.py debug_snap`.
+        # (vor dem Verkleinern – die Boxen werden in diese Auflösung zurückskaliert.)
+        _snap_bgr = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
+        full_res_rgb = cv2.cvtColor(_snap_bgr, cv2.COLOR_BGR2RGB)
 
         # Bild verkleinern falls zu groß (höhere Inferenz-Auflösung = präzisere Boxen)
         processed_image, coord_scale = resize_image_if_large(processed_image, max_size=2048)
@@ -184,7 +190,16 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         # Snap-to-Line: Box-Kanten auf die echten Planlinien einrasten
         # (per AFTERPROCESS-Schalter abschaltbar, um mit dem alten Verhalten zu vergleichen)
         if AFTERPROCESS:
-            boxes = refine_boxes_to_lines(boxes, full_res_rgb, search=16, min_darkness=25)
+            # Konservativer Snap: dem (meist schon guten) Netz vertrauen und nur
+            # winzig korrigieren. select='nearest' rastet auf die der Netz-Kante
+            # nächste Linie ein, das search-Band wirkt als Toleranz – so werden
+            # kleine Versätze sauber eingerastet, ohne bei vielen dicht liegenden
+            # Linien (Ansichten: Rahmen/Sturz/Bank/Laden) nach außen zu springen.
+            # min_darkness='auto': Schwelle wird pro Kante adaptiv aus dem Suchband
+            # abgeleitet (siehe utils._auto_darkness) – ein fester Wert tötet auf
+            # manchen Plänen die blassen Rahmenlinien (Snap greift dann ins Leere
+            # oder springt auf Schatten). Diagnose/Vergleich: `manage.py debug_snap`.
+            boxes = refine_boxes_to_lines(boxes, full_res_rgb, search=16, min_darkness='auto', select='nearest')
 
         # Flächen berechnen
         areas = []

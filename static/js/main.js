@@ -820,8 +820,11 @@ function updateResultsTable() {
       row.title = 'Benutzer-erstellt';
     }
 
-    // Add hover functionality to highlight annotation on canvas
-    row.addEventListener('mouseenter', () => highlightAnnotation(index));
+    // Hover linking uses the stable annotation id, not a positional index: the
+    // table is sorted by displayIndex while the canvas is in z-order, so indices
+    // would point at different objects in each.
+    if (annotation.id != null) row.dataset.annotationId = annotation.id;
+    row.addEventListener('mouseenter', () => highlightAnnotation(annotation));
     row.addEventListener('mouseleave', () => removeHighlight());
 
     resultsBody.appendChild(row);
@@ -938,12 +941,9 @@ let _highlightedAnnotation = null;
 /**
  * Highlight annotation on canvas when hovering over table row
  */
-function highlightAnnotation(index) {
-  if (!canvas) return;
+function highlightAnnotation(target) {
+  if (!canvas || !target) return;
   removeHighlight(); // clear any leftover highlight first
-  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  const target = annotations[index];
-  if (!target) return;
 
   _highlightedAnnotation = target;
   target._origStrokeWidth = target.strokeWidth;
@@ -969,15 +969,24 @@ function removeHighlight() {
 }
 
 /**
- * Highlight table row when hovering over annotation
+ * Find the results-table row belonging to an annotation (matched by stable id).
  */
-function highlightTableRow(index) {
-  const resultsBody = document.getElementById('resultsBody');
-  if (!resultsBody) return;
-  
-  const rows = resultsBody.querySelectorAll('tr');
-  if (index < rows.length) {
-    const targetRow = rows[index];
+function findResultRow(annotation) {
+  if (!annotation?.id) return null;
+  const rows = document.getElementById('resultsBody')?.querySelectorAll('tr');
+  if (!rows) return null;
+  for (const r of rows) {
+    if (r.dataset.annotationId === annotation.id) return r;
+  }
+  return null;
+}
+
+/**
+ * Highlight table row when hovering over its annotation
+ */
+function highlightTableRow(annotation) {
+  const targetRow = findResultRow(annotation);
+  if (targetRow) {
     targetRow.style.backgroundColor = '#e3f2fd'; // Light blue background
     targetRow.style.transform = 'scale(1.02)'; // Slight scale effect
     targetRow.style.transition = 'all 0.2s ease';
@@ -985,15 +994,11 @@ function highlightTableRow(index) {
 }
 
 /**
- * Remove highlight from table row
+ * Remove highlight from the table row of an annotation
  */
-function removeTableRowHighlight(index) {
-  const resultsBody = document.getElementById('resultsBody');
-  if (!resultsBody) return;
-  
-  const rows = resultsBody.querySelectorAll('tr');
-  if (index < rows.length) {
-    const targetRow = rows[index];
+function removeTableRowHighlight(annotation) {
+  const targetRow = findResultRow(annotation);
+  if (targetRow) {
     targetRow.style.backgroundColor = ''; // Remove background
     targetRow.style.transform = ''; // Remove scale
     targetRow.style.transition = 'all 0.2s ease';
@@ -1747,29 +1752,13 @@ function setupCanvasEvents() {
     }
   });
   
-  // Mouse hover events for annotation highlighting
+  // Mouse hover events for annotation highlighting (matched by id, not position)
   canvas.on('mouse:over', function(e) {
-    if (!e.target) return;
-    if (e.target.objectType === 'annotation') {
-      // Find index in annotations array
-      const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-      const index = annotations.indexOf(e.target);
-      if (index >= 0) {
-        highlightTableRow(index);
-      }
-    }
+    if (e.target?.objectType === 'annotation') highlightTableRow(e.target);
   });
-  
+
   canvas.on('mouse:out', function(e) {
-    if (!e.target) return;
-    if (e.target.objectType === 'annotation') {
-      // Find index in annotations array
-      const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-      const index = annotations.indexOf(e.target);
-      if (index >= 0) {
-        removeTableRowHighlight(index);
-      }
-    }
+    if (e.target?.objectType === 'annotation') removeTableRowHighlight(e.target);
   });
 }
 
@@ -2181,21 +2170,39 @@ function getCurrentSelectedLabel() {
  */
 function applyLabelChangeToSelectedObject() {
   if (!canvas || selectedObjects.length === 0) return;
-  
+
   const universalLabelSelect = document.getElementById('universalLabelSelect');
   if (!universalLabelSelect) return;
-  
+
   const newLabelId = parseInt(universalLabelSelect.value);
-  const selectedObject = selectedObjects[0];
-  
-  // Update object properties
-  selectedObject.labelId = newLabelId;
-  selectedObject.objectLabel = newLabelId;
-  
-  // Determine label type based on object
-  const isLineObject = selectedObject.annotationType === 'line';
-  
-  // Get new label info
+  if (!newLabelId) return;
+
+  // The dropdown shows labels of one category only (line vs. area, based on the
+  // first selected object). Apply the change to EVERY selected object of that
+  // same category; leave the other category untouched – a line label must not
+  // land on a rectangle/polygon and vice versa.
+  const targetIsLine = selectedObjects[0].annotationType === 'line';
+  const targets = selectedObjects.filter(o =>
+    o.objectType === 'annotation' && (o.annotationType === 'line') === targetIsLine
+  );
+
+  targets.forEach(obj => applyLabelToAnnotation(obj, newLabelId));
+
+  canvas.renderAll();
+  updateResultsTable();
+  updateSummary();
+  saveHistorySnapshot();
+}
+
+/**
+ * Apply a label (id) to a single annotation: update its label fields, fill/stroke
+ * and the colour of its linked text label.
+ */
+function applyLabelToAnnotation(obj, newLabelId) {
+  obj.labelId = newLabelId;
+  obj.objectLabel = newLabelId;
+
+  const isLineObject = obj.annotationType === 'line';
   let label;
   if (isLineObject && typeof getLabelById !== 'undefined') {
     const lineLabel = getLabelById(newLabelId, 'line');
@@ -2203,31 +2210,17 @@ function applyLabelChangeToSelectedObject() {
   } else {
     label = (typeof getLabelById !== 'undefined' && getLabelById(newLabelId)) || getLabel(newLabelId);
   }
-  
-  // Update visual appearance
+
   if (isLineObject) {
-    selectedObject.set({
-      stroke: label.color
-    });
+    obj.set({ stroke: label.color });
   } else {
-    selectedObject.set({
-      fill: getLabelColorWithOpacity(label.color, label.opacity),
-      stroke: label.color
-    });
+    obj.set({ fill: getLabelColorWithOpacity(label.color, label.opacity), stroke: label.color });
   }
-  
-  // Update linked text label color
-  const linkedTextLabel = canvas.getObjects().find(obj => 
-    obj.objectType === 'textLabel' && obj.linkedAnnotationId === selectedObject.id
+
+  const linkedTextLabel = canvas.getObjects().find(o =>
+    o.objectType === 'textLabel' && o.linkedAnnotationId === obj.id
   );
-  if (linkedTextLabel) {
-    linkedTextLabel.set({
-      backgroundColor: label.color
-    });
-  }
-  
-  canvas.renderAll();
-  saveHistorySnapshot();
+  if (linkedTextLabel) linkedTextLabel.set({ backgroundColor: label.color });
 }
 
 
@@ -3122,45 +3115,45 @@ function collectAllPagesCanvasData() {
  * Does NOT auto-trigger – only runs when the user clicks the button.
  */
 async function analyzeCurrentPage() {
-  let sessionId = getPdfSessionId() || getUploadSessionId();
-  let analyzePageNum = currentPageNumber;
-
-  if (!sessionId) {
-    // Re-establish a server session for projects loaded from ZIP by
-    // re-uploading the original PDF. The server only accepts PDFs, so this is
-    // the only fallback that can work; page numbering matches the ZIP pages.
-    const pdfBlob = getOriginalPdfBlob();
-    if (pdfBlob) {
-      try {
-        const fd = new FormData();
-        fd.append('file', new File([pdfBlob], 'document.pdf', { type: 'application/pdf' }));
-        const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
-        if (!res.ok) throw new Error();
-        const data = await res.json();
-        sessionId = data.session_id;
-        setPdfSessionId(sessionId); // reuse for subsequent analyses of any page
-      } catch {
-        alert('Analyse nicht möglich: Das Projekt-PDF konnte nicht erneut hochgeladen werden.');
-        return;
-      }
-    } else {
-      alert('Analyse nicht möglich: Dieses Projekt enthält kein Original-PDF. Bitte das PDF neu hochladen.');
-      return;
-    }
-  }
-
   const btn = document.getElementById('runDetectionBtn');
   const loader = document.getElementById('loader');
   const errorMessage = document.getElementById('errorMessage');
+  const analyzePageNum = currentPageNumber;
 
-  // UI: busy state (on the modal's "Erkennen" button)
+  // UI: busy state FIRST – set the "Analysiert…" spinner immediately on click,
+  // before any (possibly slow) work like re-uploading the PDF for project-loaded
+  // plans, so the user gets instant feedback. The finally below restores the button.
   if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.innerHTML = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> Analysiert…'; }
   if (loader) loader.style.display = 'block';
   if (errorMessage) errorMessage.style.display = 'none';
 
-  // Mark page as "analyzing" in sidebar
-
   try {
+    let sessionId = getPdfSessionId() || getUploadSessionId();
+
+    if (!sessionId) {
+      // Re-establish a server session for projects loaded from ZIP by
+      // re-uploading the original PDF. The server only accepts PDFs, so this is
+      // the only fallback that can work; page numbering matches the ZIP pages.
+      const pdfBlob = getOriginalPdfBlob();
+      if (pdfBlob) {
+        try {
+          const fd = new FormData();
+          fd.append('file', new File([pdfBlob], 'document.pdf', { type: 'application/pdf' }));
+          const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
+          if (!res.ok) throw new Error();
+          const data = await res.json();
+          sessionId = data.session_id;
+          setPdfSessionId(sessionId); // reuse for subsequent analyses of any page
+        } catch {
+          alert('Analyse nicht möglich: Das Projekt-PDF konnte nicht erneut hochgeladen werden.');
+          return; // finally restores the button
+        }
+      } else {
+        alert('Analyse nicht möglich: Dieses Projekt enthält kein Original-PDF. Bitte das PDF neu hochladen.');
+        return; // finally restores the button
+      }
+    }
+
     const formData = new FormData();
     formData.append('session_id', sessionId);
     formData.append('page', analyzePageNum);
@@ -3195,16 +3188,19 @@ async function analyzeCurrentPage() {
         a.userCreated === true || a.labelId !== targetLabelId
       );
 
-      // Bounding boxes of user annotations (from live objects → robust for any type)
+      // Bounding boxes of user annotations of the SAME target label (from live
+      // objects → robust for any type). Only same-label user annotations block a
+      // new detection: a user-drawn "Wand" must not stop a "Fenster" from being
+      // detected at the same spot.
       const userBoxes = canvas.getObjects()
-        .filter(o => o.objectType === 'annotation' && o.userCreated === true)
+        .filter(o => o.objectType === 'annotation' && o.userCreated === true && o.labelId === targetLabelId)
         .map(o => {
           const r = o.getBoundingRect();
           return { x1: r.left, y1: r.top, x2: r.left + r.width, y2: r.top + r.height };
         });
 
       // New AI annotations: first drop AI-vs-AI duplicates (keep highest score),
-      // then drop those overlapping a user annotation
+      // then drop those overlapping a same-label user annotation
       const aiData = convertPredictionsToCanvasData(data.predictions, currentPageNumber);
       const dedupedAi = dedupeAnnotationsByScore(aiData.canvas_annotations);
       const filteredAi = dedupedAi.filter(a => {
