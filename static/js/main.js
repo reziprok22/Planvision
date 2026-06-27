@@ -9,7 +9,7 @@ function getCsrfToken() {
 }
 
 // Import Fabric.js
-import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle, Group } from 'fabric';
+import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle, Group, ActiveSelection } from 'fabric';
 
 // Import modules
 import {
@@ -81,6 +81,11 @@ let clipboardSourcePositions = {}; // {id: {left, top}} of originals at copy tim
 let editingPolygon = null;         // polygon currently in vertex-edit mode
 let vertexHandles = [];            // Circle handles shown during vertex editing
 let pasteOffset = 0;               // increases with each paste so copies don't stack
+let dupArmed = false;              // Ctrl/Alt + drag duplicate: armed at mouse:down
+let dupSerialized = null;          // originals serialised at their start position, to clone on first move
+let dupCreated = false;            // clones already spawned for this drag
+let dupClonesAdded = false;        // async clone insertion has finished
+let dupNeedsFinalize = false;      // mouse:up happened before the async insertion finished
 
 // Overscan: render this many px beyond the viewport on each side so the canvas
 // already holds content where a scroll-edge would otherwise flicker for one frame
@@ -269,10 +274,14 @@ function initCanvas() {
   // Initialize Fabric.js canvas
   canvas = new Canvas('annotationCanvas');
   
-  // Configure canvas for drawing mode initially
-  canvas.selection = false;  // Disable selection by default
+  // Match the canvas interaction state to the active tool (default 'select').
+  // initCanvas runs on every upload/project-load/page-switch; hardcoding a
+  // non-select state here meant the drag-selection rectangle stayed off until
+  // the user re-picked the select tool, even though 'select' was already active.
+  const selectMode = currentTool === 'select';
+  canvas.selection = selectMode;
   canvas.defaultCursor = 'default';
-  canvas.hoverCursor = 'default';
+  canvas.hoverCursor = selectMode ? 'move' : 'crosshair';
   canvas.moveCursor = 'default';
   
   // Improve selection tolerance for thin lines and complex shapes
@@ -1236,6 +1245,7 @@ async function pasteAnnotations() {
   }
 
   const objects = await util.enlivenObjects(JSON.parse(JSON.stringify(clipboard)));
+  const pasted = [];
   canvas.renderOnAddRemove = false;
   for (const obj of objects) {
     obj.set({
@@ -1251,9 +1261,56 @@ async function pasteAnnotations() {
     canvas.add(obj);
     obj.setCoords();
     createSingleTextLabel(obj, { batch: true });
+    pasted.push(obj);
   }
   canvas.renderOnAddRemove = true;
 
+  applyLayerOrdering();
+
+  // Select the freshly pasted objects (not the copied originals) so they can be
+  // moved straight away. Only in select mode, where the new objects are selectable.
+  if (currentTool === 'select' && pasted.length) {
+    canvas.discardActiveObject();
+    const sel = pasted.length === 1
+      ? pasted[0]
+      : new ActiveSelection(pasted, { canvas });
+    canvas.setActiveObject(sel);
+    selectedObjects = pasted;
+  }
+
+  canvas.requestRenderAll();
+  updateResultsTable();
+  updateSummary();
+  saveHistorySnapshot();
+}
+
+/**
+ * Serialise annotation objects with their ABSOLUTE canvas coordinates. Objects
+ * inside an ActiveSelection store left/top relative to the selection centre, so
+ * recover the absolute position from the transform matrix (same as copy/paste).
+ */
+function serializeAnnotationsAbsolute(objs) {
+  return objs.map(o => {
+    const s = o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel']);
+    if (o.group) {
+      const m = o.calcTransformMatrix();
+      s.left = m[4] - o.getScaledWidth()  / 2;
+      s.top  = m[5] - o.getScaledHeight() / 2;
+    }
+    return s;
+  });
+}
+
+/**
+ * Finish a Ctrl/Alt duplicate-drag: refresh tables and store a single history
+ * snapshot. The copies were already dropped at the start position on first move;
+ * the dragged originals stay selected so they can be moved on.
+ */
+function finalizeDragDuplicate() {
+  dupCreated = false;
+  dupClonesAdded = false;
+  dupNeedsFinalize = false;
+  dupSerialized = null;
   applyLayerOrdering();
   canvas.requestRenderAll();
   updateResultsTable();
@@ -1494,6 +1551,30 @@ function setupCanvasEvents() {
       }
     }
 
+    // Ctrl/Alt + drag on an annotation body → duplicate-on-drag. We arm here and
+    // serialise the selection at its START position; on the first move a copy is
+    // dropped there immediately (visible at once), while the originals are dragged
+    // on. __corner is set when a resize/rotate handle was grabbed → skip those.
+    // On a multi-selection the drag target is the ActiveSelection (a group), not
+    // an annotation – handle both so Ctrl/Alt-drag duplicates groups too.
+    const t = options.target;
+    const multiSel = canvas.getActiveObject() instanceof ActiveSelection ? canvas.getActiveObject() : null;
+    const onMulti  = multiSel && (t === multiSel || multiSel.getObjects().includes(t));
+    const onAnno   = t?.objectType === 'annotation';
+    dupArmed = currentTool === 'select'
+            && (options.e.ctrlKey || options.e.altKey)
+            && (onMulti || onAnno)
+            && !t?.__corner;
+    if (dupArmed) {
+      const set = onMulti
+        ? multiSel.getObjects().filter(o => o.objectType === 'annotation')
+        : [t];
+      dupSerialized = serializeAnnotationsAbsolute(set);
+      dupCreated = false;
+      dupClonesAdded = false;
+      dupNeedsFinalize = false;
+    }
+
     // If there's a target object (user clicked on an existing annotation or handle), don't start drawing
     if (options.target && (options.target.objectType === 'annotation' || options.target.objectType === 'vertexHandle' || options.target.objectType === 'midpointHandle')) {
       return;
@@ -1540,6 +1621,28 @@ function setupCanvasEvents() {
       updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
       updateAdjacentMidpoints(obj.pointIndex);
     }
+
+    // First move of a Ctrl/Alt-drag → drop the copies at the start position right
+    // away, so the duplicate is visible immediately while the originals are dragged.
+    if (dupArmed && !dupCreated) {
+      dupCreated = true;
+      util.enlivenObjects(JSON.parse(JSON.stringify(dupSerialized))).then(objects => {
+        canvas.renderOnAddRemove = false;
+        for (const o of objects) {
+          o.set({ objectType: 'annotation', selectable: true, evented: true });
+          delete o.id;                 // fresh id/index from createSingleTextLabel
+          o.displayIndex = undefined;
+          canvas.add(o);
+          o.setCoords();
+          createSingleTextLabel(o, { batch: true });
+        }
+        canvas.renderOnAddRemove = true;
+        dupClonesAdded = true;
+        applyLayerOrdering();
+        canvas.requestRenderAll();
+        if (dupNeedsFinalize) finalizeDragDuplicate();
+      });
+    }
   });
 
   // Mouse up event - finish drawing operations
@@ -1547,6 +1650,18 @@ function setupCanvasEvents() {
 
     if (currentTool === 'rectangle' && drawingMode) {
       finishDrawingRectangle();
+    }
+
+    // Ctrl/Alt + drag duplicate: finalise once the drag ends. If the async clone
+    // insertion is still pending, finalizeDragDuplicate runs from its callback.
+    if (dupArmed) {
+      dupArmed = false;
+      if (dupCreated) {
+        if (dupClonesAdded) finalizeDragDuplicate();
+        else dupNeedsFinalize = true;
+      } else {
+        dupSerialized = null; // armed but no drag happened (plain Ctrl/Alt-click)
+      }
     }
   });
   
@@ -1610,7 +1725,10 @@ function setupCanvasEvents() {
   canvas.on('object:modified', function(e) {
     if (!e.target || e.target.objectType !== 'annotation') return;
     updateLinkedTextLabelPosition(e.target);
-    saveHistorySnapshot();
+    // During a Ctrl/Alt duplicate-drag (still armed here, fires before mouse:up),
+    // skip this snapshot – finalizeDragDuplicate saves the final state so the
+    // whole duplicate is a single undo step.
+    if (!dupArmed) saveHistorySnapshot();
     debouncedTableUpdate();
   });
 
@@ -3349,6 +3467,17 @@ async function initApp() {
     if (key === heldDrawingKey) heldDrawingKey = null;
   });
 
+  // Show a "copy" cursor while Ctrl/Alt is held in select mode, to hint that
+  // dragging a selection now duplicates it (the copy is dropped on first move).
+  const updateDupCursor = (e) => {
+    if (!canvas || currentTool !== 'select') return;
+    const dup = e.ctrlKey || e.altKey;
+    canvas.hoverCursor = dup ? 'copy' : 'move';
+    canvas.moveCursor  = dup ? 'copy' : 'default';
+  };
+  document.addEventListener('keydown', updateDupCursor);
+  document.addEventListener('keyup', updateDupCursor);
+
   // Keyboard shortcuts for tools
   document.addEventListener('keydown', function(e) {
     // Don't fire when typing in an input, textarea or select
@@ -3433,11 +3562,15 @@ async function initApp() {
         const modal = document.getElementById('labelManagerModal');
         if (modal && modal.style.display === 'block') { closeLabelManager(); break; }
         if (editingPolygon) { exitPolygonEditMode(); break; }
-        // First Escape cancels in-progress drawing; second Escape switches to select
+        // First Escape cancels in-progress drawing; otherwise it clears the
+        // current selection; failing that it falls back to the select tool.
         if ((currentTool === 'polygon' || currentTool === 'line') && drawingMode) {
           cleanupCurrentTool();
           resetAllDrawingStates();
           canvas?.renderAll();
+        } else if (canvas?.getActiveObject()) {
+          canvas.discardActiveObject();
+          canvas.requestRenderAll();
         } else {
           setTool('select');
         }
