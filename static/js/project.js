@@ -3,7 +3,7 @@
  */
 
 import { setCurrentLabels, getAllLabels } from './labels.js';
-import { initSidebarFromProject }          from './upload-modal.js';
+import { initSidebarFromProject, getUploadedBaseName } from './upload-modal.js';
 import { saveProjectAsZip, buildProjectZipBlob, loadProjectFromZip } from './project-zip.js';
 import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-client.js';
 
@@ -21,7 +21,7 @@ export function setupProject(elements, modules) {
   // Hidden file input for ZIP import
   zipFileInput          = document.createElement('input');
   zipFileInput.type     = 'file';
-  zipFileInput.accept   = '.zip';
+  zipFileInput.accept   = '.plan,.zip';   // .plan = neues Format, .zip = Altprojekte
   zipFileInput.style.display = 'none';
   document.body.appendChild(zipFileInput);
 
@@ -125,7 +125,6 @@ async function handleBugReportSubmit(closeModal) {
         settings:        pdfModule.getPageSettings(),
         pageImageUrls:   pdfModule.getAllPdfPages(),
         originalPdfBlob: pdfModule.getOriginalPdfBlob(),
-        analysisData:    window.collectAllPagesAnalysisData ? window.collectAllPagesAnalysisData() : {},
       });
       fd.append('project_zip', new File([blob], 'project.zip', { type: 'application/zip' }));
     }
@@ -170,9 +169,11 @@ async function handleSave() {
     return;
   }
 
-  const projectName = `Planvision ${new Date().toLocaleDateString('de-DE')}`;
+  // Name nach dem hochgeladenen Plan; Fallback auf generischen Namen mit Datum
+  const baseName = getUploadedBaseName();
+  const projectName = baseName || `Planvision ${new Date().toLocaleDateString('de-DE')}`;
 
-  const status = showStatus('ZIP wird erstellt…');
+  const status = showStatus('Projekt wird gespeichert…');
   try {
     await saveProjectAsZip({
       projectName,
@@ -181,10 +182,9 @@ async function handleSave() {
       settings:        pdfModule.getPageSettings(),
       pageImageUrls:   pdfModule.getAllPdfPages(),
       originalPdfBlob: pdfModule.getOriginalPdfBlob(),
-      analysisData:    window.collectAllPagesAnalysisData ? window.collectAllPagesAnalysisData() : {},
-      onProgress:      (pct) => { status.textContent = `ZIP wird erstellt… ${pct}%`; }
+      onProgress:      (pct) => { status.textContent = `Projekt wird gespeichert… ${pct}%`; }
     });
-    updateStatus(status, 'ZIP gespeichert ✓', 'success');
+    updateStatus(status, 'Projekt gespeichert ✓', 'success');
   } catch (err) {
     console.error('ZIP save error:', err);
     updateStatus(status, `Fehler: ${err.message}`, 'error');
@@ -195,17 +195,14 @@ async function handleSave() {
 
 async function handleLoad(file) {
   const loader = document.getElementById('loader');
-  const status = showStatus('ZIP wird geladen…');
+  const status = showStatus('Projekt wird geladen…');
   if (loader) loader.style.display = 'block';
 
   try {
-    const { metadata, canvasData, labels, settings, imageUrls, pdfBlob, analysisData } = await loadProjectFromZip(file);
+    const { metadata, canvasData, labels, settings, imageUrls, pdfBlob } = await loadProjectFromZip(file);
 
     // Restore state
     if (window.initializePageCanvasData) window.initializePageCanvasData(canvasData);
-    // Restore raw AI predictions (or reset, so the previous project's data
-    // can't leak into the next ZIP save)
-    if (window.setPageAnalysisData) window.setPageAnalysisData(analysisData);
     pdfModule.setPdfNavigationState(1, metadata.page_count, imageUrls);
     pdfModule.setPageSettings(settings);
     pdfModule.setPdfSessionId(null);
@@ -302,7 +299,7 @@ export async function exportPdf() {
       pageImageUrls: pdfModule.getAllPdfPages(),
       pageCanvasData,
       labels:      getAllLabels(),
-      projectName: document.title.replace('Planvision – ', '') || 'Planvision',
+      projectName: getUploadedBaseName() || document.title.replace('Planvision – ', '') || 'Planvision',
     });
     updateStatus(status, 'Bericht erstellt ✓', 'success');
   } catch (err) {
@@ -328,7 +325,7 @@ export async function exportAnnotatedPdf() {
       pageImageUrls: pdfModule.getAllPdfPages(),
       pageCanvasData,
       labels:        getAllLabels(),
-      projectName:   document.title.replace('Planvision – ', '') || 'Planvision',
+      projectName:   getUploadedBaseName() || document.title.replace('Planvision – ', '') || 'Planvision',
     });
     updateStatus(status, 'Plan erstellt ✓', 'success');
   } catch (err) {

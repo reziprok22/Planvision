@@ -112,6 +112,15 @@ export function getSessionId()    { return currentSessionId; }
 export function getUploadedPages(){ return uploadedPages; }
 export function getPageSizes()    { return uploadedPageSizes; }
 
+/**
+ * Base name of the currently loaded plan (uploaded filename without extension),
+ * used to name saved projects and PDF exports after the plan instead of a
+ * generic label. Empty string when nothing is loaded yet.
+ */
+export function getUploadedBaseName() {
+  return (currentFileName || '').replace(/\.[^.]+$/, '').trim();
+}
+
 // ── Internal helpers ──────────────────────────────────────────────────
 
 /**

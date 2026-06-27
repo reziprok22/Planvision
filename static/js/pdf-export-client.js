@@ -385,6 +385,14 @@ function triggerDownload(bytes, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/**
+ * Build a safe download base name from the project/plan name. Strips characters
+ * that are invalid in filenames; falls back to 'Planvision' when empty.
+ */
+function safeFileBase(name) {
+    return (name || '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'Planvision';
+}
+
 // ── Plan erstellen (annotated PDF) ────────────────────────────────────────────
 
 export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCanvasData, labels, projectName }) {
@@ -456,7 +464,7 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         }
     }
 
-    triggerDownload(await pdfDoc.save(), 'annotierter-plan.pdf');
+    triggerDownload(await pdfDoc.save(), `${safeFileBase(projectName)}-annotiert.pdf`);
 }
 
 // ── Bericht erstellen (report PDF) ───────────────────────────────────────────
@@ -611,5 +619,5 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
         }
     }
 
-    triggerDownload(await pdfDoc.save(), 'planvision-bericht.pdf');
+    triggerDownload(await pdfDoc.save(), `${safeFileBase(projectName)}-bericht.pdf`);
 }

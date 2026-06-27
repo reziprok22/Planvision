@@ -24,6 +24,11 @@ import JSZip from 'jszip';
 //   2 – canvas_text_labels per page added; id + labelText serialised on annotations
 //   3 – legend_position per page added (optional; null when no on-plan legend placed)
 //
+// Note: the optional analysis/page_N.json (raw AI predictions) is no longer
+// written – it was a write-only round-trip, fully superseded by the scored
+// annotations in canvas_data.json. Old files that still contain it load fine
+// (the folder is simply ignored). No version bump needed (absence-tolerant).
+//
 const CURRENT_VERSION = 3;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
@@ -97,10 +102,9 @@ function migrateCanvasData(canvasData, fromVersion) {
  * @param {Object}   p.settings         – output of getPageSettings()
  * @param {string[]} p.pageImageUrls    – URL array from getAllPdfPages()
  * @param {Blob}     p.originalPdfBlob  – the original PDF file (optional)
- * @param {Object}   p.analysisData     – raw AI predictions per page { "1": [...], "2": [...] }
  * @param {Function} p.onProgress       – optional (percent: number) => void
  */
-export async function buildProjectZipBlob({ projectName, canvasData, labels, settings, pageImageUrls, originalPdfBlob, analysisData, onProgress }) {
+export async function buildProjectZipBlob({ projectName, canvasData, labels, settings, pageImageUrls, originalPdfBlob, onProgress }) {
   const zip = new JSZip();
 
   zip.file('metadata.json', JSON.stringify({
@@ -117,14 +121,6 @@ export async function buildProjectZipBlob({ projectName, canvasData, labels, set
   // Include original PDF so server session can be re-established on load
   if (originalPdfBlob) {
     zip.file('original.pdf', originalPdfBlob);
-  }
-
-  // Include raw AI predictions so PDF reports work after re-import
-  if (analysisData && Object.keys(analysisData).length > 0) {
-    const analysisFolder = zip.folder('analysis');
-    for (const [pageNum, predictions] of Object.entries(analysisData)) {
-      analysisFolder.file(`page_${pageNum}.json`, JSON.stringify(predictions, null, 2));
-    }
   }
 
   const pagesFolder = zip.folder('pages');
@@ -154,7 +150,11 @@ export async function saveProjectAsZip(params) {
   const url = URL.createObjectURL(blob);
   const a   = document.createElement('a');
   a.href     = url;
-  a.download = `${params.projectName || 'planvision'}.zip`;
+  // .plan = ein OnlyPlans-Projekt (intern ein ZIP). Eigene Endung, damit Nutzer
+  // es nicht für ein zu entpackendes Archiv halten – wird über "Projekt öffnen"
+  // wieder geladen (loadProjectFromZip akzeptiert weiterhin alte .zip-Dateien).
+  const safeBase = (params.projectName || 'planvision').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'planvision';
+  a.download = `${safeBase}.plan`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -206,18 +206,5 @@ export async function loadProjectFromZip(file) {
   const pdfFile = zip.file('original.pdf');
   if (pdfFile) pdfBlob = await pdfFile.async('blob');
 
-  // Extract per-page analysis data for PDF report generation
-  const analysisData = {};
-  for (let i = 1; i <= metadata.page_count; i++) {
-    const af = zip.file(`analysis/page_${i}.json`);
-    if (af) {
-      try {
-        analysisData[String(i)] = JSON.parse(await af.async('string'));
-      } catch (e) {
-        console.warn(`ZIP: could not parse analysis/page_${i}.json`, e);
-      }
-    }
-  }
-
-  return { metadata, canvasData, labels, settings, imageUrls, pdfBlob, analysisData };
+  return { metadata, canvasData, labels, settings, imageUrls, pdfBlob };
 }

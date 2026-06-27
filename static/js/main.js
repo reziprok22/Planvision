@@ -59,7 +59,6 @@ let uploadedImage = null;
 
 // Multi-Page Canvas State Management
 let pageCanvasData    = {}; // Store canvas data for each page: { "1": canvasData, "2": canvasData, ... }
-let pageAnalysisData  = {}; // Store raw AI predictions per page: { "1": [...predictions], ... }
 let currentPageNumber = 1;
 
 // Make canvas and pageCanvasData globally available for label validation
@@ -3062,9 +3061,6 @@ async function analyzeCurrentPage() {
     const data = await response.json();
     window.data = data;
 
-    // Store raw predictions for ZIP export / PDF report generation
-    pageAnalysisData[currentPageNumber] = data.predictions || [];
-
     // Convert AI predictions → canvas annotations and MERGE them with what is
     // already on the page (instead of wiping everything):
     //   - keep every user-drawn annotation, plus AI annotations of OTHER labels
@@ -3164,9 +3160,26 @@ async function initApp() {
 
     // Full reset for new upload – clear all previous project state
     pageCanvasData   = {};
-    pageAnalysisData = {};
-    setPageSettings({});
     setOriginalPdfBlob(null);
+
+    // Pre-initialise a settings block for EVERY page from the detected PDF sizes,
+    // so settings.json is complete and the per-page format survives save/reload –
+    // even for pages the user never opens (lazy init previously left them blank,
+    // which dropped their real format on reload). DPI/scale/AI-label use the same
+    // UI defaults that page 1 gets on first visit.
+    const detectedSizes = uploadInfo.page_sizes || [];
+    const initialSettings = {};
+    for (let p = 1; p <= uploadInfo.page_count; p++) {
+      const s = detectedSizes[p - 1];
+      initialSettings[p] = {
+        format_width:  s ? (s.width_mm  ?? Math.round(s[0] ?? 210)) : 210,
+        format_height: s ? (s.height_mm ?? Math.round(s[1] ?? 297)) : 297,
+        dpi:           parseFloat(document.getElementById('dpi')?.value)        || 150,
+        plan_scale:    parseFloat(document.getElementById('planScale')?.value)  || 100,
+        ai_label:      parseInt(document.getElementById('aiLabelSelect')?.value) || null,
+      };
+    }
+    setPageSettings(initialSettings);
 
     // Track original PDF blob so it can be included in ZIP saves and PDF export
     if (uploadInfo.is_pdf && uploadInfo.original_file) {
@@ -3550,8 +3563,6 @@ async function initApp() {
   window.collectAllPagesCanvasData = collectAllPagesCanvasData;
   window.loadCanvasData = loadCanvasData;
   window.initializePageCanvasData = initializePageCanvasData;
-  window.collectAllPagesAnalysisData = () => ({ ...pageAnalysisData });
-  window.setPageAnalysisData = (data) => { pageAnalysisData = { ...(data || {}) }; };
   window.getCurrentPageNumber = () => currentPageNumber;
   // JPEG of the currently visible canvas viewport (used by bug reports)
   window.getCanvasScreenshotBlob = async () => {
