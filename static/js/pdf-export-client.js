@@ -605,7 +605,7 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
             page.drawLine({ start: { x: MARGIN, y: curY }, end: { x: A4_W - MARGIN, y: curY },
                 color: rgb(0.8, 0.8, 0.8), thickness: 0.5 });
         } else {
-            page.drawText('Keine Annotationen auf dieser Seite.', {
+            page.drawText('Keine Objekte auf dieser Seite.', {
                 x: MARGIN, y: curY - 14, size: 9, font, color: rgb(0.5, 0.5, 0.5)
             });
         }

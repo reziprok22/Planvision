@@ -195,33 +195,7 @@
             width: 52px;
             color: #444;
         }
-/* --- Erkennungs-Einstellungen: Pfeil-Button + Popover neben "Fenster erkennen" --- */
-        .analyze-settings-wrap {
-            display: none; /* nach Upload via JS auf flex gesetzt */
-            position: relative;
-            align-items: center;
-        }
-        .analyze-caret {
-            padding: 5px 6px;
-            margin-left: 2px;
-        }
-        .analyze-caret.open { background: #f0f0f0; border-color: #999; }
-        .analyze-settings-popover {
-            display: none;
-            position: absolute;
-            top: calc(100% + 6px);
-            right: 0;
-            z-index: 1200;
-            flex-direction: column;
-            gap: 8px;
-            min-width: 215px;
-            background: #fff;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.12);
-            padding: 10px 12px;
-        }
-        .analyze-settings-popover.open { display: flex; }
+/* --- Einstellungs-Zeilen (Label/Schwelle) im "Fenster erkennen"-Modal --- */
         .popover-row {
             display: flex;
             align-items: center;
@@ -244,6 +218,24 @@
         }
         .popover-row input[type="number"] { width: 60px; }
         .popover-row select { max-width: 130px; }
+        /* Kleines Info-Icon mit Hover-Tooltip (z.B. neben "Schwelle") */
+        .info-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 1px solid #bbb;
+            color: #888;
+            font-size: 0.7em;
+            font-style: italic;
+            font-weight: 700;
+            cursor: help;
+            margin-left: 5px;
+            flex-shrink: 0;
+        }
+        .info-icon:hover { border-color: #FF6B00; color: #FF6B00; }
 
         /* --- Analyze Button in Toolbar --- */
         .analyze-page-btn {
@@ -506,7 +498,7 @@
                     <path d="M3 12.5 H11"/>
                     <path d="M4 1.5 C4 4.2 7 4.8 7 7 C7 9.2 4 9.8 4 12.5"/>
                     <path d="M10 1.5 C10 4.2 7 4.8 7 7 C7 9.2 10 9.8 10 12.5"/>
-                </svg>Wird verarbeitet…</div>
+                </svg>Wird geladen…</div>
 
             <!-- Page list (shown after upload) -->
             <div class="page-list-section" id="pageListSection" style="display:none">
@@ -635,33 +627,14 @@
 
                         <div class="toolbar-separator"></div>
 
-                        <!-- Analyze current page button -->
-                        <button id="analyzeCurrentPageBtn" class="analyze-page-btn" disabled title="Aktuelle Seite analysieren">
+                        <!-- Fenster erkennen: öffnet das Erkennungs-Modal (Einstellungen + Liste) -->
+                        <button id="analyzeCurrentPageBtn" class="analyze-page-btn" disabled title="Fenster erkennen">
                             <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg">
                                 <circle cx="5.5" cy="5.5" r="3.5"/>
                                 <line x1="8.5" y1="8.5" x2="11.5" y2="11.5"/>
                             </svg>
                             Fenster erkennen
                         </button>
-
-                        <!-- Erkennungs-Einstellungen: Pfeil öffnet Popover (sichtbar nach Upload) -->
-                        <div class="analyze-settings-wrap" id="analysisSettingsSection">
-                            <button id="analyzeSettingsToggle" class="analyze-page-btn analyze-caret" title="Erkennungs-Einstellungen">
-                                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
-                                    <polyline points="2,3.5 5,6.5 8,3.5"/>
-                                </svg>
-                            </button>
-                            <div class="analyze-settings-popover" id="analyzeSettingsPopover">
-                                <div class="popover-row">
-                                    <label for="aiLabelSelect">Erkennen als</label>
-                                    <select id="aiLabelSelect" title="Label, das erkannte Objekte erhalten"></select>
-                                </div>
-                                <div class="popover-row">
-                                    <label for="threshold">Schwelle</label>
-                                    <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05" title="Mindest-Konfidenz der Erkennung (0.1–1)">
-                                </div>
-                            </div>
-                        </div>
 
                         <div class="toolbar-spacer"></div>
 
@@ -809,6 +782,48 @@
         </div>
     </div>
 
+    <!-- Fenster erkennen: Einstellungen + Erkennungsliste -->
+    <div id="windowDetectModal" class="modal">
+        <div class="modal-content" style="max-width:460px;">
+            <span class="close" id="windowDetectClose">&times;</span>
+            <h3>Fenster erkennen</h3>
+            <p style="font-size:0.82em; color:#666; margin:2px 0 14px; line-height:1.45;">
+                Dient zur automatischen Erkennung von Fenstern auf Ansichtsplänen.
+            </p>
+
+            <div class="popover-row" style="margin-bottom:8px;">
+                <label for="aiLabelSelect">Erkennen mit Label</label>
+                <select id="aiLabelSelect" title="Label, das erkannte Objekte erhalten"></select>
+            </div>
+            <div class="popover-row" style="margin-bottom:14px;">
+                <label for="threshold">Schwelle<span class="info-icon" title="Mindest-Sicherheit, ab der ein erkanntes Objekt übernommen wird (0,1–1). Niedriger = mehr Treffer, aber auch mehr Fehlerkennungen; höher = nur sichere Treffer.">i</span></label>
+                <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05" title="Mindest-Konfidenz der Erkennung (0.1–1)">
+            </div>
+
+            <div style="display:flex; justify-content:flex-end; gap:8px; margin-bottom:14px;">
+                <button id="removeAiAnnotationsBtn" class="editor-button" title="Alle per KI erkannten Objekte dieser Seite entfernen">
+                    Objekte entfernen
+                </button>
+                <button id="runDetectionBtn" class="analyze-page-btn">
+                    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="5.5" cy="5.5" r="3.5"/>
+                        <line x1="8.5" y1="8.5" x2="11.5" y2="11.5"/>
+                    </svg>
+                    Erkennen
+                </button>
+            </div>
+
+            <table class="shortcuts-table" id="detectionResultsTable">
+                <thead>
+                    <tr><th>Nr.</th><th>Label</th><th>Wahrscheinlichkeit</th></tr>
+                </thead>
+                <tbody id="detectionResultsBody">
+                    <tr><td colspan="3" style="text-align:center; color:#999; font-style:italic; padding:16px;">Noch keine Erkennung durchgeführt.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <div id="shortcutsModal" class="modal">
         <div class="modal-content" style="max-width:480px;">
             <span class="close" id="shortcutsModalClose">&times;</span>
@@ -821,7 +836,7 @@
                     <tr><td><kbd>Q</kbd></td><td>Rechteck zeichnen</td></tr>
                     <tr><td><kbd>W</kbd></td><td>Polygon zeichnen</td></tr>
                     <tr><td><kbd>E</kbd></td><td>Linie zeichnen</td></tr>
-                    <tr><td><kbd>T</kbd> / <kbd>Del</kbd></td><td>Ausgewählte Annotation löschen</td></tr>
+                    <tr><td><kbd>T</kbd> / <kbd>Del</kbd></td><td>Ausgewähltes Objekt löschen</td></tr>
                     <tr><td><kbd>Esc</kbd></td><td>Zeichnen abbrechen / Auswählen</td></tr>
                     <tr><td colspan="2" class="shortcuts-section">Labels</td></tr>
                     <tr><td><kbd>1</kbd> – <kbd>9</kbd></td><td>Label des aktiven Werkzeugs wählen</td></tr>
@@ -834,13 +849,13 @@
                     <tr><td>Vertex anklicken + <kbd>Del</kbd></td><td>Vertex löschen</td></tr>
                     <tr><td><kbd>Esc</kbd></td><td>Vertex-Editiermodus beenden</td></tr>
                     <tr><td colspan="2" class="shortcuts-section">Bearbeiten</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Annotation kopieren</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Annotation ausschneiden</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Annotation einfügen</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Objekt kopieren</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Objekt ausschneiden</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Objekt einfügen</td></tr>
                     <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Rückgängig</td></tr>
                     <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Wiederholen</td></tr>
-                    <tr><td><kbd>↑ ↓ ← →</kbd></td><td>Annotation 1px verschieben</td></tr>
-                    <tr><td><kbd>Shift</kbd>+<kbd>↑ ↓ ← →</kbd></td><td>Annotation 10px verschieben</td></tr>
+                    <tr><td><kbd>↑ ↓ ← →</kbd></td><td>Objekt 1px verschieben</td></tr>
+                    <tr><td><kbd>Shift</kbd>+<kbd>↑ ↓ ← →</kbd></td><td>Objekt 10px verschieben</td></tr>
                     <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Projekt speichern</td></tr>
                     <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Projekt öffnen</td></tr>
                     <tr><td colspan="2" class="shortcuts-section">Navigation</td></tr>
@@ -864,7 +879,7 @@
                     <table id="labelTable">
                         <thead>
                             <tr>
-                                <th>Ebene</th>
+                                <th>Ebene<span class="info-icon" title="Stapel-Reihenfolge der Objekte: Labels weiter oben liegen im Plan vor tieferen. Mit den Pfeilen ein Label eine Ebene nach vorne (▲) oder hinten (▼) schieben – wichtig, wenn sich Objekte überlappen.">i</span></th>
                                 <th>Name</th>
                                 <th>Farbe</th>
                                 <th>Opacity</th>

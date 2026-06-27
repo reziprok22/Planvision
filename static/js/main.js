@@ -737,12 +737,8 @@ function updateResultsTable() {
     .filter(obj => obj.objectType === 'annotation')
     .sort((a, b) => (a.displayIndex ?? Infinity) - (b.displayIndex ?? Infinity));
 
-  // Score column only when AI detections are present on this page.
-  // Check for an actual score: manually drawn annotations (incl. those from
-  // old projects without the userCreated flag) never carry one.
-  const showScore = annotations.some(a => typeof a.score === 'number' && a.score > 0 && !a.userCreated);
-
-  // Header is dynamic because the column set varies
+  // Header. The AI confidence (Wahrscheinlichkeit) is a process value and lives
+  // in the detection modal, not here – this table shows result values only.
   const headRow = document.querySelector('#resultsTable thead tr');
   if (headRow) {
     headRow.innerHTML = `
@@ -752,7 +748,6 @@ function updateResultsTable() {
       <th>Breite</th>
       <th>Höhe</th>
       <th>Messwert</th>
-      ${showScore ? '<th>Wahrsch.</th>' : ''}
     `;
   }
 
@@ -802,10 +797,6 @@ function updateResultsTable() {
     const displayNumber = annotation.displayIndex || (index + 1);
     // Type as icon (same SVGs as the toolbar buttons), name via tooltip
     const typeIcon = `<span title="${typeName}" style="display:inline-flex; vertical-align:middle; color:#666;">${LABEL_TOOL_INDICATORS[typeKey].svg}</span>`;
-    const hasScore = typeof annotation.score === 'number' && annotation.score > 0 && !annotation.userCreated;
-    const scoreCell = showScore
-      ? `<td>${hasScore ? (annotation.score * 100).toFixed(1) + '%' : '–'}</td>`
-      : '';
     row.innerHTML = `
       <td>${displayNumber}</td>
       <td>${label.name}</td>
@@ -813,7 +804,6 @@ function updateResultsTable() {
       <td>${widthCell}</td>
       <td>${heightCell}</td>
       <td>${measurement}</td>
-      ${scoreCell}
     `;
 
     // Add visual indicator for user-created annotations
@@ -828,6 +818,69 @@ function updateResultsTable() {
 
     resultsBody.appendChild(row);
   });
+
+  // Keep the detection modal's list in sync (derived from the same canvas objects)
+  updateDetectionTable();
+}
+
+/**
+ * Update the detection list in the "Fenster erkennen" modal.
+ * Derived from the AI annotations on the canvas (userCreated === false, with a
+ * score), so it persists with the project, is overwritten on a new detection run,
+ * and updates automatically when the user deletes an AI annotation.
+ * Columns: Nr. | Label | Wahrscheinlichkeit.
+ */
+function updateDetectionTable() {
+  const body = document.getElementById('detectionResultsBody');
+  if (!body || !canvas) return;
+
+  const aiAnnotations = canvas.getObjects()
+    .filter(obj => obj.objectType === 'annotation'
+                && obj.userCreated === false
+                && typeof obj.score === 'number' && obj.score > 0)
+    .sort((a, b) => (a.displayIndex ?? Infinity) - (b.displayIndex ?? Infinity));
+
+  const removeBtn = document.getElementById('removeAiAnnotationsBtn');
+  if (removeBtn) removeBtn.disabled = aiAnnotations.length === 0;
+
+  if (aiAnnotations.length === 0) {
+    body.innerHTML = '<tr><td colspan="3" style="text-align:center; color:#999; font-style:italic; padding:16px;">Noch keine Erkennung durchgeführt.</td></tr>';
+    return;
+  }
+
+  body.innerHTML = '';
+  aiAnnotations.forEach(annotation => {
+    const labelId = annotation.labelId || annotation.objectLabel || 1;
+    const label = (annotation.annotationType === 'line')
+      ? (getLabelById ? getLabelById(labelId, 'line') : null) || { name: 'Strecke' }
+      : getLabel(labelId);
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td>${annotation.displayIndex ?? '–'}</td>
+      <td>${label.name}</td>
+      <td>${(annotation.score * 100).toFixed(1)}%</td>
+    `;
+    body.appendChild(row);
+  });
+}
+
+/**
+ * Remove every AI-detected annotation (userCreated === false) from the current
+ * page. User-drawn annotations are kept. Undoable via history. Linked text labels
+ * and the tables are cleaned up by the canvas 'object:removed' handler.
+ */
+function removeAllAiAnnotations() {
+  if (!canvas) return;
+  const aiAnnotations = canvas.getObjects()
+    .filter(o => o.objectType === 'annotation' && o.userCreated === false);
+  if (aiAnnotations.length === 0) return;
+  if (!confirm(`${aiAnnotations.length} erkannte Objekt(e) entfernen? Selbst gezeichnete bleiben erhalten.`)) return;
+
+  aiAnnotations.forEach(o => canvas.remove(o));
+  canvas.renderAll();
+  updateResultsTable();   // also refreshes the detection list
+  updateSummary();
+  saveHistorySnapshot();
 }
 
 /**
@@ -998,7 +1051,7 @@ function updateSummary() {
       </div>`;
   });
 
-  summary.innerHTML = summaryHtml || '<p><em>Keine Annotationen.</em></p>';
+  summary.innerHTML = summaryHtml || '<p><em>Keine Objekte.</em></p>';
 
   // Keep the on-plan legend (if placed) in sync with the data
   refreshCanvasLegend();
@@ -1032,7 +1085,7 @@ function buildCanvasLegend(position) {
   const nameTexts  = items.map(it => new Text(it.name, { ...textOpts }));
   const countTexts = items.map(it => new Text(String(it.count), { ...textOpts }));
   const areaTexts  = items.map(it => new Text(`${it.area.toFixed(2)} ${it.unit}`, { ...textOpts }));
-  const emptyText = items.length ? null : new Text('Keine Annotationen', {
+  const emptyText = items.length ? null : new Text('Keine Objekte', {
     ...textOpts, fill: '#888', fontStyle: 'italic',
   });
 
@@ -1769,7 +1822,7 @@ function updateLabelQuickList() {
   if (options.length === 0 || select.disabled) {
     const hint = document.createElement('div');
     hint.className = 'label-quick-disabled-hint';
-    hint.textContent = 'Annotation auswählen';
+    hint.textContent = 'Objekt auswählen';
     container.appendChild(hint);
     return;
   }
@@ -2979,11 +3032,11 @@ async function analyzeCurrentPage() {
     }
   }
 
-  const btn = document.getElementById('analyzeCurrentPageBtn');
+  const btn = document.getElementById('runDetectionBtn');
   const loader = document.getElementById('loader');
   const errorMessage = document.getElementById('errorMessage');
 
-  // UI: busy state
+  // UI: busy state (on the modal's "Erkennen" button)
   if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.innerHTML = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> Analysiert…'; }
   if (loader) loader.style.display = 'block';
   if (errorMessage) errorMessage.style.display = 'none';
@@ -3076,7 +3129,7 @@ async function analyzeCurrentPage() {
     if (btn) {
       btn.disabled = false;
       btn.classList.remove('analyzing');
-      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="5.5" cy="5.5" r="3.5"/><line x1="8.5" y1="8.5" x2="11.5" y2="11.5"/></svg> Fenster erkennen';
+      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="5.5" cy="5.5" r="3.5"/><line x1="8.5" y1="8.5" x2="11.5" y2="11.5"/></svg> Erkennen';
     }
     if (loader) loader.style.display = 'none';
   }
@@ -3248,22 +3301,25 @@ async function initApp() {
   // Legende auf dem Plan ein-/ausblenden
   document.getElementById('legendBtn')?.addEventListener('click', toggleCanvasLegend);
 
-  // Erkennungs-Einstellungen: Pfeil-Button öffnet/schliesst das Popover
-  const analyzeSettingsToggle  = document.getElementById('analyzeSettingsToggle');
-  const analyzeSettingsPopover = document.getElementById('analyzeSettingsPopover');
-  if (analyzeSettingsToggle && analyzeSettingsPopover) {
-    analyzeSettingsToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const open = analyzeSettingsPopover.classList.toggle('open');
-      analyzeSettingsToggle.classList.toggle('open', open);
-    });
-    document.addEventListener('click', (e) => {
-      if (!analyzeSettingsPopover.classList.contains('open')) return;
-      if (analyzeSettingsPopover.contains(e.target) || analyzeSettingsToggle.contains(e.target)) return;
-      analyzeSettingsPopover.classList.remove('open');
-      analyzeSettingsToggle.classList.remove('open');
-    });
-  }
+  // Fenster-erkennen-Modal: Einstellungen ("Erkennen als" + Schwelle), Auslöser
+  // und Erkennungsliste leben hier. Der Toolbar-Button öffnet das Modal.
+  const windowDetectModal = document.getElementById('windowDetectModal');
+  const openDetectModal = () => {
+    if (!windowDetectModal) return;
+    updateDetectionTable();          // show the persisted list for this page
+    windowDetectModal.style.display = 'block';
+  };
+  const closeDetectModal = () => {
+    if (windowDetectModal) windowDetectModal.style.display = 'none';
+  };
+  document.getElementById('windowDetectClose')?.addEventListener('click', closeDetectModal);
+  windowDetectModal?.addEventListener('click', (e) => {
+    if (e.target === windowDetectModal) closeDetectModal();
+  });
+  document.getElementById('runDetectionBtn')?.addEventListener('click', analyzeCurrentPage);
+  document.getElementById('removeAiAnnotationsBtn')?.addEventListener('click', removeAllAiAnnotations);
+  // Toolbar button now opens the modal instead of analyzing directly
+  document.getElementById('analyzeCurrentPageBtn')?.addEventListener('click', openDetectModal);
 
   // Setup tool buttons initially
   setupToolButtons();
@@ -3359,6 +3415,8 @@ async function initApp() {
       case 'Escape': {
         const shortcutsModal = document.getElementById('shortcutsModal');
         if (shortcutsModal && shortcutsModal.style.display === 'block') { toggleShortcutsModal(); break; }
+        const detectModal = document.getElementById('windowDetectModal');
+        if (detectModal && detectModal.style.display === 'block') { detectModal.style.display = 'none'; break; }
         const modal = document.getElementById('labelManagerModal');
         if (modal && modal.style.display === 'block') { closeLabelManager(); break; }
         if (editingPolygon) { exitPolygonEditMode(); break; }
@@ -3441,10 +3499,6 @@ async function initApp() {
   });
 
   // Wire "Fenster erkennen" button
-  const analyzeCurrentPageBtn = document.getElementById('analyzeCurrentPageBtn');
-  if (analyzeCurrentPageBtn) {
-    analyzeCurrentPageBtn.addEventListener('click', analyzeCurrentPage);
-  }
 
   
   // Initialize labels module (async)

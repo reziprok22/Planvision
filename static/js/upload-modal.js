@@ -25,7 +25,7 @@ let currentFileName  = '';
 // ── DOM refs ─────────────────────────────────────────────────────────
 let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
     changeFileBtn, pageListSection, pageList, pageCountBadge,
-    analysisSettingsSection, leftLoader;
+    leftLoader;
 
 // ── Callbacks wired by main.js ────────────────────────────────────────
 let onPageClickCallback  = null;
@@ -52,7 +52,6 @@ export function setupUploadModal() {
     pageListSection      = document.getElementById('pageListSection');
     pageList             = document.getElementById('pageList');
     pageCountBadge       = document.getElementById('pageCountBadge');
-    analysisSettingsSection = document.getElementById('analysisSettingsSection');
     leftLoader           = document.getElementById('leftLoader');
 
     if (!dropZone || !fileInput) {
@@ -103,7 +102,6 @@ export function resetUploadModal() {
     if (dropZone)       dropZone.style.display   = 'block';
     if (fileInfo)       fileInfo.style.display    = 'none';
     if (pageListSection) pageListSection.style.display = 'none';
-    if (analysisSettingsSection) analysisSettingsSection.style.display = 'none';
     if (leftLoader)     leftLoader.classList.remove('active');
     if (pageList)       pageList.innerHTML = '';
     if (fileInput)      fileInput.value = '';
@@ -154,7 +152,6 @@ async function handleFile(file) {
 
         showFileInfo(file.name);
         buildPageList(data.page_count || 1);
-        showAnalysisSettings();
 
         // Tell main.js that upload is ready
         if (typeof window.onUploadReady === 'function') {
@@ -192,10 +189,6 @@ function showFileInfo(name) {
         fileInfo.style.display = 'flex';
         if (fileNameEl) fileNameEl.textContent = name;
     }
-}
-
-function showAnalysisSettings() {
-    if (analysisSettingsSection) analysisSettingsSection.style.display = 'flex';
 }
 
 /**
@@ -289,7 +282,6 @@ export function initSidebarFromProject(projectName, imageUrls, pageSizes) {
 
   showFileInfo(projectName);
   buildPageList(imageUrls.length);
-  showAnalysisSettings();
   setActivePageInList(1);
 }
 
