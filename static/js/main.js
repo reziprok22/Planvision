@@ -428,7 +428,7 @@ function setupContainerScrolling() {
 // native vertical scrolling; the 'scroll' handler keeps the canvas in sync. ---
 // Horizontal scroll speed factor per wheel notch (after line/page normalisation).
 // 0.5 ≈ the pre-d4d4065 feel (deltaY * 0.5); lower = finer/slower, higher = faster.
-const H_SCROLL_SPEED = 0.3;
+const H_SCROLL_SPEED = 0.1;
 let hScrollTarget = null;
 let hScrollRAF = 0;
 

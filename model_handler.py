@@ -142,9 +142,10 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         # Vorverarbeitung mit OpenCV
         processed_image = preprocess_image(image_bytes)
 
-        # Vollauflösungs-Graustufen für die Snap-to-Line-Verfeinerung sichern
-        # (vor dem Verkleinern – die Boxen werden später in diese Auflösung zurückskaliert)
-        full_res_gray = np.array(processed_image.convert('L'))
+        # Vollauflösungs-Farbbild für die Snap-to-Line-Verfeinerung sichern
+        # (vor dem Verkleinern – die Boxen werden später in diese Auflösung zurückskaliert).
+        # Farbe statt Grau, damit auch gesättigte Linienfarben (Gelb, Cyan ...) als Tinte zählen.
+        full_res_rgb = np.array(processed_image.convert('RGB'))
 
         # Bild verkleinern falls zu groß (höhere Inferenz-Auflösung = präzisere Boxen)
         processed_image, coord_scale = resize_image_if_large(processed_image, max_size=2048)
@@ -183,7 +184,7 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         # Snap-to-Line: Box-Kanten auf die echten Planlinien einrasten
         # (per AFTERPROCESS-Schalter abschaltbar, um mit dem alten Verhalten zu vergleichen)
         if AFTERPROCESS:
-            boxes = refine_boxes_to_lines(boxes, full_res_gray, search=12, min_darkness=25)
+            boxes = refine_boxes_to_lines(boxes, full_res_rgb, search=16, min_darkness=25)
 
         # Flächen berechnen
         areas = []

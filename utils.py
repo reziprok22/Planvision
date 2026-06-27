@@ -201,20 +201,22 @@ def _find_lines(profile, min_darkness):
 
 def _snap_edge(profile, orig_offset, min_darkness, outward):
     """
-    Bestimmt für ein 1D-Helligkeitsprofil senkrecht zu einer Box-Kante die
-    Position der maßgeblichen Planlinie und gibt deren Index zurück.
+    Bestimmt für ein 1D-Tintenprofil senkrecht zu einer Box-Kante die Position
+    der maßgeblichen Planlinie und gibt deren Index zurück.
 
     Fenster werden meist mit 2-3 nahe beieinander liegenden parallelen Linien
     gezeichnet. Auswahlregel nach Anzahl gefundener Linien:
       - 1 Linie  -> diese Linie
-      - 2 Linien -> die *äußere* (Rahmen-/Wandkante)
-      - 3 Linien -> die *mittlere* (Glas-/Mittellinie)
-      - >3 Linien-> Fallback: die äußerste (konservativ)
+      - >1 Linien-> die *zweit-innerste* (von der Box-Mitte aus gezählt)
+
+    Die zweit-innerste hat sich praktisch am besten bewährt: sie liegt zuverlässig
+    auf der Rahmen-/Öffnungskante und nicht auf der inneren Glaslinie (die die Box
+    zu klein machen würde).
 
     Args:
-        profile: 1D-Array der "Tinten-Dunkelheit" (255 - Grauwert) quer zum Suchband
+        profile: 1D-Array der Tinten-Dunkelheit quer zum Suchband
         orig_offset: Index der ursprünglichen Kantenposition innerhalb des Bandes
-        min_darkness: Mindest-Dunkelheit, damit überhaupt eine echte Linie angenommen wird
+        min_darkness: Mindest-Dunkelheit, damit überhaupt eine echte Linie zählt
         outward: Richtung "nach außen" als Vorzeichen bzgl. des Profil-Index:
                  -1 = kleinere Indizes liegen außen (obere/linke Kante),
                  +1 = größere Indizes liegen außen (untere/rechte Kante).
@@ -228,36 +230,38 @@ def _snap_edge(profile, orig_offset, min_darkness, outward):
     if not lines:
         return orig_offset
 
-    n = len(lines)
-    if n == 2:
-        # äußere der beiden parallelen Linien
-        chosen = lines[0] if outward < 0 else lines[-1]
-    elif n == 3:
-        # mittlere Linie (Glas-/Mittellinie)
-        chosen = lines[1]
-    elif n == 1:
+    if len(lines) == 1:
         chosen = lines[0]
     else:
-        # >3 Linien: konservativ die äußerste wählen
-        chosen = lines[0] if outward < 0 else lines[-1]
+        # >1 Linien: die zweit-innerste wählen (von der Box-Mitte aus gezählt).
+        # innen liegt entgegen "outward": bei outward<0 sind das die großen
+        # Indizes (-> vorletzte Linie), bei outward>0 die kleinen (-> zweite Linie).
+        chosen = lines[-2] if outward < 0 else lines[1]
     return int(round(chosen))
 
 
-def refine_boxes_to_lines(boxes, gray, search=6, min_darkness=25):
+def refine_boxes_to_lines(boxes, img, search=16, min_darkness=25):
     """
-    Rastet die Kanten erkannter Bounding Boxes auf die tatsächlichen (dunklen)
-    Planlinien ein. Nachgelagerter, deterministischer Prozess ohne Retraining –
-    nutzt aus, dass Baupläne klare Linien auf hellem Grund sind.
+    Rastet die Kanten erkannter Bounding Boxes auf die tatsächlichen Planlinien
+    ein. Nachgelagerter, deterministischer Prozess ohne Retraining – nutzt aus,
+    dass Baupläne klare Linien auf hellem Grund sind.
 
     Pro Box wird jede Kante in einem schmalen Suchband (+/- search px) auf die
-    dominante waagrechte bzw. senkrechte Linie verschoben. Findet sich keine
-    ausreichend dunkle Linie, bleibt die Kante unverändert.
+    maßgebliche Planlinie verschoben (siehe _snap_edge: zweit-innerste Linie).
+    Findet sich keine ausreichend dunkle Linie, bleibt die Kante unverändert.
+
+    Tinte ("ink") = wie weit ein Pixel von Weiß entfernt ist. Bei Farbbildern
+    wird der *Minimum-Kanal* genutzt (255 - min(R,G,B)): jede gesättigte Farbe
+    (Gelb, Cyan, Rot ...) zählt damit als volle Linie, nicht nur dunkles Grau.
+    Über die Box-Spanne wird der *Median* gebildet (robust gegen Lücken,
+    Schräglage und nur teilweise abgedeckte Linien).
 
     Args:
         boxes: numpy-Array der Boxen [x1, y1, x2, y2] in Pixeln der Vollauflösung
-        gray: Graustufenbild (numpy uint8) in genau dieser Vollauflösung
+        img: Bild (numpy uint8) in genau dieser Vollauflösung – Farbe (H,W,3)
+             bevorzugt, Graustufe (H,W) wird ebenfalls akzeptiert
         search: maximaler Versatz in Pixeln, um den eine Kante einrasten darf
-        min_darkness: Schwelle (0-255), ab der eine Linie als real gilt
+        min_darkness: Schwelle (0-255), ab der ein Pixel als Linien-Tinte zählt
 
     Returns:
         numpy-Array der verfeinerten Boxen (gleiche Reihenfolge).
@@ -265,9 +269,13 @@ def refine_boxes_to_lines(boxes, gray, search=6, min_darkness=25):
     if boxes is None or len(boxes) == 0:
         return boxes
 
-    h, w = gray.shape[:2]
-    # Dunkle Linien -> hohe Werte
-    ink = 255.0 - gray.astype(np.float32)
+    h, w = img.shape[:2]
+    # Tinte: Abstand zu Weiß. Bei Farbe der Minimum-Kanal, damit auch gesättigte
+    # helle Farben (z.B. Gelb) als volle Linie zählen; bei Grau direkt invertiert.
+    if img.ndim == 3:
+        ink = 255.0 - img.astype(np.float32).min(axis=2)
+    else:
+        ink = 255.0 - img.astype(np.float32)
 
     refined = []
     for box in boxes:
@@ -281,30 +289,30 @@ def refine_boxes_to_lines(boxes, gray, search=6, min_darkness=25):
             refined.append(np.asarray(box, dtype=np.float32))
             continue
 
-        # Obere Kante: waagrechte Linie -> Profil über die Box-Breite, je Zeile
+        # Obere Kante: waagrechte Linie -> Median-Profil über die Box-Breite, je Zeile
         # (außen = kleinerer y-Wert = kleinerer Index -> outward=-1)
         r0, r1 = max(0, iy1 - search), min(h, iy1 + search + 1)
         if r1 - r0 >= 1:
-            prof = ink[r0:r1, cx1:cx2].mean(axis=1)
+            prof = np.median(ink[r0:r1, cx1:cx2], axis=1)
             y1 = r0 + _snap_edge(prof, iy1 - r0, min_darkness, outward=-1)
 
         # Untere Kante (außen = größerer y-Wert -> outward=+1)
         r0, r1 = max(0, iy2 - search), min(h, iy2 + search + 1)
         if r1 - r0 >= 1:
-            prof = ink[r0:r1, cx1:cx2].mean(axis=1)
+            prof = np.median(ink[r0:r1, cx1:cx2], axis=1)
             y2 = r0 + _snap_edge(prof, iy2 - r0, min_darkness, outward=+1)
 
-        # Linke Kante: senkrechte Linie -> Profil über die Box-Höhe, je Spalte
+        # Linke Kante: senkrechte Linie -> Median-Profil über die Box-Höhe, je Spalte
         # (außen = kleinerer x-Wert -> outward=-1)
         c0, c1 = max(0, ix1 - search), min(w, ix1 + search + 1)
         if c1 - c0 >= 1:
-            prof = ink[cy1:cy2, c0:c1].mean(axis=0)
+            prof = np.median(ink[cy1:cy2, c0:c1], axis=0)
             x1 = c0 + _snap_edge(prof, ix1 - c0, min_darkness, outward=-1)
 
         # Rechte Kante (außen = größerer x-Wert -> outward=+1)
         c0, c1 = max(0, ix2 - search), min(w, ix2 + search + 1)
         if c1 - c0 >= 1:
-            prof = ink[cy1:cy2, c0:c1].mean(axis=0)
+            prof = np.median(ink[cy1:cy2, c0:c1], axis=0)
             x2 = c0 + _snap_edge(prof, ix2 - c0, min_darkness, outward=+1)
 
         # Nur übernehmen, wenn die Box gültig bleibt – sonst Original behalten
