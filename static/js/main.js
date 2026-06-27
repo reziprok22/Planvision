@@ -163,6 +163,61 @@ function getLabel(labelId) {
 
 
 /**
+ * Axis-aligned bounding box {x1,y1,x2,y2} of a serialized annotation spec.
+ * Handles rectangles (left/top/width/height) and point-based shapes (polygon/line).
+ * Returns null if no geometry can be derived.
+ */
+function specBBox(a) {
+  if (a.width != null && a.height != null) {
+    const sx = a.scaleX || 1, sy = a.scaleY || 1;
+    return { x1: a.left, y1: a.top, x2: a.left + a.width * sx, y2: a.top + a.height * sy };
+  }
+  if (Array.isArray(a.points) && a.points.length) {
+    const xs = a.points.map(p => p.x), ys = a.points.map(p => p.y);
+    return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+  }
+  return null;
+}
+
+/**
+ * Suppress AI annotations that overlap each other, keeping the highest-confidence
+ * one (greedy NMS by score). Needed because the backend only de-duplicates within
+ * a class, but here every prediction is relabeled to the single "Erkennen als"
+ * target — so two boxes the model emitted as different classes at the same spot
+ * would otherwise both survive as duplicates of that label.
+ */
+function dedupeAnnotationsByScore(anns) {
+  const sorted = [...anns].sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const kept = [];
+  const keptBoxes = [];
+  for (const a of sorted) {
+    const box = specBBox(a);
+    if (box && keptBoxes.some(k => boxesOverlap(box, k))) continue; // overlaps a stronger one
+    kept.push(a);
+    if (box) keptBoxes.push(box);
+  }
+  return kept;
+}
+
+/**
+ * True when two boxes {x1,y1,x2,y2} sit at "roughly the same place": either their
+ * IoU is high enough, or one largely covers the other (handles size mismatches).
+ */
+function boxesOverlap(a, b, iouThresh = 0.3, coverThresh = 0.5) {
+  const ix1 = Math.max(a.x1, b.x1), iy1 = Math.max(a.y1, b.y1);
+  const ix2 = Math.min(a.x2, b.x2), iy2 = Math.min(a.y2, b.y2);
+  const iw = ix2 - ix1, ih = iy2 - iy1;
+  if (iw <= 0 || ih <= 0) return false;
+  const inter = iw * ih;
+  const areaA = (a.x2 - a.x1) * (a.y2 - a.y1);
+  const areaB = (b.x2 - b.x1) * (b.y2 - b.y1);
+  const iou = inter / (areaA + areaB - inter);
+  const cover = inter / Math.min(areaA, areaB);
+  return iou >= iouThresh || cover >= coverThresh;
+}
+
+
+/**
  * Setup tool button event listeners
  * Ist damit Werkzeuge nach dem Plan analysieren aktiv sind
  */
@@ -488,9 +543,19 @@ function loadCanvasData(canvasData) {
     if (savedLabels?.length > 0) {
       // Restore text labels at their saved positions (preserves user moves)
       util.enlivenObjects(savedLabels).then(textLabels => {
+        const linkedIds = new Set();
         textLabels.filter(Boolean).forEach(tl => {
           tl.set({ objectType: 'textLabel', selectable: false, evented: false });
           canvas.add(tl);
+          if (tl.linkedAnnotationId != null) linkedIds.add(tl.linkedAnnotationId);
+        });
+        // Annotations without a restored label (e.g. freshly merged AI boxes after
+        // a detection run) get a fresh label + index. Normal full loads have a label
+        // for every annotation, so this creates nothing there.
+        objects.filter(Boolean).forEach(annotation => {
+          if (annotation.id == null || !linkedIds.has(annotation.id)) {
+            createSingleTextLabel(annotation, { batch: true });
+          }
         });
         applyLayerOrdering();
         canvas.requestRenderAll();
@@ -2947,11 +3012,53 @@ async function analyzeCurrentPage() {
     // Store raw predictions for ZIP export / PDF report generation
     pageAnalysisData[currentPageNumber] = data.predictions || [];
 
-    // Convert AI predictions → canvas annotations for this page
+    // Convert AI predictions → canvas annotations and MERGE them with what is
+    // already on the page (instead of wiping everything):
+    //   - keep every user-drawn annotation, plus AI annotations of OTHER labels
+    //   - drop previous AI annotations of the SAME target label (re-run overwrites)
+    //   - skip new AI boxes that sit on top of a user annotation (user wins)
     if (data.predictions && data.predictions.length > 0) {
-      const canvasData = convertPredictionsToCanvasData(data.predictions, currentPageNumber);
-      loadCanvasData(canvasData);
-      pageCanvasData[currentPageNumber] = canvasData;
+      const aiSelect = document.getElementById('aiLabelSelect');
+      const targetLabelId = aiSelect?.value ? parseInt(aiSelect.value) : null;
+
+      const existing = collectCurrentCanvasData(currentPageNumber);
+
+      // Keep: all user annotations + AI annotations of a different label
+      const kept = existing.canvas_annotations.filter(a =>
+        a.userCreated === true || a.labelId !== targetLabelId
+      );
+
+      // Bounding boxes of user annotations (from live objects → robust for any type)
+      const userBoxes = canvas.getObjects()
+        .filter(o => o.objectType === 'annotation' && o.userCreated === true)
+        .map(o => {
+          const r = o.getBoundingRect();
+          return { x1: r.left, y1: r.top, x2: r.left + r.width, y2: r.top + r.height };
+        });
+
+      // New AI annotations: first drop AI-vs-AI duplicates (keep highest score),
+      // then drop those overlapping a user annotation
+      const aiData = convertPredictionsToCanvasData(data.predictions, currentPageNumber);
+      const dedupedAi = dedupeAnnotationsByScore(aiData.canvas_annotations);
+      const filteredAi = dedupedAi.filter(a => {
+        const box = specBBox(a);
+        return !box || !userBoxes.some(u => boxesOverlap(box, u));
+      });
+      // Fresh index/id so AI numbering continues after the kept annotations
+      filteredAi.forEach(a => { delete a.displayIndex; delete a.id; });
+
+      const merged = {
+        ...existing,
+        canvas_annotations: [...kept, ...filteredAi],
+        annotation_count: kept.length + filteredAi.length,
+        // Restore saved labels only for kept annotations; AI boxes get fresh ones
+        canvas_text_labels: (existing.canvas_text_labels || []).filter(tl =>
+          kept.some(a => a.id === tl.linkedAnnotationId)
+        )
+      };
+
+      loadCanvasData(merged);
+      pageCanvasData[currentPageNumber] = merged;
     }
 
     updateResultsTable();
