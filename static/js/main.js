@@ -437,21 +437,7 @@ function initCanvas() {
   // Seite vollständig einpassen (ganze Seite sichtbar). Siehe fitToViewport.
   fitToViewport();
 
-  // Hinweis ein-/ausblenden, je nach Plangröße (siehe updateLargePlanHint).
-  updateLargePlanHint();
-
   return canvas;
-}
-
-// Das Backend skaliert für die Inferenz auf max. 2048 px lange Kante herunter
-// (resize_image_if_large). Deutlich größere Pläne verlieren dadurch Detail, sodass
-// kleine Fenster übersehen werden können -> dezenter UI-Hinweis ab dieser Schwelle.
-const LARGE_PLAN_HINT_PX = 3000;
-function updateLargePlanHint() {
-  const hint = document.getElementById('largePlanHint');
-  if (!hint || !uploadedImage) return;
-  const maxDim = Math.max(uploadedImage.naturalWidth || 0, uploadedImage.naturalHeight || 0);
-  hint.style.display = maxDim > LARGE_PLAN_HINT_PX ? 'block' : 'none';
 }
 
 /**
