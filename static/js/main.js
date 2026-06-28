@@ -437,7 +437,21 @@ function initCanvas() {
   // Seite vollständig einpassen (ganze Seite sichtbar). Siehe fitToViewport.
   fitToViewport();
 
+  // Hinweis ein-/ausblenden, je nach Plangröße (siehe updateLargePlanHint).
+  updateLargePlanHint();
+
   return canvas;
+}
+
+// Das Backend skaliert für die Inferenz auf max. 2048 px lange Kante herunter
+// (resize_image_if_large). Deutlich größere Pläne verlieren dadurch Detail, sodass
+// kleine Fenster übersehen werden können -> dezenter UI-Hinweis ab dieser Schwelle.
+const LARGE_PLAN_HINT_PX = 3000;
+function updateLargePlanHint() {
+  const hint = document.getElementById('largePlanHint');
+  if (!hint || !uploadedImage) return;
+  const maxDim = Math.max(uploadedImage.naturalWidth || 0, uploadedImage.naturalHeight || 0);
+  hint.style.display = maxDim > LARGE_PLAN_HINT_PX ? 'block' : 'none';
 }
 
 /**
@@ -3218,8 +3232,14 @@ async function analyzeCurrentPage() {
 
     const response = await fetch('/analyze_page', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
     if (!response.ok) {
+      // 502/503/504 = gunicorn-Timeout (300s) bzw. Server ausgelastet -> keine JSON-Antwort,
+      // daher eigene, verständliche Meldung statt generischem "Analyse fehlgeschlagen".
+      if ([502, 503, 504].includes(response.status)) {
+        throw new Error('Die Analyse hat zu lange gedauert oder der Server ist gerade ausgelastet. '
+          + 'Bitte in einem Moment erneut versuchen – sehr große Pläne ggf. verkleinern oder einen Ausschnitt hochladen.');
+      }
       const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || 'Analyse fehlgeschlagen');
+      throw new Error(err.error || 'Analyse fehlgeschlagen.');
     }
 
     const data = await response.json();
@@ -3285,7 +3305,12 @@ async function analyzeCurrentPage() {
   } catch (err) {
     console.error('Analyse-Fehler:', err);
     if (errorMessage) {
-      errorMessage.textContent = 'Fehler: ' + err.message;
+      // fetch wirft TypeError, wenn die Verbindung abbricht (z.B. Timeout bei sehr
+      // großem Plan oder überlastetem Server) – dann verständliche statt kryptischer Meldung.
+      const isNetwork = err instanceof TypeError;
+      errorMessage.textContent = isNetwork
+        ? 'Verbindung zum Server unterbrochen (evtl. Timeout bei sehr großem Plan oder Auslastung). Bitte erneut versuchen.'
+        : 'Fehler: ' + err.message;
       errorMessage.style.display = 'block';
     }
   } finally {
