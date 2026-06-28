@@ -482,10 +482,20 @@ button:hover {
     color: #444;
 }
 
+/* Deaktiviert (z. B. Trash ohne Auswahl): ausgegraut, kein Hover/Klick */
+.tool-button:disabled {
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
 .tool-button.active,
 .tool-button.flash-active {
     background: #444;
     color: #fff;
+    /* Voll deckend, auch wenn der Button gerade disabled ist (Lösch-Flash des
+       Trash-Icons direkt nach dem Löschen, wenn die Auswahl schon weg ist). */
+    opacity: 1;
 }
 
 /* Eigene Zustandsklasse für Toggle-Buttons (setTool() räumt .active ab) */

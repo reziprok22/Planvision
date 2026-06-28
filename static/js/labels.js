@@ -390,7 +390,7 @@ function showAddLabelForm() {
     </td>
     <td>
       <div class="color-cell">
-        <input type="color" id="newLabel-color" value="${randomColor}" />
+        <input type="color" class="inline-edit" id="newLabel-color" value="${randomColor}" />
       </div>
     </td>
     <td>

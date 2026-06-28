@@ -242,6 +242,9 @@ function setupToolButtons() {
       }
     });
   });
+
+  // Trash startet ausgegraut – erst eine Auswahl aktiviert es (siehe updateDeleteButtonState)
+  updateDeleteButtonState();
 }
 
 /**
@@ -322,7 +325,19 @@ function initCanvas() {
   });
   canvas.backgroundImage = bgImg;
   canvas.renderAll();
-  
+
+  // Direkt nach dem (Neu-)Erzeugen des Canvas ist das Hintergrund-Bitmap manchmal
+  // noch nicht zeichenbereit – der erste renderAll malt es dann nicht und der
+  // Hintergrund bleibt grau, bis eine Interaktion (Scroll/Pan) ein erneutes
+  // renderAll auslöst. Ein zweites Render, sobald das Bild garantiert dekodiert
+  // ist, malt den Hintergrund zuverlässig auch ohne Nutzer-Interaktion.
+  const rerenderBg = () => { if (canvas) canvas.renderAll(); };
+  if (uploadedImage.decode) {
+    uploadedImage.decode().then(rerenderBg).catch(rerenderBg);
+  } else {
+    requestAnimationFrame(rerenderBg);
+  }
+
   // Hide the HTML image since we're using Fabric.js background
   uploadedImage.style.display = 'none';
   
@@ -419,7 +434,42 @@ function initCanvas() {
   setupCanvasEvents();
   createCrosshairOverlay();
 
+  // Seite vollständig einpassen (ganze Seite sichtbar). Siehe fitToViewport.
+  fitToViewport();
+
   return canvas;
+}
+
+/**
+ * Passt die ganze Seite in den Viewport ein (Fit-Whole-Page / "contain"): die
+ * komplette Seite ist sichtbar, oben-links ausgerichtet. Setzt alle vier Größen
+ * konsistent, die den Zoom in dieser App steuern: Canvas-viewportTransform,
+ * #scrollSpacer (treibt die Scrollbalken), Container-Scroll und wrapperEl-Transform.
+ *
+ * Wird bei jeder Seitenanzeige aufgerufen (Upload, Projekt öffnen, Seitenwechsel),
+ * damit man immer die ganze Seite sieht statt eines 1:1-Ausschnitts.
+ */
+function fitToViewport() {
+  if (!canvas || !uploadedImage || !imageContainer) return;
+  const natW = uploadedImage.naturalWidth;
+  const natH = uploadedImage.naturalHeight;
+  const containerW = imageContainer.clientWidth;
+  const containerH = imageContainer.clientHeight;
+  if (!natW || !natH || !containerW || !containerH) return;
+
+  // contain: limitierende Achse bestimmt den Zoom -> ganze Seite passt rein
+  const zoom = Math.min(containerW / natW, containerH / natH);
+
+  const spacer = document.getElementById('scrollSpacer');
+  if (spacer) {
+    spacer.style.width  = `${natW * zoom}px`;
+    spacer.style.height = `${natH * zoom}px`;
+  }
+  imageContainer.scrollLeft = 0;
+  imageContainer.scrollTop  = 0;
+  canvas.setViewportTransform([zoom, 0, 0, zoom, OVERSCAN, OVERSCAN]);
+  if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${-OVERSCAN}px, ${-OVERSCAN}px)`;
+  canvas.renderAll();
 }
 
 /**
@@ -577,21 +627,9 @@ function loadCanvasData(canvasData) {
     canvas.requestRenderAll();
   });
   
-  // Restore zoom: resize scroll spacer (not the canvas buffer).
-  const restoredZoom = canvasData.canvas_zoom || 1;
-  if (uploadedImage) {
-    const spacer = document.getElementById('scrollSpacer');
-    if (spacer) {
-      spacer.style.width  = `${uploadedImage.naturalWidth  * restoredZoom}px`;
-      spacer.style.height = `${uploadedImage.naturalHeight * restoredZoom}px`;
-    }
-  }
-  imageContainer.scrollLeft = 0;
-  imageContainer.scrollTop  = 0;
-  canvas.setViewportTransform([restoredZoom, 0, 0, restoredZoom, OVERSCAN, OVERSCAN]);
-  if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${-OVERSCAN}px, ${-OVERSCAN}px)`;
-  
-  canvas.renderAll();
+  // Ganze Seite einpassen (statt gespeicherten Zoom wiederherzustellen) – so sieht
+  // man bei jedem Seitenwechsel/Öffnen die komplette Seite. Siehe fitToViewport.
+  fitToViewport();
 
   // Re-setup canvas events
   setupCanvasEvents();
@@ -1281,6 +1319,7 @@ async function pasteAnnotations() {
       : new ActiveSelection(pasted, { canvas });
     canvas.setActiveObject(sel);
     selectedObjects = pasted;
+    updateDeleteButtonState();
   }
 
   canvas.requestRenderAll();
@@ -1695,6 +1734,7 @@ function setupCanvasEvents() {
   // Selection events
   canvas.on('selection:created', function(e) {
     selectedObjects = canvas.getActiveObjects();
+    updateDeleteButtonState();
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
     }
@@ -1704,6 +1744,7 @@ function setupCanvasEvents() {
     // e.selected contains only the newly added/removed object;
     // getActiveObjects() returns the full current selection.
     selectedObjects = canvas.getActiveObjects();
+    updateDeleteButtonState();
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
     }
@@ -1721,6 +1762,7 @@ function setupCanvasEvents() {
     }
     
     selectedObjects = [];
+    updateDeleteButtonState();
     if (currentTool === 'select') {
       updateUniversalLabelDropdown(currentTool);
     }
@@ -2124,7 +2166,18 @@ function deleteSelectedObjects() {
 
   selectedObjects = [];
   canvas.renderAll();
+  updateDeleteButtonState();
   saveHistorySnapshot();
+}
+
+/**
+ * Trash-Button nur aktivieren, wenn etwas ausgewählt ist – ohne Auswahl hat das
+ * Löschen keine Wirkung, daher wird das Icon dann ausgegraut (siehe CSS
+ * .tool-button:disabled). Wird bei jeder Auswahländerung aufgerufen.
+ */
+function updateDeleteButtonState() {
+  const btn = document.querySelector('.tool-button[data-tool="delete"]');
+  if (btn) btn.disabled = !(selectedObjects && selectedObjects.length > 0);
 }
 
 /**
