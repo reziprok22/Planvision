@@ -100,6 +100,10 @@ def main():
     req = urllib.request.Request(base + "/upload", data=body, method="POST")
     req.add_header("Content-Type", ctype)
     req.add_header("X-CSRFToken", csrf)
+    # Über HTTPS prüft Django CSRF zusätzlich Origin/Referer gegen CSRF_TRUSTED_ORIGINS
+    # – ohne diese Header gibt es 403, obwohl der Token stimmt.
+    req.add_header("Origin", base)
+    req.add_header("Referer", base + "/app/")
     up = json.loads(opener.open(req, timeout=120).read())
     session_id = up["session_id"]
     page_count = up.get("page_count", 1)
@@ -109,7 +113,8 @@ def main():
     # Cookies + csrf für die parallelen Threads einmal einfrieren (thread-safe ohne shared opener)
     cookies = cookie_header(jar)
     headers = {"Cookie": cookies, "X-CSRFToken": csrf,
-               "Content-Type": "application/x-www-form-urlencoded"}
+               "Content-Type": "application/x-www-form-urlencoded",
+               "Origin": base, "Referer": base + "/app/"}
     payload = urllib.parse.urlencode({
         "session_id": session_id, "page": page,
         "format_width": 210, "format_height": 297, "dpi": 150,
