@@ -1869,6 +1869,7 @@ function setTool(toolName) {
   if (canvas) {
     if (toolName === 'select') {
       canvas.selection = true; // Es können mehrere Objekte gleichzeitig mit Auswahlrahmen ausgewählt werden
+      canvas.skipTargetFind = false; // Hit-Testing wieder an, damit Objekte anklickbar sind
       canvas.defaultCursor = 'default';
       canvas.hoverCursor = 'move';
       canvas.forEachObject(obj => {
@@ -1890,6 +1891,10 @@ function setTool(toolName) {
       clearCrosshair();
     } else {
       canvas.selection = false;
+      // Zeichen-Modi brauchen kein Hit-Testing (alle Objekte sind hier evented=false).
+      // skipTargetFind überspringt die O(n)-Zielsuche bei jedem mouse:move → spürbar
+      // flüssiger bei Plänen mit vielen Annotationen.
+      canvas.skipTargetFind = true;
       canvas.defaultCursor = 'crosshair';
       canvas.hoverCursor = 'crosshair';
       canvas.discardActiveObject();
@@ -3069,7 +3074,20 @@ function collectCurrentCanvasData(pageNumber = 1) {
       canvas_available: false
     };
   }
-  
+
+  // Eine aktive Mehrfachauswahl (ActiveSelection) auflösen, BEVOR serialisiert wird.
+  // In einer ActiveSelection speichert Fabric left/top (und scale/angle) der Kinder
+  // RELATIV zum Auswahl-Mittelpunkt. toObject() liefert dann diese relativen Werte
+  // (~0), nicht die absoluten Canvas-Koordinaten – die Annotationen würden beim
+  // Neuladen am Ursprung (oben links/rechts) kleben, während ihre Text-Labels (nie
+  // Teil der Auswahl) korrekt am alten Ort bleiben. discardActiveObject() backt die
+  // volle Gruppen-Transformation wieder absolut in jedes Objekt zurück. Deckt alle
+  // Speicherpfade ab (Seitenwechsel, ZIP-Save, Analyse-Merge).
+  if (canvas.getActiveObject()) {
+    canvas.discardActiveObject();
+    canvas.requestRenderAll();
+  }
+
   // Get all annotations from canvas (exclude background image and text labels)
   const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
 

@@ -332,6 +332,13 @@
             display: none;
         }
         .left-loader.active { display: block; }
+        .left-loader-note {
+            font-size: 0.92em;
+            color: #aaa;
+            line-height: 1.35;
+            margin-top: 7px;
+            padding: 0 4px;
+        }
         .left-loader-icon {
             display: inline-block;
             vertical-align: -2px;
@@ -486,7 +493,9 @@
                     <path d="M3 12.5 H11"/>
                     <path d="M4 1.5 C4 4.2 7 4.8 7 7 C7 9.2 4 9.8 4 12.5"/>
                     <path d="M10 1.5 C10 4.2 7 4.8 7 7 C7 9.2 10 9.8 10 12.5"/>
-                </svg>Wird geladen…</div>
+                </svg>Wird geladen…
+                <div class="left-loader-note">Für flüssiges Bearbeiten wird die Darstellung im Editor reduziert. Der PDF-Export verwendet weiterhin das Original.</div>
+            </div>
 
             <!-- Page list (shown after upload) -->
             <div class="page-list-section" id="pageListSection" style="display:none">
