@@ -367,10 +367,19 @@ function initCanvas() {
       if (newZoom > 5) newZoom = 5;
       // Minimum zoom: unused empty space must not exceed 150 % of the image size.
       // Constraint: containerSize ≤ 2.5 × (naturalSize × zoom)  →  zoom ≥ containerSize / (2.5 × naturalSize)
-      const minZoom = Math.max(0.02,
+      const emptySpaceMin = Math.max(0.02,
         imageContainer.clientWidth  / (1.5 * uploadedImage.naturalWidth),
         imageContainer.clientHeight / (1.5 * uploadedImage.naturalHeight)
       );
+      // Der Fit-Zoom ("ganze Seite sichtbar", contain) ist die unterste sinnvolle
+      // Stufe. Bei hohen Seiten (A3 hochkant) ist er KLEINER als emptySpaceMin —
+      // dann darf minZoom nicht größer sein als der Fit-Zoom, sonst schnappt das
+      // Reinzoomen aus der Fit-Ansicht nach oben und man kommt nie zurück.
+      const fitZoom = Math.min(
+        imageContainer.clientWidth  / uploadedImage.naturalWidth,
+        imageContainer.clientHeight / uploadedImage.naturalHeight
+      );
+      const minZoom = Math.min(emptySpaceMin, fitZoom);
       if (newZoom < minZoom) newZoom = minZoom;
 
       // offsetX/Y are relative to the (overscanned) canvas top-left, which sits
@@ -387,8 +396,9 @@ function initCanvas() {
       // Resize the scroll spacer (drives scroll bars) — canvas buffer stays viewport-sized.
       const spacer = document.getElementById('scrollSpacer');
       if (spacer) {
-        spacer.style.width  = `${natW * newZoom}px`;
-        spacer.style.height = `${natH * newZoom}px`;
+        // Ganze Pixel: muss zur Clamp-Grenze (Math.round) passen, siehe fitToViewport.
+        spacer.style.width  = `${Math.round(natW * newZoom)}px`;
+        spacer.style.height = `${Math.round(natH * newZoom)}px`;
       }
 
       // Scroll so the same image point stays under the mouse.
@@ -462,8 +472,11 @@ function fitToViewport() {
 
   const spacer = document.getElementById('scrollSpacer');
   if (spacer) {
-    spacer.style.width  = `${natW * zoom}px`;
-    spacer.style.height = `${natH * zoom}px`;
+    // Auf ganze Pixel runden: muss exakt zur Clamp-Grenze (Math.round) passen,
+    // sonst lässt der Browser am unteren/rechten Rand 1px weiter scrollen als der
+    // Clamp erlaubt → reaktives Zurückziehen ("Viewport springt leicht nach oben").
+    spacer.style.width  = `${Math.round(natW * zoom)}px`;
+    spacer.style.height = `${Math.round(natH * zoom)}px`;
   }
   imageContainer.scrollLeft = 0;
   imageContainer.scrollTop  = 0;
@@ -476,11 +489,17 @@ function fitToViewport() {
  * Clamp the container's scroll position so it never scrolls past the image edge.
  * Called on every scroll event to enforce the boundary regardless of CSS layout.
  */
+// Toleranz (px) für die Scroll-Begrenzung. Firefox zählt den per CSS-transform
+// verschobenen Fabric-wrapperEl zur scrollHeight, daher MUSS hier an die Bildgrenze
+// (natH*zoom) geklammert werden, sonst wächst die scrollbare Fläche beim Scrollen
+// mit → endloses Scrollen. Die Toleranz absorbiert den Sub-Pixel-Überstand des
+// nativen Scrollens, damit der Viewport am Rand nicht zurückgerissen wird ("Sprung").
+const SCROLL_BOUND_SLACK = 2;
 function clampScrollToImageBounds() {
   if (!imageContainer || !canvas || !uploadedImage) return;
   const zoom = canvas.getZoom();
-  const maxX = Math.max(0, Math.round(uploadedImage.naturalWidth  * zoom) - imageContainer.clientWidth);
-  const maxY = Math.max(0, Math.round(uploadedImage.naturalHeight * zoom) - imageContainer.clientHeight);
+  const maxX = Math.max(0, Math.round(uploadedImage.naturalWidth  * zoom) - imageContainer.clientWidth  + SCROLL_BOUND_SLACK);
+  const maxY = Math.max(0, Math.round(uploadedImage.naturalHeight * zoom) - imageContainer.clientHeight + SCROLL_BOUND_SLACK);
   if (imageContainer.scrollLeft > maxX) imageContainer.scrollLeft = maxX;
   if (imageContainer.scrollTop  > maxY) imageContainer.scrollTop  = maxY;
 }
@@ -510,12 +529,25 @@ function setupContainerScrolling() {
   }, { passive: true });
 
   imageContainer.addEventListener('wheel', function(e) {
+    // Ctrl+Wheel = Canvas-Zoom (Fabrics mouse:wheel-Handler macht den Zoom). Das
+    // native Page-Zoom MUSS hier deterministisch unterdrückt werden: sich allein
+    // auf Fabrics preventDefault zu verlassen ist unzuverlässig, wenn unter Last
+    // oder an der Zoom-Grenze das Handler-Timing kippt → sonst zoomt die ganze
+    // Seite. Dieser Listener ist {passive:false}, darf also preventDefault.
+    if (e.ctrlKey) {
+      e.preventDefault();
+      return;
+    }
     // If Shift key is held, convert vertical scroll to horizontal
     if (e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
       // Normalise wheel units to pixels (line/page mode → approx. pixels).
+      // Firefox liefert für das Mausrad Zeilen (deltaMode 1, ~3 pro Raste),
+      // Chromium Pixel (deltaMode 0, ~100–150 pro Raste). Mit dem Standard-Faktor
+      // 40 px/Zeile (vgl. normalizeWheel) ergibt Firefox 3×40=120 ≈ Chromium →
+      // gleiche horizontale Scroll-Geschwindigkeit in beiden Browsern.
       let dy = e.deltaY;
-      if (e.deltaMode === 1) dy *= 16;                       // lines
+      if (e.deltaMode === 1) dy *= 40;                       // lines
       else if (e.deltaMode === 2) dy *= imageContainer.clientHeight; // pages
       // Overall step size per notch. Pre-d4d4065 used deltaY * 0.5; keeping that
       // factor restores the finer, more incremental feel (tune to taste).
@@ -541,7 +573,7 @@ function setupContainerScrolling() {
 // native vertical scrolling; the 'scroll' handler keeps the canvas in sync. ---
 // Horizontal scroll speed factor per wheel notch (after line/page normalisation).
 // 0.5 ≈ the pre-d4d4065 feel (deltaY * 0.5); lower = finer/slower, higher = faster.
-const H_SCROLL_SPEED = 0.1;
+const H_SCROLL_SPEED = 0.4;
 let hScrollTarget = null;
 let hScrollRAF = 0;
 
@@ -3453,8 +3485,11 @@ async function initApp() {
       saveCurrentPageSettings(pageNumber);
     }
 
-    // Load image into canvas
-    uploadedImage.style.display = 'block';
+    // Load image into canvas. Das HTML-<img> bleibt versteckt – Fabric rendert es
+    // als Canvas-Hintergrund. Würde man es hier auf 'block' schalten, blitzt beim
+    // Seitenwechsel kurz das ALTE Bitmap in 1:1-Originalgröße auf, bis die neue
+    // src geladen ist und initCanvas es wieder ausblendet.
+    uploadedImage.style.display = 'none';
     // Empty-State ausblenden, sobald ein Plan angezeigt wird
     const emptyState = document.getElementById('canvasEmptyState');
     if (emptyState) emptyState.style.display = 'none';
