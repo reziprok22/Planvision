@@ -274,8 +274,13 @@ function initCanvas() {
   
   imageContainer.appendChild(canvasElement);
   
-  // Initialize Fabric.js canvas
-  canvas = new Canvas('annotationCanvas');
+  // Initialize Fabric.js canvas.
+  // enableRetinaScaling:false → Canvas rendert mit devicePixelRatio 1 statt 2–3.
+  // Auf HiDPI-/Retina-/4K-Displays viertelt das die zu zeichnende Pixelmenge und
+  // spürbar flüssigeres Zoomen/Scrollen bei großen Plänen mit vielen Annotationen.
+  // Tradeoff: minimal weniger gestochen scharf – beim ohnehin gerasterten JPG-
+  // Hintergrund praktisch unsichtbar.
+  canvas = new Canvas('annotationCanvas', { enableRetinaScaling: false });
   
   // Match the canvas interaction state to the active tool (default 'select').
   // initCanvas runs on every upload/project-load/page-switch; hardcoding a
