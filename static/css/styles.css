@@ -114,7 +114,7 @@ h2 {
 /* Professionelles 3-Spalten CSS Grid Layout */
 .main-container {
     display: grid;
-    grid-template-columns: 350px 1fr 600px;
+    grid-template-columns: 350px 1fr 460px;
     grid-template-rows: 1fr;
     width: 100vw;
     height: calc(100vh - 80px);
@@ -388,6 +388,35 @@ button:hover {
     padding: 12px 8px;
     text-align: left;
     border-bottom: 1px solid #e9ecef;
+    /* Verhindert, dass langer Text die fixen Spalten sprengt und (v.a. in Safari)
+       in die Nachbarspalte überläuft. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Explizite Spaltenbreiten: thead und jede tbody-Zeile sind beim scrollbaren-tbody-
+   Hack getrennte display:table-Kontexte – ohne feste Breiten berechnet Safari sie
+   unterschiedlich → Versatz/Überlappung. Prozente halten beide konsistent. */
+.results-table-section th:nth-child(1),
+.results-table-section td:nth-child(1) { width: 10%; }  /* Nr. */
+.results-table-section th:nth-child(2),
+.results-table-section td:nth-child(2) { width: 26%; }  /* Klasse */
+.results-table-section th:nth-child(3),
+.results-table-section td:nth-child(3) { width: 16%; }  /* Typ */
+.results-table-section th:nth-child(4),
+.results-table-section td:nth-child(4) { width: 16%; }  /* Breite */
+.results-table-section th:nth-child(5),
+.results-table-section td:nth-child(5) { width: 16%; }  /* Höhe */
+.results-table-section th:nth-child(6),
+.results-table-section td:nth-child(6) { width: 16%; }  /* Messwert */
+
+/* Platzhalter-/Leerzeilen (colspan) dürfen umbrechen und volle Breite nutzen –
+   nicht von den festen Spaltenbreiten/Ellipsis oben abgeschnitten werden. */
+.results-table-section td[colspan] {
+    width: auto;
+    white-space: normal;
+    overflow: visible;
 }
 
 .results-table-section th {
@@ -553,6 +582,12 @@ button:hover {
 }
 
 /* Responsive Design für verschiedene Bildschirmgrößen */
+@media (max-width: 1600px) {
+    .main-container {
+        grid-template-columns: 350px 1fr 400px;
+    }
+}
+
 @media (max-width: 1400px) {
     .main-container {
         grid-template-columns: 320px 1fr 280px;

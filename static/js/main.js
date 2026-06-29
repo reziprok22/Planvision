@@ -515,6 +515,11 @@ function clampScrollToImageBounds() {
 function setupContainerScrolling() {
   if (!imageContainer) return;
 
+  // macOS: Ctrl+Klick ist der Sekundärklick und öffnet das Kontextmenü, was den
+  // Ctrl+Ziehen-Duplizieren-Drag unterbricht. Im Canvas-Bereich gibt es kein
+  // eigenes Kontextmenü → unterdrücken, damit Ctrl-Drag auch auf dem Mac geht.
+  imageContainer.addEventListener('contextmenu', e => e.preventDefault());
+
   imageContainer.addEventListener('scroll', () => {
     clampScrollToImageBounds();
     if (!canvas) return;
@@ -551,7 +556,9 @@ function setupContainerScrolling() {
       // Chromium Pixel (deltaMode 0, ~100–150 pro Raste). Mit dem Standard-Faktor
       // 40 px/Zeile (vgl. normalizeWheel) ergibt Firefox 3×40=120 ≈ Chromium →
       // gleiche horizontale Scroll-Geschwindigkeit in beiden Browsern.
-      let dy = e.deltaY;
+      // Safari (macOS) legt den Shift+Wheel-Delta auf die X-Achse, Chrome/Firefox
+      // auf die Y-Achse → die betragsmäßig dominante Achse nehmen.
+      let dy = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (e.deltaMode === 1) dy *= 40;                       // lines
       else if (e.deltaMode === 2) dy *= imageContainer.clientHeight; // pages
       // Overall step size per notch. Pre-d4d4065 used deltaY * 0.5; keeping that
@@ -3583,6 +3590,21 @@ async function initApp() {
   document.addEventListener('keyup', function(e) {
     const key = e.key.toLowerCase();
     if (key === heldDrawingKey) heldDrawingKey = null;
+  });
+
+  // Warnung vor versehentlichem Schließen/Neuladen, sobald Annotationen vorliegen.
+  // Projekte werden nur clientseitig als ZIP gesichert – ohne diese Abfrage gingen
+  // Markierungen beim Schließen verlustlos verloren. Nur warnen, wenn es wirklich
+  // etwas zu verlieren gibt (live auf der aktuellen Seite ODER auf anderen Seiten),
+  // sonst nervt der Dialog bei jedem Schließen. Den angezeigten Text gibt der
+  // Browser vor – er ist nicht anpassbar.
+  window.addEventListener('beforeunload', (e) => {
+    const liveWork   = canvas && canvas.getObjects().some(o => o.objectType === 'annotation');
+    const storedWork = Object.values(pageCanvasData).some(p => p && p.annotation_count > 0);
+    if (liveWork || storedWork) {
+      e.preventDefault();
+      e.returnValue = ''; // für Chrome/Safari erforderlich, um den Dialog auszulösen
+    }
   });
 
   // Show a "copy" cursor while Ctrl/Alt is held in select mode, to hint that
