@@ -353,34 +353,34 @@ button:hover {
     text-align: right;
 }
 
-.results-table-section table {
+/* Scrollbarer Wrapper um die Tabelle. Ersetzt den fragilen display:block-tbody-
+   Hack (thead/tr als getrennte display:table-Kontexte), der in Safari die Spalten
+   gegeneinander verschob. Hier scrollt der Wrapper, die Tabelle bleibt eine
+   normale Tabelle mit table-layout:fixed → Spalten in allen Browsern konsistent. */
+.results-table-scroll {
     flex: 1;
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.9rem;
-    background: white;
+    min-height: 0;   /* lässt das Flex-Kind schrumpfen → scrollt statt zu überlaufen */
+    overflow-y: auto;
     border-radius: 8px;
-    overflow: hidden;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
-.results-table-section thead {
+.results-table-section table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    background: white;
+}
+
+.results-table-section thead th {
+    /* Kopfzeile bleibt beim Scrollen oben sichtbar (sticky statt des alten Hacks). */
+    position: sticky;
+    top: 0;
     background: #ffffff;
     color: #444;
     border-bottom: 2px solid #e0e0e0;
-}
-
-.results-table-section tbody {
-    display: block;
-    overflow-y: auto;
-    max-height: calc(100vh - 400px);
-}
-
-.results-table-section thead,
-.results-table-section tbody tr {
-    display: table;
-    width: 100%;
-    table-layout: fixed;
+    z-index: 1;
 }
 
 .results-table-section th,
@@ -640,7 +640,7 @@ button:hover {
         overflow-y: auto;
     }
     
-    .results-table-section tbody {
+    .results-table-scroll {
         max-height: 200px;
     }
 }
