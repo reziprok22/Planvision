@@ -833,7 +833,7 @@ function updateResultsTable() {
   if (headRow) {
     headRow.innerHTML = `
       <th>Nr.</th>
-      <th>Klasse</th>
+      <th>Label</th>
       <th>Typ</th>
       <th>Breite</th>
       <th>Höhe</th>
@@ -896,9 +896,9 @@ function updateResultsTable() {
       <td>${measurement}</td>
     `;
 
-    // Add visual indicator for user-created annotations
+    // Tooltip-Hinweis für selbst gezeichnete Annotationen (ohne kursive Schrift –
+    // die optische Hervorhebung in der Tabelle ist nicht mehr erwünscht).
     if (annotation.userCreated) {
-      row.style.fontStyle = 'italic';
       row.title = 'Benutzer-erstellt';
     }
 

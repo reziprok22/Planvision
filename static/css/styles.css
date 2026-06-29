@@ -50,6 +50,19 @@ header h1 {
     border-color: #aaa;
 }
 
+/* "Plan exportieren" hervorheben: warme Farben des BETA-Badges, aber gleiche
+   eckige Form/Größe wie die übrigen Header-Buttons (Speichern/Öffnen). */
+#exportAnnotatedPdfBtn {
+    color: #c04000;
+    background: #fff3e0;
+    border-color: #f0a060;
+}
+
+#exportAnnotatedPdfBtn:hover {
+    background: #ffe7c8;
+    border-color: #e0883f;
+}
+
 /* Header "3-Strich"-Menü (Anleitung & Bug melden) */
 .header-menu {
     position: relative;
@@ -301,16 +314,25 @@ button:hover {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    /* Keine eigene Karte: die .right-column ist bereits eine weiße, gepolsterte
+       Box. Hintergrund/Padding/Schatten hier zurücksetzen, damit Legende und
+       Tabelle den Platz direkt nutzen (kein doppelt verschachteltes Feld). */
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+    border-radius: 0;
 }
 
 .results-table-section h2 {
-    margin: 0 0 20px 0;
-    color: #444;
-    font-size: 1.5rem;
-    font-weight: 600;
-    text-align: center;
-    padding-bottom: 15px;
-    border-bottom: 1px solid #e0e0e0;
+    /* Gleicher dezenter Stil wie der "LABELS"-Titel in der linken Spalte
+       (.project-title): klein, grau, Großbuchstaben. */
+    margin: 0 0 10px 0;
+    color: #999;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    text-align: left;
 }
 
 .results-table-section .summary {
@@ -318,7 +340,7 @@ button:hover {
     padding: 12px 15px;
     background: #f8f8f8;
     border-radius: 8px;
-    font-size: 0.9rem;
+    font-size: 0.82rem;  /* gleich groß wie die Tabelle */
     border-left: 3px solid #888;
 }
 
@@ -369,7 +391,7 @@ button:hover {
     width: 100%;
     table-layout: fixed;
     border-collapse: collapse;
-    font-size: 0.9rem;
+    font-size: 0.82rem;
     background: white;
 }
 
@@ -378,14 +400,14 @@ button:hover {
     position: sticky;
     top: 0;
     background: #ffffff;
-    color: #444;
-    border-bottom: 2px solid #e0e0e0;
+    color: #999;
+    border-bottom: 1px solid #e8e8e8;
     z-index: 1;
 }
 
 .results-table-section th,
 .results-table-section td {
-    padding: 12px 8px;
+    padding: 5px 5px;
     text-align: left;
     border-bottom: 1px solid #e9ecef;
     /* Verhindert, dass langer Text die fixen Spalten sprengt und (v.a. in Safari)
@@ -399,17 +421,17 @@ button:hover {
    Hack getrennte display:table-Kontexte – ohne feste Breiten berechnet Safari sie
    unterschiedlich → Versatz/Überlappung. Prozente halten beide konsistent. */
 .results-table-section th:nth-child(1),
-.results-table-section td:nth-child(1) { width: 10%; }  /* Nr. */
+.results-table-section td:nth-child(1) { width: 8%; }   /* Nr. */
 .results-table-section th:nth-child(2),
-.results-table-section td:nth-child(2) { width: 26%; }  /* Klasse */
+.results-table-section td:nth-child(2) { width: 32%; }  /* Label (Name) */
 .results-table-section th:nth-child(3),
-.results-table-section td:nth-child(3) { width: 16%; }  /* Typ */
+.results-table-section td:nth-child(3) { width: 8%; }   /* Typ (nur Icon → wenig Platz nötig) */
 .results-table-section th:nth-child(4),
-.results-table-section td:nth-child(4) { width: 16%; }  /* Breite */
+.results-table-section td:nth-child(4) { width: 17%; }  /* Breite */
 .results-table-section th:nth-child(5),
-.results-table-section td:nth-child(5) { width: 16%; }  /* Höhe */
+.results-table-section td:nth-child(5) { width: 17%; }  /* Höhe */
 .results-table-section th:nth-child(6),
-.results-table-section td:nth-child(6) { width: 16%; }  /* Messwert */
+.results-table-section td:nth-child(6) { width: 18%; }  /* Messwert */
 
 /* Platzhalter-/Leerzeilen (colspan) dürfen umbrechen und volle Breite nutzen –
    nicht von den festen Spaltenbreiten/Ellipsis oben abgeschnitten werden. */
@@ -420,10 +442,11 @@ button:hover {
 }
 
 .results-table-section th {
+    /* Gleicher Header-Stil wie die Label-Tabelle (#labelTable th): klein, grau. */
     font-weight: 600;
     text-transform: uppercase;
-    font-size: 0.8rem;
-    letter-spacing: 0.5px;
+    font-size: 11px;
+    letter-spacing: 0.04em;
 }
 
 .results-table-section tbody tr:hover {
@@ -647,10 +670,11 @@ button:hover {
 
 /* CSS für Projektbereich */
 .project-section {
-    background: white;
+    /* Keine eigene Karte: die .left-column ist bereits eine weiße, gepolsterte
+       Box. Hintergrund/Schatten/Radius erzeugten sonst eine feine Rahmenlinie
+       rund um das Label-Feld (gleiche Verschachtelung wie zuvor rechts). */
+    background: transparent;
     padding: 20px;
-    border-radius: 5px;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     margin-top: 20px;
 }
 
@@ -1004,7 +1028,6 @@ input[type="color"].inline-edit {
 
 .label-quick-item.active {
     background: #ebebeb;
-    border-color: #999;
     color: #444;
     font-weight: 600;
 }
