@@ -2896,6 +2896,7 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
     left: labelPosition.x,
     top: labelPosition.y,
     fontSize: 14, // Fixed font size - let Canvas handle zoom scaling
+    fontFamily: 'Arial', // sonst fällt Fabric auf Times New Roman (Serif) zurück
     fill: getContrastTextColor(labelColor),
     backgroundColor: labelColor,
     padding: 4, // Fixed padding - let Canvas handle zoom scaling

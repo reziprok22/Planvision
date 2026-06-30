@@ -242,8 +242,9 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
             const c = T.toUser(tl.left * sx, tl.top * sy);
 
             // Badge is axis-aligned in *display* space → swap w/h on rotated pages
-            const wBadge = textW + 6;
-            const hBadge = textH + 4;
+            // Tight padding to match the Fabric badge in the webapp (background hugs the text)
+            const wBadge = textW + 2;
+            const hBadge = textH + 0;
             page.drawRectangle({
                 x: c.x - (T.swapped ? hBadge : wBadge) / 2,
                 y: c.y - (T.swapped ? wBadge : hBadge) / 2,
