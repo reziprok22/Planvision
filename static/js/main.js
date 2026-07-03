@@ -1613,7 +1613,10 @@ function setupCanvasEvents() {
     return;
   }
     
-  // Clear all existing events first
+  // Clear all existing events first. setupCanvasEvents läuft pro Seite mehrfach
+  // auf derselben Canvas-Instanz (initCanvas + nach loadCanvasData) — die Liste
+  // muss ALLE unten registrierten Events abdecken, sonst feuern Handler doppelt
+  // (z.B. doppelte Undo-Snapshots via object:modified).
   canvas.off('mouse:down');
   canvas.off('mouse:move');
   canvas.off('mouse:up');
@@ -1621,6 +1624,11 @@ function setupCanvasEvents() {
   canvas.off('selection:created');
   canvas.off('selection:updated');
   canvas.off('selection:cleared');
+  canvas.off('object:moving');
+  canvas.off('object:modified');
+  canvas.off('object:removed');
+  canvas.off('mouse:over');
+  canvas.off('mouse:out');
   
   // Mouse down event - handles all drawing tools
   canvas.on('mouse:down', function(options) {
