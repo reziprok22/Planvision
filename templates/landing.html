@@ -26,7 +26,7 @@
         .hero {
             background: var(--white);
             color: var(--slate-900);
-            padding: 96px 0 108px 48px;
+            padding: 96px 0 108px max(48px, (100% - var(--max-content)) / 2);
             overflow: hidden;
             background-image:
                 linear-gradient(var(--slate-100) 1px, transparent 1px),
@@ -40,6 +40,7 @@
             grid-template-columns: 1fr 2.5fr;
             gap: 64px;
             align-items: center;
+            max-width: var(--max-content);
         }
 
         .hero-eyebrow {
@@ -95,9 +96,9 @@
             border: 1px solid var(--slate-100);
             border-right: none;
             margin-left: 60px;
-            margin-right: 30px;
+            margin-right: -100px;
             user-select: none;
-            touch-action: none;
+            touch-action: pan-y;
             cursor: ew-resize;
         }
 
@@ -165,7 +166,7 @@
 
         /* ── SECTION SHARED ── */
         section {
-            padding: 100px 48px;
+            padding: 100px max(48px, (100% - var(--max-content)) / 2);
         }
 
         .section-label {
@@ -182,7 +183,7 @@
             font-weight: 900;
             letter-spacing: -0.03em;
             line-height: 1.15;
-            max-width: 600px;
+            max-width: 760px;
             margin-bottom: 18px;
             color: var(--slate-900);
         }
@@ -190,30 +191,39 @@
         .section-sub {
             font-size: 1rem;
             color: var(--slate-600);
-            max-width: 520px;
+            max-width: 760px;
             margin-bottom: 60px;
         }
 
         /* ── FEATURES ── */
-        .features { background: var(--white); }
-
+        /* ── FEATURES LAYOUT (Spiegelung auf Desktop) ── */
         .features-layout {
             display: flex;
-            gap: 40px;
+            gap: 64px;
             align-items: center;
+            flex-direction: row-reverse; /* Bild nach links, Text nach rechts */
         }
 
-        .features-content { flex: 0 1 740px; min-width: 0; }
+        /* Rechts: Der Textbereich bekommt flex: 1, um den restlichen Platz zu füllen */
+        .features-content {
+            flex: 1; 
+            min-width: 0;
+        }
 
+        /* Links: Das Karussell-Bild */
         .features-image {
             position: relative;
-            flex: 0 0 960px;
+            flex: 0 0 55%; /* Nutzt exakt 55% der Gesamtbreite (flexibel statt starr 960px) */
             height: 520px;
             overflow: hidden;
-            border-radius: 10px 0 0 10px;
-            box-shadow: 0 16px 48px rgba(15, 23, 42, 0.10);
+            /* Da das Bild jetzt LINKS steht, runden wir die Ecken rechts ab, 
+               damit es „in die Seite hineinfliesst“ (analog zum alten Design) */
+            border-radius: 0 var(--radius) var(--radius) 0; 
             background: var(--white);
-            margin-right: -48px;
+            box-shadow: 0 16px 48px rgba(15, 23, 42, 0.10);
+            
+            /* WICHTIG: Die alten Margins komplett zurücksetzen! */
+            margin-right: 0; 
         }
 
         .features-image img {
@@ -440,12 +450,6 @@
             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M3 8.5l3.5 3.5 6.5-7' stroke='%23FF6B00' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
         }
 
-        .plan-features li.muted { color: var(--slate-200); }
-
-        .plan-features li.muted::before {
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='M5 8h6' stroke='%23CBD5E1' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
-        }
-
         /* ── HOW IT WORKS ── */
         .how { background: var(--slate-50); }
 
@@ -596,12 +600,22 @@
 
             .features-layout {
                 flex-direction: column;
+                gap: 20px;
+            }
+
+            .features-content {
+                flex: none;
+            }
+
+            .features-content .section-sub {
+                margin-bottom: 0;
             }
 
             .features-image {
                 flex: none;
                 width: 100%;
-                height: 300px;
+                height: auto;
+                aspect-ratio: 16 / 9;
                 margin-right: 0;
                 border-radius: var(--radius);
             }
@@ -637,24 +651,26 @@
             <span class="hero-eyebrow">Aufmass-Software für Pläne</span>
             <h1>
                 Planli.<br>
-                <span>Just Measure.<br>Done in seconds.</span>
+                <span>Einfach messen.<br>Fertig in Sekunden.</span>
             </h1>
             <p class="hero-sub">
-                PDF hochladen, Massstab setzen, Flächen ausmessen.
-                Plan exportieren — in wenigen Klicks.
-                <br><br>
-                Das Jahres-Abo kostet CHF 240.-.
+                PDF hochladen. Massstab setzen. Flächen ausmessen. 
+                Plan exportieren mit wenigen Klicks – <strong>direkt im Browser.</strong>
             </p>
             <div class="hero-cta">
-                <a href="{% url 'app' %}" class="btn btn-primary btn-lg">Kostenlos testen</a>
+                <a href="{% url 'app' %}" class="btn btn-primary btn-lg">Beta testen</a>
                 <a href="#features" class="btn btn-outline btn-lg">Mehr erfahren</a>
             </div>
+            {% if beta_mode %}
+            <p class="hero-note">Während der Beta-Phase kostenlos &nbsp;·&nbsp; Ohne Anmeldung</p>
+            {% else %}
             <p class="hero-note">30 Tage kostenlos testen &nbsp;·&nbsp; Keine Kreditkarte erforderlich</p>
+            {% endif %}
         </div>
 
         <div class="hero-compare" id="heroCompare">
             <img class="hc-img hc-before" src="{% static 'landingpage/bevor.png' %}" alt="Plan vor der Auswertung" draggable="false">
-            <img class="hc-img hc-after" src="{% static 'landingpage/after.png' %}" alt="Plan mit OnlyPlans ausgewertet" draggable="false">
+            <img class="hc-img hc-after" src="{% static 'landingpage/after.png' %}" alt="Plan mit Planli ausgewertet" draggable="false">
             <div class="hc-handle">
                 <div class="hc-knob">&#8596;</div>
             </div>
@@ -673,17 +689,17 @@
         <div class="features-content">
             <div class="section-label">Warum Planli</div>
             <h2 class="section-title">BIM ist die Zukunft. Planli ist für all jene, die das Ausmass schon heute benötigen.</h2>
-            <p class="section-sub">Ideal für die frühen Projektphasen, bevor überhaupt ein CAD-Modell existiert. Mit Planli misst du direkt im Browser – ohne Installation, intuitiv und fehlerfrei. Keine komplizierten Tools, kein Daten-Overload. Nur du, dein Plan und ein schnelles Ergebnis in wenigen Sekunden.</p>
+            <p class="section-sub">Ideal für die frühen Projektphasen, bevor überhaupt ein CAD-Modell existiert. Mit Planli misst du direkt im Browser – ohne Installation, intuitiv,  und fehlerfrei. Du, dein Plan und ein schnelles Ergebnis in wenigen Sekunden.</p>
         </div>
         <div class="features-image" id="featuresCarousel">
             <div class="features-slide is-active">
-                <img src="{% static 'landingpage/Karussell1.png' %}" alt="OnlyPlans Screenshot 1">
+                <img src="{% static 'landingpage/Karussell1.png' %}" alt="Planli Screenshot 1">
             </div>
             <div class="features-slide">
-                <img src="{% static 'landingpage/Karussell2.png' %}" alt="OnlyPlans Screenshot 2">
+                <img src="{% static 'landingpage/Karussell2.png' %}" alt="Planli Screenshot 2">
             </div>
             <div class="features-slide">
-                <img src="{% static 'landingpage/Karussell3.png' %}" alt="OnlyPlans Screenshot 3">
+                <img src="{% static 'landingpage/Karussell3.png' %}" alt="Planli Screenshot 3">
             </div>
             <div class="features-dots">
                 <button class="features-dot is-active" type="button" aria-label="Bild 1"></button>
@@ -691,6 +707,58 @@
                 <button class="features-dot" type="button" aria-label="Bild 3"></button>
             </div>
         </div>
+    </div>
+
+    <div class="features-grid">
+
+        <div class="feature-card">
+            <div class="feature-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="4" width="10" height="10" rx="1"/>
+                    <line x1="8" y1="4" x2="8" y2="14"/>
+                    <line x1="3" y1="9" x2="13" y2="9"/>
+                    <path d="M16 3.5v4M14 5.5h4"/>
+                </svg>
+            </div>
+            <h3>KI-Fenstererkennung</h3>
+            <p>Die integrierte Objekterkennung findet Fenster automatisch — du prüfst nur noch nach.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="10" cy="10" r="7"/>
+                    <line x1="3" y1="10" x2="17" y2="10"/>
+                    <path d="M10 3c2.2 2 3.3 4.5 3.3 7s-1.1 5-3.3 7c-2.2-2-3.3-4.5-3.3-7s1.1-5 3.3-7z"/>
+                </svg>
+            </div>
+            <h3>Keine Installation</h3>
+            <p>Läuft vollständig im Browser. Kein weiteres Setup nötig.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="10" cy="10" r="7"/>
+                    <circle cx="10" cy="10" r="3.5"/>
+                    <circle cx="10" cy="10" r="0.5"/>
+                </svg>
+            </div>
+            <h3>Fokus &amp; Geschwindigkeit</h3>
+            <p>Auf das Wesentliche reduziert, extrem intuitiv und dank cleverer Tastaturkürzel noch schneller bedienbar.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3H9l7.5 7.5a1.5 1.5 0 0 1 0 2.1l-4 4a1.5 1.5 0 0 1-2.1 0L3 9V4.5z"/>
+                    <circle cx="6.5" cy="6.5" r="1"/>
+                </svg>
+            </div>
+            <h3>Label-Manager</h3>
+            <p>Verwalte Bauteile oder Zonen wie EBF und Geschossflächen nach deinen individuellen Bedürfnissen.</p>
+        </div>
+
     </div>
 
 </section>
@@ -708,7 +776,7 @@
                 <div class="step-number">1</div>
                 <div class="step-body">
                     <h3>Plan hochladen und Massstab wählen</h3>
-                    <p>Ziehe dein PDF einfach per Drag &amp; Drop in den Browser und wähle ein voreingesteller Massstab oder definiere deinen eigenen.</p>
+                    <p>Ziehe dein PDF einfach per Drag &amp; Drop in den Browser und wähle einen voreingestellten Massstab oder definiere deinen eigenen.</p>
                 </div>
             </div>
 
@@ -716,7 +784,7 @@
                 <div class="step-number">2</div>
                 <div class="step-body">
                     <h3>Labels für Bauteile oder andere Flächen definieren</h3>
-                    <p>Benenne die Labels und vergebe die Eigenschaften nach deinen Bedürfnissen.</p>
+                    <p>Benenne die Labels und vergib die Eigenschaften nach deinen Bedürfnissen.</p>
                 </div>
             </div>
 
@@ -781,7 +849,7 @@
                 <li>Alle Funktionen aus Einzel</li>
                 <li>Organisations-Konto mit Sitzplatzverwaltung</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline-dark" style="width:100%; justify-content:center;">Kostenlos starten</a>
+            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;">Kostenlos starten</a>
         </div>
 
         <div class="plan-card">
@@ -793,7 +861,7 @@
                 <li>Alle Funktionen aus Einzel</li>
                 <li>Organisations-Konto mit Sitzplatzverwaltung</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline-dark" style="width:100%; justify-content:center;">Kostenlos starten</a>
+            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;">Kostenlos starten</a>
             <p class="plan-note">Mehr als 20 Nutzer? <a href="mailto:gruezi@bauphysiklengg.ch?subject=Planli%20Team-Angebot">Individuelles Angebot anfragen</a></p>
         </div>
 
@@ -813,12 +881,12 @@
         <details>
             <summary>Was ist Planli?</summary>
             <p class="faq-answer">Planli ist eine Web-App zur Erstellung von Ausmassen aus PDF-Bauplänen. Der Fokus liegt auf einer einfachen Bedienung und einer schnellen Erfassung von Flächen, Längen und weiteren Bauteilen.
-<br> Planli eignet sich besonders für die frühe Projektphase oder überall dort, wo ein schnelles Ausmass genügt und die Präzision eines CAD-Programms nicht erforderlich ist.</p>
+<br><br> Planli eignet sich besonders für die frühe Projektphase oder überall dort, wo ein schnelles Ausmass genügt und die Präzision eines CAD-Programms nicht erforderlich ist.</p>
         </details>
 
         <details>
             <summary>Für wen ist Planli?</summary>
-            <p class="faq-answer">Planli richtet sich an alle, die schnell und einfach ein Ausmass aus PDF-Bauplänen erstellen möchten. <br>
+            <p class="faq-answer">Planli richtet sich an alle, die schnell und einfach ein Ausmass aus PDF-Bauplänen erstellen möchten. <br><br>
 Dazu gehören unter anderem Energieberater, Architekten, Planer, Bauleiter sowie Handwerksbetriebe.</p>
         </details>
 
@@ -831,8 +899,8 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
         <details>
             <summary>Welche Funktionen bietet Planli?</summary>
             <p class="faq-answer">Planli bietet Werkzeuge für Rechtecke, Polygone und Linien, um Flächen, Längen und weitere Objekte direkt auf dem Plan zu erfassen.
-<br> Mit dem Label-Manager können Bauteile wie Fenster, Wärmebrücken, EBF, Geschossflächen oder eigene Kategorien erstellt und den Werkzeugen zugeordnet werden.
-<br> Eine besondere Funktion ist die KI-gestützte Fenstererkennung, die Fenster automatisch erkennt und ihre Flächen zur weiteren Bearbeitung vorschlägt.</p>
+<br><br> Mit dem Label-Manager können Bauteile wie Fenster, Wärmebrücken, EBF, Geschossflächen oder eigene Kategorien erstellt und den Werkzeugen zugeordnet werden.
+<br><br> Eine besondere Funktion ist die KI-gestützte Fenstererkennung, die Fenster automatisch erkennt und ihre Flächen zur weiteren Bearbeitung vorschlägt.</p>
         </details>
 
         <details>
@@ -852,14 +920,21 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
 
         <details>
             <summary>Werden meine Daten gespeichert?</summary>
-            <p class="faq-answer">Projekte können als .plan-Datei heruntergeladen und lokal gespeichert werden. Zum Weiterbearbeiten lassen sie sich jederzeit wieder in Planli hochladen.
-<br> Hochgeladene Daten werden nur vorübergehend auf unseren Servern gespeichert und anschliessend gelöscht. Während dieser Zeit können sie zur Weiterentwicklung der KI-Funktionen verwendet werden. Weitere Informationen findest du in unserer Datenschutzerklärung.</p>
+            <p class="faq-answer">
+                    Deine Daten gehören dir. Hochgeladene Pläne werden ausschliesslich auf sicheren Servern verarbeitet, damit du im Browser flüssig damit arbeiten kannst. 
+                    <br><br>
+                    Um deine Privatsphäre zu schützen, werden alle Projektdaten in regelmässigen Abständen (spätestens nach 14 Tagen) von dem Server gelöscht. 
+                    <br><br>
+                    Tipp: Du kannst dein fertiges Projekt jederzeit als kompakte `.plan`-Datei lokal auf deinem Computer speichern und später wieder hochladen, um weiterzuarbeiten.</p>
         </details>
 
         <details>
             <summary>Gibt es eine kostenlose Testphase?</summary>
-            <p class="faq-answer">Während der Beta-Phase kann Planli kostenlos genutzt werden.
-<br> Nach der Beta steht eine 14-tägige Testphase zur Verfügung. Dafür genügt die Registrierung mit einer E-Mail-Adresse und einem Passwort. Eine Kreditkarte ist nicht erforderlich.</p>
+                <p class="faq-answer">
+                    Ja. Während der aktuellen Beta-Phase kannst du Planli komplett kostenlos und sogar ohne Anmeldung direkt testen. 
+                    <br><br>
+                    Nach dem offiziellen Start steht dir eine 30-tägige Testphase zur Verfügung. Für diese reguläre Testphase genügen dann die Registrierung mit einer E-Mail-Adresse und ein Passwort.
+                </p>
         </details>
 
     </div>
