@@ -93,6 +93,13 @@ let dupNeedsFinalize = false;      // mouse:up happened before the async inserti
 // math below reduces exactly to the viewport-sized buffer behaviour).
 const OVERSCAN = 96;
 
+// DEBUG/Performance-Experiment: Textlabels im Canvas komplett abschalten.
+// false → es werden weder neue Labels erzeugt noch gespeicherte geladen/gezeichnet.
+// Ergebnistabelle, PDF-Export (labelText) und Nummerierung bleiben unberührt, weil
+// createSingleTextLabel labelText/displayIndex weiterhin auf der Annotation setzt.
+// Zum Wiedereinschalten auf true setzen. NUR zum Messen gedacht.
+const SHOW_TEXT_LABELS = false;
+
 // Crosshair overlay for drawing tools
 let crosshairCanvas = null;
 let crosshairCtx = null;
@@ -642,7 +649,14 @@ function loadCanvasData(canvasData) {
     });
 
     const savedLabels = canvasData.canvas_text_labels;
-    if (savedLabels?.length > 0) {
+    if (!SHOW_TEXT_LABELS) {
+      // Perf-Experiment: gespeicherte Labels NICHT laden/zeichnen. Trotzdem pro
+      // Annotation labelText/displayIndex setzen (batch → kein Canvas-Objekt, kein
+      // Render), damit Tabelle, Nummerierung und PDF-Export stimmen.
+      objects.filter(Boolean).forEach(annotation => createSingleTextLabel(annotation, { batch: true }));
+      applyLayerOrdering();
+      canvas.requestRenderAll();
+    } else if (savedLabels?.length > 0) {
       // Restore text labels at their saved positions (preserves user moves)
       util.enlivenObjects(savedLabels).then(textLabels => {
         const linkedIds = new Set();
@@ -2896,6 +2910,18 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
   // Store label text on annotation so PDF export can access it
   annotation.set('labelText', displayNumber.toString() + measurement);
 
+  // Perf-Experiment: Labels aus → kein Text-Objekt erzeugen (labelText oben bleibt
+  // gesetzt, daher funktionieren Tabelle und PDF-Export weiter). Tabellen-/Summary-
+  // Updates im Nicht-Batch-Fall trotzdem ausführen.
+  if (!SHOW_TEXT_LABELS) {
+    if (!batch) {
+      canvas.renderAll();
+      updateResultsTable();
+      updateSummary();
+    }
+    return null;
+  }
+
   // Calculate position
   const labelPosition = calculateLabelPosition(annotation);
 
@@ -2917,7 +2943,7 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
     objectType: 'textLabel',
     linkedAnnotationId: linkId
   });
-  
+
   canvas.add(textLabel);
   if (!batch) {
     applyLayerOrdering();
