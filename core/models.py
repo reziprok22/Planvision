@@ -29,8 +29,13 @@ class BugReport(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='bug_reports')
     report_type = models.CharField(max_length=20, choices=REPORT_TYPES, default='bug')
     text = models.TextField()
+    # Optionale Rückmeldeadresse (v.a. in der Beta-Phase ohne Accounts).
+    email = models.EmailField(blank=True)
     page_number = models.IntegerField(null=True, blank=True)
     user_agent = models.CharField(max_length=500, blank=True)
+    # Clientseitig ausgelesene Systeminfos (Browser/OS/Bildschirm/Viewport/DPR/
+    # Zeitzone) zur besseren Nachvollziehbarkeit von Bugs.
+    client_info = models.TextField(blank=True)
     project_zip = models.CharField(max_length=500, blank=True)  # Pfad relativ zu BUG_REPORTS_DIR
     screenshot = models.CharField(max_length=500, blank=True)   # Pfad relativ zu BUG_REPORTS_DIR
     resolved = models.BooleanField(default=False)

@@ -20,11 +20,11 @@ class AnalysisEventAdmin(admin.ModelAdmin):
 
 @admin.register(BugReport)
 class BugReportAdmin(admin.ModelAdmin):
-    list_display = ('id', 'created_at', 'report_type', 'user', 'page_number', 'short_text', 'has_zip', 'has_screenshot', 'resolved')
+    list_display = ('id', 'created_at', 'report_type', 'user', 'email', 'page_number', 'short_text', 'has_zip', 'has_screenshot', 'resolved')
     list_editable = ('resolved',)
     list_filter = ('report_type', 'resolved', 'created_at')
-    search_fields = ('text', 'user__username')
-    readonly_fields = ('user', 'report_type', 'text', 'page_number', 'user_agent', 'project_zip', 'screenshot', 'created_at')
+    search_fields = ('text', 'user__username', 'email')
+    readonly_fields = ('user', 'report_type', 'text', 'email', 'page_number', 'user_agent', 'client_info', 'project_zip', 'screenshot', 'created_at')
 
     @admin.display(description='Beschreibung')
     def short_text(self, obj):

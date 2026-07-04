@@ -374,7 +374,9 @@ def report_bug(request):
             report_type=report_type,
             text=text[:5000],
             page_number=page_number,
+            email=(request.POST.get('email') or '').strip()[:254],
             user_agent=request.META.get('HTTP_USER_AGENT', '')[:500],
+            client_info=(request.POST.get('client_info') or '')[:2000],
         )
 
         report_dir = settings.BUG_REPORTS_DIR / str(report.pk)

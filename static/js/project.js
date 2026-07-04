@@ -46,13 +46,13 @@ const REPORT_PRESETS = {
   bug: {
     title:       'Problem melden',
     intro:       'Beschreibe kurz, was passiert ist und was du erwartet hättest.',
-    placeholder: 'Was ist passiert?',
+    placeholder: 'Was ist passiert? Bitte füge allfällige Fehlermeldungen an. ',
     attach:      true,   // Projekt/Screenshot standardmäßig anhängen
     success:     'Danke! Problem wurde gemeldet ✓',
   },
   suggestion: {
     title:       'Verbesserung vorschlagen',
-    intro:       'Was würdest du dir wünschen? Beschreibe deine Idee – je konkreter, desto besser.',
+    intro:       'Was würdest du dir wünschen? Beschreibe deine Idee.',
     placeholder: 'Deine Idee…',
     attach:      false,  // bei Vorschlägen selten nötig, aber optional zuschaltbar
     success:     'Danke für deinen Vorschlag ✓',
@@ -79,6 +79,10 @@ function setupBugReport() {
     set('bugReportText', 'placeholder', preset.placeholder);
     set('bugReportAttachProject', 'checked', preset.attach);
     set('bugReportAttachScreenshot', 'checked', preset.attach);
+    set('bugReportEmail', 'value', '');
+    // Anhänge + System-Info-Hinweis nur bei Bug-Meldungen zeigen.
+    const extras = document.getElementById('bugReportExtras');
+    if (extras) extras.style.display = preset.attach ? '' : 'none';
     modal.style.display = 'block';
     document.getElementById('bugReportText')?.focus();
   };
@@ -92,10 +96,29 @@ function setupBugReport() {
   submit.addEventListener('click', () => handleBugReportSubmit(close));
 }
 
+// Technische Systeminfos zur besseren Nachvollziehbarkeit von Bugs. Bewusst nur
+// Geräte-/Umgebungsdaten (kein Tracking) — Viewport/DPR/Zeitzone stehen nicht im
+// UA-Header und sind für eine Canvas-App am hilfreichsten.
+function collectClientInfo() {
+  const nav = navigator || {};
+  const scr = window.screen || {};
+  let tz = '-';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '-'; } catch { /* ignore */ }
+  return [
+    `User-Agent: ${nav.userAgent || '-'}`,
+    `Plattform: ${nav.userAgentData?.platform || nav.platform || '-'}`,
+    `Sprache: ${nav.language || '-'}`,
+    `Bildschirm: ${scr.width || '?'}×${scr.height || '?'} px`,
+    `Viewport: ${window.innerWidth}×${window.innerHeight} px @ DPR ${window.devicePixelRatio || 1}`,
+    `Zeitzone: ${tz}`,
+  ].join('\n');
+}
+
 async function handleBugReportSubmit(closeModal) {
   const textarea         = document.getElementById('bugReportText');
   const attachProject    = document.getElementById('bugReportAttachProject');
   const attachScreenshot = document.getElementById('bugReportAttachScreenshot');
+  const emailInput       = document.getElementById('bugReportEmail');
   const submit           = document.getElementById('bugReportSubmit');
 
   const reportType = document.getElementById('bugReportType')?.value || 'bug';
@@ -115,6 +138,10 @@ async function handleBugReportSubmit(closeModal) {
     fd.append('text', text);
     fd.append('report_type', reportType);
     if (window.getCurrentPageNumber) fd.append('page', window.getCurrentPageNumber());
+    const email = (emailInput?.value || '').trim();
+    if (email) fd.append('email', email);
+    // Systeminfos nur bei Bug-Meldungen (bei Vorschlägen irrelevant).
+    if (reportType === 'bug') fd.append('client_info', collectClientInfo());
 
     // Attach the current project as ZIP (same content as the save button)
     if (attachProject?.checked && pdfModule.getAllPdfPages().length && window.collectAllPagesCanvasData) {

@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planli – Ausmass-Tool</title>
+    <title>Planli | Ausmass-Tool</title>
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
     <style>
         /* =============================================
@@ -772,15 +772,25 @@
             <p id="bugReportIntro" style="font-size:0.85em; color:#666; margin:4px 0 10px;">
                 Beschreibe kurz, was passiert ist und was du erwartet hättest.
             </p>
-            <textarea id="bugReportText" rows="6" placeholder="Was ist passiert?"
+            <textarea id="bugReportText" rows="6" placeholder="Was ist passiert? Bitte füge allfällige Fehlermeldungen an."
                       style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; font-family:inherit; resize:vertical;"></textarea>
-            <label style="display:flex; align-items:center; gap:6px; margin:10px 0 4px; font-size:0.85em; color:#444; font-weight:normal;">
-                <input type="checkbox" id="bugReportAttachProject" checked style="width:auto; margin:0; flex-shrink:0;">
-                Aktuelles Projekt anhängen (hilft bei der Reproduktion)
-            </label>
-            <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:0.85em; color:#444; font-weight:normal;">
-                <input type="checkbox" id="bugReportAttachScreenshot" checked style="width:auto; margin:0; flex-shrink:0;">
-                Screenshot der aktuellen Ansicht anhängen
+            <div id="bugReportExtras">
+                <label style="display:flex; align-items:center; gap:6px; margin:10px 0 4px; font-size:0.85em; color:#444; font-weight:normal;">
+                    <input type="checkbox" id="bugReportAttachProject" checked style="width:auto; margin:0; flex-shrink:0;">
+                    Aktuelles Projekt anhängen (hilft bei der Reproduktion)
+                </label>
+                <label style="display:flex; align-items:center; gap:6px; margin:0; font-size:0.85em; color:#444; font-weight:normal;">
+                    <input type="checkbox" id="bugReportAttachScreenshot" checked style="width:auto; margin:0; flex-shrink:0;">
+                    Screenshot der aktuellen Ansicht anhängen
+                </label>
+                <p style="font-size:0.78em; color:#888; margin:12px 0 0; line-height:1.4;">
+                    Zur besseren Fehleranalyse werden technische Angaben (Browser, Betriebssystem und Bildschirm­auflösung) automatisch mitgesendet.
+                </p>
+            </div>
+            <label style="display:block; margin:12px 0 0; font-size:0.85em; color:#444; font-weight:normal;">
+                E-Mail (optional, für Rückfragen)
+                <input type="email" id="bugReportEmail" placeholder="name@email.com"
+                       style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; margin-top:4px;">
             </label>
             <div style="display:flex; justify-content:flex-end; gap:8px; margin-top:14px;">
                 <button id="bugReportCancel" class="editor-button">Abbrechen</button>
