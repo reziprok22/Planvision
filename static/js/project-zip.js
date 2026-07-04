@@ -19,78 +19,29 @@ import JSZip from 'jszip';
 // migration step in migrateCanvasData() below.
 //
 // Version history:
-//   1 – original format (metadata.format = 'project_zip_v1', no numeric version)
-//       canvas_annotations only; no canvas_text_labels; no id/labelText on annotations
-//   2 – canvas_text_labels per page added; id + labelText serialised on annotations
-//   3 – legend_position per page added (optional; null when no on-plan legend placed)
+//   1 – aktuelles Format: canvas_data.json (multi-page annotations inkl.
+//       canvas_text_labels und id/labelText), labels.json, settings.json,
+//       pages/, optional original.pdf sowie legend_position pro Seite.
 //
-// Note: the optional analysis/page_N.json (raw AI predictions) is no longer
-// written – it was a write-only round-trip, fully superseded by the scored
-// annotations in canvas_data.json. Old files that still contain it load fine
-// (the folder is simply ignored). No version bump needed (absence-tolerant).
-//
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 1;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
 
 /**
  * Detect the numeric format version from a loaded metadata object.
- * Old ZIPs used a string 'project_zip_v1' instead of a number.
  */
 function detectVersion(metadata) {
-  if (typeof metadata.format_version === 'number') return metadata.format_version;
-  // Legacy: string format field means version 1
-  if (metadata.format === 'project_zip_v1') return 1;
-  return 1; // safe default for unknown old files
+  return typeof metadata.format_version === 'number' ? metadata.format_version : 1;
 }
 
 /**
  * Apply all necessary migrations to bring canvasData up to CURRENT_VERSION.
- * Each "if (v < N)" block is idempotent — safe to run multiple times.
+ * Currently a no-op (format starts at v1). Add "if (fromVersion < N) { … }"
+ * blocks here when the schema changes — see CLAUDE.md, "ZIP Format Versioning".
  */
 function migrateCanvasData(canvasData, fromVersion) {
   if (fromVersion >= CURRENT_VERSION) return canvasData;
-
-  console.log(`[ZIP migration] upgrading from v${fromVersion} to v${CURRENT_VERSION}`);
-  // canvasData is the multi_page_canvas_v1 wrapper:
-  // { format, total_pages, pages: { "1": {...}, ... }, current_page, saved_at }
-  // Migrations operate on the per-page entries inside .pages.
-  let data = { ...canvasData };
-
-  // ── v1 → v2 ────────────────────────────────────────────────────────────────
-  // canvas_text_labels did not exist. The loader already handles this via the
-  // createSingleTextLabel fallback, so no data transform is needed here.
-  // We do ensure every annotation has a stable displayIndex so the fallback
-  // can assign correct numbers.
-  if (fromVersion < 2) {
-    data.pages = Object.fromEntries(
-      Object.entries(data.pages || {}).map(([pageNum, pageData]) => {
-        if (!pageData?.canvas_annotations) return [pageNum, pageData];
-
-        let nextIndex = 1;
-        const patched = pageData.canvas_annotations.map(ann => {
-          if (ann.objectType !== 'annotation') return ann;
-          if (ann.displayIndex) {
-            nextIndex = Math.max(nextIndex, ann.displayIndex + 1);
-            return ann;
-          }
-          return { ...ann, displayIndex: nextIndex++ };
-        });
-
-        return [pageNum, { ...pageData, canvas_annotations: patched }];
-      })
-    );
-    console.log('[ZIP migration] v1→v2: displayIndex assigned where missing');
-  }
-
-  // ── v2 → v3 ────────────────────────────────────────────────────────────────
-  // legend_position is a new OPTIONAL per-page field; older files simply lack
-  // it (= no legend placed), so no data transform is needed.
-
-  // ── v3 → v4 (placeholder) ──────────────────────────────────────────────────
-  // if (fromVersion < 4) { ... }
-
-  return data;
+  return canvasData;
 }
 
 /**
@@ -179,7 +130,7 @@ export async function loadProjectFromZip(file) {
   if (!metadata) throw new Error('Ungültige ZIP-Datei: metadata.json fehlt.');
 
   const version = detectVersion(metadata);
-  if (version !== CURRENT_VERSION) {
+  if (version < CURRENT_VERSION) {
     console.log(`[ZIP] Format v${version} erkannt (aktuell: v${CURRENT_VERSION}) – Migration wird ausgeführt`);
   }
 
