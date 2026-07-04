@@ -9,7 +9,7 @@ eingetragen.
 
 | Schritt | Dateiname            | Inhalt                          |
 |---------|----------------------|---------------------------------|
-| 1       | `01-upload.mp4`      | Plan hochladen & Maßstab setzen |
+| 1       | `01-upload.mp4`      | Plan hochladen & Massstab setzen |
 | 2       | `02-labels.mp4`      | Labels definieren / importieren |
 | 3       | `03-draw.mp4`        | Zeichnen & messen               |
 | 4       | `04-export.mp4`      | Speichern & exportieren         |

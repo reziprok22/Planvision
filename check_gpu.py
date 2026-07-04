@@ -76,7 +76,7 @@ def check_gpu_support():
         print("   → Moderate Verbesserung auf Apple Silicon")
     else:
         print("🎯 EMPFEHLUNG: CPU-Optimierungen fokussieren")
-        print("   → Modell-Quantisierung, kleinere Bildgrößen, Async Processing")
+        print("   → Modell-Quantisierung, kleinere Bildgrössen, Async Processing")
     
     return cuda_available or mps_available
 

@@ -150,7 +150,7 @@ Projects store JSON files containing:
 
 ### Data Retention & Opt-In Training Data (Datenschutz)
 - `projects/<uuid>/` is **ephemeral working data** (uploaded PDF + rendered JPGs). The `cleanup_projects` management command (`core/management/commands/cleanup_projects.py`, `--days`/`--dry-run`) deletes dirs older than `PROJECT_RETENTION_DAYS` and sets `Project.files_deleted=True` (the DB row stays, so statistics remain intact). Run daily via server cron (see Deployment).
-- Training data is **opt-in only**: a session-wide toggle in the app header menu (`#consentTrainingToggle`, default off, persisted in `localStorage['planvision_consent_training']`) gates `sendTrainingData()` in `project.js`. Only with consent does an export POST the full project ZIP (multipart `project_zip`) to `save_training_data`, which stores it as `training_data_opt-in/<uuid>/project.zip`. `Project.consent_training` records the choice.
+- Training data is **opt-in only**: a session-wide toggle in the app header menu (`#consentTrainingToggle`, default off, persisted in `localStorage['ai_training_consent']`) gates `sendTrainingData()` in `project.js`. Only with consent does an export POST the full project ZIP (multipart `project_zip`) to `save_training_data`, which stores it as `training_data_opt-in/<uuid>/project.zip`. `Project.consent_training` records the choice.
 - The stored ZIP is **identical to the "Speichern" export** (`buildProjectZipBlob`) → self-contained and directly re-loadable in the app via "Öffnen" for quality review. `training_data_opt-in/` is never touched by the cleanup.
 
 ## Deployment (onlyplans.tools)
@@ -191,7 +191,7 @@ The ZIP save/load system in `static/js/project-zip.js` uses a numeric `format_ve
 **Current version: 3**
 
 Version history:
-- **v1** – original format (`metadata.format = 'planvision_zip_v1'`); canvas_annotations only, no canvas_text_labels, no id/labelText on annotations
+- **v1** – original format (`metadata.format = 'project_zip_v1'`); canvas_annotations only, no canvas_text_labels, no id/labelText on annotations
 - **v2** – canvas_text_labels per page added; id + labelText serialised on annotations
 - **v3** – legend_position per page added (optional; null when no on-plan legend placed)
 

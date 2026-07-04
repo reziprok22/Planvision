@@ -51,7 +51,7 @@ header h1 {
 }
 
 /* "Plan exportieren" hervorheben: warme Farben des BETA-Badges, aber gleiche
-   eckige Form/Größe wie die übrigen Header-Buttons (Speichern/Öffnen). */
+   eckige Form/Grösse wie die übrigen Header-Buttons (Speichern/Öffnen). */
 #exportAnnotatedPdfBtn {
     color: #c04000;
     background: #fff3e0;
@@ -281,7 +281,7 @@ button:hover {
     position: relative;
     width: 100%;
     max-width: 100%;
-    overflow: auto !important; /* Scrolling wenn Bild größer als Container */
+    overflow: auto !important; /* Scrolling wenn Bild grösser als Container */
     margin-top: 10px;
     border: 1px solid #ddd;
     background: #f9f9f9;
@@ -352,7 +352,7 @@ button:hover {
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    /* Keine eigene Karte: die .right-column ist bereits eine weiße, gepolsterte
+    /* Keine eigene Karte: die .right-column ist bereits eine weisse, gepolsterte
        Box. Hintergrund/Padding/Schatten hier zurücksetzen, damit Legende und
        Tabelle den Platz direkt nutzen (kein doppelt verschachteltes Feld). */
     background: transparent;
@@ -363,7 +363,7 @@ button:hover {
 
 .results-table-section h2 {
     /* Gleicher dezenter Stil wie der "LABELS"-Titel in der linken Spalte
-       (.project-title): klein, grau, Großbuchstaben. */
+       (.project-title): klein, grau, Grossbuchstaben. */
     margin: 0 0 10px 0;
     color: #999;
     font-size: 0.72em;
@@ -378,7 +378,7 @@ button:hover {
     padding: 12px 15px;
     background: #f8f8f8;
     border-radius: 8px;
-    font-size: 0.82rem;  /* gleich groß wie die Tabelle */
+    font-size: 0.82rem;  /* gleich gross wie die Tabelle */
     border-left: 3px solid #888;
 }
 
@@ -642,7 +642,7 @@ button:hover {
     display: none;
 }
 
-/* Responsive Design für verschiedene Bildschirmgrößen */
+/* Responsive Design für verschiedene Bildschirmgrössen */
 @media (max-width: 1600px) {
     .main-container {
         grid-template-columns: 350px 1fr 400px;
@@ -708,7 +708,7 @@ button:hover {
 
 /* CSS für Projektbereich */
 .project-section {
-    /* Keine eigene Karte: die .left-column ist bereits eine weiße, gepolsterte
+    /* Keine eigene Karte: die .left-column ist bereits eine weisse, gepolsterte
        Box. Hintergrund/Schatten/Radius erzeugten sonst eine feine Rahmenlinie
        rund um das Label-Feld (gleiche Verschachtelung wie zuvor rechts). */
     background: transparent;

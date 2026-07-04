@@ -284,7 +284,7 @@ function initCanvas() {
   // Initialize Fabric.js canvas.
   // enableRetinaScaling:false → Canvas rendert mit devicePixelRatio 1 statt 2–3.
   // Auf HiDPI-/Retina-/4K-Displays viertelt das die zu zeichnende Pixelmenge und
-  // spürbar flüssigeres Zoomen/Scrollen bei großen Plänen mit vielen Annotationen.
+  // spürbar flüssigeres Zoomen/Scrollen bei grossen Plänen mit vielen Annotationen.
   // Tradeoff: minimal weniger gestochen scharf – beim ohnehin gerasterten JPG-
   // Hintergrund praktisch unsichtbar.
   canvas = new Canvas('annotationCanvas', { enableRetinaScaling: false });
@@ -385,7 +385,7 @@ function initCanvas() {
       );
       // Der Fit-Zoom ("ganze Seite sichtbar", contain) ist die unterste sinnvolle
       // Stufe. Bei hohen Seiten (A3 hochkant) ist er KLEINER als emptySpaceMin —
-      // dann darf minZoom nicht größer sein als der Fit-Zoom, sonst schnappt das
+      // dann darf minZoom nicht grösser sein als der Fit-Zoom, sonst schnappt das
       // Reinzoomen aus der Fit-Ansicht nach oben und man kommt nie zurück.
       const fitZoom = Math.min(
         imageContainer.clientWidth  / uploadedImage.naturalWidth,
@@ -464,7 +464,7 @@ function initCanvas() {
 
 /**
  * Passt die ganze Seite in den Viewport ein (Fit-Whole-Page / "contain"): die
- * komplette Seite ist sichtbar, oben-links ausgerichtet. Setzt alle vier Größen
+ * komplette Seite ist sichtbar, oben-links ausgerichtet. Setzt alle vier Grössen
  * konsistent, die den Zoom in dieser App steuern: Canvas-viewportTransform,
  * #scrollSpacer (treibt die Scrollbalken), Container-Scroll und wrapperEl-Transform.
  *
@@ -564,7 +564,7 @@ function setupContainerScrolling() {
       // 40 px/Zeile (vgl. normalizeWheel) ergibt Firefox 3×40=120 ≈ Chromium →
       // gleiche horizontale Scroll-Geschwindigkeit in beiden Browsern.
       // Safari (macOS) legt den Shift+Wheel-Delta auf die X-Achse, Chrome/Firefox
-      // auf die Y-Achse → die betragsmäßig dominante Achse nehmen.
+      // auf die Y-Achse → die betragsmässig dominante Achse nehmen.
       let dy = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
       if (e.deltaMode === 1) dy *= 40;                       // lines
       else if (e.deltaMode === 2) dy *= imageContainer.clientHeight; // pages
@@ -3319,7 +3319,7 @@ async function analyzeCurrentPage() {
       // daher eigene, verständliche Meldung statt generischem "Analyse fehlgeschlagen".
       if ([502, 503, 504].includes(response.status)) {
         throw new Error('Die Analyse hat zu lange gedauert oder der Server ist gerade ausgelastet. '
-          + 'Bitte in einem Moment erneut versuchen – sehr große Pläne ggf. verkleinern oder einen Ausschnitt hochladen.');
+          + 'Bitte in einem Moment erneut versuchen, sehr grosse Pläne ggf. verkleinern oder einen Ausschnitt hochladen.');
       }
       const err = await response.json().catch(() => ({}));
       throw new Error(err.error || 'Analyse fehlgeschlagen.');
@@ -3389,10 +3389,10 @@ async function analyzeCurrentPage() {
     console.error('Analyse-Fehler:', err);
     if (errorMessage) {
       // fetch wirft TypeError, wenn die Verbindung abbricht (z.B. Timeout bei sehr
-      // großem Plan oder überlastetem Server) – dann verständliche statt kryptischer Meldung.
+      // grossem Plan oder überlastetem Server) – dann verständliche statt kryptischer Meldung.
       const isNetwork = err instanceof TypeError;
       errorMessage.textContent = isNetwork
-        ? 'Verbindung zum Server unterbrochen (evtl. Timeout bei sehr großem Plan oder Auslastung). Bitte erneut versuchen.'
+        ? 'Verbindung zum Server unterbrochen (evtl. Timeout bei sehr grossem Plan oder Auslastung). Bitte erneut versuchen.'
         : 'Fehler: ' + err.message;
       errorMessage.style.display = 'block';
     }
@@ -3552,7 +3552,7 @@ async function initApp() {
 
     // Load image into canvas. Das HTML-<img> bleibt versteckt – Fabric rendert es
     // als Canvas-Hintergrund. Würde man es hier auf 'block' schalten, blitzt beim
-    // Seitenwechsel kurz das ALTE Bitmap in 1:1-Originalgröße auf, bis die neue
+    // Seitenwechsel kurz das ALTE Bitmap in 1:1-Originalgrösse auf, bis die neue
     // src geladen ist und initCanvas es wieder ausblendet.
     uploadedImage.style.display = 'none';
     // Empty-State ausblenden, sobald ein Plan angezeigt wird
@@ -3627,11 +3627,11 @@ async function initApp() {
     if (key === heldDrawingKey) heldDrawingKey = null;
   });
 
-  // Warnung vor versehentlichem Schließen/Neuladen, sobald Annotationen vorliegen.
+  // Warnung vor versehentlichem Schliessen/Neuladen, sobald Annotationen vorliegen.
   // Projekte werden nur clientseitig als ZIP gesichert – ohne diese Abfrage gingen
-  // Markierungen beim Schließen verlustlos verloren. Nur warnen, wenn es wirklich
+  // Markierungen beim Schliessen verlustlos verloren. Nur warnen, wenn es wirklich
   // etwas zu verlieren gibt (live auf der aktuellen Seite ODER auf anderen Seiten),
-  // sonst nervt der Dialog bei jedem Schließen. Den angezeigten Text gibt der
+  // sonst nervt der Dialog bei jedem Schliessen. Den angezeigten Text gibt der
   // Browser vor – er ist nicht anpassbar.
   window.addEventListener('beforeunload', (e) => {
     const liveWork   = canvas && canvas.getObjects().some(o => o.objectType === 'annotation');

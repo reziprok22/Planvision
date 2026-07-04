@@ -443,7 +443,7 @@
                 </svg>
                 Öffnen
             </button>
-            {% comment %} Vorübergehend deaktiviert – Report-Funktion wird überarbeitet.
+            {% comment %} Vorübergehend deaktiviert: Report-Funktion wird überarbeitet.
                Handler (exportPdf) und Logik (exportReportPdfClient) bleiben im Code.
                Zum Reaktivieren einfach die comment/endcomment-Tags entfernen. {% endcomment %}
             {% comment %}
@@ -614,7 +614,7 @@
                                 <line x1="6.5" y1="9.5" x2="12.5" y2="9.5"/>
                             </svg>
                         </button>
-                        {% comment %} Tastaturkürzel-Button in die Werkzeugleiste deaktiviert –
+                        {% comment %} Tastaturkürzel-Button in die Werkzeugleiste deaktiviert:
                            wurde ins Burger-Menü verschoben (ID shortcutsBtn bleibt dort).
                            Zum Zurückholen die comment/endcomment-Tags entfernen und den
                            Menü-Eintrag entfernen. {% endcomment %}
@@ -739,23 +739,23 @@
       "version": 1,
       "steps": [
         {
-          "title": "Plan hochladen & Maßstab setzen",
-          "body": "Zieh deine PDF links in die Ablagefläche – oder klicke hinein, um sie auszuwählen. Wähle danach pro Seite den Maßstab (z. B. 1:100), damit Flächen und Längen korrekt berechnet werden.",
+          "title": "Plan hochladen & Massstab setzen",
+          "body": "Zieh deine PDF links in die Ablagefläche oder klicke hinein, um sie auszuwählen. Wähle danach pro Seite den Massstab (z. B. 1:100), damit Flächen und Längen korrekt berechnet werden.",
           "media": "{% static 'media/onboarding/01-upload.png' %}"
         },
         {
           "title": "Labels definieren oder importieren",
-          "body": "Öffne den Label-Manager und lege fest, was du erfassen willst – z. B. Fenster, Türen, Wände – jeweils mit Farbe und ob es für das Rechteck-, Polygon, oder Linie-Tool zur Verfügng stehen soll. Ein bestehendes Label-Set kannst du auch importieren.",
+          "body": "Öffne den Label-Manager und lege fest, was du erfassen willst (z. B. Fenster, Türen, Wände) jeweils mit Farbe und ob es für das Rechteck-, Polygon, oder Linie-Tool zur Verfügng stehen soll. Ein bestehendes Label-Set kannst du auch importieren.",
           "media": "{% static 'media/onboarding/02-labels.png' %}"
         },
         {
           "title": "Zeichnen & messen",
-          "body": "Wähle zunächst ein Werkzeug (Rechtecke, Polygone oder Linien) aus, dann das passende Label und zeichne direkt auf den Plan. Lerne die Hotkeys (z. B. Q + Mausrad) kennen, um schnell die relevanten Flächen zu erfassen. Auf Wunsch schlägt die KI Objekte automatisch vor – du korrigierst nur noch.",
+          "body": "Wähle zunächst ein Werkzeug (Rechtecke, Polygone oder Linien) aus, dann das passende Label und zeichne direkt auf den Plan. Lerne die Hotkeys (z. B. Q + Mausrad) kennen, um schnell die relevanten Flächen zu erfassen. Auf Wunsch schlägt die KI Objekte automatisch vor, du korrigierst nur noch.",
           "media": "{% static 'media/onboarding/03-draw.png' %}"
         },
         {
           "title": "Speichern & exportieren",
-          "body": "Speichere dein Projekt jederzeit als Datei – oder exportiere den annotierten Plan und einen Bericht direkt als PDF.",
+          "body": "Speichere dein Projekt jederzeit als Datei oder exportiere den annotierten Plan und einen Bericht direkt als PDF.",
           "media": "{% static 'media/onboarding/04-export.png' %}"
         }
       ]
@@ -772,7 +772,7 @@
             <p id="bugReportIntro" style="font-size:0.85em; color:#666; margin:4px 0 10px;">
                 Beschreibe kurz, was passiert ist und was du erwartet hättest.
             </p>
-            <textarea id="bugReportText" rows="6" placeholder="Was ist passiert? Bitte füge allfällige Fehlermeldungen an."
+            <textarea id="bugReportText" rows="6" placeholder="Was ist passiert? Bitte füge allfällige Fehlermeldungen hinzu."
                       style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; font-family:inherit; resize:vertical;"></textarea>
             <div id="bugReportExtras">
                 <label style="display:flex; align-items:center; gap:6px; margin:10px 0 4px; font-size:0.85em; color:#444; font-weight:normal;">
@@ -897,7 +897,7 @@
                     <table id="labelTable">
                         <thead>
                             <tr>
-                                <th>Ebene<span class="info-icon" title="Stapel-Reihenfolge der Objekte: Labels weiter oben liegen im Plan vor tieferen. Mit den Pfeilen ein Label eine Ebene nach vorne (▲) oder hinten (▼) schieben – wichtig, wenn sich Objekte überlappen.">i</span></th>
+                                <th>Ebene<span class="info-icon" title="Stapel-Reihenfolge der Objekte: Labels weiter oben liegen im Plan vor tieferen. Mit den Pfeilen ein Label eine Ebene nach vorne (▲) oder hinten (▼) schieben. Wichtig, wenn sich Objekte überlappen.">i</span></th>
                                 <th>Name</th>
                                 <th>Farbe</th>
                                 <th>Opacity</th>
@@ -1013,9 +1013,9 @@
             var open = menu.classList.toggle('open');
             btn.setAttribute('aria-expanded', open ? 'true' : 'false');
         });
-        // Nach Auswahl eines Eintrags schließen (Klick auf die Buttons darin).
+        // Nach Auswahl eines Eintrags schliessen (Klick auf die Buttons darin).
         menu.addEventListener('click', close);
-        // Außerhalb klicken oder Esc → schließen.
+        // Ausserhalb klicken oder Esc → schliessen.
         document.addEventListener('click', function (e) {
             if (!menu.contains(e.target) && e.target !== btn) close();
         });
@@ -1025,8 +1025,8 @@
 
         // Einwilligung „Zur KI-Verbesserung freigeben" (session-weiter Toggle,
         // Default aus, in localStorage gemerkt). Wird von project.js beim Export
-        // gelesen. Klicks auf die Toggle-Zeile schließen das Menü NICHT.
-        var CONSENT_KEY = 'planvision_consent_training';
+        // gelesen. Klicks auf die Toggle-Zeile schliessen das Menü NICHT.
+        var CONSENT_KEY = 'ai_training_consent';
         var toggle = document.getElementById('consentTrainingToggle');
         var toggleRow = document.getElementById('consentTrainingRow');
         if (toggle) {

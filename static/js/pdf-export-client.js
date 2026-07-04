@@ -388,10 +388,10 @@ function triggerDownload(bytes, filename) {
 
 /**
  * Build a safe download base name from the project/plan name. Strips characters
- * that are invalid in filenames; falls back to 'Planvision' when empty.
+ * that are invalid in filenames; falls back to 'Planli' when empty.
  */
 function safeFileBase(name) {
-    return (name || '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'Planvision';
+    return (name || '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'Planli';
 }
 
 // ── Plan erstellen (annotated PDF) ────────────────────────────────────────────
@@ -495,7 +495,7 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
         let curY = A4_H - MARGIN;
 
         // Header
-        page.drawText(projectName || 'Planvision', {
+        page.drawText(projectName || 'Planli', {
             x: MARGIN, y: curY, size: 14, font: fontB, color: rgb(0, 0, 0)
         });
         page.drawText(`Seite ${pageNum}  |  ${dateStr}`, {

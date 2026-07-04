@@ -6,7 +6,7 @@ Das Skript wie folgt ausführen:
 -n 12: Anzahl Analysen
 -c 3: Parallalität
 
-Das Skript hält 3 Analyse-Anfragen gleichzeitig „in flight". -n 12 -c 3 heißt also: 12 Analysen insgesamt, aber nie mehr als 3 parallel — sobald eine fertig ist, startet die nächste. Das simuliert 3 Nutzer, die im selben Moment „Erkennen" drücken und alle gleichzeitig auf das Ergebnis warten.
+Das Skript hält 3 Analyse-Anfragen gleichzeitig „in flight". -n 12 -c 3 heisst also: 12 Analysen insgesamt, aber nie mehr als 3 parallel — sobald eine fertig ist, startet die nächste. Das simuliert 3 Nutzer, die im selben Moment „Erkennen" drücken und alle gleichzeitig auf das Ergebnis warten.
 
 # Ergebnis Loadtest vo 2026-06-28
 Verdikt: Der CX22 reicht für die Beta — klar.
@@ -25,7 +25,7 @@ Verdikt: Der CX22 reicht für die Beta — klar.
 
 Die zwei entscheidenden Befunde
 
-1. Riesiger Timeout-Puffer. Selbst unter 3-facher Parallelität liegt die langsamste Analyse bei 12.3 s — gegen das gunicorn-Limit von 300 s. Du hast also ~25× Luft. Ein Timeout-Riss ist für normale Pläne praktisch ausgeschlossen; selbst ein deutlich größerer Plan oder mehr Parallelität würde die 300 s nicht reißen. Die Robustheit gegen Timeouts ist damit faktisch bestätigt.
+1. Riesiger Timeout-Puffer. Selbst unter 3-facher Parallelität liegt die langsamste Analyse bei 12.3 s — gegen das gunicorn-Limit von 300 s. Du hast also ~25× Luft. Ein Timeout-Riss ist für normale Pläne praktisch ausgeschlossen; selbst ein deutlich grösserer Plan oder mehr Parallelität würde die 300 s nicht reissen. Die Robustheit gegen Timeouts ist damit faktisch bestätigt.
 2. Keine Fehler, kein OOM. 12/12 erfolgreich bei c=3 → die Worker haben die Last RAM-technisch überlebt. Gut.
 
 Der reale Trade-off: Latenz, nicht Stabilität

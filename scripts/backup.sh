@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Beta-Backup für Planvision: sichert db.sqlite3 (konsistent) und bug_reports/.
-# Bewusst NICHT projects/ (groß, transient, fremde Pläne -> Datenschutz/Retention).
+# Bewusst NICHT projects/ (gross, transient, fremde Pläne -> Datenschutz/Retention).
 #
 # Einrichtung:
 #   1. Pfade unten anpassen (APP_DIR, BACKUP_DIR).

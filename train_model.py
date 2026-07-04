@@ -22,7 +22,7 @@ class WindowDataset(Dataset):
             self.annotations = json.load(f)
         self.image_folder = image_folder
         self.transform = transform
-        self.max_size = max_size  # Max Größe für die längere Seite des Bildes
+        self.max_size = max_size  # Max Grösse für die längere Seite des Bildes
         self.use_preprocessing = use_preprocessing  # Flag für Preprocessing
 
     def __len__(self):
@@ -57,9 +57,9 @@ class WindowDataset(Dataset):
             # Original-Ladecode
             image = Image.open(img_path).convert("RGB")
                 
-        # Bild auf vernünftige Größe skalieren
+        # Bild auf vernünftige Grösse skalieren
         w, h = image.size
-        scale = min(self.max_size / max(w, h), 1.0)  # Skalieren, wenn größer als max_size
+        scale = min(self.max_size / max(w, h), 1.0)  # Skalieren, wenn grösser als max_size
         if scale < 1.0:
             new_w, new_h = int(w * scale), int(h * scale)
             image = image.resize((new_w, new_h), Image.BILINEAR)
@@ -157,7 +157,7 @@ def train_model(image_folder, annotation_file, num_epochs=10, batch_size=2,
     
     try:
         # Training
-        print(f"Starte Training mit {len(dataset)} Bildern, Batch-Größe: {batch_size}")
+        print(f"Starte Training mit {len(dataset)} Bildern, Batch-Grösse: {batch_size}")
         for epoch in range(num_epochs):
             model.train()
             epoch_loss = 0
@@ -234,9 +234,9 @@ if __name__ == "__main__":
     success = train_model(
         image_folder='trainings_data/image',
         annotation_file='trainings_data/json_fenster/combined_labels_2025-04-22-20-03-21.json',
-        batch_size=2,         # Reduziere Batch-Größe auf 2
+        batch_size=2,         # Reduziere Batch-Grösse auf 2
         num_epochs=15,        # Mehr Epochen für besseres Training
-        max_image_size=800,   # Begrenze die Bildgröße
+        max_image_size=800,   # Begrenze die Bildgrösse
         use_gpu=True,         # Auf False setzen, wenn CUDA-Probleme bestehen bleiben
         save_checkpoints=True # Checkpoints während des Trainings speichern
     )

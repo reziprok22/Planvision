@@ -8,7 +8,7 @@ def calculate_scale_factor(format_size, dpi, plan_scale):
     Args:
         format_size: Tuple (width, height) in mm
         dpi: Auflösung in Dots Per Inch
-        plan_scale: Maßstab des Plans (z.B. 100 für 1:100)
+        plan_scale: Massstab des Plans (z.B. 100 für 1:100)
         
     Returns:
         pixels_per_meter: Anzahl Pixel pro Meter in der Realität
@@ -81,7 +81,7 @@ def is_contained(inner_box, outer_box, tolerance=0):
     
     Args:
         inner_box: Liste [x1, y1, x2, y2] der potenziell enthaltenen Box
-        outer_box: Liste [x1, y1, x2, y2] der potenziell umschließenden Box
+        outer_box: Liste [x1, y1, x2, y2] der potenziell umschliessenden Box
         tolerance: Toleranzwert in Pixeln für leichte Überlappungen
         
     Returns:
@@ -100,7 +100,7 @@ def apply_nms(boxes, labels, scores, areas, iou_threshold=0.5, overlap_ratio_thr
         boxes: Liste von Bounding Boxes
         labels: Liste von Klassen-IDs
         scores: Liste von Konfidenzwerten
-        areas: Liste von Flächengrößen
+        areas: Liste von Flächengrössen
         iou_threshold: Schwellenwert für die IoU-Überlappung (Standard: 0.5)
         overlap_ratio_threshold: Schwellenwert für den relativen Überlappungsanteil (Standard: 0.7)
         tolerance: Toleranzwert in Pixeln für die Erkennung "fast enthaltener" Boxen (Standard: 5)
@@ -144,12 +144,12 @@ def apply_nms(boxes, labels, scores, areas, iou_threshold=0.5, overlap_ratio_thr
                 
                 # Kriterium 2: Eine Box ist (nahezu) vollständig in der anderen enthalten
                 if is_contained(boxes[idx], current_box, tolerance):
-                    # Kleinere Box ist in der größeren Box enthalten
+                    # Kleinere Box ist in der grösseren Box enthalten
                     remove_indices.append(i)
                     continue
                 
                 # Kriterium 3: Relativer Überlappungsanteil
-                # Entferne die Box, wenn ein großer Teil davon mit der aktuellen Box überlappt
+                # Entferne die Box, wenn ein grosser Teil davon mit der aktuellen Box überlappt
                 if (overlap_metrics["overlap_box2_ratio"] > overlap_ratio_threshold and 
                     overlap_metrics["box2_area"] < overlap_metrics["box1_area"]):
                     remove_indices.append(i)
@@ -203,7 +203,7 @@ def _auto_darkness(profile, frac=0.5, floor=40.0, abs_min=50.0):
     """
     Leitet die Linien-Schwelle adaptiv aus dem Suchband selbst ab, statt sie global
     fest vorzugeben. Idee: die dunkelste Tinte im Band ist (wenn überhaupt) die
-    maßgebliche Planlinie; die Schwelle wird relativ dazu gesetzt.
+    massgebliche Planlinie; die Schwelle wird relativ dazu gesetzt.
 
       - Kräftige dunkle Rahmenlinie (Peak hoch)  -> hohe Schwelle -> Schatten fliegen raus.
       - Blasse, dünne Linie (Peak niedrig)       -> niedrige Schwelle -> Linie bleibt erhalten.
@@ -240,21 +240,21 @@ def _resolve_darkness(profile, min_darkness):
 def _threshold_crossings(profile, level, rising):
     """
     Findet die Stellen, an denen das Tintenprofil die Schwelle `level` kreuzt –
-    also die *Kanten* dunkler Bereiche (Weiß->Schwarz bzw. Schwarz->Weiß), nicht
+    also die *Kanten* dunkler Bereiche (Weiss->Schwarz bzw. Schwarz->Weiss), nicht
     deren Schwerpunkt. Subpixel-genau durch lineare Interpolation zwischen den
     beiden Nachbar-Stützstellen.
 
     Gedacht für massive dunkle Körper (z.B. Ansichtsfenster), bei denen Rahmen
     und Fensterfläche zu einem durchgehenden dunklen Block verschmelzen: dort ist
-    die maßgebliche Kante der *Übergang* am Rand des Blocks, den _find_lines (das
+    die massgebliche Kante der *Übergang* am Rand des Blocks, den _find_lines (das
     nur Schwerpunkte liefert) nicht trifft.
 
     Args:
         profile: 1D-Array der Tinten-Dunkelheit
         level: Schwellenwert für die Kante
-        rising: True  -> nur steigende Flanken (Weiß->Schwarz, Index aufsteigend),
-                         maßgeblich für obere/linke Box-Kante (Körper innen = höhere Indizes)
-                False -> nur fallende Flanken (Schwarz->Weiß), für untere/rechte Kante
+        rising: True  -> nur steigende Flanken (Weiss->Schwarz, Index aufsteigend),
+                         massgeblich für obere/linke Box-Kante (Körper innen = höhere Indizes)
+                False -> nur fallende Flanken (Schwarz->Weiss), für untere/rechte Kante
 
     Returns:
         Liste der Kreuzungspositionen (Profil-Index, float), aufsteigend.
@@ -273,7 +273,7 @@ def _threshold_crossings(profile, level, rising):
 def _snap_edge(profile, orig_offset, min_darkness, outward, select='second_inner'):
     """
     Bestimmt für ein 1D-Tintenprofil senkrecht zu einer Box-Kante die Position
-    der maßgeblichen Planlinie und gibt deren Index zurück.
+    der massgeblichen Planlinie und gibt deren Index zurück.
 
     Über select wird gesteuert, welche der gefundenen Linien gewählt wird –
     entscheidend, weil je nach Plantyp eine andere Linie die richtige ist:
@@ -285,7 +285,7 @@ def _snap_edge(profile, orig_offset, min_darkness, outward, select='second_inner
                        Robust, wenn das Netz bereits gut sitzt (nur kleine
                        Korrektur). Für ANSICHTEN/Fassaden meist richtig, wo viele
                        Linien (Sturz, Bank, Laden) dicht liegen und 'second_inner'
-                       nach außen verrutscht.
+                       nach aussen verrutscht.
       'edge'         – nicht der Linien-*Schwerpunkt*, sondern die *Kante* des
                        dunklen Bereichs (Schwellen-Übergang) am nächsten zur
                        Netz-Kante, mit korrekter Polarität (steigende Flanke für
@@ -293,21 +293,21 @@ def _snap_edge(profile, orig_offset, min_darkness, outward, select='second_inner
                        Rahmen auch dann, wenn er mit der Fensterfläche zu einem
                        durchgehenden dunklen Block verschmilzt (siehe
                        _threshold_crossings).
-      'outer_near'   – von den *zwei der Netz-Kante nächsten* Linien die äußere.
+      'outer_near'   – von den *zwei der Netz-Kante nächsten* Linien die äussere.
                        Lokalisierte Variante von 'second_inner': greift nur die
                        Rahmenkante aus dem nahen Linienpaar, ohne weit entfernte
                        Linien (Sturz/Bank) einzubeziehen. Setzt aber voraus, dass
                        das Linienpaar überhaupt getrennt erkannt wird.
-      'innermost'    – die zur Box-Mitte hin äußerste gefundene Linie.
+      'innermost'    – die zur Box-Mitte hin äusserste gefundene Linie.
       'outermost'    – die von der Box-Mitte am weitesten entfernte Linie.
 
     Args:
         profile: 1D-Array der Tinten-Dunkelheit quer zum Suchband
         orig_offset: Index der ursprünglichen Kantenposition innerhalb des Bandes
         min_darkness: Mindest-Dunkelheit, damit überhaupt eine echte Linie zählt
-        outward: Richtung "nach außen" als Vorzeichen bzgl. des Profil-Index:
-                 -1 = kleinere Indizes liegen außen (obere/linke Kante),
-                 +1 = größere Indizes liegen außen (untere/rechte Kante).
+        outward: Richtung "nach aussen" als Vorzeichen bzgl. des Profil-Index:
+                 -1 = kleinere Indizes liegen aussen (obere/linke Kante),
+                 +1 = grössere Indizes liegen aussen (untere/rechte Kante).
         select: Auswahlstrategie (siehe oben).
 
     Returns:
@@ -331,13 +331,13 @@ def _snap_edge(profile, orig_offset, min_darkness, outward, select='second_inner
         chosen = min(lines, key=lambda l: abs(l - orig_offset))
     elif select == 'outer_near':
         # Die zwei der Netz-Kante nächstgelegenen Linien betrachten und davon die
-        # *äußere* (weiter von der Box-Mitte weg) nehmen. Idee: ein Fensterrahmen
-        # wird oft als enges Linienpaar gezeichnet; die äußere ist die Rahmenkante.
-        # (entgegen 'outward' liegt innen -> außen = kleinerer Index bei outward<0)
+        # *äussere* (weiter von der Box-Mitte weg) nehmen. Idee: ein Fensterrahmen
+        # wird oft als enges Linienpaar gezeichnet; die äussere ist die Rahmenkante.
+        # (entgegen 'outward' liegt innen -> aussen = kleinerer Index bei outward<0)
         nearest2 = sorted(lines, key=lambda l: abs(l - orig_offset))[:2]
         chosen = min(nearest2) if outward < 0 else max(nearest2)
     elif select == 'innermost':
-        # innen = entgegen "outward": bei outward<0 die größten Indizes
+        # innen = entgegen "outward": bei outward<0 die grössten Indizes
         chosen = lines[-1] if outward < 0 else lines[0]
     elif select == 'outermost':
         chosen = lines[0] if outward < 0 else lines[-1]
@@ -351,9 +351,9 @@ def _snap_edge(profile, orig_offset, min_darkness, outward, select='second_inner
 
 def _ink_from_image(img, mode='black'):
     """
-    Wandelt ein Bild in ein "Tinten"-Profil (float, 0..255 – je größer, desto
+    Wandelt ein Bild in ein "Tinten"-Profil (float, 0..255 – je grösser, desto
     eher Linie). Über mode wird gesteuert, welche Linienfarben als Tinte zählen –
-    entscheidend, um schwarze Baugeometrie von bunten Hilfslinien (Bemaßung,
+    entscheidend, um schwarze Baugeometrie von bunten Hilfslinien (Bemassung,
     Raster, Schraffur in Gelb/Cyan/Grün) zu trennen.
 
     Modi:
@@ -367,7 +367,7 @@ def _ink_from_image(img, mode='black'):
                     (auch Gelb/Cyan) zählt – erfasst damit viele Hilfslinien.
 
     Hinweis: Wirkt nur auf echten Farbbildern. Ein bereits in Graustufen
-    gewandeltes Bild (R=G=B) liefert für alle Modi außer 'red' dasselbe.
+    gewandeltes Bild (R=G=B) liefert für alle Modi ausser 'red' dasselbe.
     """
     a = img.astype(np.float32)
     if a.ndim == 2:
@@ -392,12 +392,12 @@ def refine_boxes_to_lines(boxes, img, search=16, min_darkness=25, ink_mode='blac
     dass Baupläne klare Linien auf hellem Grund sind.
 
     Pro Box wird jede Kante in einem schmalen Suchband (+/- search px) auf die
-    maßgebliche Planlinie verschoben (siehe _snap_edge: zweit-innerste Linie).
+    massgebliche Planlinie verschoben (siehe _snap_edge: zweit-innerste Linie).
     Findet sich keine ausreichend dunkle Linie, bleibt die Kante unverändert.
 
     Tinte ("ink") wird per ink_mode bestimmt (siehe _ink_from_image): 'black'
     zählt nur dunkle Linien, 'black_red' zusätzlich rote, 'min' jede gesättigte
-    Farbe. So lassen sich bunte Hilfslinien (Bemaßung, Raster) ausblenden, die
+    Farbe. So lassen sich bunte Hilfslinien (Bemassung, Raster) ausblenden, die
     sonst die Kante falsch einrasten. Über die Box-Spanne wird der *Median*
     gebildet (robust gegen Lücken, Schräglage und nur teilweise abgedeckte Linien).
 
@@ -415,7 +415,7 @@ def refine_boxes_to_lines(boxes, img, search=16, min_darkness=25, ink_mode='blac
         ink_mode: 'black' | 'black_red' | 'red' | 'min' – welche Linienfarben als
                   Tinte zählen (siehe _ink_from_image)
         select: 'second_inner' | 'nearest' | 'edge' | 'innermost' | 'outermost' –
-                wie die maßgebliche Position je Kante gewählt wird (siehe _snap_edge)
+                wie die massgebliche Position je Kante gewählt wird (siehe _snap_edge)
 
     Returns:
         numpy-Array der verfeinerten Boxen (gleiche Reihenfolge).
@@ -441,14 +441,14 @@ def refine_boxes_to_lines(boxes, img, search=16, min_darkness=25, ink_mode='blac
             continue
 
         # Obere Kante: waagrechte Linie -> Median-Profil über die Box-Breite, je Zeile
-        # (außen = kleinerer y-Wert = kleinerer Index -> outward=-1)
+        # (aussen = kleinerer y-Wert = kleinerer Index -> outward=-1)
         r0, r1 = max(0, iy1 - search), min(h, iy1 + search + 1)
         if r1 - r0 >= 1:
             prof = np.median(ink[r0:r1, cx1:cx2], axis=1)
             md = _resolve_darkness(prof, min_darkness)
             y1 = r0 + _snap_edge(prof, iy1 - r0, md, outward=-1, select=select)
 
-        # Untere Kante (außen = größerer y-Wert -> outward=+1)
+        # Untere Kante (aussen = grösserer y-Wert -> outward=+1)
         r0, r1 = max(0, iy2 - search), min(h, iy2 + search + 1)
         if r1 - r0 >= 1:
             prof = np.median(ink[r0:r1, cx1:cx2], axis=1)
@@ -456,14 +456,14 @@ def refine_boxes_to_lines(boxes, img, search=16, min_darkness=25, ink_mode='blac
             y2 = r0 + _snap_edge(prof, iy2 - r0, md, outward=+1, select=select)
 
         # Linke Kante: senkrechte Linie -> Median-Profil über die Box-Höhe, je Spalte
-        # (außen = kleinerer x-Wert -> outward=-1)
+        # (aussen = kleinerer x-Wert -> outward=-1)
         c0, c1 = max(0, ix1 - search), min(w, ix1 + search + 1)
         if c1 - c0 >= 1:
             prof = np.median(ink[cy1:cy2, c0:c1], axis=0)
             md = _resolve_darkness(prof, min_darkness)
             x1 = c0 + _snap_edge(prof, ix1 - c0, md, outward=-1, select=select)
 
-        # Rechte Kante (außen = größerer x-Wert -> outward=+1)
+        # Rechte Kante (aussen = grösserer x-Wert -> outward=+1)
         c0, c1 = max(0, ix2 - search), min(w, ix2 + search + 1)
         if c1 - c0 >= 1:
             prof = np.median(ink[cy1:cy2, c0:c1], axis=0)

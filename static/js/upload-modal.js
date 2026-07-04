@@ -134,7 +134,7 @@ async function handleFile(file) {
         return;
     }
     if (file.size > 100 * 1024 * 1024) {
-        alert('Die Datei ist zu groß (max. 100 MB).');
+        alert('Die Datei ist zu gross (max. 100 MB).');
         return;
     }
 

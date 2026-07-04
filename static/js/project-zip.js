@@ -19,7 +19,7 @@ import JSZip from 'jszip';
 // migration step in migrateCanvasData() below.
 //
 // Version history:
-//   1 – original format (metadata.format = 'planvision_zip_v1', no numeric version)
+//   1 – original format (metadata.format = 'project_zip_v1', no numeric version)
 //       canvas_annotations only; no canvas_text_labels; no id/labelText on annotations
 //   2 – canvas_text_labels per page added; id + labelText serialised on annotations
 //   3 – legend_position per page added (optional; null when no on-plan legend placed)
@@ -35,12 +35,12 @@ const CURRENT_VERSION = 3;
 
 /**
  * Detect the numeric format version from a loaded metadata object.
- * Old ZIPs used a string 'planvision_zip_v1' instead of a number.
+ * Old ZIPs used a string 'project_zip_v1' instead of a number.
  */
 function detectVersion(metadata) {
   if (typeof metadata.format_version === 'number') return metadata.format_version;
   // Legacy: string format field means version 1
-  if (metadata.format === 'planvision_zip_v1') return 1;
+  if (metadata.format === 'project_zip_v1') return 1;
   return 1; // safe default for unknown old files
 }
 
@@ -153,7 +153,7 @@ export async function saveProjectAsZip(params) {
   // .plan = ein OnlyPlans-Projekt (intern ein ZIP). Eigene Endung, damit Nutzer
   // es nicht für ein zu entpackendes Archiv halten – wird über "Projekt öffnen"
   // wieder geladen (loadProjectFromZip akzeptiert weiterhin alte .zip-Dateien).
-  const safeBase = (params.projectName || 'planvision').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'planvision';
+  const safeBase = (params.projectName || 'planli').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'planli';
   a.download = `${safeBase}.plan`;
   document.body.appendChild(a);
   a.click();

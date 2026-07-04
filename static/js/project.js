@@ -46,8 +46,8 @@ const REPORT_PRESETS = {
   bug: {
     title:       'Problem melden',
     intro:       'Beschreibe kurz, was passiert ist und was du erwartet hättest.',
-    placeholder: 'Was ist passiert? Bitte füge allfällige Fehlermeldungen an. ',
-    attach:      true,   // Projekt/Screenshot standardmäßig anhängen
+    placeholder: 'Was ist passiert? Bitte füge allfällige Fehlermeldungen hinzu. ',
+    attach:      true,   // Projekt/Screenshot standardmässig anhängen
     success:     'Danke! Problem wurde gemeldet ✓',
   },
   suggestion: {
@@ -198,7 +198,7 @@ async function handleSave() {
 
   // Name nach dem hochgeladenen Plan; Fallback auf generischen Namen mit Datum
   const baseName = getUploadedBaseName();
-  const projectName = baseName || `Planvision ${new Date().toLocaleDateString('de-DE')}`;
+  const projectName = baseName || `Planli ${new Date().toLocaleDateString('de-DE')}`;
 
   const status = showStatus('Projekt wird gespeichert…');
   try {
@@ -266,7 +266,7 @@ async function handleLoad(file) {
     // Navigate to page 1 – loads its settings into UI fields
     if (window.navigateToPageNoAnalysis) window.navigateToPageNoAnalysis(1, imageUrls);
 
-    document.title = `Planvision – ${metadata.project_name}`;
+    document.title = `Planli – ${metadata.project_name}`;
     updateStatus(status, 'Projekt geladen ✓', 'success');
   } catch (err) {
     console.error('ZIP load error:', err);
@@ -298,7 +298,7 @@ function getCsrfToken() {
 async function sendTrainingData() {
   // Nur mit ausdrücklicher Einwilligung (session-weiter Toggle im Header-Menü,
   // Default aus). Ohne Zustimmung verlässt nichts den Client.
-  if (localStorage.getItem('planvision_consent_training') !== 'true') return;
+  if (localStorage.getItem('ai_training_consent') !== 'true') return;
   const sessionId = window.getUploadModalSessionId ? window.getUploadModalSessionId() : null;
   if (!sessionId || !window.collectAllPagesCanvasData || !pdfModule.getAllPdfPages().length) return;
   try {
@@ -342,7 +342,7 @@ export async function exportPdf() {
       pageImageUrls: pdfModule.getAllPdfPages(),
       pageCanvasData,
       labels:      getAllLabels(),
-      projectName: getUploadedBaseName() || document.title.replace('Planvision – ', '') || 'Planvision',
+      projectName: getUploadedBaseName() || document.title.replace('Planli – ', '') || 'Planli',
     });
     updateStatus(status, 'Bericht erstellt ✓', 'success');
   } catch (err) {
@@ -368,7 +368,7 @@ export async function exportAnnotatedPdf() {
       pageImageUrls: pdfModule.getAllPdfPages(),
       pageCanvasData,
       labels:        getAllLabels(),
-      projectName:   getUploadedBaseName() || document.title.replace('Planvision – ', '') || 'Planvision',
+      projectName:   getUploadedBaseName() || document.title.replace('Planli – ', '') || 'Planli',
     });
     updateStatus(status, 'Plan erstellt ✓', 'success');
   } catch (err) {

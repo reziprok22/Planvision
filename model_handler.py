@@ -98,11 +98,11 @@ def cleanup_memory():
 
 def resize_image_if_large(image, max_size=2048):
     """
-    Verkleinert Bild wenn es zu groß ist, um RAM zu sparen.
+    Verkleinert Bild wenn es zu gross ist, um RAM zu sparen.
     
     Args:
         image: PIL Image
-        max_size: Maximale Bildgröße (längste Seite)
+        max_size: Maximale Bildgrösse (längste Seite)
         
     Returns:
         resized_image: Verkleinertes Bild
@@ -128,7 +128,7 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         image_bytes: Bilddaten als Bytes
         format_size: Tuple (width, height) in mm
         dpi: Auflösung in Dots Per Inch
-        plan_scale: Maßstab des Plans (z.B. 100 für 1:100)
+        plan_scale: Massstab des Plans (z.B. 100 für 1:100)
         threshold: Schwellenwert für die Erkennungssicherheit
         
     Returns:
@@ -153,7 +153,7 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         _snap_bgr = cv2.imdecode(np.frombuffer(image_bytes, np.uint8), cv2.IMREAD_COLOR)
         full_res_rgb = cv2.cvtColor(_snap_bgr, cv2.COLOR_BGR2RGB)
 
-        # Bild verkleinern falls zu groß (höhere Inferenz-Auflösung = präzisere Boxen)
+        # Bild verkleinern falls zu gross (höhere Inferenz-Auflösung = präzisere Boxen)
         processed_image, coord_scale = resize_image_if_large(processed_image, max_size=2048)
         
         # Bild transformieren und direkt auf GPU verschieben
@@ -194,7 +194,7 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
             # winzig korrigieren. select='nearest' rastet auf die der Netz-Kante
             # nächste Linie ein, das search-Band wirkt als Toleranz – so werden
             # kleine Versätze sauber eingerastet, ohne bei vielen dicht liegenden
-            # Linien (Ansichten: Rahmen/Sturz/Bank/Laden) nach außen zu springen.
+            # Linien (Ansichten: Rahmen/Sturz/Bank/Laden) nach aussen zu springen.
             # min_darkness='auto': Schwelle wird pro Kante adaptiv aus dem Suchband
             # abgeleitet (siehe utils._auto_darkness) – ein fester Wert tötet auf
             # manchen Plänen die blassen Rahmenlinien (Snap greift dann ins Leere

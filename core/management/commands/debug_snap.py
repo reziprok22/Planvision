@@ -230,7 +230,7 @@ class Command(BaseCommand):
 
         for pno in pages:
             if pno < 0 or pno >= len(doc):
-                self.stderr.write(f"Seite {pno + 1} außerhalb des Bereichs – übersprungen")
+                self.stderr.write(f"Seite {pno + 1} ausserhalb des Bereichs – übersprungen")
                 continue
             page = doc[pno]
             pix = page.get_pixmap(matrix=fitz.Matrix(scale_px, scale_px), alpha=False)

@@ -2,7 +2,7 @@
  * onboarding.js – Einführungs-Modal ("Tour") für neue Nutzer.
  *
  * Zeigt beim ersten Besuch automatisch ein durchklickbares Modal mit 4 Schritten
- * (Upload & Maßstab → Labels → Zeichnen → Export). Jeder Schritt kann ein
+ * (Upload & Massstab → Labels → Zeichnen → Export). Jeder Schritt kann ein
  * Bild oder ein stummes Loop-Video zeigen; der Medientyp wird aus der
  * Dateiendung abgeleitet (.mp4/.webm/.ogg → <video>, sonst <img>).
  *
