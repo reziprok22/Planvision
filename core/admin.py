@@ -3,7 +3,12 @@ from django.contrib import admin
 from .models import Project, BugReport, AnalysisEvent
 
 
-admin.site.register(Project)
+@admin.register(Project)
+class ProjectAdmin(admin.ModelAdmin):
+    list_display = ('id', 'created_at', 'user', 'original_filename', 'consent_training', 'files_deleted')
+    list_filter = ('consent_training', 'files_deleted', 'created_at')
+    search_fields = ('original_filename', 'user__username')
+    readonly_fields = ('id', 'created_at')
 
 
 @admin.register(AnalysisEvent)

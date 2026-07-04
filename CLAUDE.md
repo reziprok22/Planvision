@@ -135,7 +135,8 @@ The application requires a pre-trained Faster R-CNN model at:
 - `ALLOWED_HOSTS`: reads from env var `DJANGO_ALLOWED_HOSTS`
 - `SECURE_PROXY_SSL_HEADER` + `CSRF_TRUSTED_ORIGINS`: HTTPS/CSRF behind the nginx proxy (onlyplans.tools)
 - `BETA_MODE`: beta switch, default True; env var `BETA_MODE=False` re-enables login
-- `PROJECTS_DIR`: `BASE_DIR / 'projects'` — `BUG_REPORTS_DIR`: `BASE_DIR / 'bug_reports'` (both gitignored)
+- `PROJECTS_DIR`: `BASE_DIR / 'projects'` — `BUG_REPORTS_DIR`: `BASE_DIR / 'bug_reports'` — `TRAINING_DATA_DIR`: `BASE_DIR / 'training_data_opt-in'` (all gitignored)
+- `PROJECT_RETENTION_DAYS`: default 14 (env-overridable); how long `projects/<uuid>/` is kept before the cleanup command deletes it
 - `PDF_DPI = 150` (server always renders at 150 DPI — frontend has no DPI input, only a hidden field), `JPEG_QUALITY = 70`
 
 ### Project Data Format
@@ -147,6 +148,11 @@ Projects store JSON files containing:
 - `pages/`: Original image files
 - `original.pdf`: Original PDF file if applicable
 
+### Data Retention & Opt-In Training Data (Datenschutz)
+- `projects/<uuid>/` is **ephemeral working data** (uploaded PDF + rendered JPGs). The `cleanup_projects` management command (`core/management/commands/cleanup_projects.py`, `--days`/`--dry-run`) deletes dirs older than `PROJECT_RETENTION_DAYS` and sets `Project.files_deleted=True` (the DB row stays, so statistics remain intact). Run daily via server cron (see Deployment).
+- Training data is **opt-in only**: a session-wide toggle in the app header menu (`#consentTrainingToggle`, default off, persisted in `localStorage['planvision_consent_training']`) gates `sendTrainingData()` in `project.js`. Only with consent does an export POST the full project ZIP (multipart `project_zip`) to `save_training_data`, which stores it as `training_data_opt-in/<uuid>/project.zip`. `Project.consent_training` records the choice.
+- The stored ZIP is **identical to the "Speichern" export** (`buildProjectZipBlob`) → self-contained and directly re-loadable in the app via "Öffnen" for quality review. `training_data_opt-in/` is never touched by the cleanup.
+
 ## Deployment (onlyplans.tools)
 
 Production runs on a Debian server (Hetzner) at `/opt/Planvision`: gunicorn (systemd service `planvision`, `--timeout 300`) behind nginx with Let's Encrypt. nginx proxies **everything** to Django — the landing page is a Django template, never serve it as a static file. Only `/static/` is an nginx alias to `staticfiles/`; do **not** alias `/project_files/` (it would bypass the ownership check in `serve_project_file`).
@@ -155,6 +161,11 @@ After every `git pull` on the server:
 1. `env/bin/python manage.py migrate`
 2. `env/bin/python manage.py collectstatic --noinput` — otherwise nginx keeps serving the old JS bundle (symptom: CSRF 403 on POSTs)
 3. `sudo systemctl restart planvision`
+
+One-time setup — data-retention cron (deletes `projects/` older than 14 days):
+```
+0 3 * * * cd /opt/Planvision && env/bin/python manage.py cleanup_projects >> /var/log/planvision_cleanup.log 2>&1
+```
 
 ## Common Development Tasks
 

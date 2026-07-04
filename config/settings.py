@@ -90,6 +90,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 PROJECTS_DIR = BASE_DIR / 'projects'
 BUG_REPORTS_DIR = BASE_DIR / 'bug_reports'
+# Dauerhaft gespeicherte, freiwillig freigegebene Trainingsdaten (Opt-In).
+# Vom projects/-Cleanup unberührt.
+TRAINING_DATA_DIR = BASE_DIR / 'training_data_opt-in'
+# Aufbewahrungsdauer für projects/<uuid>/ (Arbeits-/Zwischenspeicher).
+PROJECT_RETENTION_DAYS = int(os.environ.get('PROJECT_RETENTION_DAYS', 14))
 
 # BETA_MODE: zentraler Schalter für die Beta-Phase. Wenn True, löst er aus:
 #   - Kein Login nötig: alle Endpunkte (App, Upload, Analyse, Bug-Reports)

@@ -9,6 +9,12 @@ class Project(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='projects', null=True, blank=True)
     original_filename = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Freiwillige Einwilligung, den Plan + Annotationen zur Tool-/KI-Verbesserung
+    # in TRAINING_DATA_DIR dauerhaft zu speichern.
+    consent_training = models.BooleanField(default=False)
+    # Wird vom cleanup_projects-Command gesetzt: Dateien in projects/<uuid>/
+    # wurden gelöscht, die DB-Zeile bleibt (für Statistik) erhalten.
+    files_deleted = models.BooleanField(default=False)
 
     def __str__(self):
         username = self.user.username if self.user else 'anonym'

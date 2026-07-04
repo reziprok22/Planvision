@@ -75,7 +75,7 @@ header h1 {
     top: calc(100% + 6px);
     left: 0;
     z-index: 1300;
-    min-width: 184px;
+    min-width: 230px;
     flex-direction: column;
     gap: 2px;
     background: #fff;
@@ -94,6 +94,7 @@ header h1 {
     align-items: center;
     gap: 9px;
     width: 100%;
+    box-sizing: border-box; /* Padding in die 100%-Breite einrechnen → kein Überlauf (v.a. beim <label>) */
     background: transparent;
     border: none;
     border-radius: 6px;
@@ -112,6 +113,43 @@ header h1 {
 .header-menu-item svg {
     flex-shrink: 0;
     color: #666;
+}
+
+.header-menu-sep {
+    height: 1px;
+    background: #ececec;
+    margin: 4px 2px;
+}
+
+.header-menu-toggle {
+    cursor: pointer;
+}
+
+.header-menu-toggle-text {
+    flex: 1 1 auto;
+    white-space: normal;
+}
+
+.header-menu-toggle input[type="checkbox"] {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    margin: 0;
+    border: none;
+    cursor: pointer;
+}
+
+.header-menu-hint {
+    display: block;
+    padding: 2px 10px 4px 33px;
+    font-size: 0.75em;
+    color: #FF6B00;
+    text-decoration: none;
+}
+
+.header-menu-hint:hover {
+    text-decoration: underline;
 }
 
 h1, h2 {

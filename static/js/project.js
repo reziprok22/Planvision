@@ -268,19 +268,35 @@ function getCsrfToken() {
     .find(c => c.startsWith('csrftoken='))?.split('=')[1] ?? '';
 }
 
-function sendTrainingData(pageCanvasData) {
+async function sendTrainingData() {
+  // Nur mit ausdrücklicher Einwilligung (session-weiter Toggle im Header-Menü,
+  // Default aus). Ohne Zustimmung verlässt nichts den Client.
+  if (localStorage.getItem('planvision_consent_training') !== 'true') return;
   const sessionId = window.getUploadModalSessionId ? window.getUploadModalSessionId() : null;
-  if (!sessionId) return;
-  fetch('/save_training_data', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-    body: JSON.stringify({
-      session_id: sessionId,
-      page_canvas_data: pageCanvasData,
-      labels: getAllLabels(),
-      exported_at: new Date().toISOString(),
-    }),
-  }).catch(err => console.warn('Training data save failed:', err));
+  if (!sessionId || !window.collectAllPagesCanvasData || !pdfModule.getAllPdfPages().length) return;
+  try {
+    // Vollständiges, ladbares Projekt-ZIP (identisch zum "Speichern"-Export),
+    // damit die Qualität später in der App per "Öffnen" geprüft werden kann.
+    const blob = await buildProjectZipBlob({
+      projectName:     getUploadedBaseName() || 'training',
+      canvasData:      window.collectAllPagesCanvasData(),
+      labels:          getAllLabels(),
+      settings:        pdfModule.getPageSettings(),
+      pageImageUrls:   pdfModule.getAllPdfPages(),
+      originalPdfBlob: pdfModule.getOriginalPdfBlob(),
+    });
+    const fd = new FormData();
+    fd.append('session_id', sessionId);
+    fd.append('consent', 'true');
+    fd.append('project_zip', new File([blob], 'project.zip', { type: 'application/zip' }));
+    await fetch('/save_training_data', {
+      method: 'POST',
+      body: fd,
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+  } catch (err) {
+    console.warn('Training data save failed:', err);
+  }
 }
 
 export async function exportPdf() {
@@ -294,7 +310,7 @@ export async function exportPdf() {
     if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
 
     const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
-    sendTrainingData(pageCanvasData);
+    sendTrainingData();
     await exportReportPdfClient({
       pageImageUrls: pdfModule.getAllPdfPages(),
       pageCanvasData,
@@ -319,7 +335,7 @@ export async function exportAnnotatedPdf() {
     if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
 
     const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
-    sendTrainingData(pageCanvasData);
+    sendTrainingData();
     await exportAnnotatedPdfClient({
       pdfBlob:       pdfModule.getOriginalPdfBlob(),
       pageImageUrls: pdfModule.getAllPdfPages(),

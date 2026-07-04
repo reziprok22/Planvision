@@ -409,25 +409,35 @@ def save_training_data(request):
     if denied:
         return denied
     try:
-        body = json.loads(request.body)
-        session_id = body.get('session_id')
+        session_id = request.POST.get('session_id')
         if not session_id:
             return JsonResponse({'error': 'session_id fehlt'}, status=400)
 
-        if _get_project(request, session_id) is None:
+        project = _get_project(request, session_id)
+        if project is None:
             return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
 
-        training_data = {
-            'session_id': session_id,
-            'page_canvas_data': body.get('page_canvas_data', {}),
-            'labels': body.get('labels', []),
-            'exported_at': body.get('exported_at'),
-        }
+        # Einwilligung des Nutzers persistieren.
+        consent = request.POST.get('consent') == 'true'
+        if project.consent_training != consent:
+            project.consent_training = consent
+            project.save(update_fields=['consent_training'])
 
-        project_dir = PROJECTS_DIR / session_id
-        training_path = project_dir / 'training_data.json'
-        with open(training_path, 'w', encoding='utf-8') as f:
-            json.dump(training_data, f, ensure_ascii=False, indent=2)
+        # Ohne Einwilligung wird nichts dauerhaft gespeichert.
+        if not consent:
+            return JsonResponse({'status': 'skipped'})
+
+        # Es wird das vollständige, ladbare Projekt-ZIP abgelegt (identisch zum
+        # "Speichern"-Export): self-contained, in der App per "Öffnen" prüfbar.
+        zip_file = request.FILES.get('project_zip')
+        if not zip_file:
+            return JsonResponse({'error': 'project_zip fehlt'}, status=400)
+
+        target_dir = settings.TRAINING_DATA_DIR / session_id
+        target_dir.mkdir(parents=True, exist_ok=True)
+        with open(target_dir / 'project.zip', 'wb') as f:
+            for chunk in zip_file.chunks():
+                f.write(chunk)
 
         return JsonResponse({'status': 'ok'})
 
