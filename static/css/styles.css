@@ -1664,8 +1664,8 @@ background-color: #2a70c2;
        Die Medienzone (flex:1) fängt die Höhenunterschiede ab. */
     display: flex;
     flex-direction: column;
-    height: 600px;
-    max-height: 86vh;
+    height: 660px;
+    max-height: 90vh;
 }
 
 .onboarding-header {
@@ -1739,6 +1739,8 @@ background-color: #2a70c2;
     line-height: 1.5;
     color: #555;
     min-height: 3em;
+    flex-shrink: 0; /* Body nie unter seinen Text schrumpfen → kein Überlauf in die Dots */
+    white-space: pre-line; /* \n im Onboarding-Text wird als Zeilenumbruch gerendert */
 }
 
 .onboarding-dots {

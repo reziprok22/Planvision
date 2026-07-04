@@ -15,7 +15,7 @@
  * Toolbar-Button #onboardingBtn lässt es sich jederzeit erneut öffnen.
  */
 
-const SEEN_KEY = 'onlyplans_onboarding_seen_v1';
+const SEEN_KEY = 'planli_onboarding_seen_v1';
 const VIDEO_EXT = /\.(mp4|webm|ogg)(\?.*)?$/i;
 
 let steps = [];
