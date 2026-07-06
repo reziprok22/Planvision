@@ -22,11 +22,13 @@ import JSZip from 'jszip';
 //   1 – Basisformat: canvas_data.json (multi-page annotations inkl.
 //       canvas_text_labels und id/labelText), labels.json, settings.json,
 //       pages/, optional original.pdf sowie legend_position pro Seite.
-//   2 – zusätzlich canvas_dimensions pro Seite: CAD-Bemaßungs-Hilfen (eigener
+//   2 – zusätzlich canvas_dimensions pro Seite: CAD-Bemassungs-Hilfen (eigener
 //       objectType 'dimension', keine Annotationen). v1-ZIPs erhalten beim Laden
 //       ein leeres Array (siehe migrateCanvasData).
+//   3 – zusätzlich canvas_text_notes pro Seite: Textfelder (Fabric Textbox, eigener
+//       objectType 'textNote', keine Annotationen). Ältere ZIPs → leeres Array.
 //
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
 
@@ -53,6 +55,18 @@ function migrateCanvasData(canvasData, fromVersion) {
       for (const key of Object.keys(pages)) {
         if (pages[key] && !Array.isArray(pages[key].canvas_dimensions)) {
           pages[key].canvas_dimensions = [];
+        }
+      }
+    }
+  }
+
+  // v2 → v3: same for canvas_text_notes (text fields).
+  if (fromVersion < 3) {
+    const pages = canvasData?.pages;
+    if (pages && typeof pages === 'object') {
+      for (const key of Object.keys(pages)) {
+        if (pages[key] && !Array.isArray(pages[key].canvas_text_notes)) {
+          pages[key].canvas_text_notes = [];
         }
       }
     }

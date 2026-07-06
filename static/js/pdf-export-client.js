@@ -344,6 +344,77 @@ function drawDimensionsOnPage(page, dimensions, T, sx, sy, font) {
     return drawn;
 }
 
+// Greedy word-wrap to a max width (honours explicit newlines). Mirrors how a
+// Fabric Textbox wraps, closely enough for the PDF (fonts differ slightly).
+function wrapText(text, font, size, maxWidth) {
+    const out = [];
+    for (const para of String(text).split('\n')) {
+        const words = para.split(' ');
+        let line = '';
+        for (const w of words) {
+            const test = line ? line + ' ' + w : w;
+            if (line && font.widthOfTextAtSize(test, size) > maxWidth) {
+                out.push(line);
+                line = w;
+            } else {
+                line = test;
+            }
+        }
+        out.push(line);
+    }
+    return out;
+}
+
+/**
+ * Draw text notes (Fabric Textbox, objectType 'textNote') onto a page.
+ * Serialized fields: left/top (image px, top-left), width, fontSize, fill,
+ * backgroundColor, scaleX/scaleY, text. Page rotation is honoured; a note's own
+ * rotation is ignored (users rarely rotate notes).
+ */
+function drawTextNotesOnPage(page, notes, T, sx, sy, font) {
+    if (!notes?.length) return 0;
+    let drawn = 0;
+    const s = Math.min(sx, sy);
+
+    for (const t of notes) {
+        if (!t.text || !t.text.trim()) continue;
+        const sX = t.scaleX || 1, sY = t.scaleY || 1;
+        const fs   = (t.fontSize || 18) * sY * s;      // display-space font size
+        const boxW = (t.width || 180) * sX * sx;       // display-space wrap width
+        const lineH = fs * 1.16;
+        const color = hexToRgb(t.fill || '#222222');
+        const lines = wrapText(t.text, font, fs, boxW);
+
+        const x0 = (t.left || 0) * sx;                 // box top-left, display px
+        const y0 = (t.top  || 0) * sy;
+        const totalH = lines.length * lineH;
+
+        // Background box (white, translucent) — axis-aligned for any 90° page rotation
+        if (t.backgroundColor) {
+            const c1 = T.toUser(x0, y0);
+            const c2 = T.toUser(x0 + boxW, y0 + totalH);
+            page.drawRectangle({
+                x: Math.min(c1.x, c2.x), y: Math.min(c1.y, c2.y),
+                width: Math.abs(c2.x - c1.x), height: Math.abs(c2.y - c1.y),
+                color: rgb(1, 1, 1), opacity: 0.82,
+            });
+        }
+
+        // Text lines, positioned via the display-space basis (like the label pass)
+        const tl = T.toUser(x0, y0);
+        lines.forEach((line, i) => {
+            const dyd = i * lineH + fs * 0.8;          // baseline offset, display y-down
+            page.drawText(line, {
+                x: tl.x + dyd * T.down.x,
+                y: tl.y + dyd * T.down.y,
+                size: fs, font, color, rotate: degrees(T.rotation),
+            });
+        });
+        drawn++;
+    }
+    return drawn;
+}
+
 /**
  * Draw the on-plan legend at its saved canvas position.
  * Mirrors the Fabric legend in main.js: title + one row per used label with
@@ -510,9 +581,10 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         const canvasData  = pageCanvasData[pageNum] || pageCanvasData[String(pageNum)];
         const annotations = canvasData?.canvas_annotations || [];
         const dimensions  = canvasData?.canvas_dimensions || [];
+        const textNotes   = canvasData?.canvas_text_notes || [];
 
-        console.log(`[PDF export] page ${pageNum}: ${annotations.length} canvas annotations, ${dimensions.length} dimensions`);
-        if (!annotations.length && !dimensions.length) continue;
+        console.log(`[PDF export] page ${pageNum}: ${annotations.length} canvas annotations, ${dimensions.length} dimensions, ${textNotes.length} text notes`);
+        if (!annotations.length && !dimensions.length && !textNotes.length) continue;
 
         const page = pdfPages[i];
         const T = makeDisplayTransform(page);
@@ -530,7 +602,8 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         const textLabels = canvasData?.canvas_text_labels || [];
         const n = drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont);
         const nd = drawDimensionsOnPage(page, dimensions, T, sx, sy, labelFont);
-        console.log(`[PDF export] page ${pageNum}: drew ${n} annotations, ${nd} dimensions`);
+        const nt = drawTextNotesOnPage(page, textNotes, T, sx, sy, labelFont);
+        console.log(`[PDF export] page ${pageNum}: drew ${n} annotations, ${nd} dimensions, ${nt} text notes`);
 
         // On-plan legend (placed by the user on the canvas)
         if (canvasData?.legend_position) {

@@ -9,7 +9,7 @@ function getCsrfToken() {
 }
 
 // Import Fabric.js
-import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle, Group, Line, ActiveSelection } from 'fabric';
+import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Textbox, Shadow, util, Circle, Group, Line, ActiveSelection } from 'fabric';
 
 // Import modules
 import {
@@ -75,13 +75,17 @@ let currentRectangle = null;
 let currentPolygon = null;
 let currentLine = null;
 let rectangleStartPoint = null;
-// Dimension ("Bemaßung") helper tool — 3-click flow: start → end → parallel offset.
+// Dimension ("Bemassung") helper tool — 3-click flow: start → end → parallel offset.
 // Not an annotation (own objectType 'dimension'): never in results table/summary/
 // label manager. dimPhase: 0 idle, 1 have p1 (awaiting p2), 2 have p1+p2 (choosing offset).
 let dimPhase = 0;
 let dimP1 = null;
 let dimP2 = null;
 let dimPreview = null;             // temp preview group while drawing
+// Text field ("Textfeld") helper tool — drag a box, then type inside it.
+// Own objectType 'textNote' (not an annotation): stays out of results/summary/labels.
+let textStartPoint = null;         // drag start while defining the box width
+let textPreviewRect = null;        // dashed preview rect during the drag
 let clipboard = [];                // serialised annotations ready to paste
 let clipboardSourceIds = [];       // canvas IDs of originals at copy time
 let clipboardSourcePositions = {}; // {id: {left, top}} of originals at copy time
@@ -703,6 +707,9 @@ function loadCanvasData(canvasData) {
   (canvasData.canvas_dimensions || []).forEach(d => {
     canvas.add(buildDimensionGroup(d));
   });
+
+  // Rebuild text notes (async enliven); z-order fixed by the delayed applyLayerOrdering.
+  rebuildTextNotes(canvasData.canvas_text_notes).then(() => canvas.requestRenderAll());
 
   // Ganze Seite einpassen (statt gespeicherten Zoom wiederherzustellen) – so sieht
   // man bei jedem Seitenwechsel/Öffnen die komplette Seite. Siehe fitToViewport.
@@ -1461,6 +1468,7 @@ function saveHistorySnapshot() {
   const state = JSON.stringify({
     annotations: JSON.parse(serializeAnnotations()),
     dimensions: serializeDimensions(),
+    textNotes: serializeTextNotes(),
   });
   if (undoStack.length > 0 && undoStack[undoStack.length - 1] === state) return;
   undoStack.push(state);
@@ -1473,13 +1481,14 @@ async function applyHistoryState(stateJson) {
   // Remove all annotation objects, their text labels and dimension helpers
   canvas.renderOnAddRemove = false;
   canvas.getObjects()
-    .filter(o => o.objectType === 'annotation' || o.objectType === 'textLabel' || o.objectType === 'dimension')
+    .filter(o => o.objectType === 'annotation' || o.objectType === 'textLabel' || o.objectType === 'dimension' || o.objectType === 'textNote')
     .forEach(o => canvas.remove(o));
 
-  // State shape: { annotations: [...], dimensions: [...] } (older bare arrays tolerated).
+  // State shape: { annotations, dimensions, textNotes } (older bare arrays tolerated).
   const parsed = JSON.parse(stateJson);
   const annotations = Array.isArray(parsed) ? parsed : (parsed.annotations || []);
   const dimensions  = Array.isArray(parsed) ? []     : (parsed.dimensions  || []);
+  const textNotes   = Array.isArray(parsed) ? []     : (parsed.textNotes   || []);
 
   if (annotations.length) {
     const objects = await util.enlivenObjects(annotations);
@@ -1492,6 +1501,7 @@ async function applyHistoryState(stateJson) {
   }
 
   dimensions.forEach(d => canvas.add(buildDimensionGroup(d)));
+  await rebuildTextNotes(textNotes);
 
   canvas.renderOnAddRemove = true;
   applyLayerOrdering();
@@ -1740,6 +1750,10 @@ function setupCanvasEvents() {
       addLinePoint(pointer, options.e);
     } else if (currentTool === 'dimension') {
       dimHandleClick(pointer, options.e);
+    } else if (currentTool === 'text') {
+      isProcessingClick = true;
+      startTextDrawing(pointer);
+      setTimeout(() => { isProcessingClick = false; }, 50);
     }
     // For 'select' tool, let Fabric.js handle selection naturally
   });
@@ -1762,6 +1776,8 @@ function setupCanvasEvents() {
       updateLinePreview(pointer, options.e.shiftKey);
     } else if (currentTool === 'dimension') {
       dimHandleMove(pointer, options.e);
+    } else if (currentTool === 'text' && textPreviewRect) {
+      updateTextDrawing(pointer);
     }
   });
   
@@ -1804,6 +1820,10 @@ function setupCanvasEvents() {
 
     if (currentTool === 'rectangle' && drawingMode) {
       finishDrawingRectangle();
+    }
+
+    if (currentTool === 'text' && drawingMode) {
+      finishTextDrawing();
     }
 
     // Ctrl/Alt + drag duplicate: finalise once the drag ends. If the async clone
@@ -1891,11 +1911,43 @@ function setupCanvasEvents() {
     }
   });
   
+  // Shift while rotating a text note → snap to 22.5° steps (matches the drawing snap).
+  // The Textbox origin is top-left, so setting only `angle` would pivot around the
+  // corner and make the box drift — keep its centre fixed across the snap.
+  canvas.on('object:rotating', function(e) {
+    const t = e.target;
+    if (!t || t.objectType !== 'textNote' || !e.e?.shiftKey) return;
+    const step = 22.5;
+    const snapped = Math.round(t.angle / step) * step;
+    if (snapped === t.angle) return;
+    const center = t.getCenterPoint();
+    t.set('angle', snapped);
+    t.setPositionByOrigin(center, 'center', 'center');
+    t.setCoords();
+  });
+
+  // Text note finished editing → drop it if left empty, otherwise record the edit.
+  canvas.on('text:editing:exited', function(e) {
+    const t = e.target;
+    if (!t || t.objectType !== 'textNote') return;
+    if (!t.text || !t.text.trim()) {
+      canvas.remove(t);
+      canvas.requestRenderAll();
+      return;
+    }
+    saveHistorySnapshot();
+  });
+
   // Object modified (resize/scale) – recalculate measurements
   canvas.on('object:modified', function(e) {
     // Dimension helper moved → fold the translation back into its stored geometry.
     if (e.target?.objectType === 'dimension') {
       bakeDimensionMove(e.target);
+      if (!dupArmed) saveHistorySnapshot();
+      return;
+    }
+    // Text note moved/resized → just record a history step.
+    if (e.target?.objectType === 'textNote') {
       if (!dupArmed) saveHistorySnapshot();
       return;
     }
@@ -1967,7 +2019,7 @@ function setTool(toolName) {
       canvas.hoverCursor = 'move';
       canvas.forEachObject(obj => {
         // Nur Annotation-Objekte selektierbar machen, nicht Text-Labels
-        if (obj.objectType === 'annotation' || obj.objectType === 'dimension') {
+        if (obj.objectType === 'annotation' || obj.objectType === 'dimension' || obj.objectType === 'textNote') {
           obj.selectable = true;
           obj.evented = true;
           obj.setCoords(); // ensure hit-detection bounds are current
@@ -2042,8 +2094,9 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   // Select tool with no annotation selected: placeholder, disabled.
   // The dimension helper has no label, so treat it (tool or selection) the same way.
   if ((toolName === 'select' && !selectedObject) ||
-      toolName === 'dimension' ||
-      selectedObject?.objectType === 'dimension') {
+      toolName === 'dimension' || toolName === 'text' ||
+      selectedObject?.objectType === 'dimension' ||
+      selectedObject?.objectType === 'textNote') {
     universalLabelSelect.innerHTML = '<option value="">–</option>';
     universalLabelSelect.disabled = true;
     universalLabelSelect.classList.add('no-selection');
@@ -2151,6 +2204,8 @@ function cleanupCurrentTool() {
     currentLine = null;
   } else if (currentTool === 'dimension') {
     resetDimDrawing();
+  } else if (currentTool === 'text') {
+    resetTextDrawing();
   }
 
   if (canvas) {
@@ -2172,6 +2227,9 @@ function resetAllDrawingStates() {
   dimPhase = 0;
   dimP1 = null;
   dimP2 = null;
+  // Text field drawing state
+  if (textPreviewRect) { canvas?.remove(textPreviewRect); textPreviewRect = null; }
+  textStartPoint = null;
 }
 
 /**
@@ -2936,7 +2994,7 @@ function resetLineDrawing() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Bemaßung (CAD-style dimension) — a pure helper with its own objectType
+// Bemassung (CAD-style dimension) — a pure helper with its own objectType
 // 'dimension'. It is NEVER an annotation, so it never appears in the results
 // table, summary or label manager (all of those filter objectType==='annotation').
 //
@@ -3070,6 +3128,30 @@ function serializeDimensions() {
   return canvas.getObjects()
     .filter(o => o.objectType === 'dimension' && o.dimData)
     .map(g => ({ ...g.dimData }));
+}
+
+function serializeTextNotes() {
+  if (!canvas) return [];
+  return canvas.getObjects()
+    .filter(o => o.objectType === 'textNote')
+    .map(t => {
+      const o = t.toObject(['objectType', 'userCreated']);
+      o.objectType = 'textNote';
+      return o;
+    });
+}
+
+// Rebuild text notes (Fabric Textboxes) from their serialized form.
+async function rebuildTextNotes(serialized) {
+  if (!canvas || !serialized?.length) return;
+  const notes = await util.enlivenObjects(serialized);
+  notes.filter(Boolean).forEach(n => {
+    n.set({
+      objectType: 'textNote', editable: true,
+      selectable: currentTool === 'select', evented: currentTool === 'select',
+    });
+    canvas.add(n);
+  });
 }
 
 function clearDimPreview() {
@@ -3237,6 +3319,79 @@ function updateDimensionFromHandle(handle, shiftKey = false) {
   dimHandles.forEach(h => canvas.bringObjectToFront(h)); // keep handles above the rebuilt group
 }
 
+// ── Text field ("Textfeld") ───────────────────────────────────────────────────
+// Drag to define the box width, then type inside (Fabric Textbox, word-wrapped).
+// Own objectType 'textNote' — a note, never a measured annotation.
+
+const TEXTNOTE_FONT   = 18;
+const TEXTNOTE_COLOR  = '#222222';
+const TEXTNOTE_BG     = 'rgba(255,255,255,0.82)';   // legible over busy plans
+const TEXTNOTE_MIN_W  = 60;
+const TEXTNOTE_DEF_W  = 180;                         // fallback when the drag is tiny
+
+function startTextDrawing(pointer) {
+  if (!canvas) return;
+  drawingMode = true;
+  textStartPoint = { x: pointer.x, y: pointer.y };
+  textPreviewRect = new Rect({
+    left: pointer.x, top: pointer.y, width: 0, height: 0,
+    fill: 'rgba(25,118,210,0.08)', stroke: '#1976d2', strokeWidth: 1,
+    strokeDashArray: [4, 4], selectable: false, evented: false,
+    objectType: 'textPreview',
+  });
+  canvas.add(textPreviewRect);
+}
+
+function updateTextDrawing(pointer) {
+  if (!textPreviewRect || !textStartPoint) return;
+  const w = pointer.x - textStartPoint.x;
+  const h = pointer.y - textStartPoint.y;
+  textPreviewRect.set({
+    width: Math.abs(w), height: Math.abs(h),
+    left: w < 0 ? pointer.x : textStartPoint.x,
+    top:  h < 0 ? pointer.y : textStartPoint.y,
+  });
+  canvas.requestRenderAll();
+}
+
+function finishTextDrawing() {
+  if (!textPreviewRect || !textStartPoint) return;
+
+  const left  = textPreviewRect.left;
+  const top   = textPreviewRect.top;
+  const width = Math.max(textPreviewRect.width, TEXTNOTE_MIN_W) || TEXTNOTE_DEF_W;
+
+  canvas.remove(textPreviewRect);
+  textPreviewRect = null;
+  textStartPoint = null;
+  drawingMode = false;
+
+  const box = new Textbox('', {
+    left, top, width,
+    fontSize: TEXTNOTE_FONT, fontFamily: 'Arial', fill: TEXTNOTE_COLOR,
+    backgroundColor: TEXTNOTE_BG,
+    objectType: 'textNote', userCreated: true,
+    editable: true, selectable: true, evented: true,
+    lockScalingFlip: true,
+  });
+  canvas.add(box);
+
+  // Switch to select so the note is immediately movable after typing, then start
+  // editing on the next tick (after the current mouse:up settles).
+  setTool('select');
+  setTimeout(() => {
+    canvas.setActiveObject(box);
+    box.enterEditing();
+    canvas.requestRenderAll();
+  }, 10);
+}
+
+function resetTextDrawing() {
+  if (textPreviewRect) { canvas?.remove(textPreviewRect); textPreviewRect = null; }
+  textStartPoint = null;
+  drawingMode = false;
+}
+
 /**
  * Create a text label for a single new annotation without affecting others
  */
@@ -3291,6 +3446,7 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
   // Updates im Nicht-Batch-Fall trotzdem ausführen.
   if (!SHOW_TEXT_LABELS) {
     if (!batch) {
+      applyLayerOrdering();   // keep new annotations behind dimensions/text notes
       canvas.renderAll();
       updateResultsTable();
       updateSummary();
@@ -3540,6 +3696,9 @@ function collectCurrentCanvasData(pageNumber = 1) {
   // buildDimensionGroup on load. Not annotations, so kept in a separate array.
   const canvasDimensions = serializeDimensions();
 
+  // Text notes: full Fabric Textbox serialization (text, width, font, colours …).
+  const canvasTextNotes = serializeTextNotes();
+
   // On-plan legend: persist position only — content is derived from annotations
   const legendObj = canvas.getObjects().find(obj => obj.objectType === 'legend');
 
@@ -3548,6 +3707,7 @@ function collectCurrentCanvasData(pageNumber = 1) {
     canvas_annotations: canvasAnnotations,
     canvas_text_labels: canvasTextLabels,
     canvas_dimensions: canvasDimensions,
+    canvas_text_notes: canvasTextNotes,
     legend_position: legendObj ? { left: legendObj.left, top: legendObj.top } : null,
     annotation_count: annotations.length,
     canvas_available: true,
@@ -4079,6 +4239,7 @@ async function initApp() {
       case 'w': case 'W': setTool('polygon');   break;
       case 'e': case 'E': setTool('line');      break;
       case 'd': case 'D': setTool('dimension'); break;
+      case 'f': case 'F': setTool('text');      break;
       case 'l': case 'L': {
         const modal = document.getElementById('labelManagerModal');
         if (modal && modal.style.display === 'block') { closeLabelManager(); }
@@ -4134,7 +4295,7 @@ async function initApp() {
         if (editingDimension) { exitDimensionEditMode(); break; }
         // First Escape cancels in-progress drawing; otherwise it clears the
         // current selection; failing that it falls back to the select tool.
-        if ((currentTool === 'polygon' || currentTool === 'line' || currentTool === 'dimension') && drawingMode) {
+        if ((currentTool === 'polygon' || currentTool === 'line' || currentTool === 'dimension' || currentTool === 'text') && drawingMode) {
           cleanupCurrentTool();
           resetAllDrawingStates();
           canvas?.renderAll();
