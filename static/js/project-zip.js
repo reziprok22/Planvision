@@ -19,11 +19,14 @@ import JSZip from 'jszip';
 // migration step in migrateCanvasData() below.
 //
 // Version history:
-//   1 – aktuelles Format: canvas_data.json (multi-page annotations inkl.
+//   1 – Basisformat: canvas_data.json (multi-page annotations inkl.
 //       canvas_text_labels und id/labelText), labels.json, settings.json,
 //       pages/, optional original.pdf sowie legend_position pro Seite.
+//   2 – zusätzlich canvas_dimensions pro Seite: CAD-Bemaßungs-Hilfen (eigener
+//       objectType 'dimension', keine Annotationen). v1-ZIPs erhalten beim Laden
+//       ein leeres Array (siehe migrateCanvasData).
 //
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
 
@@ -36,11 +39,25 @@ function detectVersion(metadata) {
 
 /**
  * Apply all necessary migrations to bring canvasData up to CURRENT_VERSION.
- * Currently a no-op (format starts at v1). Add "if (fromVersion < N) { … }"
- * blocks here when the schema changes — see CLAUDE.md, "ZIP Format Versioning".
+ * Add "if (fromVersion < N) { … }" blocks here when the schema changes —
+ * see CLAUDE.md, "ZIP Format Versioning". Migrations run sequentially.
  */
 function migrateCanvasData(canvasData, fromVersion) {
   if (fromVersion >= CURRENT_VERSION) return canvasData;
+
+  // v1 → v2: ensure every page carries a canvas_dimensions array. loadCanvasData
+  // already tolerates a missing one, so this is defensive/normalising only.
+  if (fromVersion < 2) {
+    const pages = canvasData?.pages;
+    if (pages && typeof pages === 'object') {
+      for (const key of Object.keys(pages)) {
+        if (pages[key] && !Array.isArray(pages[key].canvas_dimensions)) {
+          pages[key].canvas_dimensions = [];
+        }
+      }
+    }
+  }
+
   return canvasData;
 }
 

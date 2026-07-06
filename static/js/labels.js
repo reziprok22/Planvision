@@ -593,7 +593,8 @@ function sortCanvasObjectsByLabelOrder(canvas) {
   if (!canvas) return;
 
   const layerRank = obj => {
-    if (obj.objectType === 'textLabel') return 2;   // always front
+    if (obj.objectType === 'textLabel') return 3;   // always front
+    if (obj.objectType === 'dimension') return 2;   // helper lines above annotations
     if (obj.objectType === 'annotation') return 1;   // middle
     return 0;                                         // background / other → back
   };

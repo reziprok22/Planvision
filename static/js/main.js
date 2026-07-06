@@ -9,7 +9,7 @@ function getCsrfToken() {
 }
 
 // Import Fabric.js
-import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle, Group, ActiveSelection } from 'fabric';
+import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Shadow, util, Circle, Group, Line, ActiveSelection } from 'fabric';
 
 // Import modules
 import {
@@ -75,11 +75,20 @@ let currentRectangle = null;
 let currentPolygon = null;
 let currentLine = null;
 let rectangleStartPoint = null;
+// Dimension ("Bemaßung") helper tool — 3-click flow: start → end → parallel offset.
+// Not an annotation (own objectType 'dimension'): never in results table/summary/
+// label manager. dimPhase: 0 idle, 1 have p1 (awaiting p2), 2 have p1+p2 (choosing offset).
+let dimPhase = 0;
+let dimP1 = null;
+let dimP2 = null;
+let dimPreview = null;             // temp preview group while drawing
 let clipboard = [];                // serialised annotations ready to paste
 let clipboardSourceIds = [];       // canvas IDs of originals at copy time
 let clipboardSourcePositions = {}; // {id: {left, top}} of originals at copy time
 let editingPolygon = null;         // polygon currently in vertex-edit mode
 let vertexHandles = [];            // Circle handles shown during vertex editing
+let editingDimension = null;       // dimension group currently in edit mode
+let dimHandles = [];               // Circle handles shown while editing a dimension
 let pasteOffset = 0;               // increases with each paste so copies don't stack
 let dupArmed = false;              // Ctrl/Alt + drag duplicate: armed at mouse:down
 let dupSerialized = null;          // originals serialised at their start position, to clone on first move
@@ -633,7 +642,11 @@ function loadCanvasData(canvasData) {
   
   // Clear existing canvas content
   canvas.clear();
-  
+
+  // Drop any stale edit-mode state — its objects are about to be removed
+  editingDimension = null;
+  dimHandles = [];
+
   // Reinitialize canvas to set background image
   initCanvas();
   
@@ -684,7 +697,13 @@ function loadCanvasData(canvasData) {
     canvas.renderOnAddRemove = true;
     canvas.requestRenderAll();
   });
-  
+
+  // Rebuild dimension helpers (own objectType, not annotations). Synchronous —
+  // the delayed applyLayerOrdering() below fixes their z-order once everything settled.
+  (canvasData.canvas_dimensions || []).forEach(d => {
+    canvas.add(buildDimensionGroup(d));
+  });
+
   // Ganze Seite einpassen (statt gespeicherten Zoom wiederherzustellen) – so sieht
   // man bei jedem Seitenwechsel/Öffnen die komplette Seite. Siehe fitToViewport.
   fitToViewport();
@@ -1439,7 +1458,10 @@ function initHistory() {
 
 function saveHistorySnapshot() {
   if (isHistoryAction || isPageSwitching || !canvas) return;
-  const state = serializeAnnotations();
+  const state = JSON.stringify({
+    annotations: JSON.parse(serializeAnnotations()),
+    dimensions: serializeDimensions(),
+  });
   if (undoStack.length > 0 && undoStack[undoStack.length - 1] === state) return;
   undoStack.push(state);
   if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
@@ -1448,13 +1470,17 @@ function saveHistorySnapshot() {
 
 async function applyHistoryState(stateJson) {
   isHistoryAction = true;
-  // Remove all annotation objects and their text labels
+  // Remove all annotation objects, their text labels and dimension helpers
   canvas.renderOnAddRemove = false;
   canvas.getObjects()
-    .filter(o => o.objectType === 'annotation' || o.objectType === 'textLabel')
+    .filter(o => o.objectType === 'annotation' || o.objectType === 'textLabel' || o.objectType === 'dimension')
     .forEach(o => canvas.remove(o));
 
-  const annotations = JSON.parse(stateJson);
+  // State shape: { annotations: [...], dimensions: [...] } (older bare arrays tolerated).
+  const parsed = JSON.parse(stateJson);
+  const annotations = Array.isArray(parsed) ? parsed : (parsed.annotations || []);
+  const dimensions  = Array.isArray(parsed) ? []     : (parsed.dimensions  || []);
+
   if (annotations.length) {
     const objects = await util.enlivenObjects(annotations);
     for (const obj of objects) {
@@ -1462,10 +1488,13 @@ async function applyHistoryState(stateJson) {
       canvas.add(obj);
       obj.setCoords();
     }
-    canvas.renderOnAddRemove = true;
-    applyLayerOrdering();
     for (const obj of objects) createSingleTextLabel(obj, { batch: true });
   }
+
+  dimensions.forEach(d => canvas.add(buildDimensionGroup(d)));
+
+  canvas.renderOnAddRemove = true;
+  applyLayerOrdering();
 
   canvas.discardActiveObject();
   selectedObjects = [];
@@ -1661,6 +1690,14 @@ function setupCanvasEvents() {
       }
     }
 
+    // Dimension edit mode: a click anywhere but on a dimension handle exits it.
+    if (editingDimension && currentTool === 'select') {
+      if (options.target?.objectType !== 'dimHandle') {
+        exitDimensionEditMode();
+        return;
+      }
+    }
+
     // Ctrl/Alt + drag on an annotation body → duplicate-on-drag. We arm here and
     // serialise the selection at its START position; on the first move a copy is
     // dropped there immediately (visible at once), while the originals are dragged
@@ -1686,7 +1723,7 @@ function setupCanvasEvents() {
     }
 
     // If there's a target object (user clicked on an existing annotation or handle), don't start drawing
-    if (options.target && (options.target.objectType === 'annotation' || options.target.objectType === 'vertexHandle' || options.target.objectType === 'midpointHandle')) {
+    if (options.target && (options.target.objectType === 'annotation' || options.target.objectType === 'dimension' || options.target.objectType === 'vertexHandle' || options.target.objectType === 'midpointHandle')) {
       return;
     }
     
@@ -1701,6 +1738,8 @@ function setupCanvasEvents() {
       addPolygonPoint(pointer, options.e);
     } else if (currentTool === 'line') {
       addLinePoint(pointer, options.e);
+    } else if (currentTool === 'dimension') {
+      dimHandleClick(pointer, options.e);
     }
     // For 'select' tool, let Fabric.js handle selection naturally
   });
@@ -1721,6 +1760,8 @@ function setupCanvasEvents() {
       updatePolygonPreview(pointer, options.e.shiftKey);
     } else if (currentTool === 'line' && currentLine) {
       updateLinePreview(pointer, options.e.shiftKey);
+    } else if (currentTool === 'dimension') {
+      dimHandleMove(pointer, options.e);
     }
   });
   
@@ -1730,6 +1771,9 @@ function setupCanvasEvents() {
     if (obj.objectType === 'vertexHandle' && editingPolygon) {
       updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
       updateAdjacentMidpoints(obj.pointIndex);
+    }
+    if (obj.objectType === 'dimHandle' && editingDimension) {
+      updateDimensionFromHandle(obj, e.e?.shiftKey);
     }
 
     // First move of a Ctrl/Alt-drag → drop the copies at the start position right
@@ -1788,6 +1832,14 @@ function setupCanvasEvents() {
         }
         return;
       }
+      if (target?.objectType === 'dimension') {
+        if (editingDimension === target) {
+          exitDimensionEditMode();
+        } else {
+          enterDimensionEditMode(target);
+        }
+        return;
+      }
     }
 
     if (currentTool === 'polygon' && currentPoints.length >= 3) {
@@ -1822,6 +1874,11 @@ function setupCanvasEvents() {
       selectedObjects.forEach(selectedObj => {
         if (selectedObj.objectType === 'annotation') {
           updateLinkedTextLabelPosition(selectedObj);
+        } else if (selectedObj.objectType === 'dimension') {
+          // A dimension moved inside a multi-selection reports object:modified on the
+          // ActiveSelection, not the group, so its geometry is only reconciled here —
+          // coords are absolute again after Fabric discards the selection.
+          bakeDimensionMove(selectedObj);
         }
       });
       debouncedTableUpdate();
@@ -1836,6 +1893,12 @@ function setupCanvasEvents() {
   
   // Object modified (resize/scale) – recalculate measurements
   canvas.on('object:modified', function(e) {
+    // Dimension helper moved → fold the translation back into its stored geometry.
+    if (e.target?.objectType === 'dimension') {
+      bakeDimensionMove(e.target);
+      if (!dupArmed) saveHistorySnapshot();
+      return;
+    }
     if (!e.target || e.target.objectType !== 'annotation') return;
     updateLinkedTextLabelPosition(e.target);
     // During a Ctrl/Alt duplicate-drag (still armed here, fires before mouse:up),
@@ -1876,6 +1939,7 @@ function setupCanvasEvents() {
  */
 function setTool(toolName) {
   if (editingPolygon) exitPolygonEditMode();
+  if (editingDimension) exitDimensionEditMode();
 
   // Clean up current tool state first
   cleanupCurrentTool();
@@ -1903,7 +1967,7 @@ function setTool(toolName) {
       canvas.hoverCursor = 'move';
       canvas.forEachObject(obj => {
         // Nur Annotation-Objekte selektierbar machen, nicht Text-Labels
-        if (obj.objectType === 'annotation') {
+        if (obj.objectType === 'annotation' || obj.objectType === 'dimension') {
           obj.selectable = true;
           obj.evented = true;
           obj.setCoords(); // ensure hit-detection bounds are current
@@ -1975,8 +2039,11 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   const universalLabelSelect = document.getElementById('universalLabelSelect');
   if (!universalLabelSelect) return;
 
-  // Select tool with no annotation selected: placeholder, disabled
-  if (toolName === 'select' && !selectedObject) {
+  // Select tool with no annotation selected: placeholder, disabled.
+  // The dimension helper has no label, so treat it (tool or selection) the same way.
+  if ((toolName === 'select' && !selectedObject) ||
+      toolName === 'dimension' ||
+      selectedObject?.objectType === 'dimension') {
     universalLabelSelect.innerHTML = '<option value="">–</option>';
     universalLabelSelect.disabled = true;
     universalLabelSelect.classList.add('no-selection');
@@ -2082,8 +2149,10 @@ function cleanupCurrentTool() {
   } else if (currentTool === 'line' && currentLine) {
     canvas.remove(currentLine);
     currentLine = null;
+  } else if (currentTool === 'dimension') {
+    resetDimDrawing();
   }
-  
+
   if (canvas) {
     canvas.renderAll();
   }
@@ -2098,6 +2167,11 @@ function resetAllDrawingStates() {
   currentLine = null;
   rectangleStartPoint = null;
   isProcessingClick = false;
+  // Dimension helper drawing state (preview cleared separately in resetDimDrawing)
+  if (dimPreview) { canvas?.remove(dimPreview); dimPreview = null; }
+  dimPhase = 0;
+  dimP1 = null;
+  dimP2 = null;
 }
 
 /**
@@ -2861,6 +2935,308 @@ function resetLineDrawing() {
   currentPoints = [];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bemaßung (CAD-style dimension) — a pure helper with its own objectType
+// 'dimension'. It is NEVER an annotation, so it never appears in the results
+// table, summary or label manager (all of those filter objectType==='annotation').
+//
+// Each dimension is a Fabric Group of: 2 witness (extension) lines, the dimension
+// line, 2 end ticks and the centred measurement text. After placement it can be
+// selected, moved (position only — scaling/rotation locked) and deleted. Its
+// canonical geometry lives in group.dimData (image pixels) so save/load, scale
+// changes and PDF export all reconstruct it deterministically.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DIM_COLOR  = '#333333';   // technical grey, deliberately independent of label colours
+const DIM_STROKE = 1;
+const DIM_GAP    = 6;           // gap between measured point and start of witness line
+const DIM_EXT    = 6;           // witness-line overshoot past the dimension line
+const DIM_TICK   = 9;           // length of the 45° end ticks
+const DIM_FONT   = 13;
+
+// Signed perpendicular distance from the p1→p2 line to a pointer (the parallel offset).
+function dimOffsetFromPointer(p1, p2, pointer) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  return (pointer.x - p1.x) * nx + (pointer.y - p1.y) * ny;
+}
+
+function dimMeasurementText(baseLenPx) {
+  return `${(baseLenPx * getPixelToMeterFactor()).toFixed(2)} m`;
+}
+
+// Derive full geometry (image px) from two base points + a signed offset.
+function computeDimGeometry(p1, p2, offset) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len, uy = dy / len;   // unit along p1→p2
+  const nx = -uy, ny = ux;              // unit normal
+  const d1 = { x: p1.x + nx * offset, y: p1.y + ny * offset };
+  const d2 = { x: p2.x + nx * offset, y: p2.y + ny * offset };
+  return { p1, p2, d1, d2, offset, baseLenPx: len, ux, uy, nx, ny };
+}
+
+// Build the Fabric group from a dimData record { p1, p2, offset, [color] }.
+function buildDimensionGroup(dimData) {
+  const g = computeDimGeometry(dimData.p1, dimData.p2, dimData.offset);
+  const s = Math.sign(g.offset) || 1;
+  const color = dimData.color || DIM_COLOR;
+  const parts = [];
+
+  // Witness (extension) lines: from just off each measured point to just past d.
+  const w1a = { x: g.p1.x + g.nx * DIM_GAP * s, y: g.p1.y + g.ny * DIM_GAP * s };
+  const w1b = { x: g.d1.x + g.nx * DIM_EXT * s, y: g.d1.y + g.ny * DIM_EXT * s };
+  const w2a = { x: g.p2.x + g.nx * DIM_GAP * s, y: g.p2.y + g.ny * DIM_GAP * s };
+  const w2b = { x: g.d2.x + g.nx * DIM_EXT * s, y: g.d2.y + g.ny * DIM_EXT * s };
+  parts.push(new Line([w1a.x, w1a.y, w1b.x, w1b.y], { stroke: color, strokeWidth: DIM_STROKE }));
+  parts.push(new Line([w2a.x, w2a.y, w2b.x, w2b.y], { stroke: color, strokeWidth: DIM_STROKE }));
+
+  // Dimension line d1 → d2
+  parts.push(new Line([g.d1.x, g.d1.y, g.d2.x, g.d2.y], { stroke: color, strokeWidth: DIM_STROKE }));
+
+  // 45° architectural ticks at each end (direction = along + normal)
+  const tl = Math.hypot(g.ux + g.nx, g.uy + g.ny) || 1;
+  const tux = (g.ux + g.nx) / tl * DIM_TICK / 2;
+  const tuy = (g.uy + g.ny) / tl * DIM_TICK / 2;
+  parts.push(new Line([g.d1.x - tux, g.d1.y - tuy, g.d1.x + tux, g.d1.y + tuy], { stroke: color, strokeWidth: DIM_STROKE }));
+  parts.push(new Line([g.d2.x - tux, g.d2.y - tuy, g.d2.x + tux, g.d2.y + tuy], { stroke: color, strokeWidth: DIM_STROKE }));
+
+  // Measurement text, centred on the dimension line, rotated to the line angle.
+  let deg = Math.atan2(g.uy, g.ux) * 180 / Math.PI;
+  if (deg > 90 || deg < -90) deg += 180;   // keep upright
+  const text = new Text(dimMeasurementText(g.baseLenPx), {
+    left: (g.d1.x + g.d2.x) / 2, top: (g.d1.y + g.d2.y) / 2,
+    originX: 'center', originY: 'center',
+    angle: deg,
+    fontSize: DIM_FONT, fontFamily: 'Arial', fontWeight: 'bold',
+    fill: color, backgroundColor: 'rgba(255,255,255,0.85)',
+    __dimText: true,
+  });
+  parts.push(text);
+
+  const group = new Group(parts, {
+    objectType: 'dimension',
+    selectable: currentTool === 'select',
+    evented:    currentTool === 'select',
+    hasControls: false,       // move only — no resize/rotate handles
+    hasBorders: true,
+    lockScalingX: true, lockScalingY: true, lockRotation: true,
+    objectCaching: false,
+  });
+  // Canonical geometry (image px) — single source of truth for save/PDF/refresh.
+  // `text` is stored too so the PDF export (no access to the scale inputs) can
+  // render the measurement without recomputing it.
+  group.dimData = {
+    p1: { ...g.p1 }, p2: { ...g.p2 }, d1: { ...g.d1 }, d2: { ...g.d2 },
+    offset: g.offset, baseLenPx: g.baseLenPx, color, text: text.text,
+  };
+  group.__dimLeft0 = group.left;
+  group.__dimTop0  = group.top;
+  return group;
+}
+
+// Fold a whole-group move back into dimData so the stored geometry stays canonical.
+function bakeDimensionMove(group) {
+  const dx = group.left - group.__dimLeft0;
+  const dy = group.top  - group.__dimTop0;
+  if (dx || dy) {
+    const d = group.dimData;
+    for (const k of ['p1', 'p2', 'd1', 'd2']) {
+      d[k] = { x: d[k].x + dx, y: d[k].y + dy };
+    }
+  }
+  group.__dimLeft0 = group.left;
+  group.__dimTop0  = group.top;
+}
+
+// Recompute the measurement text of all dimensions after a scale/format change.
+function refreshAllDimensions() {
+  if (!canvas) return;
+  canvas.getObjects().filter(o => o.objectType === 'dimension').forEach(group => {
+    const txt = group.getObjects().find(c => c.__dimText);
+    if (txt && group.dimData) {
+      const str = dimMeasurementText(group.dimData.baseLenPx);
+      txt.set('text', str);
+      group.dimData.text = str;
+      group.dirty = true;
+    }
+  });
+  canvas.requestRenderAll();
+}
+
+function serializeDimensions() {
+  if (!canvas) return [];
+  return canvas.getObjects()
+    .filter(o => o.objectType === 'dimension' && o.dimData)
+    .map(g => ({ ...g.dimData }));
+}
+
+function clearDimPreview() {
+  if (dimPreview) { canvas.remove(dimPreview); dimPreview = null; }
+}
+
+function resetDimDrawing() {
+  clearDimPreview();
+  dimPhase = 0;
+  dimP1 = null;
+  dimP2 = null;
+  drawingMode = false;
+}
+
+// 3-click flow: click 1 → start, click 2 → end, click 3 → place at current offset.
+function dimHandleClick(pointer, e) {
+  if (!canvas || isProcessingClick) return;
+  isProcessingClick = true;
+
+  if (dimPhase === 0) {
+    dimP1 = { x: pointer.x, y: pointer.y };
+    dimPhase = 1;
+    drawingMode = true;                    // enable mouse:move preview
+  } else if (dimPhase === 1) {
+    const pt = e?.shiftKey ? snapToAngle(dimP1, pointer) : pointer;
+    dimP2 = { x: pt.x, y: pt.y };
+    dimPhase = 2;
+  } else if (dimPhase === 2) {
+    const offset = dimOffsetFromPointer(dimP1, dimP2, pointer);
+    clearDimPreview();
+    canvas.add(buildDimensionGroup({ p1: dimP1, p2: dimP2, offset, color: DIM_COLOR }));
+    applyLayerOrdering();
+    canvas.requestRenderAll();
+    saveHistorySnapshot();
+    resetDimDrawing();
+  }
+
+  setTimeout(() => { isProcessingClick = false; }, 50);
+}
+
+function dimHandleMove(pointer, e) {
+  if (!canvas) return;
+  clearDimPreview();
+
+  if (dimPhase === 1) {
+    const pt = e?.shiftKey ? snapToAngle(dimP1, pointer) : pointer;
+    dimPreview = new Line([dimP1.x, dimP1.y, pt.x, pt.y], {
+      stroke: DIM_COLOR, strokeWidth: DIM_STROKE, strokeDashArray: [4, 4],
+      selectable: false, evented: false, objectType: 'dimensionPreview',
+    });
+    canvas.add(dimPreview);
+  } else if (dimPhase === 2) {
+    const offset = dimOffsetFromPointer(dimP1, dimP2, pointer);
+    dimPreview = buildDimensionGroup({ p1: dimP1, p2: dimP2, offset, color: DIM_COLOR });
+    dimPreview.set({ selectable: false, evented: false, objectType: 'dimensionPreview' });
+    canvas.add(dimPreview);
+  }
+  canvas.requestRenderAll();
+}
+
+// ── Dimension edit mode ───────────────────────────────────────────────────────
+// Double-click a placed dimension to show handles: the two endpoints (change the
+// measured span) and one on the dimension line (drag the parallel offset). Mirrors
+// the polygon vertex-edit UX but standalone, since a dimension is a Group.
+
+function enterDimensionEditMode(group) {
+  if (editingPolygon) exitPolygonEditMode();
+  if (editingDimension) exitDimensionEditMode();
+  editingDimension = group;
+
+  group.lockMovementX = true;
+  group.lockMovementY = true;
+  group.hasControls = false;
+  group.hasBorders = false;
+
+  refreshDimHandles();
+  canvas.discardActiveObject();
+  canvas.renderAll();
+}
+
+function exitDimensionEditMode() {
+  if (!editingDimension) return;
+
+  dimHandles.forEach(h => canvas.remove(h));
+  dimHandles = [];
+
+  editingDimension.lockMovementX = false;
+  editingDimension.lockMovementY = false;
+  editingDimension.hasBorders = true;
+  editingDimension.setCoords();
+  editingDimension = null;
+
+  applyLayerOrdering();       // restore z-order (rebuilt group sat on top during editing)
+  saveHistorySnapshot();
+  canvas.renderAll();
+}
+
+function makeDimHandle(pos, role) {
+  const isOffset = role === 'offset';
+  const h = new Circle({
+    left: pos.x, top: pos.y,
+    originX: 'center', originY: 'center',
+    radius: isOffset ? 5 : 6,
+    fill:   isOffset ? '#ffffff' : '#1976d2',
+    stroke: isOffset ? '#1976d2' : '#ffffff',
+    strokeWidth: 2,
+    opacity: isOffset ? 0.85 : 0.55,   // slightly transparent so the line stays visible
+    objectType: 'dimHandle', dimRole: role,
+    hasBorders: false, hasControls: false,
+    hoverCursor: 'crosshair', moveCursor: 'crosshair',
+    selectable: true, evented: true,
+  });
+  dimHandles.push(h);
+  canvas.add(h);
+  return h;
+}
+
+function refreshDimHandles() {
+  if (!editingDimension) return;
+  dimHandles.forEach(h => canvas.remove(h));
+  dimHandles = [];
+  const d = editingDimension.dimData;
+  makeDimHandle(d.p1, 'p1');
+  makeDimHandle(d.p2, 'p2');
+  makeDimHandle({ x: (d.d1.x + d.d2.x) / 2, y: (d.d1.y + d.d2.y) / 2 }, 'offset');
+  canvas.renderAll();
+}
+
+// Live-update while dragging a handle: recompute dimData, rebuild the group and
+// reposition the *other* handles (never the one Fabric is currently dragging).
+function updateDimensionFromHandle(handle, shiftKey = false) {
+  if (!editingDimension) return;
+  const d = { ...editingDimension.dimData };
+
+  if (handle.dimRole === 'p1' || handle.dimRole === 'p2') {
+    // Shift → snap the dragged endpoint's angle (rel. to the fixed one) to 22.5°
+    // steps, mirroring the drawing behaviour, and move the handle onto the snap.
+    const anchor = handle.dimRole === 'p1' ? d.p2 : d.p1;
+    const raw = { x: handle.left, y: handle.top };
+    const p = shiftKey ? snapToAngle(anchor, raw) : raw;
+    d[handle.dimRole] = p;
+    if (shiftKey) { handle.set({ left: p.x, top: p.y }); handle.setCoords(); }
+  } else if (handle.dimRole === 'offset') {
+    d.offset = dimOffsetFromPointer(d.p1, d.p2, { x: handle.left, y: handle.top });
+  }
+
+  const newGroup = buildDimensionGroup(d);
+  newGroup.lockMovementX = true;
+  newGroup.lockMovementY = true;
+  newGroup.hasControls = false;
+  newGroup.hasBorders = false;
+
+  canvas.remove(editingDimension);
+  canvas.add(newGroup);
+  editingDimension = newGroup;
+
+  const nd = newGroup.dimData;
+  dimHandles.forEach(h => {
+    if (h === handle) return;             // leave the dragged handle to Fabric
+    if (h.dimRole === 'p1')      h.set({ left: nd.p1.x, top: nd.p1.y });
+    else if (h.dimRole === 'p2') h.set({ left: nd.p2.x, top: nd.p2.y });
+    else if (h.dimRole === 'offset') h.set({ left: (nd.d1.x + nd.d2.x) / 2, top: (nd.d1.y + nd.d2.y) / 2 });
+    h.setCoords();
+  });
+  dimHandles.forEach(h => canvas.bringObjectToFront(h)); // keep handles above the rebuilt group
+}
+
 /**
  * Create a text label for a single new annotation without affecting others
  */
@@ -3160,6 +3536,10 @@ function collectCurrentCanvasData(pageNumber = 1) {
     tl.toObject(['objectType', 'linkedAnnotationId', 'text', 'backgroundColor', 'fill'])
   );
 
+  // Dimension helpers: persist their canonical geometry (image px) — rebuilt via
+  // buildDimensionGroup on load. Not annotations, so kept in a separate array.
+  const canvasDimensions = serializeDimensions();
+
   // On-plan legend: persist position only — content is derived from annotations
   const legendObj = canvas.getObjects().find(obj => obj.objectType === 'legend');
 
@@ -3167,6 +3547,7 @@ function collectCurrentCanvasData(pageNumber = 1) {
     page_number: pageNumber,
     canvas_annotations: canvasAnnotations,
     canvas_text_labels: canvasTextLabels,
+    canvas_dimensions: canvasDimensions,
     legend_position: legendObj ? { left: legendObj.left, top: legendObj.top } : null,
     annotation_count: annotations.length,
     canvas_available: true,
@@ -3697,6 +4078,7 @@ async function initApp() {
       case 'q': case 'Q': setTool('rectangle'); break;
       case 'w': case 'W': setTool('polygon');   break;
       case 'e': case 'E': setTool('line');      break;
+      case 'd': case 'D': setTool('dimension'); break;
       case 'l': case 'L': {
         const modal = document.getElementById('labelManagerModal');
         if (modal && modal.style.display === 'block') { closeLabelManager(); }
@@ -3726,6 +4108,18 @@ async function initApp() {
             break;
           }
         }
+        // In dimension edit mode, Delete removes the whole dimension (never a handle).
+        if (editingDimension) {
+          const g = editingDimension;
+          dimHandles.forEach(h => canvas.remove(h));
+          dimHandles = [];
+          editingDimension = null;
+          canvas.remove(g);
+          canvas.renderAll();
+          saveHistorySnapshot();
+          e.preventDefault();
+          break;
+        }
         deleteSelectedObjects();
         e.preventDefault();
         break;
@@ -3737,9 +4131,10 @@ async function initApp() {
         const modal = document.getElementById('labelManagerModal');
         if (modal && modal.style.display === 'block') { closeLabelManager(); break; }
         if (editingPolygon) { exitPolygonEditMode(); break; }
+        if (editingDimension) { exitDimensionEditMode(); break; }
         // First Escape cancels in-progress drawing; otherwise it clears the
         // current selection; failing that it falls back to the select tool.
-        if ((currentTool === 'polygon' || currentTool === 'line') && drawingMode) {
+        if ((currentTool === 'polygon' || currentTool === 'line' || currentTool === 'dimension') && drawingMode) {
           cleanupCurrentTool();
           resetAllDrawingStates();
           canvas?.renderAll();
@@ -3815,6 +4210,7 @@ async function initApp() {
     setPageSettings(current);
     // Refresh canvas labels and results table with new scale
     refreshAllCanvasLabels();
+    refreshAllDimensions();
     updateResultsTable();
     updateSummary();
   });

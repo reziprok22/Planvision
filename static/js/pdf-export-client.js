@@ -274,6 +274,77 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
 }
 
 /**
+ * Draw CAD-style dimension helpers (own objectType 'dimension') onto a page.
+ * Each record carries image-px geometry { p1, p2, d1, d2 } and a precomputed
+ * measurement string `text`. Mirrors buildDimensionGroup() in main.js.
+ */
+function drawDimensionsOnPage(page, dimensions, T, sx, sy, font) {
+    if (!dimensions?.length) return 0;
+    let drawn = 0;
+
+    const u = Math.min(sx, sy);
+    const thickness = Math.max(0.5, 1 * u);
+    const GAP = 6 * u, EXT = 6 * u, TICK = 9 * u;
+
+    for (const d of dimensions) {
+        if (!d.p1 || !d.p2 || !d.d1 || !d.d2) continue;
+        const color = hexToRgb(d.color || '#333333');
+
+        // Image px → display px
+        const P1 = { x: d.p1.x * sx, y: d.p1.y * sy };
+        const P2 = { x: d.p2.x * sx, y: d.p2.y * sy };
+        const D1 = { x: d.d1.x * sx, y: d.d1.y * sy };
+        const D2 = { x: d.d2.x * sx, y: d.d2.y * sy };
+
+        const ddx = D2.x - D1.x, ddy = D2.y - D1.y;
+        const len = Math.hypot(ddx, ddy) || 1;
+        const ux = ddx / len, uy = ddy / len;      // along dimension line
+        const nx = -uy, ny = ux;                    // normal
+        const s = Math.sign((D1.x - P1.x) * nx + (D1.y - P1.y) * ny) || 1;
+
+        const drawSeg = (ax, ay, bx, by) => {
+            const A = T.toUser(ax, ay), B = T.toUser(bx, by);
+            page.drawLine({ start: { x: A.x, y: A.y }, end: { x: B.x, y: B.y }, color, thickness });
+        };
+
+        // Witness (extension) lines
+        drawSeg(P1.x + nx * GAP * s, P1.y + ny * GAP * s, D1.x + nx * EXT * s, D1.y + ny * EXT * s);
+        drawSeg(P2.x + nx * GAP * s, P2.y + ny * GAP * s, D2.x + nx * EXT * s, D2.y + ny * EXT * s);
+        // Dimension line
+        drawSeg(D1.x, D1.y, D2.x, D2.y);
+        // 45° end ticks
+        const tl = Math.hypot(ux + nx, uy + ny) || 1;
+        const tux = (ux + nx) / tl * TICK / 2, tuy = (uy + ny) / tl * TICK / 2;
+        drawSeg(D1.x - tux, D1.y - tuy, D1.x + tux, D1.y + tuy);
+        drawSeg(D2.x - tux, D2.y - tuy, D2.x + tux, D2.y + tuy);
+
+        // Measurement text as a centred white badge at the dimension-line midpoint.
+        // Kept axis-aligned in display orientation (like annotation labels) for legibility.
+        if (font && d.text) {
+            const c = T.toUser((D1.x + D2.x) / 2, (D1.y + D2.y) / 2);
+            const fontSize = 8;
+            const textW = font.widthOfTextAtSize(d.text, fontSize);
+            const wBadge = textW + 4, hBadge = fontSize + 3;
+            page.drawRectangle({
+                x: c.x - (T.swapped ? hBadge : wBadge) / 2,
+                y: c.y - (T.swapped ? wBadge : hBadge) / 2,
+                width:  T.swapped ? hBadge : wBadge,
+                height: T.swapped ? wBadge : hBadge,
+                color: rgb(1, 1, 1), opacity: 0.85,
+            });
+            const dxd = -textW / 2, dyd = fontSize / 2 - 1;
+            page.drawText(d.text, {
+                x: c.x + dxd * T.right.x + dyd * T.down.x,
+                y: c.y + dxd * T.right.y + dyd * T.down.y,
+                size: fontSize, font, color, rotate: degrees(T.rotation),
+            });
+        }
+        drawn++;
+    }
+    return drawn;
+}
+
+/**
  * Draw the on-plan legend at its saved canvas position.
  * Mirrors the Fabric legend in main.js: title + one row per used label with
  * swatch, name, count and summed area (parsed from the annotations' labelText).
@@ -438,9 +509,10 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         const pageNum     = i + 1;
         const canvasData  = pageCanvasData[pageNum] || pageCanvasData[String(pageNum)];
         const annotations = canvasData?.canvas_annotations || [];
+        const dimensions  = canvasData?.canvas_dimensions || [];
 
-        console.log(`[PDF export] page ${pageNum}: ${annotations.length} canvas annotations`);
-        if (!annotations.length) continue;
+        console.log(`[PDF export] page ${pageNum}: ${annotations.length} canvas annotations, ${dimensions.length} dimensions`);
+        if (!annotations.length && !dimensions.length) continue;
 
         const page = pdfPages[i];
         const T = makeDisplayTransform(page);
@@ -457,7 +529,8 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
 
         const textLabels = canvasData?.canvas_text_labels || [];
         const n = drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont);
-        console.log(`[PDF export] page ${pageNum}: drew ${n} annotations`);
+        const nd = drawDimensionsOnPage(page, dimensions, T, sx, sy, labelFont);
+        console.log(`[PDF export] page ${pageNum}: drew ${n} annotations, ${nd} dimensions`);
 
         // On-plan legend (placed by the user on the canvas)
         if (canvasData?.legend_position) {
