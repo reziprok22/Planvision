@@ -138,6 +138,40 @@ const OVERSCAN = 96;
 // Zum Wiedereinschalten auf true setzen. NUR zum Messen gedacht.
 const SHOW_TEXT_LABELS = true;
 
+// Perf: Textlabels während der Zoom-Geste ausblenden. Jeder Zoom-Tick ändert die
+// viewportTransform und invalidiert damit Fabrics Objekt-Cache aller sichtbaren
+// Objekte (die Cache-Auflösung hängt am Viewport-Zoom) → jedes Label würde pro
+// Wheel-Tick komplett neu gerastert (Textlayout + Glyphen + Hintergrund), das
+// dominiert die Zoom-Kosten bei vielen Annotationen. Unsichtbare Objekte
+// überspringt Fabric dagegen vollständig. Nach dem letzten Wheel-Tick blendet
+// ein Debounce die Labels wieder ein. Beim Pan/Scroll bleiben die Caches gültig
+// (Zoom unverändert), dort lohnt sich das Ausblenden nicht.
+const ZOOM_LABEL_HIDE_MS = 360;
+let zoomLabelRestoreTimer = null;
+
+function hideTextLabelsDuringZoom() {
+  if (!canvas) return;
+  canvas.getObjects().forEach(o => {
+    if (o.objectType === 'textLabel') o.visible = false;
+  });
+  clearTimeout(zoomLabelRestoreTimer);
+  zoomLabelRestoreTimer = setTimeout(restoreTextLabelsAfterZoom, ZOOM_LABEL_HIDE_MS);
+}
+
+// Auch als synchroner Flush nutzbar (vor dem Serialisieren): ohne ihn würde ein
+// mitten im Debounce ausgelöstes Speichern/Seitenwechseln visible:false in die
+// Projektdaten schreiben und die Labels blieben nach dem Laden unsichtbar.
+function restoreTextLabelsAfterZoom() {
+  if (zoomLabelRestoreTimer === null) return;
+  clearTimeout(zoomLabelRestoreTimer);
+  zoomLabelRestoreTimer = null;
+  if (!canvas) return;
+  canvas.getObjects().forEach(o => {
+    if (o.objectType === 'textLabel') o.visible = true;
+  });
+  canvas.requestRenderAll();
+}
+
 // Crosshair overlay for drawing tools
 let crosshairCanvas = null;
 let crosshairCtx = null;
@@ -459,6 +493,7 @@ function initCanvas() {
       const sl = imageContainer.scrollLeft;
       const st = imageContainer.scrollTop;
       if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl - OVERSCAN}px,${st - OVERSCAN}px)`;
+      hideTextLabelsDuringZoom();
       canvas.setViewportTransform([newZoom, 0, 0, newZoom, OVERSCAN - sl, OVERSCAN - st]);
 
       // Refresh bounding-box cache of the active drawing object so Fabric
@@ -3729,6 +3764,10 @@ function collectCurrentCanvasData(pageNumber = 1) {
       canvas_available: false
     };
   }
+
+  // Zoom-Debounce flushen: Labels könnten gerade ausgeblendet sein — visible:false
+  // darf nicht in die serialisierten canvas_text_labels gelangen.
+  restoreTextLabelsAfterZoom();
 
   // Eine aktive Mehrfachauswahl (ActiveSelection) auflösen, BEVOR serialisiert wird.
   // In einer ActiveSelection speichert Fabric left/top (und scale/angle) der Kinder
