@@ -21,7 +21,7 @@ export function setupProject(elements, modules) {
   // Hidden file input for ZIP import
   zipFileInput          = document.createElement('input');
   zipFileInput.type     = 'file';
-  zipFileInput.accept   = '.plan,.zip';   // .plan = neues Format, .zip = Altprojekte
+  zipFileInput.accept   = '.planli,.plan,.zip';   // .planli = neues Format, .plan/.zip = ältere Testdateien
   zipFileInput.style.display = 'none';
   document.body.appendChild(zipFileInput);
 

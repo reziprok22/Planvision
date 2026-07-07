@@ -20,15 +20,14 @@ import JSZip from 'jszip';
 //
 // Version history:
 //   1 – Basisformat: canvas_data.json (multi-page annotations inkl.
-//       canvas_text_labels und id/labelText), labels.json, settings.json,
-//       pages/, optional original.pdf sowie legend_position pro Seite.
-//   2 – zusätzlich canvas_dimensions pro Seite: CAD-Bemassungs-Hilfen (eigener
-//       objectType 'dimension', keine Annotationen). v1-ZIPs erhalten beim Laden
-//       ein leeres Array (siehe migrateCanvasData).
-//   3 – zusätzlich canvas_text_notes pro Seite: Textfelder (Fabric Textbox, eigener
-//       objectType 'textNote', keine Annotationen). Ältere ZIPs → leeres Array.
+//       canvas_text_labels und id/labelText, canvas_dimensions und
+//       canvas_text_notes pro Seite), labels.json, settings.json, pages/,
+//       optional original.pdf sowie legend_position pro Seite.
 //
-const CURRENT_VERSION = 3;
+// (Vor dem Live-Gang auf v1 zurückgesetzt – es gibt noch keine echten
+//  Projektdateien im Umlauf, daher keine Legacy-Migration nötig.)
+//
+const CURRENT_VERSION = 1;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
 
@@ -47,31 +46,8 @@ function detectVersion(metadata) {
 function migrateCanvasData(canvasData, fromVersion) {
   if (fromVersion >= CURRENT_VERSION) return canvasData;
 
-  // v1 → v2: ensure every page carries a canvas_dimensions array. loadCanvasData
-  // already tolerates a missing one, so this is defensive/normalising only.
-  if (fromVersion < 2) {
-    const pages = canvasData?.pages;
-    if (pages && typeof pages === 'object') {
-      for (const key of Object.keys(pages)) {
-        if (pages[key] && !Array.isArray(pages[key].canvas_dimensions)) {
-          pages[key].canvas_dimensions = [];
-        }
-      }
-    }
-  }
-
-  // v2 → v3: same for canvas_text_notes (text fields).
-  if (fromVersion < 3) {
-    const pages = canvasData?.pages;
-    if (pages && typeof pages === 'object') {
-      for (const key of Object.keys(pages)) {
-        if (pages[key] && !Array.isArray(pages[key].canvas_text_notes)) {
-          pages[key].canvas_text_notes = [];
-        }
-      }
-    }
-  }
-
+  // No migrations yet – v1 is the base format. Add "if (fromVersion < N) { … }"
+  // blocks here when the schema changes (see CLAUDE.md, "ZIP Format Versioning").
   return canvasData;
 }
 
@@ -132,11 +108,11 @@ export async function saveProjectAsZip(params) {
   const url = URL.createObjectURL(blob);
   const a   = document.createElement('a');
   a.href     = url;
-  // .plan = ein Planli-Projekt (intern ein ZIP). Eigene Endung, damit Nutzer
+  // .planli = ein Planli-Projekt (intern ein ZIP). Eigene Endung, damit Nutzer
   // es nicht für ein zu entpackendes Archiv halten – wird über "Projekt öffnen"
   // wieder geladen (loadProjectFromZip akzeptiert weiterhin alte .zip-Dateien).
   const safeBase = (params.projectName || 'planli').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'planli';
-  a.download = `${safeBase}.plan`;
+  a.download = `${safeBase}.planli`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

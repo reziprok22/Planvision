@@ -9,8 +9,8 @@ Planvision (live as **planli.net**) is a Django-based web application for archit
 - AI-powered object detection using a Faster R-CNN model (target label selectable via "Erkennen als")
 - Multi-page PDF support with individual page analysis (server accepts **PDF only**; images are rejected)
 - Interactive annotation editor using Fabric.js (rectangles, polygons, line measurements, vertex editing)
-- CAD-style "Bemassung" helper tool (`data-tool="dimension"`, shortcut **D**): a 3-click linear dimension (start → end → parallel offset) with witness lines + centred measurement. Own `objectType: 'dimension'` — deliberately **not** an annotation, so it never appears in the results table, summary or label manager; it is selectable/movable/deletable, editable via **double-click** (handles for the two endpoints + a parallel-offset handle on the dimension line), persisted per page (ZIP v2 `canvas_dimensions`) and drawn in the PDF export
-- "Textfeld" tool (`data-tool="text"`, shortcut **F**): drag a box, then type inside it (Fabric `Textbox`, word-wrapped). Own `objectType: 'textNote'` — like the dimension, **not** an annotation (out of results table/summary/label manager); double-click to re-edit, empty notes auto-removed on exit, persisted per page (ZIP v3 `canvas_text_notes`) and rendered in the PDF export
+- CAD-style "Bemassung" helper tool (`data-tool="dimension"`, shortcut **D**): a 3-click linear dimension (start → end → parallel offset) with witness lines + centred measurement. Own `objectType: 'dimension'` — deliberately **not** an annotation, so it never appears in the results table, summary or label manager; it is selectable/movable/deletable, editable via **double-click** (handles for the two endpoints + a parallel-offset handle on the dimension line), persisted per page (ZIP `canvas_dimensions`) and drawn in the PDF export
+- "Textfeld" tool (`data-tool="text"`, shortcut **F**): drag a box, then type inside it (Fabric `Textbox`, word-wrapped). Own `objectType: 'textNote'` — like the dimension, **not** an annotation (out of results table/summary/label manager); double-click to re-edit, empty notes auto-removed on exit, persisted per page (ZIP `canvas_text_notes`) and rendered in the PDF export
 - Project management with client-side ZIP save/load
 - Frontend PDF exports (annotated plan + report) via pdf-lib, incl. placeable on-plan legend
 - Bug reports from testers (header button → Django admin)
@@ -190,14 +190,14 @@ When changing PDF processing:
 
 The ZIP save/load system in `static/js/project-zip.js` uses a numeric `format_version` in `metadata.json` to ensure old ZIP files always load correctly.
 
-**Current version: 3**
+**Current version: 1**
 
 Version history:
-- **v1** – base format: `canvas_data.json` (multi-page annotations incl. canvas_text_labels and id/labelText), `labels.json`, `settings.json`, `pages/`, optional `original.pdf`, and per-page `legend_position`
-- **v2** – adds per-page `canvas_dimensions`: CAD-style "Bemassung" helper lines (own `objectType: 'dimension'`, **not** annotations). Migration v1→v2 just defaults a missing `canvas_dimensions` to `[]`.
-- **v3** – adds per-page `canvas_text_notes`: text fields (Fabric `Textbox`, own `objectType: 'textNote'`, **not** annotations). Migration v2→v3 defaults a missing `canvas_text_notes` to `[]`.
+- **v1** – base format: `canvas_data.json` (multi-page annotations incl. canvas_text_labels and id/labelText, plus per-page `canvas_dimensions` and `canvas_text_notes`), `labels.json`, `settings.json`, `pages/`, optional `original.pdf`, and per-page `legend_position`
 
-(History was reset to a clean v1 during the beta — there were no real users yet, so no legacy files to migrate.)
+(History was reset to a clean v1 before the live launch — there were no real project files in circulation yet, so no legacy migration is needed. `canvas_dimensions` (dimension helper lines) and `canvas_text_notes` (text fields) were folded into the base v1 format.)
+
+Project files are saved with the `.planli` extension (internally a ZIP); "Projekt öffnen" still accepts older `.plan`/`.zip` test files.
 
 ### When changing the ZIP schema:
 
