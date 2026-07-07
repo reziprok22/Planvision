@@ -222,26 +222,21 @@ function convertPointsToFabric(points) {
 }
 
 
-/**
- * Convert bbox coordinates to canvas coordinates
- */
-function convertToCanvasCoordinates(bbox) {
-  const [x1, y1, x2, y2] = bbox;
-  return {
-    x1: x1,
-    y1: y1,
-    x2: x2,
-    y2: y2,
-    width: x2 - x1,
-    height: y2 - y1
-  };
-}
-
 function getLabel(labelId) {
   return {
     name: getLabelName(labelId),
     color: getLabelColor(labelId)
   };
+}
+
+/**
+ * Resolve the label object for an annotation, with the shared fallbacks:
+ * line annotations fall back to a generic "Strecke" label, area annotations
+ * to the name/color pair from getLabel().
+ */
+function resolveAnnotationLabel(labelId, isLine = false) {
+  return getLabelById(labelId)
+    || (isLine ? { name: 'Strecke', color: '#FF0000' } : getLabel(labelId));
 }
 
 
@@ -822,23 +817,22 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
   // Convert predictions to Fabric.js serializable format
   const canvasAnnotations = predictions.map((pred, index) => {
     const labelId = targetLabelId ?? (pred.label || 1);
-    const fullLabel = getLabelById ? getLabelById(labelId) : null;
-    const labelColor = fullLabel ? fullLabel.color : getLabel(labelId).color;
-    const labelStrokeWidth = fullLabel ? (fullLabel.strokeWidth || 2) : 2;
+    const fullLabel = resolveAnnotationLabel(labelId);
+    const labelColor = fullLabel.color;
+    const labelStrokeWidth = fullLabel.strokeWidth || 2;
 
     if (pred.box || pred.bbox) {
       // Rectangle from bounding box
-      const coords = pred.box || pred.bbox;
-      const canvasCoords = convertToCanvasCoordinates(coords);
+      const [x1, y1, x2, y2] = pred.box || pred.bbox;
 
       return {
         type: 'rect',
         objectType: 'annotation',
         annotationType: 'rectangle',
-        left: canvasCoords.x1,
-        top: canvasCoords.y1,
-        width: canvasCoords.width,
-        height: canvasCoords.height,
+        left: x1,
+        top: y1,
+        width: x2 - x1,
+        height: y2 - y1,
         fill: getLabelColorWithOpacity(labelColor, fullLabel?.opacity),
         stroke: labelColor,
         strokeWidth: labelStrokeWidth,
@@ -954,16 +948,7 @@ function updateResultsTable() {
   annotations.forEach((annotation, index) => {
     // Get label info
     const labelId = annotation.labelId || annotation.objectLabel || 1;
-    let label;
-
-    if (annotation.annotationType === 'line') {
-      // Use line labels for line annotations
-      const lineLabel = getLabelById ? getLabelById(labelId, 'line') : null;
-      label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
-    } else {
-      // Use area labels for rectangles and polygons
-      label = getLabel(labelId);
-    }
+    const label = resolveAnnotationLabel(labelId, annotation.annotationType === 'line');
 
     // Determine annotation type, dimensions and measurement
     let typeKey = 'rectangle';
@@ -972,9 +957,9 @@ function updateResultsTable() {
     let widthCell = '–';
     let heightCell = '–';
 
+    const measured = measureAnnotation(annotation);
     if (annotation.type === 'rect') {
-      const area = calculateRectangleAreaFromCanvas(annotation);
-      measurement = `${area.toFixed(2)} m²`;
+      measurement = `${measured.value.toFixed(2)} m²`;
       const widthM  = annotation.width  * (annotation.scaleX || 1) * pixelToMeter;
       const heightM = annotation.height * (annotation.scaleY || 1) * pixelToMeter;
       widthCell  = `${widthM.toFixed(2)} m`;
@@ -982,14 +967,12 @@ function updateResultsTable() {
     } else if (annotation.type === 'polygon') {
       typeKey = 'polygon';
       typeName = 'Polygon';
-      const area = calculatePolygonAreaFromCanvas(annotation);
-      measurement = `${area.toFixed(2)} m²`;
+      measurement = `${measured.value.toFixed(2)} m²`;
     } else if (annotation.type === 'polyline') {
       typeKey = 'line';
       typeName = 'Linie';
-      const length = calculatePolylineLength(annotation.points || []);
-      widthCell = `${length.toFixed(2)} m`;   // length goes in the "Länge" column
-      measurement = '–';                       // a line has no area
+      widthCell = `${measured.value.toFixed(2)} m`; // length goes in the "Länge" column
+      measurement = '–';                             // a line has no area
     }
 
     const row = document.createElement('tr');
@@ -1053,9 +1036,7 @@ function updateDetectionTable() {
   body.innerHTML = '';
   aiAnnotations.forEach(annotation => {
     const labelId = annotation.labelId || annotation.objectLabel || 1;
-    const label = (annotation.annotationType === 'line')
-      ? (getLabelById ? getLabelById(labelId, 'line') : null) || { name: 'Strecke' }
-      : getLabel(labelId);
+    const label = resolveAnnotationLabel(labelId, annotation.annotationType === 'line');
     const row = document.createElement('tr');
     row.innerHTML = `
       <td>${annotation.displayIndex ?? '–'}</td>
@@ -1124,6 +1105,30 @@ function calculatePolygonAreaFromCanvas(polygonObject) {
   
   // Convert to square meters
   return areaPixels * pixelToMeter * pixelToMeter;
+}
+
+/**
+ * Measured value of an annotation: area (m²) for rectangles/polygons, length (m)
+ * for lines. Single source for the results table, summary/legend and text labels.
+ */
+function measureAnnotation(annotation) {
+  if (annotation.type === 'rect') {
+    return { value: calculateRectangleAreaFromCanvas(annotation), unit: 'm²' };
+  }
+  if (annotation.type === 'polygon') {
+    return { value: calculatePolygonAreaFromCanvas(annotation), unit: 'm²' };
+  }
+  if (annotation.type === 'polyline') {
+    return { value: calculatePolylineLength(annotation.points || []), unit: 'm' };
+  }
+  return null;
+}
+
+/** Text-label content for an annotation: display number + measurement line. */
+function buildLabelText(annotation) {
+  const measured = measureAnnotation(annotation);
+  const number = annotation.displayIndex || 1;
+  return measured ? `${number}\n${measured.value.toFixed(2)} ${measured.unit}` : String(number);
 }
 
 // Currently highlighted annotation object reference (avoids index-based lookup after z-order changes)
@@ -1226,13 +1231,8 @@ function collectSummaryData() {
     const item = items.get(key);
     item.count++;
 
-    if (annotation.type === 'rect') {
-      item.area += calculateRectangleAreaFromCanvas(annotation);
-    } else if (annotation.type === 'polygon') {
-      item.area += calculatePolygonAreaFromCanvas(annotation);
-    } else if (annotation.type === 'polyline') {
-      item.area += calculatePolylineLength(annotation.points || []);
-    }
+    const measured = measureAnnotation(annotation);
+    if (measured) item.area += measured.value;
   });
 
   return [...items.values()];
@@ -1405,21 +1405,11 @@ function syncLegendButton() {
 function copySelectedAnnotations() {
   const annotations = selectedObjects.filter(o => o.objectType === 'annotation');
   if (!annotations.length) return;
-  // Serialise with custom properties so paste recreates them faithfully
   clipboardSourceIds = annotations.map(o => o.id).filter(Boolean);
+  clipboard = serializeAnnotationsAbsolute(annotations);
   clipboardSourcePositions = {};
-  clipboard = annotations.map(o => {
-    const serialized = o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel']);
-    // When objects are part of an ActiveSelection their left/top are
-    // relative to the selection centre.  Use the absolute transform matrix
-    // to recover canvas-absolute coordinates before serialising.
-    if (o.group) {
-      const m = o.calcTransformMatrix(); // [4],[5] = absolute centre of object
-      serialized.left = m[4] - o.getScaledWidth()  / 2;
-      serialized.top  = m[5] - o.getScaledHeight() / 2;
-    }
-    if (o.id) clipboardSourcePositions[o.id] = { left: serialized.left, top: serialized.top };
-    return serialized;
+  annotations.forEach((o, i) => {
+    if (o.id) clipboardSourcePositions[o.id] = { left: clipboard[i].left, top: clipboard[i].top };
   });
   pasteOffset = 0;
 }
@@ -1428,6 +1418,33 @@ function cutSelectedAnnotations() {
   if (!selectedObjects.filter(o => o.objectType === 'annotation').length) return;
   copySelectedAnnotations();
   deleteSelectedObjects();
+}
+
+/**
+ * Enliven serialized annotations and add them to the canvas as fresh copies:
+ * new id/displayIndex (assigned by createSingleTextLabel), optional position
+ * offset. Shared by paste and the Ctrl/Alt duplicate-drag.
+ */
+async function addClonedAnnotations(serialized, { offset = 0, interactive = true } = {}) {
+  const objects = await util.enlivenObjects(JSON.parse(JSON.stringify(serialized)));
+  canvas.renderOnAddRemove = false;
+  for (const obj of objects) {
+    obj.set({
+      left:       (obj.left || 0) + offset,
+      top:        (obj.top  || 0) + offset,
+      objectType: 'annotation',
+      selectable: interactive,
+      evented:    interactive,
+    });
+    // Remove stale id/index so createSingleTextLabel assigns fresh ones
+    delete obj.id;
+    obj.displayIndex = undefined;
+    canvas.add(obj);
+    obj.setCoords();
+    createSingleTextLabel(obj, { batch: true });
+  }
+  canvas.renderOnAddRemove = true;
+  return objects;
 }
 
 async function pasteAnnotations() {
@@ -1451,26 +1468,10 @@ async function pasteAnnotations() {
     pasteOffset = 0;
   }
 
-  const objects = await util.enlivenObjects(JSON.parse(JSON.stringify(clipboard)));
-  const pasted = [];
-  canvas.renderOnAddRemove = false;
-  for (const obj of objects) {
-    obj.set({
-      left:        (obj.left  || 0) + pasteOffset,
-      top:         (obj.top   || 0) + pasteOffset,
-      objectType:  'annotation',
-      selectable:  currentTool === 'select',
-      evented:     currentTool === 'select',
-    });
-    // Remove stale id/index so createSingleTextLabel assigns fresh ones
-    delete obj.id;
-    obj.displayIndex = undefined;
-    canvas.add(obj);
-    obj.setCoords();
-    createSingleTextLabel(obj, { batch: true });
-    pasted.push(obj);
-  }
-  canvas.renderOnAddRemove = true;
+  const pasted = await addClonedAnnotations(clipboard, {
+    offset: pasteOffset,
+    interactive: currentTool === 'select',
+  });
 
   applyLayerOrdering();
 
@@ -1877,17 +1878,7 @@ function setupCanvasEvents() {
     // away, so the duplicate is visible immediately while the originals are dragged.
     if (dupArmed && !dupCreated) {
       dupCreated = true;
-      util.enlivenObjects(JSON.parse(JSON.stringify(dupSerialized))).then(objects => {
-        canvas.renderOnAddRemove = false;
-        for (const o of objects) {
-          o.set({ objectType: 'annotation', selectable: true, evented: true });
-          delete o.id;                 // fresh id/index from createSingleTextLabel
-          o.displayIndex = undefined;
-          canvas.add(o);
-          o.setCoords();
-          createSingleTextLabel(o, { batch: true });
-        }
-        canvas.renderOnAddRemove = true;
+      addClonedAnnotations(dupSerialized).then(() => {
         dupClonesAdded = true;
         applyLayerOrdering();
         canvas.requestRenderAll();
@@ -1950,24 +1941,17 @@ function setupCanvasEvents() {
     }
   });
   
-  // Selection events
-  canvas.on('selection:created', function(e) {
+  // Selection events. e.selected contains only the newly added/removed object;
+  // getActiveObjects() returns the full current selection.
+  const onSelectionChanged = function() {
     selectedObjects = canvas.getActiveObjects();
     updateDeleteButtonState();
     if (currentTool === 'select' && selectedObjects.length > 0) {
       updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
     }
-  });
-
-  canvas.on('selection:updated', function(e) {
-    // e.selected contains only the newly added/removed object;
-    // getActiveObjects() returns the full current selection.
-    selectedObjects = canvas.getActiveObjects();
-    updateDeleteButtonState();
-    if (currentTool === 'select' && selectedObjects.length > 0) {
-      updateUniversalLabelDropdown(currentTool, selectedObjects[0]);
-    }
-  });
+  };
+  canvas.on('selection:created', onSelectionChanged);
+  canvas.on('selection:updated', onSelectionChanged);
   
   canvas.on('selection:cleared', function(e) {
     // Update text labels only for annotations that were actually selected/modified
@@ -2325,10 +2309,10 @@ function startDrawingRectangle(pointer) {
   
   // Store the original start point
   rectangleStartPoint = { x: pointer.x, y: pointer.y };
-  
+
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel();
-  const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+  const label = resolveAnnotationLabel(selectedLabelId);
 
   const rect = new Rect({
     left: pointer.x,
@@ -2376,7 +2360,7 @@ function finishDrawingRectangle() {
   } else {
     // Get selected label
     const selectedLabelId = getCurrentSelectedLabel();
-    const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+    const label = resolveAnnotationLabel(selectedLabelId);
 
     // Update rectangle with correct label and colors
     currentRectangle.set({
@@ -2568,13 +2552,7 @@ function applyLabelToAnnotation(obj, newLabelId) {
   obj.objectLabel = newLabelId;
 
   const isLineObject = obj.annotationType === 'line';
-  let label;
-  if (isLineObject && typeof getLabelById !== 'undefined') {
-    const lineLabel = getLabelById(newLabelId, 'line');
-    label = lineLabel ? { name: lineLabel.name, color: lineLabel.color } : { name: 'Strecke', color: '#FF0000' };
-  } else {
-    label = (typeof getLabelById !== 'undefined' && getLabelById(newLabelId)) || getLabel(newLabelId);
-  }
+  const label = resolveAnnotationLabel(newLabelId, isLineObject);
 
   if (isLineObject) {
     obj.set({ stroke: label.color });
@@ -2641,10 +2619,10 @@ function startPolygonDrawing() {
   if (!canvas || currentPoints.length === 0) return;
   
   drawingMode = true;
-  
+
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel();
-  const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+  const label = resolveAnnotationLabel(selectedLabelId);
 
   // Create initial polygon with first point duplicated to make it visible
   const firstPoint = currentPoints[0];
@@ -2713,7 +2691,7 @@ function finishPolygonDrawing() {
   
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel();
-  const label = getLabelById ? getLabelById(selectedLabelId) : getLabel(selectedLabelId);
+  const label = resolveAnnotationLabel(selectedLabelId);
 
   // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
@@ -2783,17 +2761,7 @@ function updatePolygonVertex(polygon, pointIndex, canvasX, canvasY) {
 
   // Recalculate bounding box (updates pathOffset/width/height, without repositioning).
   polygon.setBoundingBox(false);
-
-  // Shift left/top by Δ(minX) — not Δ(pathOffset) — so every unchanged vertex
-  // stays on the same canvas pixel even when the bounding-box width/height changes.
-  const newMinX = polygon.pathOffset.x - polygon.width  / 2;
-  const newMinY = polygon.pathOffset.y - polygon.height / 2;
-  polygon.left += newMinX - oldMinX;
-  polygon.top  += newMinY - oldMinY;
-  // Direct points mutation bypasses Fabric's cache invalidation — without this
-  // the polygon only re-renders when the bounding box happens to change size.
-  polygon.dirty = true;
-  polygon.setCoords();
+  _applyBoundingBoxShift(polygon, oldMinX, oldMinY);
 }
 
 function enterPolygonEditMode(polygon) {
@@ -2912,7 +2880,9 @@ function updateAdjacentMidpoints(pointIndex) {
   });
 }
 
-// Shared helper to adjust left/top after points array changed and setBoundingBox was called
+// Shared helper to adjust left/top after points array changed and setBoundingBox
+// was called. Shift left/top by Δ(minX) — not Δ(pathOffset) — so every unchanged
+// vertex stays on the same canvas pixel even when the bbox width/height changes.
 function _applyBoundingBoxShift(obj, oldMinX, oldMinY) {
   const newMinX = obj.pathOffset.x - obj.width  / 2;
   const newMinY = obj.pathOffset.y - obj.height / 2;
@@ -2988,9 +2958,7 @@ function startLineDrawing() {
     
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel();
-  const lineLabel = getLabelById ? getLabelById(selectedLabelId) : null;
-  const labelColor = lineLabel ? lineLabel.color : '#FF0000';
-  const lineSW = lineLabel ? (lineLabel.strokeWidth || 2) : 2;
+  const label = resolveAnnotationLabel(selectedLabelId, true);
 
   // Create initial polyline with first point duplicated to make it visible
   const firstPoint = currentPoints[0];
@@ -3001,8 +2969,8 @@ function startLineDrawing() {
 
   currentLine = new Polyline(points, {
     fill: '',
-    stroke: labelColor,
-    strokeWidth: lineSW,
+    stroke: label.color,
+    strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'line',
     userCreated: true,
@@ -3062,8 +3030,7 @@ function finishLineDrawing() {
     
   // Get selected label
   const selectedLabelId = getCurrentSelectedLabel();
-  const lineLabel = getLabelById ? getLabelById(selectedLabelId) : null;
-  const labelColor = lineLabel ? lineLabel.color : '#FF0000';
+  const label = resolveAnnotationLabel(selectedLabelId, true);
 
   // SIMPLE APPROACH: Use original points, prevent Fabric.js offset
   const fabricPoints = currentPoints.map(p => ({ x: p.x, y: p.y }));
@@ -3071,8 +3038,8 @@ function finishLineDrawing() {
   // Create polyline with original points
   const finalLine = new Polyline(fabricPoints, {
     fill: '',
-    stroke: labelColor,
-    strokeWidth: lineLabel ? (lineLabel.strokeWidth || 2) : 2,
+    stroke: label.color,
+    strokeWidth: label.strokeWidth || 2,
     objectType: 'annotation',
     annotationType: 'line',
     selectable: true,
@@ -3535,26 +3502,12 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
     annotation.displayIndex = nextIndex;
   }
   
-  const displayNumber = annotation.displayIndex;
-  
-  // Calculate area/length for display
-  let measurement = '';
-  if (annotation.type === 'rect') {
-    const area = calculateRectangleAreaFromCanvas(annotation);
-    measurement = `\n${area.toFixed(2)} m²`;
-  } else if (annotation.type === 'polygon') {
-    const area = calculatePolygonAreaFromCanvas(annotation);
-    measurement = `\n${area.toFixed(2)} m²`;
-  } else if (annotation.type === 'polyline') {
-    const length = calculatePolylineLength(annotation.points || []);
-    measurement = `\n${length.toFixed(2)} m`;
-  }
-  
   // Get annotation color
   const labelColor = annotation.stroke || annotation.fill || '#000000';
 
-  // Store label text on annotation so PDF export can access it
-  annotation.set('labelText', displayNumber.toString() + measurement);
+  // Store label text (number + area/length) on annotation so PDF export can access it
+  const labelText = buildLabelText(annotation);
+  annotation.set('labelText', labelText);
 
   // Perf-Experiment: Labels aus → kein Text-Objekt erzeugen (labelText oben bleibt
   // gesetzt, daher funktionieren Tabelle und PDF-Export weiter). Tabellen-/Summary-
@@ -3574,7 +3527,7 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
 
   // Create text label with number and area/length (no inverse scaling)
   const k = getAutoFontScale();
-  const textLabel = new Text(displayNumber.toString() + measurement, {
+  const textLabel = new Text(labelText, {
     left: labelPosition.x,
     top: labelPosition.y,
     fontSize: 14 * k, // A4-Basis, skaliert mit Seitengrösse — Zoom macht der Canvas
@@ -3615,34 +3568,19 @@ function updateLinkedTextLabelPosition(annotation) {
   );
   
   if (textLabel) {
-    // Calculate new position
+    // Recalculate position and area/length after object modification
     const newPosition = calculateLabelPosition(annotation);
-    
-    // Recalculate area/length after object modification
-    let measurement = '';
-    if (annotation.type === 'rect') {
-      const area = calculateRectangleAreaFromCanvas(annotation);
-      measurement = `\n${area.toFixed(2)} m²`;
-    } else if (annotation.type === 'polygon') {
-      const area = calculatePolygonAreaFromCanvas(annotation);
-      measurement = `\n${area.toFixed(2)} m²`;
-    } else if (annotation.type === 'polyline') {
-      const length = calculatePolylineLength(annotation.points || []);
-      measurement = `\n${length.toFixed(2)} m`;
-    }
-    
-    // Use stable display index instead of dynamic calculation
-    const displayNumber = annotation.displayIndex || 1;
-    
+    const labelText = buildLabelText(annotation);
+
     // Sync text label color with annotation color
     const annotationColor = annotation.stroke || annotation.fill || '#000000';
-    
+
     // Update position, text content, and color
-    annotation.set('labelText', displayNumber.toString() + measurement);
+    annotation.set('labelText', labelText);
     textLabel.set({
       left: newPosition.x,
       top: newPosition.y,
-      text: displayNumber.toString() + measurement,
+      text: labelText,
       backgroundColor: annotationColor,
       fill: getContrastTextColor(annotationColor)
     });
@@ -4186,9 +4124,8 @@ async function initApp() {
       saveCurrentPageSettings(currentPageNumber);
     }
 
-    // Update page state
+    // Update page state (saves the outgoing page's canvas data, sets currentPageNumber)
     setCurrentPage(pageNumber);
-    currentPageNumber = pageNumber;
 
     // Sync sidebar highlight
     setActivePageInList(pageNumber);
