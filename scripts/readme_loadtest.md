@@ -1,6 +1,6 @@
 # loadtest
 Das Skript wie folgt ausführen:
-- Hetzner-VPN: python3 loadtest.py --url https://onlyplans.tools --pdf Pläne_Fenstererkennung_loadtest.pdf -n 12 -c 3
+- Hetzner-VPN: python3 loadtest.py --url https://planli.net --pdf Pläne_Fenstererkennung_loadtest.pdf -n 12 -c 3
 - Homerecher: python3 loadtest.py --url http://127.0.0.1:8000 --pdf Pläne_Fenstererkennung_loadtest.pdf -n 12 -c 3
 
 -n 12: Anzahl Analysen
@@ -46,7 +46,7 @@ watch -n1 aktualisiert jede Sekunde. Läuft, bis du es mit Strg+C beendest.
 
 Terminal 1 (Last) — dann starten:
 länger laufen lassen, damit du in Ruhe ablesen kannst (z.B. -n 30):
-python scripts/loadtest.py --url https://onlyplans.tools --pdf Pläne_Fenstererkennung_loadtest.pdf -n 30 -c 3
+python scripts/loadtest.py --url https://planli.net --pdf Pläne_Fenstererkennung_loadtest.pdf -n 30 -c 3
 
 Während Terminal 1 läuft, schaust du Terminal 2 zu.
 

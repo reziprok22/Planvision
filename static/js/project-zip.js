@@ -132,7 +132,7 @@ export async function saveProjectAsZip(params) {
   const url = URL.createObjectURL(blob);
   const a   = document.createElement('a');
   a.href     = url;
-  // .plan = ein OnlyPlans-Projekt (intern ein ZIP). Eigene Endung, damit Nutzer
+  // .plan = ein Planli-Projekt (intern ein ZIP). Eigene Endung, damit Nutzer
   // es nicht für ein zu entpackendes Archiv halten – wird über "Projekt öffnen"
   // wieder geladen (loadProjectFromZip akzeptiert weiterhin alte .zip-Dateien).
   const safeBase = (params.projectName || 'planli').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'planli';

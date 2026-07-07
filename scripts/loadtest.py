@@ -18,7 +18,7 @@ Ablauf:
 
 Aufruf:
   python scripts/loadtest.py --url http://127.0.0.1:8000 --pdf plan.pdf -n 12 -c 3
-  python scripts/loadtest.py --url https://onlyplans.tools --pdf plan.pdf -n 20 -c 5 --page 1
+  python scripts/loadtest.py --url https://planli.net --pdf plan.pdf -n 20 -c 5 --page 1
 
 Begleitend auf dem Server beobachten (zweites Terminal):
   watch -n1 'free -m; echo; ps -C gunicorn -o pid,rss,%cpu,cmd --no-headers'

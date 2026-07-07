@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Planvision (live as **onlyplans.tools**) is a Django-based web application for architectural plan analysis that uses computer vision to detect and annotate building elements (windows, doors, walls, roofs, etc.) in PDF files. The application provides:
+Planvision (live as **planli.net**) is a Django-based web application for architectural plan analysis that uses computer vision to detect and annotate building elements (windows, doors, walls, roofs, etc.) in PDF files. The application provides:
 
 - AI-powered object detection using a Faster R-CNN model (target label selectable via "Erkennen als")
 - Multi-page PDF support with individual page analysis (server accepts **PDF only**; images are rejected)
@@ -135,7 +135,7 @@ The application requires a pre-trained Faster R-CNN model at:
 - `SECRET_KEY`: reads from env var `DJANGO_SECRET_KEY` (falls back to insecure dev key)
 - `DEBUG`: reads from env var `DJANGO_DEBUG` (default `True`)
 - `ALLOWED_HOSTS`: reads from env var `DJANGO_ALLOWED_HOSTS`
-- `SECURE_PROXY_SSL_HEADER` + `CSRF_TRUSTED_ORIGINS`: HTTPS/CSRF behind the nginx proxy (onlyplans.tools)
+- `SECURE_PROXY_SSL_HEADER` + `CSRF_TRUSTED_ORIGINS`: HTTPS/CSRF behind the nginx proxy (planli.net)
 - `BETA_MODE`: beta switch, default True; env var `BETA_MODE=False` re-enables login
 - `PROJECTS_DIR`: `BASE_DIR / 'projects'` — `BUG_REPORTS_DIR`: `BASE_DIR / 'bug_reports'` — `TRAINING_DATA_DIR`: `BASE_DIR / 'training_data_opt-in'` (all gitignored)
 - `PROJECT_RETENTION_DAYS`: default 14 (env-overridable); how long `projects/<uuid>/` is kept before the cleanup command deletes it
@@ -155,7 +155,7 @@ Projects store JSON files containing:
 - Training data is **opt-in only**: a session-wide toggle in the app header menu (`#consentTrainingToggle`, default off, persisted in `localStorage['ai_training_consent']`) gates `sendTrainingData()` in `project.js`. Only with consent does an export POST the full project ZIP (multipart `project_zip`) to `save_training_data`, which stores it as `training_data_opt-in/<uuid>/project.zip`. `Project.consent_training` records the choice.
 - The stored ZIP is **identical to the "Speichern" export** (`buildProjectZipBlob`) → self-contained and directly re-loadable in the app via "Öffnen" for quality review. `training_data_opt-in/` is never touched by the cleanup.
 
-## Deployment (onlyplans.tools)
+## Deployment (planli.net)
 
 Production runs on a Debian server (Hetzner) at `/opt/Planvision`: gunicorn (systemd service `planvision`, `--timeout 300`) behind nginx with Let's Encrypt. nginx proxies **everything** to Django — the landing page is a Django template, never serve it as a static file. Only `/static/` is an nginx alias to `staticfiles/`; do **not** alias `/project_files/` (it would bypass the ownership check in `serve_project_file`).
 

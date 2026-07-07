@@ -13,10 +13,7 @@ ALLOWED_HOSTS = os.environ.get('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').sp
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Erlaubte Origins für CSRF-geschützte POSTs (Upload, Analyse, Bug-Report)
-CSRF_TRUSTED_ORIGINS = os.environ.get(
-    'DJANGO_CSRF_TRUSTED_ORIGINS',
-    'https://onlyplans.tools,https://www.onlyplans.tools'
-).split(',')
+CSRF_TRUSTED_ORIGINS = ['https://planli.net', 'https://www.planli.net']
 
 
 INSTALLED_APPS = [
@@ -109,7 +106,7 @@ LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
 
-# Plausible-Analytics: Domain wie im Plausible-Dashboard angelegt (z. B. 'onlyplans.tools').
+# Plausible-Analytics: Domain wie im Plausible-Dashboard angelegt (z. B. 'planli.net').
 # Leer = deaktiviert; sobald gesetzt, wird das Tracking-Snippet auf allen Seiten geladen.
 PLAUSIBLE_DOMAIN = ''
 
