@@ -51,6 +51,30 @@ import {
 // Fabric.js v6 ES6 modules imported successfully
 console.log('✅ Fabric.js v6 ES6 modules loaded');
 
+// ── Endpoint dots on line annotations ────────────────────────────────────────
+// Draw a small filled dot at the first and last vertex of every line annotation
+// so the exact start/end of a measured stretch is visible. The number label is
+// nudged off the start point (see calculateLabelPosition) so it doesn't hide the
+// start dot. Implemented by extending Polyline's own _render → the dots move,
+// scale and reload with the line for free, with no separate objects to manage.
+// (Line annotations use objectCaching:false so the dots never clip at the bbox.)
+const _polylineRender = Polyline.prototype._render;
+Polyline.prototype._render = function (ctx) {
+  _polylineRender.call(this, ctx);
+  if (this.annotationType !== 'line' || !this.points || this.points.length < 2) return;
+  const ox = this.pathOffset.x, oy = this.pathOffset.y;
+  const r = (this.strokeWidth || 2) + 1.5;   // image-px radius → scales with zoom like the stroke
+  const ends = [this.points[0], this.points[this.points.length - 1]];
+  ctx.save();
+  ctx.fillStyle = this.stroke || '#000000';
+  for (const p of ends) {
+    ctx.beginPath();
+    ctx.arc(p.x - ox, p.y - oy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+};
+
 // Global app state
 window.data = null;
 let canvas = null;
@@ -111,7 +135,7 @@ const OVERSCAN = 96;
 // Ergebnistabelle, PDF-Export (labelText) und Nummerierung bleiben unberührt, weil
 // createSingleTextLabel labelText/displayIndex weiterhin auf der Annotation setzt.
 // Zum Wiedereinschalten auf true setzen. NUR zum Messen gedacht.
-const SHOW_TEXT_LABELS = false;
+const SHOW_TEXT_LABELS = true;
 
 // Crosshair overlay for drawing tools
 let crosshairCanvas = null;
@@ -662,6 +686,8 @@ function loadCanvasData(canvasData) {
     objects.forEach(annotation => {
       if (!annotation) return;
       annotation.set({ objectType: 'annotation', selectable: true, evented: true });
+      // Lines draw endpoint dots in _render → disable caching so they don't clip.
+      if (annotation.type === 'polyline') annotation.set('objectCaching', false);
       canvas.add(annotation);
     });
 
@@ -875,9 +901,9 @@ function updateResultsTable() {
       <th>Nr.</th>
       <th>Label</th>
       <th>Typ</th>
-      <th>Breite</th>
+      <th>Länge</th>
       <th>Höhe</th>
-      <th>Messwert</th>
+      <th>Fläche</th>
     `;
   }
 
@@ -920,7 +946,8 @@ function updateResultsTable() {
       typeKey = 'line';
       typeName = 'Linie';
       const length = calculatePolylineLength(annotation.points || []);
-      measurement = `${length.toFixed(2)} m`;
+      widthCell = `${length.toFixed(2)} m`;   // length goes in the "Länge" column
+      measurement = '–';                       // a line has no area
     }
 
     const row = document.createElement('tr');
@@ -1087,6 +1114,9 @@ function removeHighlight() {
     shadow: null
   });
   _highlightedAnnotation = null;
+  // highlightAnnotation() brought the annotation to the front so the hover glow
+  // sits on top — restore the canonical z-order so its text label is in front again.
+  applyLayerOrdering();
   canvas.renderAll();
 }
 
@@ -1494,6 +1524,7 @@ async function applyHistoryState(stateJson) {
     const objects = await util.enlivenObjects(annotations);
     for (const obj of objects) {
       obj.set({ selectable: currentTool === 'select', evented: currentTool === 'select' });
+      if (obj.type === 'polyline') obj.set('objectCaching', false);
       canvas.add(obj);
       obj.setCoords();
     }
@@ -1911,12 +1942,13 @@ function setupCanvasEvents() {
     }
   });
   
-  // Shift while rotating a text note → snap to 22.5° steps (matches the drawing snap).
-  // The Textbox origin is top-left, so setting only `angle` would pivot around the
-  // corner and make the box drift — keep its centre fixed across the snap.
+  // Shift while rotating a text note or annotation → snap to 22.5° steps (matches
+  // the drawing snap). Origins are top-left, so setting only `angle` would pivot
+  // around the corner and make the object drift — keep its centre fixed instead.
   canvas.on('object:rotating', function(e) {
     const t = e.target;
-    if (!t || t.objectType !== 'textNote' || !e.e?.shiftKey) return;
+    if (!t || !e.e?.shiftKey) return;
+    if (t.objectType !== 'textNote' && t.objectType !== 'annotation') return;
     const step = 22.5;
     const snapped = Math.round(t.angle / step) * step;
     if (snapped === t.angle) return;
@@ -1924,6 +1956,7 @@ function setupCanvasEvents() {
     t.set('angle', snapped);
     t.setPositionByOrigin(center, 'center', 'center');
     t.setCoords();
+    if (t.objectType === 'annotation') updateLinkedTextLabelPosition(t);
   });
 
   // Text note finished editing → drop it if left empty, otherwise record the edit.
@@ -2363,14 +2396,22 @@ function deleteSelectedObjects() {
 
   flashToolButton('delete');
 
-  selectedObjects.forEach(obj => {
-    canvas.remove(obj);
-  });
-
+  // Objects inside an ActiveSelection stay rendered by that group until it's
+  // cleared, so removing them while selected leaves the annotations on screen
+  // until the next deselect. Discard the selection first, then remove — so the
+  // annotations and their linked text labels disappear together, immediately.
+  const toRemove = selectedObjects;
+  canvas.discardActiveObject();       // fires selection:cleared → resets selectedObjects
   selectedObjects = [];
+
+  toRemove.forEach(obj => canvas.remove(obj));
+
   canvas.renderAll();
   updateDeleteButtonState();
   saveHistorySnapshot();
+
+  // Back to the select tool so the user can immediately pick the next object.
+  if (currentTool !== 'select') setTool('select');
 }
 
 /**
@@ -2402,11 +2443,29 @@ function calculateLabelPosition(annotationObject) {
     return { x: annotationObject.left, y: annotationObject.top };
   }
 
-  // Polygon / Polyline: transform first point to absolute canvas coordinates
-  if ((annotationObject.type === 'polygon' || annotationObject.type === 'polyline') &&
+  // Polygon: transform first point to absolute canvas coordinates
+  if (annotationObject.type === 'polygon' &&
       annotationObject.points && annotationObject.points.length > 0 &&
       annotationObject.pathOffset) {
     return getVertexAbsPosition(annotationObject, 0);
+  }
+
+  // Line: place the label just past the start point (outward, along the first
+  // segment) so it sits beside the start dot instead of covering it.
+  if (annotationObject.type === 'polyline' &&
+      annotationObject.points && annotationObject.points.length > 0 &&
+      annotationObject.pathOffset) {
+    const p0 = getVertexAbsPosition(annotationObject, 0);
+    if (annotationObject.points.length >= 2) {
+      const p1 = getVertexAbsPosition(annotationObject, 1);
+      const dx = p0.x - p1.x, dy = p0.y - p1.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 0.001) {
+        const OFF = 32;   // canvas px between start dot and label centre
+        return { x: p0.x + (dx / len) * OFF, y: p0.y + (dy / len) * OFF };
+      }
+    }
+    return p0;
   }
 
   // Fallback
@@ -2766,9 +2825,9 @@ function refreshVertexHandles() {
         left: (abs.x + nextAbs.x) / 2,
         top:  (abs.y + nextAbs.y) / 2,
         originX: 'center', originY: 'center',
-        radius: 4,
-        fill: '#ffffff', stroke: '#1976d2', strokeWidth: 1.5,
-        opacity: 0.4,
+        radius: 5,
+        fill: '#ffffff', stroke: '#1976d2', strokeWidth: 2,
+        opacity: 0.8,
         objectType: 'midpointHandle', midIndex: i,
         hasBorders: false, hasControls: false,
         lockMovementX: true, lockMovementY: true,
@@ -2972,7 +3031,7 @@ function finishLineDrawing() {
     objectLabel: selectedLabelId,
     hasControls: true,
     hasBorders: true,
-    objectCaching: true
+    objectCaching: false   // endpoint dots (drawn in _render) must not clip at the bbox
   });
 
   canvas.add(finalLine);

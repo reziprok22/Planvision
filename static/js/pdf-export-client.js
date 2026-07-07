@@ -219,8 +219,32 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
                     color, thickness: strokeW,
                 });
             }
+            // Endpoint dots at first/last vertex — mirrors Polyline._render on canvas
+            // (radius = strokeWidth + 1.5 in image px, scaled to page units).
+            const dotR = ((ann.strokeWidth || 2) + 1.5) * Math.min(sx, sy);
+            for (const p of [pts[0], pts[pts.length - 1]]) {
+                page.drawCircle({ x: p.x, y: p.y, size: dotR, color });
+            }
             drawn++;
         }
+    }
+
+    // Line-annotation anchors (display space) so their number label can be nudged
+    // clear of the start dot. The saved position carries the canvas offset scaled
+    // by sx, but the export badge uses a fixed font size — so that scaled offset is
+    // too small and the badge touches the point. We re-anchor line labels edge-wise
+    // instead (badge edge kept a fixed gap past the start dot, any orientation).
+    const lineAnchors = {};
+    for (const ann of canvasAnnotations) {
+        if (ann.annotationType !== 'line' || ann.id == null) continue;
+        const c = fabricToAbsolute(ann);
+        if (!c || c.kind !== 'polyline' || c.points.length < 2) continue;
+        const p0 = { x: c.points[0].x * sx,  y: c.points[0].y * sy };
+        const p1 = { x: c.points[1].x * sx,  y: c.points[1].y * sy };
+        const dx = p0.x - p1.x, dy = p0.y - p1.y;
+        const len = Math.hypot(dx, dy) || 1;
+        const dotR = ((ann.strokeWidth || 2) + 1.5) * Math.min(sx, sy);
+        lineAnchors[ann.id] = { p0, dir: { x: dx / len, y: dy / len }, dotR };
     }
 
     // Pass 2: draw text labels using saved canvas positions (originX/Y: 'center')
@@ -238,13 +262,22 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
             const textH    = lines.length * lineH;
             const textW    = Math.max(...lines.map(l => font.widthOfTextAtSize(l, fontSize)));
 
-            // tl.left/top is the center of the badge (originX/Y: 'center')
-            const c = T.toUser(tl.left * sx, tl.top * sy);
-
             // Badge is axis-aligned in *display* space → swap w/h on rotated pages
-            // Tight padding to match the Fabric badge in the webapp (background hugs the text)
             const wBadge = textW + 2;
             const hBadge = textH + 0;
+
+            // tl.left/top is the center of the badge (originX/Y: 'center'). For line
+            // labels, override it: place the badge edge a fixed gap past the start dot.
+            let cx = tl.left * sx, cy = tl.top * sy;
+            const anchor = lineAnchors[tl.linkedAnnotationId];
+            if (anchor) {
+                const halfAlong = Math.abs(anchor.dir.x) * wBadge / 2 + Math.abs(anchor.dir.y) * hBadge / 2;
+                const GAP = 3;   // points between start dot and badge edge
+                cx = anchor.p0.x + anchor.dir.x * (halfAlong + anchor.dotR + GAP);
+                cy = anchor.p0.y + anchor.dir.y * (halfAlong + anchor.dotR + GAP);
+            }
+            const c = T.toUser(cx, cy);
+
             page.drawRectangle({
                 x: c.x - (T.swapped ? hBadge : wBadge) / 2,
                 y: c.y - (T.swapped ? wBadge : hBadge) / 2,
