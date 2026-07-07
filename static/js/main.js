@@ -34,7 +34,8 @@ import {
   setPageSettings,
   setPdfNavigationState,
   setOriginalPdfBlob,
-  getOriginalPdfBlob
+  getOriginalPdfBlob,
+  autoFontScale
 } from './pdf-handler.js';
 import { setupProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
@@ -700,11 +701,17 @@ function loadCanvasData(canvasData) {
       applyLayerOrdering();
       canvas.requestRenderAll();
     } else if (savedLabels?.length > 0) {
-      // Restore text labels at their saved positions (preserves user moves)
+      // Restore text labels at their saved positions (preserves user moves).
+      // Font size is NOT taken from the save but re-derived from the page size,
+      // so saves from before the auto font scale render consistently.
+      const labelK = getAutoFontScale();
       util.enlivenObjects(savedLabels).then(textLabels => {
         const linkedIds = new Set();
         textLabels.filter(Boolean).forEach(tl => {
-          tl.set({ objectType: 'textLabel', selectable: false, evented: false });
+          tl.set({
+            objectType: 'textLabel', selectable: false, evented: false,
+            fontSize: 14 * labelK, padding: 4 * labelK,
+          });
           canvas.add(tl);
           if (tl.linkedAnnotationId != null) linkedIds.add(tl.linkedAnnotationId);
         });
@@ -1223,11 +1230,18 @@ function updateSummary() {
   syncLegendButton();
 }
 
+// Auto font scale for the current page (see autoFontScale in pdf-handler.js):
+// text sizes are tuned for A4; bigger formats scale proportionally per page.
+function getAutoFontScale() {
+  return autoFontScale(uploadedImage?.naturalWidth, uploadedImage?.naturalHeight);
+}
+
 // ── On-plan legend ────────────────────────────────────────────────────────────
 // A Fabric Group on the canvas showing the label summary. Content is derived
 // from the annotations on every updateSummary(); only its POSITION is state
 // (persisted per page as legend_position in the canvas data).
 
+// Base values for A4 — buildCanvasLegend() scales them by getAutoFontScale().
 const LEGEND_STYLE = { font: 14, titleFont: 15, rowH: 24, pad: 14, swatch: 14, gap: 8 };
 
 function getCanvasLegend() {
@@ -1240,7 +1254,8 @@ function buildCanvasLegend(position) {
   if (old) canvas.remove(old);
 
   const items = collectSummaryData();
-  const S = LEGEND_STYLE;
+  const k = getAutoFontScale();
+  const S = Object.fromEntries(Object.entries(LEGEND_STYLE).map(([key, v]) => [key, v * k]));
 
   const textOpts = { fontSize: S.font, fill: '#222', fontFamily: 'Arial', selectable: false, evented: false };
   const title = new Text('Legende', {
@@ -1254,7 +1269,7 @@ function buildCanvasLegend(position) {
     ...textOpts, fill: '#888', fontStyle: 'italic',
   });
 
-  const colGap = 18;
+  const colGap = 18 * k;
   const nameW  = Math.max(emptyText?.width || 0, ...nameTexts.map(t => t.width), 0);
   const countW = Math.max(...countTexts.map(t => t.width), 0);
   const areaW  = Math.max(...areaTexts.map(t => t.width), 0);
@@ -1265,19 +1280,19 @@ function buildCanvasLegend(position) {
 
   const rowCount = Math.max(items.length, 1);
   const boxW = Math.max(areaRight + S.pad, S.pad * 2 + title.width);
-  const boxH = S.pad * 2 + S.titleFont + 10 + rowCount * S.rowH;
+  const boxH = S.pad * 2 + S.titleFont + 10 * k + rowCount * S.rowH;
 
   const children = [
     new Rect({
       left: 0, top: 0, width: boxW, height: boxH,
-      fill: 'rgba(255,255,255,0.92)', stroke: '#999', strokeWidth: 1, rx: 6, ry: 6,
+      fill: 'rgba(255,255,255,0.92)', stroke: '#999', strokeWidth: k, rx: 6 * k, ry: 6 * k,
       selectable: false, evented: false,
     }),
   ];
   title.set({ left: S.pad, top: S.pad });
   children.push(title);
 
-  const rowsTop = S.pad + S.titleFont + 10;
+  const rowsTop = S.pad + S.titleFont + 10 * k;
   if (emptyText) {
     emptyText.set({ left: nameX, top: rowsTop });
     children.push(emptyText);
@@ -1285,9 +1300,9 @@ function buildCanvasLegend(position) {
   items.forEach((it, i) => {
     const rowY = rowsTop + i * S.rowH;
     children.push(new Rect({
-      left: S.pad, top: rowY + (S.font - S.swatch) / 2 + 2,
+      left: S.pad, top: rowY + (S.font - S.swatch) / 2 + 2 * k,
       width: S.swatch, height: S.swatch,
-      fill: it.color, stroke: '#666', strokeWidth: 0.5,
+      fill: it.color, stroke: '#666', strokeWidth: 0.5 * k,
       selectable: false, evented: false,
     }));
     nameTexts[i].set({ left: nameX, top: rowY });
@@ -2461,7 +2476,7 @@ function calculateLabelPosition(annotationObject) {
       const dx = p0.x - p1.x, dy = p0.y - p1.y;
       const len = Math.hypot(dx, dy);
       if (len > 0.001) {
-        const OFF = 32;   // canvas px between start dot and label centre
+        const OFF = 32 * getAutoFontScale();   // canvas px between start dot and label centre
         return { x: p0.x + (dx / len) * OFF, y: p0.y + (dy / len) * OFF };
       }
     }
@@ -3065,6 +3080,7 @@ function resetLineDrawing() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DIM_COLOR  = '#333333';   // technical grey, deliberately independent of label colours
+// Base values for A4 — buildDimensionGroup() scales them by getAutoFontScale().
 const DIM_STROKE = 1;
 const DIM_GAP    = 6;           // gap between measured point and start of witness line
 const DIM_EXT    = 6;           // witness-line overshoot past the dimension line
@@ -3100,24 +3116,26 @@ function buildDimensionGroup(dimData) {
   const s = Math.sign(g.offset) || 1;
   const color = dimData.color || DIM_COLOR;
   const parts = [];
+  const k = getAutoFontScale();
+  const gap = DIM_GAP * k, ext = DIM_EXT * k, tick = DIM_TICK * k, strokeW = DIM_STROKE * k;
 
   // Witness (extension) lines: from just off each measured point to just past d.
-  const w1a = { x: g.p1.x + g.nx * DIM_GAP * s, y: g.p1.y + g.ny * DIM_GAP * s };
-  const w1b = { x: g.d1.x + g.nx * DIM_EXT * s, y: g.d1.y + g.ny * DIM_EXT * s };
-  const w2a = { x: g.p2.x + g.nx * DIM_GAP * s, y: g.p2.y + g.ny * DIM_GAP * s };
-  const w2b = { x: g.d2.x + g.nx * DIM_EXT * s, y: g.d2.y + g.ny * DIM_EXT * s };
-  parts.push(new Line([w1a.x, w1a.y, w1b.x, w1b.y], { stroke: color, strokeWidth: DIM_STROKE }));
-  parts.push(new Line([w2a.x, w2a.y, w2b.x, w2b.y], { stroke: color, strokeWidth: DIM_STROKE }));
+  const w1a = { x: g.p1.x + g.nx * gap * s, y: g.p1.y + g.ny * gap * s };
+  const w1b = { x: g.d1.x + g.nx * ext * s, y: g.d1.y + g.ny * ext * s };
+  const w2a = { x: g.p2.x + g.nx * gap * s, y: g.p2.y + g.ny * gap * s };
+  const w2b = { x: g.d2.x + g.nx * ext * s, y: g.d2.y + g.ny * ext * s };
+  parts.push(new Line([w1a.x, w1a.y, w1b.x, w1b.y], { stroke: color, strokeWidth: strokeW }));
+  parts.push(new Line([w2a.x, w2a.y, w2b.x, w2b.y], { stroke: color, strokeWidth: strokeW }));
 
   // Dimension line d1 → d2
-  parts.push(new Line([g.d1.x, g.d1.y, g.d2.x, g.d2.y], { stroke: color, strokeWidth: DIM_STROKE }));
+  parts.push(new Line([g.d1.x, g.d1.y, g.d2.x, g.d2.y], { stroke: color, strokeWidth: strokeW }));
 
   // 45° architectural ticks at each end (direction = along + normal)
   const tl = Math.hypot(g.ux + g.nx, g.uy + g.ny) || 1;
-  const tux = (g.ux + g.nx) / tl * DIM_TICK / 2;
-  const tuy = (g.uy + g.ny) / tl * DIM_TICK / 2;
-  parts.push(new Line([g.d1.x - tux, g.d1.y - tuy, g.d1.x + tux, g.d1.y + tuy], { stroke: color, strokeWidth: DIM_STROKE }));
-  parts.push(new Line([g.d2.x - tux, g.d2.y - tuy, g.d2.x + tux, g.d2.y + tuy], { stroke: color, strokeWidth: DIM_STROKE }));
+  const tux = (g.ux + g.nx) / tl * tick / 2;
+  const tuy = (g.uy + g.ny) / tl * tick / 2;
+  parts.push(new Line([g.d1.x - tux, g.d1.y - tuy, g.d1.x + tux, g.d1.y + tuy], { stroke: color, strokeWidth: strokeW }));
+  parts.push(new Line([g.d2.x - tux, g.d2.y - tuy, g.d2.x + tux, g.d2.y + tuy], { stroke: color, strokeWidth: strokeW }));
 
   // Measurement text, centred on the dimension line, rotated to the line angle.
   let deg = Math.atan2(g.uy, g.ux) * 180 / Math.PI;
@@ -3126,7 +3144,7 @@ function buildDimensionGroup(dimData) {
     left: (g.d1.x + g.d2.x) / 2, top: (g.d1.y + g.d2.y) / 2,
     originX: 'center', originY: 'center',
     angle: deg,
-    fontSize: DIM_FONT, fontFamily: 'Arial', fontWeight: 'bold',
+    fontSize: DIM_FONT * k, fontFamily: 'Arial', fontWeight: 'bold',
     fill: color, backgroundColor: 'rgba(255,255,255,0.85)',
     __dimText: true,
   });
@@ -3257,8 +3275,9 @@ function dimHandleMove(pointer, e) {
 
   if (dimPhase === 1) {
     const pt = e?.shiftKey ? snapToAngle(dimP1, pointer) : pointer;
+    const k = getAutoFontScale();
     dimPreview = new Line([dimP1.x, dimP1.y, pt.x, pt.y], {
-      stroke: DIM_COLOR, strokeWidth: DIM_STROKE, strokeDashArray: [4, 4],
+      stroke: DIM_COLOR, strokeWidth: DIM_STROKE * k, strokeDashArray: [4 * k, 4 * k],
       selectable: false, evented: false, objectType: 'dimensionPreview',
     });
     canvas.add(dimPreview);
@@ -3382,6 +3401,7 @@ function updateDimensionFromHandle(handle, shiftKey = false) {
 // Drag to define the box width, then type inside (Fabric Textbox, word-wrapped).
 // Own objectType 'textNote' — a note, never a measured annotation.
 
+// Base values for A4 — finishTextDrawing() scales them by getAutoFontScale().
 const TEXTNOTE_FONT   = 18;
 const TEXTNOTE_COLOR  = '#222222';
 const TEXTNOTE_BG     = 'rgba(255,255,255,0.82)';   // legible over busy plans
@@ -3416,9 +3436,10 @@ function updateTextDrawing(pointer) {
 function finishTextDrawing() {
   if (!textPreviewRect || !textStartPoint) return;
 
+  const k     = getAutoFontScale();
   const left  = textPreviewRect.left;
   const top   = textPreviewRect.top;
-  const width = Math.max(textPreviewRect.width, TEXTNOTE_MIN_W) || TEXTNOTE_DEF_W;
+  const width = Math.max(textPreviewRect.width, TEXTNOTE_MIN_W * k) || TEXTNOTE_DEF_W * k;
 
   canvas.remove(textPreviewRect);
   textPreviewRect = null;
@@ -3427,7 +3448,7 @@ function finishTextDrawing() {
 
   const box = new Textbox('', {
     left, top, width,
-    fontSize: TEXTNOTE_FONT, fontFamily: 'Arial', fill: TEXTNOTE_COLOR,
+    fontSize: TEXTNOTE_FONT * k, fontFamily: 'Arial', fill: TEXTNOTE_COLOR,
     backgroundColor: TEXTNOTE_BG,
     objectType: 'textNote', userCreated: true,
     editable: true, selectable: true, evented: true,
@@ -3517,14 +3538,15 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
   const labelPosition = calculateLabelPosition(annotation);
 
   // Create text label with number and area/length (no inverse scaling)
+  const k = getAutoFontScale();
   const textLabel = new Text(displayNumber.toString() + measurement, {
     left: labelPosition.x,
     top: labelPosition.y,
-    fontSize: 14, // Fixed font size - let Canvas handle zoom scaling
+    fontSize: 14 * k, // A4-Basis, skaliert mit Seitengrösse — Zoom macht der Canvas
     fontFamily: 'Arial', // sonst fällt Fabric auf Times New Roman (Serif) zurück
     fill: getContrastTextColor(labelColor),
     backgroundColor: labelColor,
-    padding: 4, // Fixed padding - let Canvas handle zoom scaling
+    padding: 4 * k,
     textAlign: 'center',
     fontWeight: 'bold',
     originX: 'center',

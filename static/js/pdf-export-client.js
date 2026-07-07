@@ -7,6 +7,7 @@
  */
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
+import { autoFontScale } from './pdf-handler.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -170,7 +171,7 @@ function makeDisplayTransform(page) {
  * sx = displayPageWidth  / imageNaturalWidth
  * sy = displayPageHeight / imageNaturalHeight
  */
-function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx, sy, labelMap, font) {
+function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx, sy, labelMap, font, k = 1) {
     let drawn = 0;
 
     // Pass 1: draw annotation shapes
@@ -257,13 +258,13 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
             const textColor = contrastColor(bgHex);
 
             const lines    = tl.text.split('\n');
-            const fontSize = 8;
-            const lineH    = fontSize + 2;
+            const fontSize = 8 * k;      // mirrors the canvas auto font scale
+            const lineH    = fontSize + 2 * k;
             const textH    = lines.length * lineH;
             const textW    = Math.max(...lines.map(l => font.widthOfTextAtSize(l, fontSize)));
 
             // Badge is axis-aligned in *display* space → swap w/h on rotated pages
-            const wBadge = textW + 2;
+            const wBadge = textW + 2 * k;
             const hBadge = textH + 0;
 
             // tl.left/top is the center of the badge (originX/Y: 'center'). For line
@@ -272,7 +273,7 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
             const anchor = lineAnchors[tl.linkedAnnotationId];
             if (anchor) {
                 const halfAlong = Math.abs(anchor.dir.x) * wBadge / 2 + Math.abs(anchor.dir.y) * hBadge / 2;
-                const GAP = 3;   // points between start dot and badge edge
+                const GAP = 3 * k;   // points between start dot and badge edge
                 cx = anchor.p0.x + anchor.dir.x * (halfAlong + anchor.dotR + GAP);
                 cy = anchor.p0.y + anchor.dir.y * (halfAlong + anchor.dotR + GAP);
             }
@@ -290,7 +291,7 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
                 const lineW = font.widthOfTextAtSize(line, fontSize);
                 // Offsets in display space from the badge center …
                 const dxd = -lineW / 2;
-                const dyd = (i + 1) * lineH - textH / 2 - 2;
+                const dyd = (i + 1) * lineH - textH / 2 - 2 * k;
                 // … mapped to user space via the display unit vectors
                 const px = c.x + dxd * T.right.x + dyd * T.down.x;
                 const py = c.y + dxd * T.right.y + dyd * T.down.y;
@@ -311,11 +312,11 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
  * Each record carries image-px geometry { p1, p2, d1, d2 } and a precomputed
  * measurement string `text`. Mirrors buildDimensionGroup() in main.js.
  */
-function drawDimensionsOnPage(page, dimensions, T, sx, sy, font) {
+function drawDimensionsOnPage(page, dimensions, T, sx, sy, font, k = 1) {
     if (!dimensions?.length) return 0;
     let drawn = 0;
 
-    const u = Math.min(sx, sy);
+    const u = Math.min(sx, sy) * k;   // mirrors the canvas auto font scale
     const thickness = Math.max(0.5, 1 * u);
     const GAP = 6 * u, EXT = 6 * u, TICK = 9 * u;
 
@@ -355,9 +356,9 @@ function drawDimensionsOnPage(page, dimensions, T, sx, sy, font) {
         // Kept axis-aligned in display orientation (like annotation labels) for legibility.
         if (font && d.text) {
             const c = T.toUser((D1.x + D2.x) / 2, (D1.y + D2.y) / 2);
-            const fontSize = 8;
+            const fontSize = 8 * k;
             const textW = font.widthOfTextAtSize(d.text, fontSize);
-            const wBadge = textW + 4, hBadge = fontSize + 3;
+            const wBadge = textW + 4 * k, hBadge = fontSize + 3 * k;
             page.drawRectangle({
                 x: c.x - (T.swapped ? hBadge : wBadge) / 2,
                 y: c.y - (T.swapped ? wBadge : hBadge) / 2,
@@ -365,7 +366,7 @@ function drawDimensionsOnPage(page, dimensions, T, sx, sy, font) {
                 height: T.swapped ? wBadge : hBadge,
                 color: rgb(1, 1, 1), opacity: 0.85,
             });
-            const dxd = -textW / 2, dyd = fontSize / 2 - 1;
+            const dxd = -textW / 2, dyd = fontSize / 2 - 1 * k;
             page.drawText(d.text, {
                 x: c.x + dxd * T.right.x + dyd * T.down.x,
                 y: c.y + dxd * T.right.y + dyd * T.down.y,
@@ -453,7 +454,7 @@ function drawTextNotesOnPage(page, notes, T, sx, sy, font) {
  * Mirrors the Fabric legend in main.js: title + one row per used label with
  * swatch, name, count and summed area (parsed from the annotations' labelText).
  */
-function drawLegendOnPdfPage(page, T, sx, sy, legendPos, annotations, labelMap, font, fontB) {
+function drawLegendOnPdfPage(page, T, sx, sy, legendPos, annotations, labelMap, font, fontB, k = 1) {
     // Collect per-label rows from the serialized annotations
     const itemMap = new Map();
     for (const ann of annotations) {
@@ -479,8 +480,9 @@ function drawLegendOnPdfPage(page, T, sx, sy, legendPos, annotations, labelMap, 
     const items = [...itemMap.values()];
     if (!items.length) return;
 
-    // Layout in display space, scaled like the canvas legend (LEGEND_STYLE in main.js)
-    const s = Math.min(sx, sy);
+    // Layout in display space, scaled like the canvas legend (LEGEND_STYLE in
+    // main.js) incl. the same per-page auto font scale
+    const s = Math.min(sx, sy) * k;
     const fontSize  = 14 * s;
     const titleSize = 15 * s;
     const rowH      = 24 * s;
@@ -629,18 +631,20 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         const imgH   = imgDim?.h || T.displayH;
         const sx = T.displayW / imgW;
         const sy = T.displayH / imgH;
+        // Same per-page auto font scale as on the canvas (labels, dimensions, legend)
+        const k  = autoFontScale(imgW, imgH);
 
         console.log(`[PDF export] page ${pageNum}: displaySize=${T.displayW}x${T.displayH}, rotation=${T.rotation}, imgSize=${imgW}x${imgH}, scale=${sx.toFixed(3)}x${sy.toFixed(3)}`);
 
         const textLabels = canvasData?.canvas_text_labels || [];
-        const n = drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont);
-        const nd = drawDimensionsOnPage(page, dimensions, T, sx, sy, labelFont);
+        const n = drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont, k);
+        const nd = drawDimensionsOnPage(page, dimensions, T, sx, sy, labelFont, k);
         const nt = drawTextNotesOnPage(page, textNotes, T, sx, sy, labelFont);
         console.log(`[PDF export] page ${pageNum}: drew ${n} annotations, ${nd} dimensions, ${nt} text notes`);
 
         // On-plan legend (placed by the user on the canvas)
         if (canvasData?.legend_position) {
-            drawLegendOnPdfPage(page, T, sx, sy, canvasData.legend_position, annotations, labelMap, labelFont, labelFontB);
+            drawLegendOnPdfPage(page, T, sx, sy, canvasData.legend_position, annotations, labelMap, labelFont, labelFontB, k);
         }
     }
 

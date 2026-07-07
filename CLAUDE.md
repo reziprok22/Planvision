@@ -123,6 +123,7 @@ The application requires a pre-trained Faster R-CNN model at:
 - Supports rectangles, polygons, and line measurements
 - Canvas coordinates are synchronized with image zoom levels
 - Editor mode allows adding, editing, and deleting annotations
+- **Auto font scale**: all on-canvas text sizes (annotation labels, legend, dimension text, text-note start size) are A4-tuned base values multiplied by `autoFontScale(imgW, imgH)` (`pdf-handler.js`): `clamp((shortSide / 1240)^0.6, 1, 5)` — page-size-based because the server always renders at 150 DPI, damped since large plans tend to have finer detail (A4 = 1×, A3 ≈ 1.2×, A0 ≈ 2.3×). Computed per page; the PDF export applies the same factor so canvas and export match. No user setting by design.
 
 ### Authentication
 - Django's built-in `django.contrib.auth` handles users, sessions, and password hashing
