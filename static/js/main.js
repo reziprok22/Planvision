@@ -3,11 +3,6 @@
  * Core functionality: Upload, Predict, Annotation Display, Drawing Tools, Zoom
  */
 
-function getCsrfToken() {
-  return document.cookie.split(';').map(c => c.trim())
-    .find(c => c.startsWith('csrftoken='))?.split('=')[1] ?? '';
-}
-
 // Import Fabric.js
 import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Textbox, Shadow, util, Circle, Group, Line, ActiveSelection } from 'fabric';
 
@@ -15,8 +10,7 @@ import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Te
 import {
   setupLabels,
   getLabelById,
-  getLabelName,
-  getLabelColor,
+  getLabelColorWithOpacity,
   getCurrentLabels,
   getCurrentLineLabels,
   getLabelsForTool,
@@ -35,7 +29,9 @@ import {
   setPdfNavigationState,
   setOriginalPdfBlob,
   getOriginalPdfBlob,
-  autoFontScale
+  autoFontScale,
+  getCsrfToken,
+  isLightColor
 } from './pdf-handler.js';
 import { setupProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
@@ -77,7 +73,6 @@ Polyline.prototype._render = function (ctx) {
 };
 
 // Global app state
-window.data = null;
 let canvas = null;
 let imageContainer = null;
 let uploadedImage = null;
@@ -86,10 +81,9 @@ let uploadedImage = null;
 let pageCanvasData    = {}; // Store canvas data for each page: { "1": canvasData, "2": canvasData, ... }
 let currentPageNumber = 1;
 
-// Make canvas and pageCanvasData globally available for label validation
+// Make canvas globally available for label validation (labels.js);
+// getPageCanvasData/getCurrentPageNumber werden in initApp() gesetzt.
 window.getCanvas = () => canvas;
-window.getPageCanvasData = () => pageCanvasData;
-window.getCurrentPageNumber = () => currentPageNumber;
 
 // Editor state
 let currentTool = 'select';
@@ -192,10 +186,6 @@ let undoStack = [];      // serialised states; top = current state
 let redoStack = [];
 let isHistoryAction = false; // true while restoring a state (prevents recursive saves)
 
-// Per-page session cache for projects loaded without a PDF blob (image-only projects).
-// Maps pageNumber → { sessionId, pageNumOnServer } so we avoid re-uploading on every click.
-let imageSessionCache = {};
-
 // Event timing control
 let isProcessingClick = false;
 let isPageSwitching = false; // Prevent canvas events during page switches
@@ -205,16 +195,6 @@ let updateTableTimeout = null;
 
 // Utility Functions
 /**
- * Convert hex color to color with opacity.
- * `opacity` is the label's fill alpha (0–1) managed in the Label-Manager;
- * labels without one fall back to the classic '20' hex alpha (≈ 12.5 %).
- */
-function getLabelColorWithOpacity(color, opacity) {
-  const alpha = (typeof opacity === 'number') ? Math.min(1, Math.max(0, opacity)) : 0x20 / 255;
-  return color + Math.round(alpha * 255).toString(16).padStart(2, '0');
-}
-
-/**
  * Convert points array to Fabric.js format
  */
 function convertPointsToFabric(points) {
@@ -223,9 +203,10 @@ function convertPointsToFabric(points) {
 
 
 function getLabel(labelId) {
+  const label = getLabelById(labelId);
   return {
-    name: getLabelName(labelId),
-    color: getLabelColor(labelId)
+    name:  label ? label.name  : 'Unknown',
+    color: label ? label.color : '#808080'
   };
 }
 
@@ -2458,19 +2439,13 @@ function updateDeleteButtonState() {
   if (btn) btn.disabled = !(selectedObjects && selectedObjects.length > 0);
 }
 
+function getContrastTextColor(hex) {
+  return isLightColor(hex) ? '#222222' : 'white';
+}
+
 /**
  * Calculate optimal position for text label based on annotation's REAL Fabric.js coordinates
  */
-function getContrastTextColor(hex) {
-  const c = hex.replace('#', '');
-  const r = parseInt(c.substring(0, 2), 16);
-  const g = parseInt(c.substring(2, 4), 16);
-  const b = parseInt(c.substring(4, 6), 16);
-  // Perceived luminance (sRGB coefficients)
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.55 ? '#222222' : 'white';
-}
-
 function calculateLabelPosition(annotationObject) {
   // Rectangle: top-left corner is the first vertex
   if (annotationObject.type === 'rect') {
@@ -2570,9 +2545,6 @@ function applyLabelToAnnotation(obj, newLabelId) {
 // Make functions globally available
 window.updateResultsTable = updateResultsTable;
 window.createSingleTextLabel = createSingleTextLabel;
-window.calculateRectangleAreaFromCanvas = calculateRectangleAreaFromCanvas;
-window.calculatePolygonAreaFromCanvas = calculatePolygonAreaFromCanvas;
-window.calculatePolylineLength = calculatePolylineLength;
 
 /**
  * Snaps point `to` to the nearest angle multiple of `stepDeg` from point `from`.
@@ -3795,9 +3767,9 @@ function saveCurrentPageCanvasData(pageNum = currentPageNumber) {
  */
 function loadPageCanvasData(pageNum) {
   const canvasData = pageCanvasData[pageNum];
-  if (canvasData && canvasData.canvas_available && window.loadCanvasData) {
+  if (canvasData && canvasData.canvas_available) {
     console.log(`Loading canvas data for page ${pageNum}: ${canvasData.annotation_count} annotations`);
-    window.loadCanvasData(canvasData);
+    loadCanvasData(canvasData);
   } else {
     console.log(`No canvas data available for page ${pageNum}`);
     // Clear canvas for empty page
@@ -3925,7 +3897,6 @@ async function analyzeCurrentPage() {
     }
 
     const data = await response.json();
-    window.data = data;
 
     // Convert AI predictions → canvas annotations and MERGE them with what is
     // already on the page (instead of wiping everything):
@@ -4029,7 +4000,6 @@ async function initApp() {
 
     // Store session + all pages in PDF handler so navigation and project-save work
     setPdfSessionId(uploadInfo.session_id);
-    imageSessionCache = {}; // clear per-page cache from any previous project
     setPdfNavigationState(1, uploadInfo.page_count, uploadInfo.all_pages);
 
     // Full reset for new upload – clear all previous project state
@@ -4444,15 +4414,7 @@ async function initApp() {
     labelTableBody: document.getElementById('labelTableBody'),
     addLabelBtn: document.getElementById('addLabelBtn'),
     importLabelsBtn: document.getElementById('importLabelsBtn'),
-    exportLabelsBtn: document.getElementById('exportLabelsBtn'),
-    resetLabelsBtn: document.getElementById('resetLabelsBtn'),
-    labelForm: document.getElementById('labelForm'),
-    labelFormTitle: document.getElementById('labelFormTitle'),
-    labelIdInput: document.getElementById('labelId'),
-    labelNameInput: document.getElementById('labelName'),
-    labelColorInput: document.getElementById('labelColor'),
-    saveLabelBtn: document.getElementById('saveLabelBtn'),
-    cancelLabelBtn: document.getElementById('cancelLabelBtn')
+    exportLabelsBtn: document.getElementById('exportLabelsBtn')
   });
   
   // Initialize project management module
@@ -4481,9 +4443,7 @@ async function initApp() {
   setupOnboarding();
 
   // Make essential functions globally available for inter-module communication
-  window.collectCurrentCanvasData = collectCurrentCanvasData;
   window.collectAllPagesCanvasData = collectAllPagesCanvasData;
-  window.loadCanvasData = loadCanvasData;
   window.initializePageCanvasData = initializePageCanvasData;
   window.getCurrentPageNumber = () => currentPageNumber;
   // JPEG of the currently visible canvas viewport (used by bug reports)
@@ -4505,13 +4465,7 @@ async function initApp() {
       return null;
     }
   };
-  window.clearImageSessionCache = () => { imageSessionCache = {}; };
-  window.getFirstImageSessionId = () => {
-    const entry = Object.values(imageSessionCache)[0];
-    return entry ? entry.sessionId : null;
-  };
   window.getUploadModalSessionId = () => getUploadSessionId();
-  window.getCurrentLabels = getCurrentLabels;
 
   // Used by pdf-export-client.js via project.js and labels.js.
   // Read-only: callers that need the live canvas included must call

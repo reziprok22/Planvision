@@ -7,7 +7,7 @@
  */
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
-import { autoFontScale } from './pdf-handler.js';
+import { autoFontScale, isLightColor, sanitizeFileBase } from './pdf-handler.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -46,17 +46,9 @@ function parseFill(fill, fallbackHex) {
     return { color: hexToRgb(fallbackHex), opacity: 0x20 / 255 };
 }
 
+// Mirrors getContrastTextColor() on the canvas (shared luminance via isLightColor)
 function contrastColor(hex) {
-    if (!hex || typeof hex !== 'string') return rgb(1, 1, 1);
-    const match = hex.match(/^#?([0-9a-f]{6})/i);
-    if (!match) return rgb(1, 1, 1);
-    const c = match[1];
-    const r = parseInt(c.slice(0, 2), 16);
-    const g = parseInt(c.slice(2, 4), 16);
-    const b = parseInt(c.slice(4, 6), 16);
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.55
-        ? rgb(0.13, 0.13, 0.13)
-        : rgb(1, 1, 1);
+    return isLightColor(hex) ? rgb(0.13, 0.13, 0.13) : rgb(1, 1, 1);
 }
 
 function loadImgDimensions(url) {
@@ -265,7 +257,7 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
 
             // Badge is axis-aligned in *display* space → swap w/h on rotated pages
             const wBadge = textW + 2 * k;
-            const hBadge = textH + 0;
+            const hBadge = textH;
 
             // tl.left/top is the center of the badge (originX/Y: 'center'). For line
             // labels, override it: place the badge edge a fixed gap past the start dot.
@@ -563,28 +555,14 @@ function triggerDownload(bytes, filename) {
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/**
- * Build a safe download base name from the project/plan name. Strips characters
- * that are invalid in filenames; falls back to 'Planli' when empty.
- */
-function safeFileBase(name) {
-    return (name || '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'Planli';
-}
+const safeFileBase = (name) => sanitizeFileBase(name, 'Planli');
 
 // ── Plan erstellen (annotated PDF) ────────────────────────────────────────────
 
 export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCanvasData, labels, projectName }) {
     const labelMap = Object.fromEntries((labels || []).map(l => [l.id, l]));
 
-    console.log('[PDF export] pdfBlob:', pdfBlob ? `${pdfBlob.size} bytes` : 'null');
-    console.log('[PDF export] pageImageUrls:', pageImageUrls);
-    console.log('[PDF export] pageCanvasData keys:', Object.keys(pageCanvasData));
-    for (const [k, v] of Object.entries(pageCanvasData)) {
-        console.log(`  page ${k}: ${v?.canvas_annotations?.length ?? 0} annotations`);
-    }
-
     let pdfDoc;
-    let labelFont;
 
     if (pdfBlob) {
         pdfDoc = await PDFDocument.load(await pdfBlob.arrayBuffer());
@@ -605,11 +583,10 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         }
     }
 
-    labelFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const labelFont  = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const labelFontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     const pdfPages = pdfDoc.getPages();
-    console.log('[PDF export] PDF pages:', pdfPages.length);
 
     for (let i = 0; i < pdfPages.length; i++) {
         const pageNum     = i + 1;
@@ -617,8 +594,6 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         const annotations = canvasData?.canvas_annotations || [];
         const dimensions  = canvasData?.canvas_dimensions || [];
         const textNotes   = canvasData?.canvas_text_notes || [];
-
-        console.log(`[PDF export] page ${pageNum}: ${annotations.length} canvas annotations, ${dimensions.length} dimensions, ${textNotes.length} text notes`);
         if (!annotations.length && !dimensions.length && !textNotes.length) continue;
 
         const page = pdfPages[i];
@@ -634,13 +609,10 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         // Same per-page auto font scale as on the canvas (labels, dimensions, legend)
         const k  = autoFontScale(imgW, imgH);
 
-        console.log(`[PDF export] page ${pageNum}: displaySize=${T.displayW}x${T.displayH}, rotation=${T.rotation}, imgSize=${imgW}x${imgH}, scale=${sx.toFixed(3)}x${sy.toFixed(3)}`);
-
         const textLabels = canvasData?.canvas_text_labels || [];
-        const n = drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont, k);
-        const nd = drawDimensionsOnPage(page, dimensions, T, sx, sy, labelFont, k);
-        const nt = drawTextNotesOnPage(page, textNotes, T, sx, sy, labelFont);
-        console.log(`[PDF export] page ${pageNum}: drew ${n} annotations, ${nd} dimensions, ${nt} text notes`);
+        drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont, k);
+        drawDimensionsOnPage(page, dimensions, T, sx, sy, labelFont, k);
+        drawTextNotesOnPage(page, textNotes, T, sx, sy, labelFont);
 
         // On-plan legend (placed by the user on the canvas)
         if (canvasData?.legend_position) {
@@ -659,8 +631,6 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
     const MARGIN = 40;
     const INNER_W = A4_W - 2 * MARGIN;
 
-    console.log('[Report export] pages:', pageImageUrls.length, 'labels:', labels?.length);
-
     const pdfDoc = await PDFDocument.create();
     const font   = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const fontB  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
@@ -671,8 +641,6 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
         const canvasData = pageCanvasData[pageNum] || pageCanvasData[String(pageNum)];
         const annotations = (canvasData?.canvas_annotations || [])
             .filter(a => a.objectType === 'annotation');
-
-        console.log(`[Report export] page ${pageNum}: ${annotations.length} annotations`);
 
         const page = pdfDoc.addPage([A4_W, A4_H]);
         let curY = A4_H - MARGIN;

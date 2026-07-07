@@ -1,20 +1,12 @@
 /**
- * upload-modal.js (Redesigned)
+ * upload-modal.js
  *
  * Handles the left-column drag-and-drop upload zone.
  * No overlay modal – the PDF is uploaded immediately and the main app
  * is ready to use. Analysis is triggered manually per page.
- *
- * Exports (unchanged names for main.js compatibility):
- *   setupUploadModal()   – initialize drop zone + events
- *   showUploadModal()    – show drop zone / reset to "ready for new file"
- *   resetUploadModal()   – reset internal state
  */
 
-function getCsrfToken() {
-  return document.cookie.split(';').map(c => c.trim())
-    .find(c => c.startsWith('csrftoken='))?.split('=')[1] ?? '';
-}
+import { getCsrfToken } from './pdf-handler.js';
 
 // ── Internal state ──────────────────────────────────────────────────
 let currentSessionId = null;
@@ -87,13 +79,8 @@ export function setupUploadModal() {
 
 }
 
-/** Show the upload area (e.g. after "New file" action) */
-export function showUploadModal() {
-    resetUploadModal();
-}
-
 /** Reset all state and UI to initial "waiting for file" */
-export function resetUploadModal() {
+function resetUploadModal() {
     currentSessionId   = null;
     uploadedPages      = [];
     uploadedPageSizes  = [];
@@ -109,7 +96,6 @@ export function resetUploadModal() {
 
 // ── Accessors used by main.js ─────────────────────────────────────────
 export function getSessionId()    { return currentSessionId; }
-export function getUploadedPages(){ return uploadedPages; }
 export function getPageSizes()    { return uploadedPageSizes; }
 
 /**
@@ -127,10 +113,9 @@ export function getUploadedBaseName() {
  * Main entry point after a file is selected.
  */
 async function handleFile(file) {
-    // Validate
-    const allowed = ['application/pdf','image/jpeg','image/jpg','image/png'];
-    if (!allowed.includes(file.type)) {
-        alert('Nur PDF-, JPG- und PNG-Dateien sind erlaubt.');
+    // Validate — der Server akzeptiert ausschliesslich PDFs (core/views.py)
+    if (file.type !== 'application/pdf') {
+        alert('Nur PDF-Dateien sind erlaubt.');
         return;
     }
     if (file.size > 100 * 1024 * 1024) {

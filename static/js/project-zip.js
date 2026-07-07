@@ -13,6 +13,7 @@
  */
 
 import JSZip from 'jszip';
+import { sanitizeFileBase } from './pdf-handler.js';
 
 // ── Format versioning ─────────────────────────────────────────────────────────
 // Increment CURRENT_VERSION whenever the ZIP schema changes, and add a
@@ -111,8 +112,7 @@ export async function saveProjectAsZip(params) {
   // .planli = ein Planli-Projekt (intern ein ZIP). Eigene Endung, damit Nutzer
   // es nicht für ein zu entpackendes Archiv halten – wird über "Projekt öffnen"
   // wieder geladen (loadProjectFromZip akzeptiert weiterhin alte .zip-Dateien).
-  const safeBase = (params.projectName || 'planli').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'planli';
-  a.download = `${safeBase}.planli`;
+  a.download = `${sanitizeFileBase(params.projectName, 'planli')}.planli`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

@@ -6,6 +6,7 @@ import { setCurrentLabels, getAllLabels } from './labels.js';
 import { initSidebarFromProject, getUploadedBaseName } from './upload-modal.js';
 import { saveProjectAsZip, buildProjectZipBlob, loadProjectFromZip } from './project-zip.js';
 import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-client.js';
+import { getCsrfToken } from './pdf-handler.js';
 
 let saveProjectBtn, loadProjectBtn, exportPdfBtn, exportAnnotatedPdfBtn;
 let zipFileInput;
@@ -36,6 +37,21 @@ export function setupProject(elements, modules) {
   });
 
   setupBugReport();
+}
+
+/**
+ * Gemeinsame Parameter für buildProjectZipBlob() — Projekt-Speichern,
+ * Bug-Report-Anhang und Trainingsdaten bauen dasselbe ZIP aus demselben Zustand.
+ */
+function collectZipParams(projectName) {
+  return {
+    projectName,
+    canvasData:      window.collectAllPagesCanvasData(),
+    labels:          getAllLabels(),
+    settings:        pdfModule.getPageSettings(),
+    pageImageUrls:   pdfModule.getAllPdfPages(),
+    originalPdfBlob: pdfModule.getOriginalPdfBlob(),
+  };
 }
 
 // ── Bug report ───────────────────────────────────────────────────────────────
@@ -145,14 +161,7 @@ async function handleBugReportSubmit(closeModal) {
 
     // Attach the current project as ZIP (same content as the save button)
     if (attachProject?.checked && pdfModule.getAllPdfPages().length && window.collectAllPagesCanvasData) {
-      const blob = await buildProjectZipBlob({
-        projectName:     'bug-report',
-        canvasData:      window.collectAllPagesCanvasData(),
-        labels:          getAllLabels(),
-        settings:        pdfModule.getPageSettings(),
-        pageImageUrls:   pdfModule.getAllPdfPages(),
-        originalPdfBlob: pdfModule.getOriginalPdfBlob(),
-      });
+      const blob = await buildProjectZipBlob(collectZipParams('bug-report'));
       fd.append('project_zip', new File([blob], 'project.zip', { type: 'application/zip' }));
     }
 
@@ -203,13 +212,8 @@ async function handleSave() {
   const status = showStatus('Projekt wird gespeichert…');
   try {
     await saveProjectAsZip({
-      projectName,
-      canvasData:      window.collectAllPagesCanvasData(),
-      labels:          getAllLabels(),
-      settings:        pdfModule.getPageSettings(),
-      pageImageUrls:   pdfModule.getAllPdfPages(),
-      originalPdfBlob: pdfModule.getOriginalPdfBlob(),
-      onProgress:      (pct) => { status.textContent = `Projekt wird gespeichert… ${pct}%`; }
+      ...collectZipParams(projectName),
+      onProgress: (pct) => { status.textContent = `Projekt wird gespeichert… ${pct}%`; }
     });
     updateStatus(status, 'Projekt gespeichert ✓', 'success');
   } catch (err) {
@@ -233,7 +237,6 @@ async function handleLoad(file) {
     pdfModule.setPdfNavigationState(1, metadata.page_count, imageUrls);
     pdfModule.setPageSettings(settings);
     pdfModule.setPdfSessionId(null);
-    if (window.clearImageSessionCache) window.clearImageSessionCache();
 
     if (labels.length > 0) setCurrentLabels(labels);
 
@@ -278,23 +281,6 @@ async function handleLoad(file) {
 
 // ── PDF Export ────────────────────────────────────────────────────────────────
 
-/**
- * Returns the best available session ID:
- * 1. pdfSessionId (set by fresh upload or ZIP re-upload)
- * 2. any per-page session from imageSessionCache (image projects analyzed on demand)
- */
-function resolveSessionId() {
-  return pdfModule.getPdfSessionId()
-    || (window.getUploadModalSessionId ? window.getUploadModalSessionId() : null)
-    || (window.getFirstImageSessionId  ? window.getFirstImageSessionId()  : null);
-}
-
-
-function getCsrfToken() {
-  return document.cookie.split(';').map(c => c.trim())
-    .find(c => c.startsWith('csrftoken='))?.split('=')[1] ?? '';
-}
-
 async function sendTrainingData() {
   // Nur mit ausdrücklicher Einwilligung (session-weiter Toggle im Header-Menü,
   // Default aus). Ohne Zustimmung verlässt nichts den Client.
@@ -304,14 +290,7 @@ async function sendTrainingData() {
   try {
     // Vollständiges, ladbares Projekt-ZIP (identisch zum "Speichern"-Export),
     // damit die Qualität später in der App per "Öffnen" geprüft werden kann.
-    const blob = await buildProjectZipBlob({
-      projectName:     getUploadedBaseName() || 'training',
-      canvasData:      window.collectAllPagesCanvasData(),
-      labels:          getAllLabels(),
-      settings:        pdfModule.getPageSettings(),
-      pageImageUrls:   pdfModule.getAllPdfPages(),
-      originalPdfBlob: pdfModule.getOriginalPdfBlob(),
-    });
+    const blob = await buildProjectZipBlob(collectZipParams(getUploadedBaseName() || 'training'));
     const fd = new FormData();
     fd.append('session_id', sessionId);
     fd.append('consent', 'true');
@@ -326,55 +305,39 @@ async function sendTrainingData() {
   }
 }
 
-export async function exportPdf() {
+/** Gemeinsamer Ablauf für beide PDF-Exporte (Bericht + annotierter Plan). */
+async function runPdfExport(startMsg, successMsg, exporter) {
   if (!pdfModule.getAllPdfPages().length) {
     alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
     return;
   }
 
-  const status = showStatus('Bericht wird erstellt…');
+  const status = showStatus(startMsg);
   try {
     if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
 
     const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
     sendTrainingData();
-    await exportReportPdfClient({
-      pageImageUrls: pdfModule.getAllPdfPages(),
-      pageCanvasData,
-      labels:      getAllLabels(),
-      projectName: getUploadedBaseName() || document.title.replace('Planli – ', '') || 'Planli',
-    });
-    updateStatus(status, 'Bericht erstellt ✓', 'success');
-  } catch (err) {
-    console.error('exportPdf error:', err);
-    updateStatus(status, `Fehler: ${err.message}`, 'error');
-  }
-}
-
-export async function exportAnnotatedPdf() {
-  if (!pdfModule.getAllPdfPages().length) {
-    alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
-    return;
-  }
-
-  const status = showStatus('Annotierter Plan wird erstellt…');
-  try {
-    if (window.saveCurrentPageCanvas) window.saveCurrentPageCanvas();
-
-    const pageCanvasData = window.getPageCanvasData ? window.getPageCanvasData() : {};
-    sendTrainingData();
-    await exportAnnotatedPdfClient({
-      pdfBlob:       pdfModule.getOriginalPdfBlob(),
+    await exporter({
       pageImageUrls: pdfModule.getAllPdfPages(),
       pageCanvasData,
       labels:        getAllLabels(),
       projectName:   getUploadedBaseName() || document.title.replace('Planli – ', '') || 'Planli',
     });
-    updateStatus(status, 'Plan erstellt ✓', 'success');
+    updateStatus(status, successMsg, 'success');
   } catch (err) {
-    console.error('exportAnnotatedPdf error:', err);
+    console.error('PDF export error:', err);
     updateStatus(status, `Fehler: ${err.message}`, 'error');
   }
+}
+
+export function exportPdf() {
+  return runPdfExport('Bericht wird erstellt…', 'Bericht erstellt ✓', exportReportPdfClient);
+}
+
+export function exportAnnotatedPdf() {
+  return runPdfExport('Annotierter Plan wird erstellt…', 'Plan erstellt ✓', (params) =>
+    exportAnnotatedPdfClient({ ...params, pdfBlob: pdfModule.getOriginalPdfBlob() }));
 }
 
 // ── Status helper ─────────────────────────────────────────────────────────────

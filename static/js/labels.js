@@ -11,21 +11,8 @@ let labelTableBody;
 let addLabelBtn;
 let importLabelsBtn;
 let exportLabelsBtn;
-let resetLabelsBtn;
 let applyChangesBtn;
 let cancelChangesBtn;
-let labelForm;
-let labelFormTitle;
-let labelIdInput;
-let labelNameInput;
-let labelColorInput;
-let labelOpacityInput;
-let opacityValueDisplay;
-let toolRectangleInput;
-let toolPolygonInput;
-let toolLineInput;
-let saveLabelBtn;
-let cancelLabelBtn;
 
 // Default unified labels - will be loaded from JSON file
 let defaultLabels = [];
@@ -67,35 +54,14 @@ export async function setupLabels(elements) {
   addLabelBtn = elements.addLabelBtn;
   importLabelsBtn = elements.importLabelsBtn;
   exportLabelsBtn = elements.exportLabelsBtn;
-  resetLabelsBtn = elements.resetLabelsBtn;
-  labelForm = elements.labelForm;
-  labelFormTitle = elements.labelFormTitle;
-  labelIdInput = elements.labelIdInput;
-  labelNameInput = elements.labelNameInput;
-  labelColorInput = elements.labelColorInput;
-  saveLabelBtn = elements.saveLabelBtn;
-  cancelLabelBtn = elements.cancelLabelBtn;
-  
-  // Get opacity elements
-  labelOpacityInput = document.getElementById('labelOpacity');
-  opacityValueDisplay = document.getElementById('opacityValueDisplay');
-  
+
   // Get batch action buttons
   applyChangesBtn = document.getElementById('applyChangesBtn');
   cancelChangesBtn = document.getElementById('cancelChangesBtn');
-  
-  // Get tool checkboxes
-  toolRectangleInput = document.getElementById('toolRectangle');
-  toolPolygonInput = document.getElementById('toolPolygon');
-  toolLineInput = document.getElementById('toolLine');
-  
+
   // Initialize labels from localStorage or defaults
   currentLabels = JSON.parse(localStorage.getItem('unifiedLabels')) || [...defaultLabels];
-  
-  // Make labels globally available 
-  window.currentLabels = getLabelsForTool('rectangle');
-  window.currentLineLabels = getLabelsForTool('line');
-  
+
   // Set up event listeners
   manageLabelBtn.addEventListener('click', openLabelManager);
   closeModalBtn.addEventListener('click', closeLabelManager);
@@ -118,18 +84,9 @@ export async function setupLabels(elements) {
   addLabelBtn.addEventListener('click', showAddLabelForm);
   importLabelsBtn.addEventListener('click', importLabels);
   exportLabelsBtn.addEventListener('click', exportLabels);
-  saveLabelBtn.addEventListener('click', saveNewLabel);
-  cancelLabelBtn.addEventListener('click', hideForm);
   applyChangesBtn.addEventListener('click', applyAllChanges);
   cancelChangesBtn.addEventListener('click', cancelChanges);
-  
-  // Opacity slider in form
-  if (labelOpacityInput && opacityValueDisplay) {
-    labelOpacityInput.addEventListener('input', function() {
-      opacityValueDisplay.textContent = this.value + '%';
-    });
-  }
-  
+
   // Update UI with current labels
   updateUIForLabels();
 }
@@ -166,11 +123,11 @@ export function closeLabelManager() {
 function refreshLabelTable() {
   labelTableBody.innerHTML = '';
   
-  currentLabels.forEach(label => {
+  currentLabels.forEach((label, index) => {
     const row = document.createElement('tr');
-    
-    const isFirst = (currentLabels.indexOf(label) === 0);
-    const isLast = (currentLabels.indexOf(label) === currentLabels.length - 1);
+
+    const isFirst = (index === 0);
+    const isLast = (index === currentLabels.length - 1);
     
     // Get opacity value from label data
     const opacityPercent = Math.round((1 - label.opacity) * 100); // Umkehrung: 1 - opacity
@@ -213,17 +170,7 @@ function refreshLabelTable() {
   // Event listeners for inline editing
   document.querySelectorAll('.inline-edit').forEach(input => {
     input.addEventListener('input', handleInlineEdit);
-    
-    // Special handling for color input to update preview
-    if (input.type === 'color') {
-      input.addEventListener('change', function() {
-        const preview = this.nextElementSibling;
-        if (preview && preview.classList.contains('color-preview')) {
-          preview.style.backgroundColor = this.value;
-        }
-      });
-    }
-    
+
     // Special handling for opacity slider to update display and tooltip
     if (input.classList.contains('opacity-slider')) {
       input.addEventListener('input', function() {
@@ -634,11 +581,7 @@ function hideForm() {
  */
 export function saveLabels() {
   localStorage.setItem('unifiedLabels', JSON.stringify(currentLabels));
-  
-  // Update global variables for compatibility
-  window.currentLabels = getLabelsForTool('rectangle');
-  window.currentLineLabels = getLabelsForTool('line');
-  
+
   updateUIForLabels();
   
   // Update existing canvas annotations with new label information
@@ -731,11 +674,12 @@ function initializeCanvasTextLabels(canvas) {
   const textLabels = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
   textLabels.forEach(label => canvas.remove(label));
   
-  // Get all annotations and create text labels for each
-  const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-  annotations.forEach((annotation) => {
-    createSingleTextLabel(canvas, annotation);
-  });
+  // Get all annotations and create text labels for each (via main.js, which
+  // has all the proper position calculations)
+  if (typeof window.createSingleTextLabel === 'function') {
+    const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
+    annotations.forEach(annotation => window.createSingleTextLabel(annotation));
+  }
   
   canvas.renderAll();
   
@@ -746,28 +690,14 @@ function initializeCanvasTextLabels(canvas) {
 }
 
 /**
- * Create a text label for a single annotation
+ * Label color ('#rrggbb') + fill alpha → '#rrggbbaa' fill string.
+ * `opacity` is the label's fill alpha (0–1) managed in the Label-Manager;
+ * labels without one fall back to the classic '20' hex alpha (≈ 12.5 %).
+ * Shared with main.js so canvas drawing and label updates write the same format.
  */
-function createSingleTextLabel(canvas, annotation) {
-  if (!annotation || !canvas) return;
-  
-  // Use the main.js function which has all the proper calculations
-  if (typeof window.createSingleTextLabel === 'function') {
-    return window.createSingleTextLabel(annotation);
-  }
-}
-
-
-/**
- * Helper function to get label color with opacity for fill
- */
-function getLabelColorWithOpacity(color, opacity = 0.3) {
-  // Convert hex color to rgba with opacity
-  const hex = color.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+export function getLabelColorWithOpacity(color, opacity) {
+  const alpha = (typeof opacity === 'number') ? Math.min(1, Math.max(0, opacity)) : 0x20 / 255;
+  return color + Math.round(alpha * 255).toString(16).padStart(2, '0');
 }
 
 /**
@@ -829,17 +759,6 @@ function exportLabels() {
   document.body.appendChild(downloadAnchorNode);
   downloadAnchorNode.click();
   downloadAnchorNode.remove();
-}
-
-/**
- * Reset labels to default values
- */
-function resetLabels() {
-  if (confirm('Are you sure you want to reset all labels to default values?')) {
-    currentLabels = [...defaultLabels];
-    hasUnsavedChanges = true;
-    refreshLabelTable();
-  }
 }
 
 /**
@@ -945,39 +864,24 @@ function getAnnotationSummary(annotations) {
  * Update UI elements based on current labels
  */
 export function updateUIForLabels() {
-  // Update universal label select for area labels
-  const universalLabelSelect = document.getElementById('universalLabelSelect');
-  if (universalLabelSelect) {
-    const selectedValue = universalLabelSelect.value;
-    
-    universalLabelSelect.innerHTML = '';
+  // universalLabelSelect = area-label dropdown in the editor,
+  // aiLabelSelect = AI target-label select ("Erkennen als" in Analyse-Einstellungen)
+  for (const selectId of ['universalLabelSelect', 'aiLabelSelect']) {
+    const select = document.getElementById(selectId);
+    if (!select) continue;
+
+    const selectedValue = select.value;
+
+    select.innerHTML = '';
     getLabelsForTool('rectangle').forEach(label => {
       const option = document.createElement('option');
       option.value = label.id;
       option.textContent = label.name;
-      universalLabelSelect.appendChild(option);
-    });
-    
-    if (selectedValue && universalLabelSelect.querySelector(`option[value="${selectedValue}"]`)) {
-      universalLabelSelect.value = selectedValue;
-    }
-  }
-
-  // Update AI analysis target-label select ("Erkennen als" in Analyse-Einstellungen)
-  const aiLabelSelect = document.getElementById('aiLabelSelect');
-  if (aiLabelSelect) {
-    const selectedValue = aiLabelSelect.value;
-
-    aiLabelSelect.innerHTML = '';
-    getLabelsForTool('rectangle').forEach(label => {
-      const option = document.createElement('option');
-      option.value = label.id;
-      option.textContent = label.name;
-      aiLabelSelect.appendChild(option);
+      select.appendChild(option);
     });
 
-    if (selectedValue && aiLabelSelect.querySelector(`option[value="${selectedValue}"]`)) {
-      aiLabelSelect.value = selectedValue;
+    if (selectedValue && select.querySelector(`option[value="${selectedValue}"]`)) {
+      select.value = selectedValue;
     }
   }
 }
@@ -1004,29 +908,11 @@ export function getLabelById(id) {
 }
 
 /**
- * Generate label name based on ID
- */
-export function getLabelName(labelId) {
-  const label = getLabelById(labelId);
-  return label ? label.name : "Unknown";
-}
-
-/**
- * Get color for a label
- */
-export function getLabelColor(labelId) {
-  const label = getLabelById(labelId);
-  return label ? label.color : "#808080";
-}
-
-/**
  * Set the current labels
  */
 export function setCurrentLabels(labels) {
   currentLabels = labels;
-  window.currentLabels = getLabelsForTool('rectangle');
-  window.currentLineLabels = getLabelsForTool('line');
-  saveLabels();
+  saveLabels();   // persists + refreshes UI + canvas annotations
 }
 
 /**

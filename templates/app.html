@@ -471,7 +471,7 @@
     </header>
 
     <!-- Hidden file input for left column upload -->
-    <input type="file" id="leftFileInput" accept=".pdf,.jpg,.jpeg,.png">
+    <input type="file" id="leftFileInput" accept=".pdf">
 
     <div class="main-container">
 
@@ -696,7 +696,7 @@
 
         <!-- ==================== RIGHT COLUMN ==================== -->
         <div class="right-column">
-            <div class="results-table-section" id="resultsTableSection">
+            <div class="results-table-section">
                 <h2>Ergebnisse</h2>
                 <div class="summary" id="summary">
                     <p><em>Keine Analyse durchgeführt.</em></p>
@@ -849,7 +849,7 @@
                 </button>
             </div>
 
-            <table class="shortcuts-table" id="detectionResultsTable">
+            <table class="shortcuts-table">
                 <thead>
                     <tr><th>Nr.</th><th>Label</th><th>Wahrscheinlichkeit</th></tr>
                 </thead>
@@ -954,43 +954,6 @@
                 <div class="label-batch-actions" style="display:none;">
                     <button id="applyChangesBtn" class="save-button">Änderungen übernehmen</button>
                     <button id="cancelChangesBtn" class="cancel-button">Abbrechen</button>
-                </div>
-                <div id="labelForm" class="label-form" style="display:none;">
-                    <h4 id="labelFormTitle">Label hinzufügen</h4>
-                    <input type="hidden" id="labelId">
-                    <div class="form-group">
-                        <label for="labelName">Name:</label>
-                        <input type="text" id="labelName" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="labelColor">Farbe:</label>
-                        <input type="color" id="labelColor" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="labelOpacity">Opacity: <span id="opacityValueDisplay">70%</span></label>
-                        <input type="range" id="labelOpacity" min="0" max="100" step="5" value="70">
-                    </div>
-                    <div class="form-group">
-                        <label>Verfügbar für:</label>
-                        <div class="checkbox-group">
-                            <label style="display:inline-flex; align-items:center; gap:5px; margin-right:12px;">
-                                <input type="checkbox" id="toolRectangle">
-                                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><rect x="1.5" y="3" width="11" height="8"/></svg>
-                            </label>
-                            <label style="display:inline-flex; align-items:center; gap:5px; margin-right:12px;">
-                                <input type="checkbox" id="toolPolygon">
-                                <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg"><polygon points="7,1.5 12.5,5.5 10.5,12.5 3.5,12.5 1.5,5.5"/></svg>
-                            </label>
-                            <label style="display:inline-flex; align-items:center; gap:5px;">
-                                <input type="checkbox" id="toolLine">
-                                <svg width="13" height="13" viewBox="0 0 14 14" fill="currentColor" stroke="currentColor" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><line x1="12" y1="2" x2="2" y2="12" stroke-width="1.5"/><circle cx="12" cy="2" r="1.5" stroke="none"/><circle cx="2" cy="12" r="1.5" stroke="none"/></svg>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="form-actions">
-                        <button id="saveLabelBtn" class="save-button">Speichern</button>
-                        <button id="cancelLabelBtn" class="cancel-button">Abbrechen</button>
-                    </div>
                 </div>
             </div>
         </div>
