@@ -4,28 +4,20 @@
 # Ordner ignorieren
 __pycache__
 env
-Archiv
 fasterrcnn_model
 trainings_data
 training_data_opt-in
 projects
 bug_reports
-static/js/mainone_file.js
-performance_optimierung
 node_modules
-UI
 db.sqlite3
 core/management/commands/Ergebnisse
 
 # Einzelne Datei ignorieren
 Notizen_FL.md
-after_preprocessing.png
-before_preprocessing.png
 Gechäftsmodell.md
 scripts/Pläne_Fenstererkennung_loadtest.pdf
 scripts/Performance-Vergleich.png
-static/landingpage/Musterpläne_für_landingpage
-static/landingpage/landingpage_Varianten
 
 
 # Alle temporären Dateien ignorieren
