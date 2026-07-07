@@ -639,6 +639,13 @@ button:hover {
         height: auto;
         gap: 15px;
     }
+
+    /* Auch bei eingeklappter rechter Spalte einspaltig stapeln — die
+       right-collapsed-Regeln der breiten Layouts sind spezifischer und
+       würden sonst das zweispaltige Grid (280px 1fr) erzwingen. */
+    .main-container.right-collapsed {
+        grid-template-columns: 1fr;
+    }
     
     .left-column {
         order: 1;
