@@ -108,7 +108,7 @@ LOGOUT_REDIRECT_URL = '/accounts/login/'
 
 # Plausible-Analytics: Domain wie im Plausible-Dashboard angelegt (z. B. 'planli.net').
 # Leer = deaktiviert; sobald gesetzt, wird das Tracking-Snippet auf allen Seiten geladen.
-PLAUSIBLE_DOMAIN = ''
+PLAUSIBLE_DOMAIN = 'planli.net'
 
 PDF_DPI = 150
 JPEG_QUALITY = 70

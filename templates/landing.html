@@ -751,7 +751,7 @@
                 Plan exportieren mit wenigen Klicks – <strong>direkt im Browser.</strong>
             </p>
             <div class="hero-cta">
-                <a href="{% url 'app' %}" class="btn btn-primary btn-lg">Beta testen</a>
+                <a href="{% url 'app' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">Beta testen</a>
                 <a href="#features" class="btn btn-outline btn-lg">Mehr erfahren</a>
             </div>
             {% if beta_mode %}
@@ -930,7 +930,7 @@
                 <li>KI-Objekterkennung</li>
                 <li>PDF-Export &amp; annotierter Plan</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-primary" style="width:100%; justify-content:center;">Kostenlos starten</a>
+            <a href="{% url 'app' %}" class="btn btn-primary" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Einzel')">Kostenlos starten</a>
         </div>
 
         <div class="plan-card">
@@ -942,7 +942,7 @@
                 <li>Alle Funktionen aus Einzel</li>
                 <li>Organisations-Konto mit Sitzplatzverwaltung</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;">Kostenlos starten</a>
+            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Team')">Kostenlos starten</a>
         </div>
 
         <div class="plan-card">
@@ -954,7 +954,7 @@
                 <li>Alle Funktionen aus Einzel</li>
                 <li>Organisations-Konto mit Sitzplatzverwaltung</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;">Kostenlos starten</a>
+            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Grosses Team')">Kostenlos starten</a>
             <p class="plan-note">Mehr als 20 Nutzer? <a href="mailto:gruezi@bauphysiklengg.ch?subject=Planli%20Team-Angebot">Individuelles Angebot anfragen</a></p>
         </div>
 

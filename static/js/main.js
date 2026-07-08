@@ -3868,6 +3868,7 @@ async function analyzeCurrentPage() {
     }
 
     const data = await response.json();
+    window.plausible?.('Analyse durchgeführt');
 
     // Convert AI predictions → canvas annotations and MERGE them with what is
     // already on the page (instead of wiping everything):

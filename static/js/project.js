@@ -216,6 +216,7 @@ async function handleSave() {
       onProgress: (pct) => { status.textContent = `Projekt wird gespeichert… ${pct}%`; }
     });
     updateStatus(status, 'Projekt gespeichert ✓', 'success');
+    window.plausible?.('Projekt gespeichert');
   } catch (err) {
     console.error('ZIP save error:', err);
     updateStatus(status, `Fehler: ${err.message}`, 'error');
@@ -306,7 +307,7 @@ async function sendTrainingData() {
 }
 
 /** Gemeinsamer Ablauf für beide PDF-Exporte (Bericht + annotierter Plan). */
-async function runPdfExport(startMsg, successMsg, exporter) {
+async function runPdfExport(startMsg, successMsg, exporter, eventName) {
   if (!pdfModule.getAllPdfPages().length) {
     alert('Kein aktiver Plan. Bitte laden Sie zuerst eine Datei hoch oder ein Projekt.');
     return;
@@ -325,6 +326,7 @@ async function runPdfExport(startMsg, successMsg, exporter) {
       projectName:   getUploadedBaseName() || document.title.replace('Planli – ', '') || 'Planli',
     });
     updateStatus(status, successMsg, 'success');
+    window.plausible?.(eventName);
   } catch (err) {
     console.error('PDF export error:', err);
     updateStatus(status, `Fehler: ${err.message}`, 'error');
@@ -332,12 +334,12 @@ async function runPdfExport(startMsg, successMsg, exporter) {
 }
 
 export function exportPdf() {
-  return runPdfExport('Bericht wird erstellt…', 'Bericht erstellt ✓', exportReportPdfClient);
+  return runPdfExport('Bericht wird erstellt…', 'Bericht erstellt ✓', exportReportPdfClient, 'PDF Export: Bericht');
 }
 
 export function exportAnnotatedPdf() {
   return runPdfExport('Annotierter Plan wird erstellt…', 'Plan erstellt ✓', (params) =>
-    exportAnnotatedPdfClient({ ...params, pdfBlob: pdfModule.getOriginalPdfBlob() }));
+    exportAnnotatedPdfClient({ ...params, pdfBlob: pdfModule.getOriginalPdfBlob() }), 'PDF Export: Plan');
 }
 
 // ── Status helper ─────────────────────────────────────────────────────────────
