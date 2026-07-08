@@ -3,6 +3,8 @@ from . import views
 
 urlpatterns = [
     path('', views.landing, name='landing'),
+    path('robots.txt', views.robots_txt, name='robots_txt'),
+    path('sitemap.xml', views.sitemap_xml, name='sitemap_xml'),
     path('app/', views.app, name='app'),
     path('datenschutz/', views.datenschutz, name='datenschutz'),
     path('impressum/', views.impressum, name='impressum'),

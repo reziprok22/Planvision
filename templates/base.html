@@ -1,9 +1,32 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Planli{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{% static 'favicon/favicon.svg' %}">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'favicon/favicon-32x32.png' %}">
+    <link rel="icon" type="image/png" sizes="16x16" href="{% static 'favicon/favicon-16x16.png' %}">
+    <link rel="icon" href="{% static 'favicon/favicon.ico' %}">
+    <link rel="apple-touch-icon" href="{% static 'favicon/apple-touch-icon.png' %}">
+    {% with meta_title=meta_title|default:"Planli" meta_description=meta_description|default:"Planli ist die Ausmass-Software für Bauplan-PDFs: Flächen und Längen direkt im Browser messen, Fenster per KI erkennen, Ergebnis als PDF exportieren – ohne Installation." %}
+    <meta name="description" content="{{ meta_description }}">
+    <link rel="canonical" href="https://planli.net{{ request.path }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Planli">
+    <meta property="og:locale" content="de_CH">
+    <meta property="og:url" content="https://planli.net{{ request.path }}">
+    <meta property="og:title" content="{{ meta_title }}">
+    <meta property="og:description" content="{{ meta_description }}">
+    <meta property="og:image" content="https://planli.net{% static 'media/og-image.png' %}">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ meta_title }}">
+    <meta name="twitter:description" content="{{ meta_description }}">
+    <meta name="twitter:image" content="https://planli.net{% static 'media/og-image.png' %}">
+    {% endwith %}
     <style>
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

@@ -9,7 +9,7 @@ from datetime import timedelta
 from collections import defaultdict
 
 from django.shortcuts import render
-from django.http import JsonResponse, FileResponse, Http404
+from django.http import JsonResponse, FileResponse, Http404, HttpResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.contrib.auth.views import redirect_to_login
@@ -35,7 +35,11 @@ JPEG_QUALITY = settings.JPEG_QUALITY
 
 
 def landing(request):
-    return render(request, 'landing.html', {'beta_mode': settings.BETA_MODE})
+    return render(request, 'landing.html', {
+        'beta_mode': settings.BETA_MODE,
+        'meta_title': 'Planli | Ausmass-Software für Bauplan-PDFs',
+        'meta_description': 'Flächen und Längen direkt aus PDF-Bauplänen im Browser messen. KI-Fenstererkennung, PDF-Export, ohne Installation – für Architekten, Energieberater und Bauleiter.',
+    })
 
 
 def _access_denied(request):
@@ -66,15 +70,48 @@ def app(request):
 
 
 def datenschutz(request):
-    return render(request, 'datenschutz.html')
+    return render(request, 'datenschutz.html', {
+        'meta_description': 'Datenschutzerklärung von Planli: Wie wir mit hochgeladenen Bauplänen und Nutzerdaten umgehen.',
+    })
 
 
 def impressum(request):
-    return render(request, 'impressum.html')
+    return render(request, 'impressum.html', {
+        'meta_description': 'Impressum von Planli – Anbieterkennzeichnung und Kontaktangaben.',
+    })
 
 
 def agb(request):
-    return render(request, 'agb.html')
+    return render(request, 'agb.html', {
+        'meta_description': 'Allgemeine Geschäftsbedingungen (AGB) von Planli.',
+    })
+
+
+def robots_txt(request):
+    lines = [
+        'User-agent: *',
+        'Disallow: /admin/',
+        'Disallow: /accounts/',
+        'Disallow: /project_files/',
+        '',
+        'Sitemap: https://planli.net/sitemap.xml',
+    ]
+    return HttpResponse('\n'.join(lines), content_type='text/plain')
+
+
+def sitemap_xml(request):
+    urls = [
+        ('https://planli.net/', '1.0'),
+        ('https://planli.net/datenschutz/', '0.3'),
+        ('https://planli.net/impressum/', '0.3'),
+        ('https://planli.net/agb/', '0.3'),
+    ]
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>',
+           '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for url, priority in urls:
+        xml.append(f'  <url><loc>{url}</loc><priority>{priority}</priority></url>')
+    xml.append('</urlset>')
+    return HttpResponse('\n'.join(xml), content_type='application/xml')
 
 
 @staff_member_required

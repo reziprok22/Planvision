@@ -640,6 +640,99 @@
             section { padding: 72px 20px; }
         }
     </style>
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@graph": [
+            {
+                "@type": "SoftwareApplication",
+                "name": "Planli",
+                "url": "https://planli.net/",
+                "applicationCategory": "BusinessApplication",
+                "operatingSystem": "Web",
+                "description": "Ausmass-Software für Bauplan-PDFs: Flächen und Längen direkt im Browser messen, Fenster per KI erkennen, Ergebnis als PDF exportieren.",
+                "offers": {
+                    "@type": "Offer",
+                    {% if beta_mode %}"price": "0",{% else %}"price": "240",{% endif %}
+                    "priceCurrency": "CHF"
+                }
+            },
+            {
+                "@type": "FAQPage",
+                "mainEntity": [
+                    {
+                        "@type": "Question",
+                        "name": "Was ist Planli?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Planli ist eine Web-App zur Erstellung von Ausmassen aus PDF-Bauplänen. Der Fokus liegt auf einer einfachen Bedienung und einer schnellen Erfassung von Flächen, Längen und weiteren Bauteilen. Planli eignet sich besonders für die frühe Projektphase oder überall dort, wo ein schnelles Ausmass genügt und die Präzision eines CAD-Programms nicht erforderlich ist."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Für wen ist Planli?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Planli richtet sich an alle, die schnell und einfach ein Ausmass aus PDF-Bauplänen erstellen möchten. Dazu gehören unter anderem Energieberater, Architekten, Planer, Bauleiter sowie Handwerksbetriebe."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Welche Dateiformate werden unterstützt?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Planli unterstützt PDF-Dateien. Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine flüssige Bearbeitung werden die Pläne im Editor optimiert dargestellt."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Welche Funktionen bietet Planli?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Planli bietet Werkzeuge für Rechtecke, Polygone und Linien, um Flächen, Längen und weitere Objekte direkt auf dem Plan zu erfassen. Mit dem Label-Manager können Bauteile wie Fenster, Wärmebrücken, EBF, Geschossflächen oder eigene Kategorien erstellt und den Werkzeugen zugeordnet werden. Eine besondere Funktion ist die KI-gestützte Fenstererkennung, die Fenster automatisch erkennt und ihre Flächen zur weiteren Bearbeitung vorschlägt."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Wie sehen die exportierten Pläne aus?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Beim Export werden alle eingezeichneten Objekte als Vektoren direkt auf das Original-PDF gelegt. Dadurch bleiben die Pläne scharf und können ohne Qualitätsverlust weitergegeben oder ausgedruckt werden."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Brauche ich eine spezielle Software oder Installation?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Nein. Planli läuft vollständig im Browser. Es ist keine Installation oder zusätzliche Software erforderlich."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Werden meine Daten gespeichert?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "Hochgeladene Pläne werden ausschliesslich auf sicheren Servern verarbeitet und standardmässig spätestens nach 14 Tagen automatisch gelöscht. Eine dauerhafte Speicherung erfolgt nur, wenn du dies im App-Menü ausdrücklich erlaubst."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Gibt es eine kostenlose Testphase?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            {% if beta_mode %}
+                            "text": "Ja. Während der aktuellen Beta-Phase kannst du Planli komplett kostenlos und ohne Anmeldung testen."
+                            {% else %}
+                            "text": "Ja. Nach der Registrierung steht dir eine 30-tägige kostenlose Testphase zur Verfügung."
+                            {% endif %}
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+    </script>
 {% endblock %}
 
 {% block body %}
