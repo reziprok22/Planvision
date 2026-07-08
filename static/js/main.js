@@ -418,9 +418,6 @@ function initCanvas() {
     }
     // Only zoom with Ctrl key, otherwise allow normal scrolling
     if (opt.e.ctrlKey) {
-      // Cancel any in-flight Shift+wheel horizontal animation: its target is in
-      // pre-zoom scroll coordinates and would otherwise yank the view sideways.
-      stopHorizontalScrollAnim();
       const delta = opt.e.deltaY;
       const oldZoom = canvas.getZoom();
       let newZoom = oldZoom * (0.999 ** delta);
@@ -607,64 +604,33 @@ function setupContainerScrolling() {
     // If Shift key is held, convert vertical scroll to horizontal
     if (e.shiftKey && !e.ctrlKey) {
       e.preventDefault();
-      // Normalise wheel units to pixels (line/page mode → approx. pixels).
-      // Firefox liefert für das Mausrad Zeilen (deltaMode 1, ~3 pro Raste),
-      // Chromium Pixel (deltaMode 0, ~100–150 pro Raste). Mit dem Standard-Faktor
-      // 40 px/Zeile (vgl. normalizeWheel) ergibt Firefox 3×40=120 ≈ Chromium →
-      // gleiche horizontale Scroll-Geschwindigkeit in beiden Browsern.
-      // Safari (macOS) legt den Shift+Wheel-Delta auf die X-Achse, Chrome/Firefox
-      // auf die Y-Achse → die betragsmässig dominante Achse nehmen.
-      let dy = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-      if (e.deltaMode === 1) dy *= 40;                       // lines
-      else if (e.deltaMode === 2) dy *= imageContainer.clientHeight; // pages
-      // Overall step size per notch. Pre-d4d4065 used deltaY * 0.5; keeping that
-      // factor restores the finer, more incremental feel (tune to taste).
-      dy *= H_SCROLL_SPEED;
-
-      // Accumulate onto a target so rapid notches add up smoothly.
-      if (hScrollTarget === null) hScrollTarget = imageContainer.scrollLeft;
-      const maxLeft = imageContainer.scrollWidth - imageContainer.clientWidth;
-      hScrollTarget = Math.max(0, Math.min(maxLeft, hScrollTarget + dy));
-
-      if (!hScrollRAF) {
-        hScrollRAF = requestAnimationFrame(animateHorizontalScroll);
+      // Safari (macOS) puts the Shift+wheel delta on the X axis, Chrome/Firefox
+      // on the Y axis → take whichever axis dominates in magnitude.
+      const raw = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (raw === 0) return;
+      // Browsers disagree wildly on delta magnitude and unit for Shift+wheel
+      // (Firefox: axis swap + line/page mode, Chromium: ~120 px pixels), so the
+      // magnitude is NOT trusted for wheel notches. A notch only carries its
+      // direction and jumps a fixed fraction of the visible width — deterministic
+      // across browsers and zoom levels, matching the feel of native vertical
+      // scrolling. Trackpads are the exception: they emit many small pixel-mode
+      // deltas per gesture, which would explode if each counted as a notch →
+      // small pixel deltas scroll 1:1 instead.
+      let dx;
+      if (e.deltaMode === 0 && Math.abs(raw) < 50) {
+        dx = raw; // trackpad / smooth-scroll: follow the gesture directly
+      } else {
+        dx = Math.sign(raw) * imageContainer.clientWidth * H_SCROLL_STEP;
       }
+      imageContainer.scrollLeft += dx;
     }
     // Normal vertical scrolling happens automatically if no modifiers
     // Ctrl+Wheel is handled by Fabric.js for zooming
   }, { passive: false });
 }
 
-// --- Smooth horizontal scroll state (Shift+wheel), module-level so the zoom
-// handler can cancel an in-flight animation before it fights the zoom's own
-// scroll positioning. Easing toward a target matches the feel of the browser's
-// native vertical scrolling; the 'scroll' handler keeps the canvas in sync. ---
-// Horizontal scroll speed factor per wheel notch (after line/page normalisation).
-// 0.5 ≈ the pre-d4d4065 feel (deltaY * 0.5); lower = finer/slower, higher = faster.
-const H_SCROLL_SPEED = 0.4;
-let hScrollTarget = null;
-let hScrollRAF = 0;
-
-function animateHorizontalScroll() {
-  if (!imageContainer || hScrollTarget === null) { hScrollRAF = 0; return; }
-  const cur = imageContainer.scrollLeft;
-  const diff = hScrollTarget - cur;
-  if (Math.abs(diff) < 0.5) {
-    imageContainer.scrollLeft = hScrollTarget;
-    hScrollRAF = 0;
-    hScrollTarget = null;
-    return;
-  }
-  imageContainer.scrollLeft = cur + diff * 0.25; // easing toward target
-  hScrollRAF = requestAnimationFrame(animateHorizontalScroll);
-}
-
-// Cancels any in-flight horizontal scroll animation. Called by the zoom handler
-// so a stale target (in pre-zoom scroll coordinates) can't yank the view sideways.
-function stopHorizontalScrollAnim() {
-  if (hScrollRAF) { cancelAnimationFrame(hScrollRAF); hScrollRAF = 0; }
-  hScrollTarget = null;
-}
+// Horizontal jump per wheel notch (Shift+wheel), as a fraction of the visible width.
+const H_SCROLL_STEP = 0.03;
 
 /**
  * Load Canvas data directly into the canvas (Single Source of Truth approach)
@@ -2538,7 +2504,12 @@ function applyLabelToAnnotation(obj, newLabelId) {
   const linkedTextLabel = canvas.getObjects().find(o =>
     o.objectType === 'textLabel' && o.linkedAnnotationId === obj.id
   );
-  if (linkedTextLabel) linkedTextLabel.set({ backgroundColor: label.color });
+  if (linkedTextLabel) {
+    linkedTextLabel.set({
+      backgroundColor: label.color,
+      fill: getContrastTextColor(label.color)
+    });
+  }
 }
 
 

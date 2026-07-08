@@ -5,7 +5,6 @@
 __pycache__
 env
 fasterrcnn_model
-trainings_data
 training_data_opt-in
 projects
 bug_reports
