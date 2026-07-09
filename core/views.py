@@ -170,7 +170,13 @@ def serve_project_file(request, project_id, filename):
         raise Http404("File not found")
     if not str(file_path.resolve()).startswith(str(project_dir.resolve())):
         raise Http404
-    return FileResponse(open(file_path, 'rb'))
+    response = FileResponse(open(file_path, 'rb'))
+    # Page renders are immutable for the lifetime of a session (never
+    # re-rendered under the same filename) — cache in the browser so
+    # switching pages doesn't re-fetch them. `private`, not `public`: access
+    # here is guarded by the unguessable session UUID, not meant for shared caches.
+    response['Cache-Control'] = 'private, max-age=31536000, immutable'
+    return response
 
 
 def _convert_pdf_to_images(pdf_file, project_id=None, source_index=1):

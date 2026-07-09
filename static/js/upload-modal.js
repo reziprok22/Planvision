@@ -27,6 +27,27 @@ let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
     changeFileBtn, pageListSection, pageList, pageCountBadge,
     leftLoader, appendFileInput, appendPageBtn;
 
+// Thumbnails reuse the full-resolution page image (there's no separate small
+// render) — so loading one really does prefetch that page. Native
+// loading="lazy" is too generous about what counts as "near the viewport"
+// for that to be free; this IntersectionObserver only starts a download once
+// a thumbnail is actually about to be shown; see CLAUDE.md "Seiten-Management".
+let thumbObserver = null;
+
+function getThumbObserver() {
+    if (thumbObserver) return thumbObserver;
+    const root = pageList?.closest('.left-column') || null;
+    thumbObserver = new IntersectionObserver((entries, obs) => {
+        for (const e of entries) {
+            if (!e.isIntersecting) continue;
+            const img = e.target;
+            if (img.dataset.src) { img.src = img.dataset.src; delete img.dataset.src; }
+            obs.unobserve(img);
+        }
+    }, { root, rootMargin: '100px 0px' });
+    return thumbObserver;
+}
+
 // ── Callbacks wired by main.js ────────────────────────────────────────
 let onPageClickCallback   = null;
 let onScaleChangeCallback = null;
@@ -293,9 +314,8 @@ export function buildPageList() {
 
         li.innerHTML = `
             <img class="page-thumb"
-                 src="${entry.imageUrl || ''}"
-                 alt="Seite ${position}"
-                 loading="lazy">
+                 data-src="${entry.imageUrl || ''}"
+                 alt="Seite ${position}">
             <span class="page-label">
                 Seite ${position}
                 ${sizeText ? `<span class="page-size-hint">${sizeText}</span>` : ''}
@@ -353,6 +373,7 @@ export function buildPageList() {
         });
 
         pageList.appendChild(li);
+        getThumbObserver().observe(li.querySelector('.page-thumb'));
     });
 
     // Restore highlight (rebuilds tear down and recreate all <li> nodes)

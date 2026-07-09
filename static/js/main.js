@@ -4228,8 +4228,10 @@ async function initApp() {
       // Reset undo/redo history for each new page
       setTimeout(() => { initHistory(); saveHistorySnapshot(); }, 200);
     };
-    // Blob URLs don't support query parameters – only add cache-busting for server paths
-    uploadedImage.src = imageUrl.startsWith('blob:') ? imageUrl : imageUrl + '?t=' + Date.now();
+    // No cache-busting: a page's rendered JPG never changes within a session
+    // (re-analysis only touches annotations, not the image) — letting the
+    // browser cache it means revisiting a page is instant and works offline.
+    uploadedImage.src = imageUrl;
   }
   // Expose for upload-modal page-click callback
   window.navigateToPageNoAnalysis = navigateToPageNoAnalysis;
