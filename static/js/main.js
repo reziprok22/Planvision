@@ -24,8 +24,10 @@ import {
   getAllPdfPages,
   setPdfSessionId,
   setPageSettings,
-  setOriginalPdfBlob,
-  getOriginalPdfBlob,
+  setSourcePdfBlob,
+  getAllSourcePdfBlobs,
+  setAllSourcePdfBlobs,
+  ensureServerSession,
   autoFontScale,
   getCsrfToken,
   isLightColor,
@@ -3927,10 +3929,13 @@ async function analyzeCurrentPage() {
   const loader = document.getElementById('loader');
   const errorMessage = document.getElementById('errorMessage');
   const analyzePageId = currentPageId;
-  // The server always addresses pages by their position in the ORIGINAL PDF
-  // (uploads/page_<N>.jpg) — that's sourcePageIndex, not the display position,
-  // which can differ after duplicate/delete/reorder.
-  const analyzePageNum = getPageEntry(analyzePageId)?.sourcePageIndex;
+  // The server addresses pages by their position within the ORIGINAL PDF they
+  // came from (uploads/page_<sourcePdfIndex>_<sourcePageIndex>.jpg) — that's
+  // sourcePageIndex/sourcePdfIndex, not the display position, which can differ
+  // after duplicate/delete/reorder or when pages were appended from another PDF.
+  const analyzeEntry = getPageEntry(analyzePageId);
+  const analyzePageNum = analyzeEntry?.sourcePageIndex;
+  const analyzeSourceIndex = analyzeEntry?.sourcePdfIndex ?? 1;
 
   // UI: busy state FIRST – set the "Analysiert…" spinner immediately on click,
   // before any (possibly slow) work like re-uploading the PDF for project-loaded
@@ -3940,35 +3945,20 @@ async function analyzeCurrentPage() {
   if (errorMessage) errorMessage.style.display = 'none';
 
   try {
-    let sessionId = getPdfSessionId() || getUploadSessionId();
-
-    if (!sessionId) {
-      // Re-establish a server session for projects loaded from ZIP by
-      // re-uploading the original PDF. The server only accepts PDFs, so this is
-      // the only fallback that can work; page numbering matches the ZIP pages.
-      const pdfBlob = getOriginalPdfBlob();
-      if (pdfBlob) {
-        try {
-          const fd = new FormData();
-          fd.append('file', new File([pdfBlob], 'document.pdf', { type: 'application/pdf' }));
-          const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
-          if (!res.ok) throw new Error();
-          const data = await res.json();
-          sessionId = data.session_id;
-          setPdfSessionId(sessionId); // reuse for subsequent analyses of any page
-        } catch {
-          alert('Analyse nicht möglich: Das Projekt-PDF konnte nicht erneut hochgeladen werden.');
-          return; // finally restores the button
-        }
-      } else {
-        alert('Analyse nicht möglich: Dieses Projekt enthält kein Original-PDF. Bitte das PDF neu hochladen.');
-        return; // finally restores the button
-      }
+    let sessionId;
+    try {
+      // Re-establishes a server session (re-uploading every source PDF, in
+      // order) for projects loaded from ZIP that were never analyzed yet.
+      sessionId = await ensureServerSession();
+    } catch (e) {
+      alert('Analyse nicht möglich: ' + e.message);
+      return; // finally restores the button
     }
 
     const formData = new FormData();
     formData.append('session_id', sessionId);
     formData.append('page', analyzePageNum);
+    formData.append('source_index', analyzeSourceIndex);
     formData.append('format_width',  document.getElementById('formatWidth')?.value  || 210);
     formData.append('format_height', document.getElementById('formatHeight')?.value || 297);
     formData.append('dpi',           document.getElementById('dpi')?.value           || 150);
@@ -4096,7 +4086,7 @@ async function initApp() {
 
     // Full reset for new upload – clear all previous project state
     pageCanvasData   = {};
-    setOriginalPdfBlob(null);
+    setAllSourcePdfBlobs({});
 
     // Pre-initialise a settings block for EVERY page from the detected PDF sizes,
     // so settings.json is complete and the per-page format survives save/reload –
@@ -4115,9 +4105,9 @@ async function initApp() {
     }
     setPageSettings(initialSettings);
 
-    // Track original PDF blob so it can be included in ZIP saves and PDF export
+    // Track original PDF blob (source 1) so it can be included in ZIP saves and PDF export
     if (uploadInfo.is_pdf && uploadInfo.original_file) {
-      setOriginalPdfBlob(uploadInfo.original_file);
+      setSourcePdfBlob(1, uploadInfo.original_file);
     }
     if (canvas) canvas.clear();
 
@@ -4245,6 +4235,28 @@ async function initApp() {
   window.navigateToPageNoAnalysis = navigateToPageNoAnalysis;
 
   /**
+   * Called by upload-modal.js after "Seiten anhängen" successfully rendered
+   * an additional PDF (Seiten-Management "Anhängen"). The new manifest
+   * entries exist already — this only needs pageSettings for them (same
+   * defaults as a fresh upload) and to jump to the first appended page.
+   */
+  window.onPagesAppended = function(newEntries) {
+    if (!newEntries || !newEntries.length) return;
+    const settings = getPageSettings();
+    for (const entry of newEntries) {
+      settings[entry.id] = {
+        format_width:  entry.width_mm  ?? 210,
+        format_height: entry.height_mm ?? 297,
+        dpi:           parseFloat(document.getElementById('dpi')?.value)        || 150,
+        plan_scale:    parseFloat(document.getElementById('planScale')?.value)  || 100,
+        ai_label:      parseInt(document.getElementById('aiLabelSelect')?.value) || null,
+      };
+    }
+    setPageSettings(settings);
+    navigateToPageNoAnalysis(newEntries[0].id);
+  };
+
+  /**
    * Handle a page action from the sidebar (Duplizieren/Löschen/Reihenfolge).
    * Always flushes the live canvas + UI settings into storage first, so an
    * operation on the currently active page picks up its latest state.
@@ -4272,6 +4284,9 @@ async function initApp() {
     }
 
     if (action === 'delete') {
+      const position = getPageIndexById(pageId);
+      if (!confirm(`Seite ${position} wirklich löschen?`)) return;
+
       const wasCurrent = pageId === currentPageId;
       let fallbackId = null;
       if (wasCurrent) {
@@ -4580,8 +4595,8 @@ async function initApp() {
       setPdfSessionId,
       setPageSettings,
       setPageManifest,
-      getOriginalPdfBlob,
-      setOriginalPdfBlob
+      getAllSourcePdfBlobs,
+      setAllSourcePdfBlobs
     }
   });
 

@@ -50,7 +50,7 @@ function collectZipParams(projectName) {
     labels:          getAllLabels(),
     settings:        pdfModule.getPageSettings(),
     pageImageUrls:   pdfModule.getAllPdfPages(),
-    originalPdfBlob: pdfModule.getOriginalPdfBlob(),
+    sourcePdfBlobs:  pdfModule.getAllSourcePdfBlobs(),
   };
 }
 
@@ -231,13 +231,14 @@ async function handleLoad(file) {
   if (loader) loader.style.display = 'block';
 
   try {
-    const { metadata, canvasData, labels, settings, imageUrls, pdfBlob } = await loadProjectFromZip(file);
+    const { metadata, canvasData, labels, settings, imageUrls, sourcePdfBlobs } = await loadProjectFromZip(file);
 
     // Rebuild the page manifest: canvasData.page_manifest carries id/
-    // sourcePageIndex/size in display order (see project-zip.js migration for
-    // older v1 ZIPs); imageUrls (from the ZIP's pages/ folder) is in the same
-    // order, so we zip them together. width_mm/height_mm backfilled from
-    // settings.json for migrated v1 projects, which never stored them there.
+    // sourcePdfIndex/sourcePageIndex/size in display order (see project-zip.js
+    // migrations for older v1/v2 ZIPs); imageUrls (from the ZIP's pages/
+    // folder) is in the same order, so we zip them together. width_mm/height_mm
+    // backfilled from settings.json for migrated v1 projects, which never
+    // stored them there.
     const fullManifest = (canvasData.page_manifest || []).map((entry, i) => ({
       ...entry,
       imageUrl: imageUrls[i],
@@ -253,10 +254,8 @@ async function handleLoad(file) {
 
     if (labels.length > 0) setCurrentLabels(labels);
 
-    // Store the original PDF blob for frontend export
-    if (pdfBlob) {
-      pdfModule.setOriginalPdfBlob(pdfBlob);
-    }
+    // Store the source PDF(s) for frontend export / session re-establishment
+    pdfModule.setAllSourcePdfBlobs(sourcePdfBlobs);
 
     initSidebarFromProject(metadata.project_name);
 
@@ -342,7 +341,7 @@ export function exportPdf() {
 
 export function exportAnnotatedPdf() {
   return runPdfExport('Annotierter Plan wird erstellt…', 'Plan erstellt ✓', (params) =>
-    exportAnnotatedPdfClient({ ...params, pdfBlob: pdfModule.getOriginalPdfBlob() }), 'PDF Export: Plan');
+    exportAnnotatedPdfClient({ ...params, sourcePdfBlobs: pdfModule.getAllSourcePdfBlobs() }), 'PDF Export: Plan');
 }
 
 // ── Status helper ─────────────────────────────────────────────────────────────

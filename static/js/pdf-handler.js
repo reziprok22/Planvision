@@ -40,23 +40,24 @@ export function autoFontScale(imgWidth, imgHeight) {
 }
 
 let pdfSessionId = null;
-let originalPdfBlob = null;
+let sourcePdfBlobs = {}; // { <sourcePdfIndex>: Blob } — the uploaded PDF(s), 1 = original upload
 let pageSettings = {}; // keyed by pageId (see pageManifest)
 let currentPageId = null;
 let pageIdSeq = 0;
 
 // Ordered list of page entries — this IS the page order shown in the app,
-// exported to PDF, and saved to ZIP. `sourcePageIndex` is the 1-based page
-// number in the ORIGINAL uploaded PDF (and the server-rendered `page_N.jpg`);
-// it stays fixed per entry even when the entry is duplicated, deleted, or
-// reordered, so the AI-analysis endpoint and PDF export always fetch the
-// right source page. `id` is the stable identity used everywhere else
-// (pageCanvasData, pageSettings) — see CLAUDE.md "Seiten-Management".
-let pageManifest = []; // [{ id, imageUrl, sourcePageIndex, width_mm, height_mm }]
+// exported to PDF, and saved to ZIP. `sourcePdfIndex`/`sourcePageIndex`
+// address the ORIGINAL uploaded PDF this page came from and its page number
+// within it (server-rendered as uploads/page_<sourcePdfIndex>_<sourcePageIndex>.jpg,
+// see core/views.py _convert_pdf_to_images) — both stay fixed per entry even
+// when the entry is duplicated, deleted, or reordered, so AI analysis and PDF
+// export always fetch the right source page. `id` is the stable identity used
+// everywhere else (pageCanvasData, pageSettings) — see CLAUDE.md "Seiten-Management".
+let pageManifest = []; // [{ id, imageUrl, sourcePdfIndex, sourcePageIndex, width_mm, height_mm }]
 
 export function resetPdfState() {
   pdfSessionId = null;
-  originalPdfBlob = null;
+  sourcePdfBlobs = {};
   pageSettings = {};
   currentPageId = null;
   pageIdSeq = 0;
@@ -68,9 +69,10 @@ function nextPageId() { return String(++pageIdSeq); }
 // Getters
 export function getPdfSessionId()    { return pdfSessionId; }
 export function getPageSettings()    { return pageSettings; }
-export function getOriginalPdfBlob() { return originalPdfBlob; }
 export function getPageManifest()    { return pageManifest; }
 export function getCurrentPageId()   { return currentPageId; }
+export function getSourcePdfBlob(sourcePdfIndex)  { return sourcePdfBlobs[sourcePdfIndex] || null; }
+export function getAllSourcePdfBlobs()            { return { ...sourcePdfBlobs }; }
 
 // Ordered array of image URLs (position-based) — bridge for consumers that
 // only care about display order (ZIP save, PDF export, sidebar rendering).
@@ -83,17 +85,19 @@ export function getPageIdAtIndex(pos) { return pageManifest[pos - 1]?.id ?? null
 // Setters
 export function setPdfSessionId(sessionId) { pdfSessionId = sessionId; }
 export function setPageSettings(settings)  { pageSettings = settings; }
-export function setOriginalPdfBlob(blob)   { originalPdfBlob = blob; }
 export function setCurrentPageId(id)       { currentPageId = id; }
+export function setSourcePdfBlob(sourcePdfIndex, blob) { sourcePdfBlobs[sourcePdfIndex] = blob; }
+export function setAllSourcePdfBlobs(blobs)            { sourcePdfBlobs = { ...blobs }; }
 
 /**
- * Build a fresh manifest after a new upload (all pages share one source PDF,
- * sourcePageIndex === original position).
+ * Build a fresh manifest after a new upload (all pages share source PDF 1,
+ * sourcePageIndex === original position). Replaces any previous project.
  */
-export function initPageManifestFromUpload(imageUrls, pageSizes) {
+export function initPageManifestFromUpload(imageUrls, pageSizes, sourcePdfIndex = 1) {
   pageManifest = (imageUrls || []).map((url, i) => ({
     id: nextPageId(),
     imageUrl: url,
+    sourcePdfIndex,
     sourcePageIndex: i + 1,
     width_mm:  pageSizes?.[i]?.width_mm  ?? null,
     height_mm: pageSizes?.[i]?.height_mm ?? null,
@@ -103,7 +107,24 @@ export function initPageManifestFromUpload(imageUrls, pageSizes) {
 }
 
 /**
- * Restore a manifest loaded from a ZIP (already has ids/sourcePageIndex).
+ * Append pages from an additionally uploaded PDF (Seiten-Management "Anhängen")
+ * to the end of the manifest. Returns the new entries.
+ */
+export function appendPagesToManifest(imageUrls, pageSizes, sourcePdfIndex) {
+  const newEntries = (imageUrls || []).map((url, i) => ({
+    id: nextPageId(),
+    imageUrl: url,
+    sourcePdfIndex,
+    sourcePageIndex: i + 1,
+    width_mm:  pageSizes?.[i]?.width_mm  ?? null,
+    height_mm: pageSizes?.[i]?.height_mm ?? null,
+  }));
+  pageManifest.push(...newEntries);
+  return newEntries;
+}
+
+/**
+ * Restore a manifest loaded from a ZIP (already has ids/sourcePdfIndex/sourcePageIndex).
  * Keeps the id counter ahead of any loaded ids so new duplicates never collide.
  */
 export function setPageManifest(entries) {
@@ -112,6 +133,39 @@ export function setPageManifest(entries) {
   pageIdSeq = Math.max(pageIdSeq, maxId);
   currentPageId = pageManifest[0]?.id ?? null;
   return pageManifest;
+}
+
+/**
+ * Make sure a server session exists, re-establishing one from the stored
+ * source PDFs if needed (e.g. a project loaded from ZIP was never analyzed
+ * yet, so it has no live session). Re-uploads every source PDF in order —
+ * source 1 via /upload, the rest via /upload_append — so uploads/page_<n>_<i>.jpg
+ * exists again for every page in the manifest. Throws if nothing can be done.
+ */
+export async function ensureServerSession() {
+  if (pdfSessionId) return pdfSessionId;
+
+  const indices = Object.keys(sourcePdfBlobs).map(Number).sort((a, b) => a - b);
+  if (!indices.length) {
+    throw new Error('Dieses Projekt enthält kein Original-PDF. Bitte das PDF neu hochladen.');
+  }
+
+  for (const idx of indices) {
+    const blob = sourcePdfBlobs[idx];
+    const fd = new FormData();
+    fd.append('file', new File([blob], 'document.pdf', { type: 'application/pdf' }));
+    if (idx === indices[0]) {
+      const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
+      if (!res.ok) throw new Error('Das Projekt-PDF konnte nicht erneut hochgeladen werden.');
+      const data = await res.json();
+      pdfSessionId = data.session_id;
+    } else {
+      fd.append('session_id', pdfSessionId);
+      const res = await fetch('/upload_append', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
+      if (!res.ok) throw new Error('Ein angehängtes PDF konnte nicht erneut hochgeladen werden.');
+    }
+  }
+  return pdfSessionId;
 }
 
 // ── Page operations ───────────────────────────────────────────────────────────

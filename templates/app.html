@@ -71,7 +71,7 @@
             text-decoration: underline;
             cursor: pointer;
         }
-        #leftFileInput { display: none; }
+        #leftFileInput, #appendFileInput { display: none; }
 
         /* --- File Info Bar (after upload) --- */
         .file-info-bar {
@@ -208,6 +208,11 @@
             color: #e0e0e0;
             cursor: default;
         }
+        /* Löschen-Button rot bei Hover, wie .delete-label-btn im Label-Manager */
+        .page-action-btn[data-action="delete"]:hover:not(:disabled) {
+            color: #e74c3c;
+            background: #fff0f0;
+        }
         .page-scale-control {
             display: flex;
             align-items: center;
@@ -240,6 +245,32 @@
             border-radius: 3px;
             width: 52px;
             color: #444;
+        }
+        .append-page-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            width: 100%;
+            margin-top: 8px;
+            background: none;
+            border: 1px dashed #ccc;
+            border-radius: 6px;
+            padding: 7px;
+            font-size: 0.85em;
+            color: #888;
+            cursor: pointer;
+        }
+        .append-page-btn:hover { border-color: #999; color: #555; background: #f7f7f7; }
+        .append-page-btn:disabled { cursor: not-allowed; }
+        /* Busy state while the PDF uploads/renders — same treatment as
+           .analyze-page-btn.analyzing ("Erkennen"-Button), see upload-modal.js */
+        .append-page-btn.busy {
+            background: #fff3e0;
+            color: #c04000;
+            border-color: #f0a060;
+            border-style: solid;
+            opacity: 1;
         }
 /* --- Einstellungs-Zeilen (Label/Schwelle) im "Fenster erkennen"-Modal --- */
         .popover-row {
@@ -518,6 +549,8 @@
 
     <!-- Hidden file input for left column upload -->
     <input type="file" id="leftFileInput" accept=".pdf">
+    <!-- Hidden file input for appending an additional PDF to the current project -->
+    <input type="file" id="appendFileInput" accept=".pdf">
 
     <div class="main-container">
 
@@ -563,6 +596,9 @@
                 <ul class="page-list" id="pageList">
                     <!-- Populated dynamically -->
                 </ul>
+                <button type="button" class="append-page-btn" id="appendPageBtn" title="Weiteren Plan (PDF) an dieses Projekt anhängen">
+                    + Seiten anhängen
+                </button>
             </div>
 
             <!-- Label Management -->

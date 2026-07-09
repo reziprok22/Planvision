@@ -4,14 +4,18 @@
  * ZIP structure:
  *   metadata.json      – project name, page count, format version
  *   canvas_data.json   – all-page canvas annotations, keyed by pageId, plus
- *                        page_manifest (ordered [{id, sourcePageIndex,
- *                        width_mm, height_mm}] — see CLAUDE.md "Seiten-Management")
+ *                        page_manifest (ordered [{id, sourcePdfIndex,
+ *                        sourcePageIndex, width_mm, height_mm}] — see
+ *                        CLAUDE.md "Seiten-Management")
  *   labels.json        – unified label definitions
  *   settings.json      – per-page analysis settings, keyed by pageId
  *   pages/
  *     page_1.jpg
  *     page_2.jpg
  *     …               (positional — display order at save time)
+ *   sources/
+ *     1.pdf            (the original upload)
+ *     2.pdf            (a PDF appended via "Seiten anhängen"), …
  */
 
 import JSZip from 'jszip';
@@ -35,8 +39,13 @@ import { sanitizeFileBase } from './pdf-handler.js';
 //       bleibt weiterhin positionsbasiert (Anzeigereihenfolge zum Speicherzeitpunkt) —
 //       Duplikate landen als eigene page_N.jpg, auch wenn sie dieselbe
 //       Original-PDF-Seite referenzieren.
+//   3 – Seiten-Management "Anhängen": mehrere Quell-PDFs pro Projekt möglich.
+//       page_manifest-Einträge bekommen sourcePdfIndex (welches der mehreren
+//       Quell-PDFs); `original.pdf` wird zu `sources/<index>.pdf` (1 = die
+//       ursprüngliche Datei). Der PDF-Export kopiert Seiten pro Eintrag aus
+//       der jeweils passenden Quelle (pdf-lib copyPages).
 //
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
 
@@ -72,6 +81,15 @@ function migrateCanvasData(canvasData, fromVersion) {
     canvasData.current_page_id = canvasData.page_manifest[0]?.id ?? null;
   }
 
+  if (fromVersion < 3) {
+    // v1/v2 only ever had a single source PDF ("original.pdf", loaded by the
+    // caller as sources[1] — see loadProjectFromZip). Every existing entry
+    // belongs to it.
+    for (const entry of canvasData.page_manifest || []) {
+      entry.sourcePdfIndex = 1;
+    }
+  }
+
   return canvasData;
 }
 
@@ -83,10 +101,10 @@ function migrateCanvasData(canvasData, fromVersion) {
  * @param {Array}    p.labels           – output of getAllLabels()
  * @param {Object}   p.settings         – output of getPageSettings()
  * @param {string[]} p.pageImageUrls    – URL array from getAllPdfPages()
- * @param {Blob}     p.originalPdfBlob  – the original PDF file (optional)
+ * @param {Object}   p.sourcePdfBlobs   – { <sourcePdfIndex>: Blob } — every uploaded/appended PDF (optional)
  * @param {Function} p.onProgress       – optional (percent: number) => void
  */
-export async function buildProjectZipBlob({ projectName, canvasData, labels, settings, pageImageUrls, originalPdfBlob, onProgress }) {
+export async function buildProjectZipBlob({ projectName, canvasData, labels, settings, pageImageUrls, sourcePdfBlobs, onProgress }) {
   const zip = new JSZip();
 
   zip.file('metadata.json', JSON.stringify({
@@ -100,9 +118,11 @@ export async function buildProjectZipBlob({ projectName, canvasData, labels, set
   zip.file('labels.json',      JSON.stringify(labels,     null, 2));
   zip.file('settings.json',    JSON.stringify(settings,   null, 2));
 
-  // Include original PDF so server session can be re-established on load
-  if (originalPdfBlob) {
-    zip.file('original.pdf', originalPdfBlob);
+  // Include every source PDF so the server session can be re-established on
+  // load and the PDF export can copy vector pages from each of them.
+  const sourcesFolder = zip.folder('sources');
+  for (const [sourcePdfIndex, blob] of Object.entries(sourcePdfBlobs || {})) {
+    if (blob) sourcesFolder.file(`${sourcePdfIndex}.pdf`, blob);
   }
 
   const pagesFolder = zip.folder('pages');
@@ -144,7 +164,7 @@ export async function saveProjectAsZip(params) {
 
 /**
  * Load a project from a ZIP file.
- * Returns { metadata, canvasData, labels, settings, imageUrls }
+ * Returns { metadata, canvasData, labels, settings, imageUrls, sourcePdfBlobs }
  * imageUrls are blob: URLs – caller is responsible for revoking them when done.
  */
 export async function loadProjectFromZip(file) {
@@ -182,10 +202,19 @@ export async function loadProjectFromZip(file) {
   }
   if (imageUrls.length === 0) throw new Error('ZIP enthält keine Seiten-Bilder.');
 
-  // Extract original PDF for server session re-establishment
-  let pdfBlob = null;
-  const pdfFile = zip.file('original.pdf');
-  if (pdfFile) pdfBlob = await pdfFile.async('blob');
+  // Extract every source PDF for server session re-establishment + export.
+  // v3+ stores one file per source under sources/<index>.pdf; v1/v2 only ever
+  // had a single "original.pdf", which becomes source 1.
+  const sourcePdfBlobs = {};
+  if (version >= 3) {
+    for (const name of Object.keys(zip.files)) {
+      const m = name.match(/^sources\/(\d+)\.pdf$/);
+      if (m) sourcePdfBlobs[parseInt(m[1], 10)] = await zip.file(name).async('blob');
+    }
+  } else {
+    const legacyPdf = zip.file('original.pdf');
+    if (legacyPdf) sourcePdfBlobs[1] = await legacyPdf.async('blob');
+  }
 
-  return { metadata, canvasData, labels, settings, imageUrls, pdfBlob };
+  return { metadata, canvasData, labels, settings, imageUrls, sourcePdfBlobs };
 }

@@ -559,27 +559,38 @@ const safeFileBase = (name) => sanitizeFileBase(name, 'Planli');
 
 // ── Plan erstellen (annotated PDF) ────────────────────────────────────────────
 
-export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageManifest, pageCanvasData, labels, projectName }) {
+export async function exportAnnotatedPdfClient({ sourcePdfBlobs, pageImageUrls, pageManifest, pageCanvasData, labels, projectName }) {
     const labelMap = Object.fromEntries((labels || []).map(l => [l.id, l]));
 
-    let pdfDoc;
+    // Preload every distinct source PDF once (Seiten-Management "Anhängen" —
+    // pages can come from several uploaded PDFs, see CLAUDE.md).
+    const srcDocs = {};
+    for (const [sourcePdfIndex, blob] of Object.entries(sourcePdfBlobs || {})) {
+        if (!blob) continue;
+        try {
+            srcDocs[sourcePdfIndex] = await PDFDocument.load(await blob.arrayBuffer());
+        } catch (e) {
+            console.warn('[PDF export] source PDF could not be loaded, falling back to images for its pages', sourcePdfIndex, e);
+        }
+    }
 
-    if (pdfBlob) {
-        // Rebuild the page order/selection from the manifest — after
-        // duplicate/delete/reorder, pdfBlob's own page order no longer
-        // matches the app's. sourcePageIndex still points at the right
-        // page in the ORIGINAL pdfBlob (duplicates copy it twice, deleted
-        // pages are simply never copied). See CLAUDE.md "Seiten-Management".
-        const srcDoc = await PDFDocument.load(await pdfBlob.arrayBuffer());
-        pdfDoc = await PDFDocument.create();
-        for (const entry of pageManifest) {
+    const pdfDoc = await PDFDocument.create();
+
+    // Build the output page order straight from the manifest — this is what
+    // makes duplicate/delete/reorder (and multiple source PDFs) come out
+    // right, independent of any single source's own page order.
+    for (let i = 0; i < pageManifest.length; i++) {
+        const entry = pageManifest[i];
+        const srcDoc = srcDocs[entry.sourcePdfIndex];
+        if (srcDoc) {
+            // Vector-quality copy straight from the source PDF
             const [copiedPage] = await pdfDoc.copyPages(srcDoc, [entry.sourcePageIndex - 1]);
             pdfDoc.addPage(copiedPage);
-        }
-    } else {
-        // No original PDF — build one from page images
-        pdfDoc = await PDFDocument.create();
-        for (const url of pageImageUrls) {
+        } else {
+            // No (usable) source PDF for this page — embed the rendered
+            // image instead, so the export always contains every page shown
+            // in the webapp, even in degraded cases (e.g. a legacy ZIP).
+            const url = pageImageUrls[i];
             try {
                 const bytes = await fetch(url).then(r => r.arrayBuffer());
                 const isJpg = /\.(jpe?g)(\?.*)?$/i.test(url);

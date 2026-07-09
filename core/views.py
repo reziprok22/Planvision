@@ -173,14 +173,20 @@ def serve_project_file(request, project_id, filename):
     return FileResponse(open(file_path, 'rb'))
 
 
-def _convert_pdf_to_images(pdf_file, project_id=None):
+def _convert_pdf_to_images(pdf_file, project_id=None, source_index=1):
+    """Render a PDF into projects/<uuid>/uploads/.
+
+    `source_index` namespaces the output (document_<n>.pdf, page_<n>_<i>.jpg)
+    so multiple PDFs can coexist in the same session — see Seiten-Management
+    "Anhängen" (CLAUDE.md). source_index=1 is the original upload.
+    """
     if not project_id:
         project_id = str(uuid.uuid4())
 
     output_dir = PROJECTS_DIR / project_id / 'uploads'
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    pdf_path = output_dir / "document.pdf"
+    pdf_path = output_dir / f"document_{source_index}.pdf"
     with open(pdf_path, 'wb') as f:
         for chunk in pdf_file.chunks():
             f.write(chunk)
@@ -199,10 +205,10 @@ def _convert_pdf_to_images(pdf_file, project_id=None):
         images = convert_from_path(str(pdf_path), dpi=PDF_DPI)
         page_count = len(images)
         for i, image in enumerate(images):
-            image_path = output_dir / f"page_{i+1}.jpg"
+            image_path = output_dir / f"page_{source_index}_{i+1}.jpg"
             image.save(str(image_path), "JPEG", quality=JPEG_QUALITY, optimize=True)
             local_image_paths.append(str(image_path))
-            image_paths.append(f"/project_files/{project_id}/uploads/page_{i+1}.jpg")
+            image_paths.append(f"/project_files/{project_id}/uploads/page_{source_index}_{i+1}.jpg")
         del images
         gc.collect()
     except Exception as e:
@@ -213,6 +219,7 @@ def _convert_pdf_to_images(pdf_file, project_id=None):
 
     return {
         "session_id": project_id,
+        "source_index": source_index,
         "image_paths": image_paths,
         "local_image_paths": local_image_paths,
         "page_count": page_count,
@@ -223,27 +230,32 @@ def _convert_pdf_to_images(pdf_file, project_id=None):
 MAX_UPLOAD_SIZE = 40 * 1024 * 1024  # 40 MB
 
 
+def _validate_pdf_upload(request):
+    """Shared checks for upload_file/upload_append. Returns (file, None) or (None, error_response)."""
+    if 'file' not in request.FILES:
+        return None, JsonResponse({'error': 'No file part'}, status=400)
+    file = request.FILES['file']
+    if not file.name:
+        return None, JsonResponse({'error': 'No selected file'}, status=400)
+    if not file.name.lower().endswith('.pdf'):
+        return None, JsonResponse({'error': 'Nur PDF-Dateien sind erlaubt.'}, status=400)
+    if file.size > MAX_UPLOAD_SIZE:
+        return None, JsonResponse({'error': 'Datei zu gross. Maximum: 40 MB.'}, status=400)
+    if file.read(4) != b'%PDF':
+        return None, JsonResponse({'error': 'Ungültige PDF-Datei.'}, status=400)
+    file.seek(0)
+    return file, None
+
+
 @require_POST
 def upload_file(request):
     denied = _access_denied(request)
     if denied:
         return denied
     try:
-        if 'file' not in request.FILES:
-            return JsonResponse({'error': 'No file part'}, status=400)
-        file = request.FILES['file']
-        if not file.name:
-            return JsonResponse({'error': 'No selected file'}, status=400)
-
-        if not file.name.lower().endswith('.pdf'):
-            return JsonResponse({'error': 'Nur PDF-Dateien sind erlaubt.'}, status=400)
-
-        if file.size > MAX_UPLOAD_SIZE:
-            return JsonResponse({'error': 'Datei zu gross. Maximum: 40 MB.'}, status=400)
-
-        if file.read(4) != b'%PDF':
-            return JsonResponse({'error': 'Ungültige PDF-Datei.'}, status=400)
-        file.seek(0)
+        file, error = _validate_pdf_upload(request)
+        if error:
+            return error
 
         try:
             pdf_info = _convert_pdf_to_images(file)
@@ -255,6 +267,7 @@ def upload_file(request):
             return JsonResponse({
                 'is_pdf': True,
                 'session_id': pdf_info["session_id"],
+                'source_index': pdf_info["source_index"],
                 'page_count': int(pdf_info["page_count"]),
                 'all_pages': pdf_info["image_paths"],
                 'page_sizes': pdf_info["page_sizes"],
@@ -266,6 +279,51 @@ def upload_file(request):
 
     except Exception as e:
         logger.exception("Upload error")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_POST
+def upload_append(request):
+    """Render an additional PDF into an EXISTING session (Seiten-Management
+    "Anhängen") — same session_id, next free source_index. The frontend keeps
+    each page's sourcePdfIndex/sourcePageIndex in its page manifest so
+    analysis and PDF export can address the right rendered page afterwards."""
+    denied = _access_denied(request)
+    if denied:
+        return denied
+    try:
+        session_id = request.POST.get('session_id')
+        if _get_project(request, session_id) is None:
+            return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+
+        file, error = _validate_pdf_upload(request)
+        if error:
+            return error
+
+        session_dir = PROJECTS_DIR / session_id / 'uploads'
+        existing_indices = []
+        for name in os.listdir(session_dir):
+            if name.startswith('document_') and name.endswith('.pdf'):
+                try:
+                    existing_indices.append(int(name[len('document_'):-len('.pdf')]))
+                except ValueError:
+                    pass
+        next_index = max(existing_indices, default=0) + 1
+
+        try:
+            pdf_info = _convert_pdf_to_images(file, project_id=session_id, source_index=next_index)
+            return JsonResponse({
+                'source_index': pdf_info["source_index"],
+                'page_count': int(pdf_info["page_count"]),
+                'all_pages': pdf_info["image_paths"],
+                'page_sizes': pdf_info["page_sizes"],
+            })
+        except Exception as e:
+            logger.exception("PDF processing error (append)")
+            return JsonResponse({'error': f'Error converting PDF: {str(e)}'}, status=500)
+
+    except Exception as e:
+        logger.exception("Upload-append error")
         return JsonResponse({'error': str(e)}, status=500)
 
 
@@ -285,6 +343,9 @@ def analyze_page(request):
             return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
 
         page = int(request.POST.get('page', 1))
+        # Which uploaded PDF this page belongs to (Seiten-Management "Anhängen") —
+        # 1 = the original upload. See _convert_pdf_to_images' source_index namespacing.
+        source_index = int(request.POST.get('source_index', 1))
         format_size = (
             float(request.POST.get('format_width', 210)),
             float(request.POST.get('format_height', 297)),
@@ -297,7 +358,8 @@ def analyze_page(request):
         if not session_dir.exists():
             return JsonResponse({'error': 'Session nicht gefunden'}, status=404)
 
-        pdf_files = [f for f in os.listdir(session_dir) if f.startswith('page_') and f.endswith('.jpg')]
+        page_prefix = f"page_{source_index}_"
+        pdf_files = [f for f in os.listdir(session_dir) if f.startswith(page_prefix) and f.endswith('.jpg')]
         image_files = [f for f in os.listdir(session_dir) if f.startswith('image.')]
 
         is_pdf = len(pdf_files) > 0
@@ -307,8 +369,8 @@ def analyze_page(request):
             return JsonResponse({'error': 'Ungültige Seitenzahl'}, status=400)
 
         if is_pdf:
-            image_filename = f"page_{page}.jpg"
-            rel_image_path = f"/project_files/{session_id}/uploads/page_{page}.jpg"
+            image_filename = f"{page_prefix}{page}.jpg"
+            rel_image_path = f"/project_files/{session_id}/uploads/{page_prefix}{page}.jpg"
         else:
             image_filename = image_files[0] if image_files else None
             if not image_filename:
@@ -343,7 +405,7 @@ def analyze_page(request):
         ]
 
         if is_pdf:
-            all_image_paths = [f"/project_files/{session_id}/uploads/page_{i+1}.jpg" for i in range(page_count)]
+            all_image_paths = [f"/project_files/{session_id}/uploads/{page_prefix}{i+1}.jpg" for i in range(page_count)]
         else:
             all_image_paths = [rel_image_path]
 

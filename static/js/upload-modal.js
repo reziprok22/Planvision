@@ -9,7 +9,10 @@
 import {
   getCsrfToken,
   initPageManifestFromUpload,
+  appendPagesToManifest,
   getPageManifest,
+  setSourcePdfBlob,
+  ensureServerSession,
 } from './pdf-handler.js';
 
 // ── Internal state ──────────────────────────────────────────────────
@@ -22,7 +25,7 @@ let currentFileName  = '';
 // ── DOM refs ─────────────────────────────────────────────────────────
 let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
     changeFileBtn, pageListSection, pageList, pageCountBadge,
-    leftLoader;
+    leftLoader, appendFileInput, appendPageBtn;
 
 // ── Callbacks wired by main.js ────────────────────────────────────────
 let onPageClickCallback   = null;
@@ -52,6 +55,8 @@ export function setupUploadModal() {
     pageList             = document.getElementById('pageList');
     pageCountBadge       = document.getElementById('pageCountBadge');
     leftLoader           = document.getElementById('leftLoader');
+    appendFileInput      = document.getElementById('appendFileInput');
+    appendPageBtn        = document.getElementById('appendPageBtn');
 
     if (!dropZone || !fileInput) {
         console.warn('Upload handler: DOM elements not found');
@@ -82,6 +87,13 @@ export function setupUploadModal() {
     if (changeFileBtn) changeFileBtn.addEventListener('click', () => {
         resetUploadModal();
         fileInput.click();
+    });
+
+    // ── "Seiten anhängen" (append an additional PDF to the current project) ──
+    if (appendPageBtn) appendPageBtn.addEventListener('click', () => appendFileInput?.click());
+    if (appendFileInput) appendFileInput.addEventListener('change', () => {
+        if (appendFileInput.files[0]) handleAppendFile(appendFileInput.files[0]);
+        appendFileInput.value = '';
     });
 
 }
@@ -169,6 +181,68 @@ async function handleFile(file) {
     } finally {
         showLoading(false);
     }
+}
+
+/**
+ * Append an additional PDF's pages to the current project (Seiten-Management
+ * "Anhängen"). Re-establishes a server session first if the project has none
+ * yet (e.g. a ZIP-loaded project that was never analyzed).
+ */
+async function handleAppendFile(file) {
+    if (file.type !== 'application/pdf') {
+        alert('Nur PDF-Dateien sind erlaubt.');
+        return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+        alert('Die Datei ist zu gross (max. 100 MB).');
+        return;
+    }
+
+    setAppendButtonBusy(true);
+    try {
+        const sessionId = await ensureServerSession();
+
+        const formData = new FormData();
+        formData.append('session_id', sessionId);
+        formData.append('file', file);
+
+        const response = await fetch('/upload_append', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Anhängen fehlgeschlagen');
+        }
+
+        const data = await response.json();
+        const pageSizes = (data.page_sizes || []).map(s => ({
+            width_mm:  Math.round(s[0]),
+            height_mm: Math.round(s[1])
+        }));
+
+        setSourcePdfBlob(data.source_index, file);
+        const newEntries = appendPagesToManifest(data.all_pages || [], pageSizes, data.source_index);
+
+        buildPageList();
+        // Let main.js initialise settings for the new pages and navigate there
+        if (typeof window.onPagesAppended === 'function') window.onPagesAppended(newEntries);
+
+    } catch (err) {
+        alert('Fehler beim Anhängen: ' + err.message);
+        console.error('Append error:', err);
+    } finally {
+        setAppendButtonBusy(false);
+    }
+}
+
+// Same spinner treatment as the "Erkennen"-Button (analyze-page-btn.analyzing)
+// during the upload/render round trip — reuses its .btn-spinner CSS/keyframes.
+const APPEND_BTN_IDLE = '+ Seiten anhängen';
+const APPEND_BTN_BUSY = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> Wird angehängt…';
+
+function setAppendButtonBusy(busy) {
+    if (!appendPageBtn) return;
+    appendPageBtn.disabled = busy;
+    appendPageBtn.classList.toggle('busy', busy);
+    appendPageBtn.innerHTML = busy ? APPEND_BTN_BUSY : APPEND_BTN_IDLE;
 }
 
 function showLoading(active) {
