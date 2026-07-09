@@ -649,7 +649,7 @@ function setupContainerScrolling() {
 }
 
 // Horizontal jump per wheel notch (Shift+wheel), as a fraction of the visible width.
-const H_SCROLL_STEP = 0.03;
+const H_SCROLL_STEP = 0.05;
 
 /**
  * Load Canvas data directly into the canvas (Single Source of Truth approach)
