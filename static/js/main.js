@@ -420,6 +420,7 @@ function initCanvas() {
         const next = (sel.selectedIndex + dir + sel.options.length) % sel.options.length;
         sel.selectedIndex = next;
         sel.dispatchEvent(new Event('change'));
+        updateLabelQuickList();
       }
       opt.e.preventDefault();
       opt.e.stopPropagation();
@@ -1702,6 +1703,48 @@ function showLabelTooltip(labelName, labelColor) {
   }, 1500);
 }
 
+/**
+ * Live-Distanzanzeige beim Zeichnen — kleines Tooltip, das dem Cursor folgt,
+ * solange ein Zeichenvorgang läuft (Rechteck: B × H, Linie/Polygon/Bemassung:
+ * Distanz zum letzten gesetzten Punkt). Sitzt unter-rechts vom Cursor, damit
+ * es nicht mit dem Label-Tooltip (oben-rechts) kollidiert.
+ */
+let drawDistanceEl = null;
+
+function ensureDrawDistanceEl() {
+  if (drawDistanceEl) return drawDistanceEl;
+  drawDistanceEl = document.createElement('div');
+  drawDistanceEl.id = 'drawDistanceTooltip';
+  Object.assign(drawDistanceEl.style, {
+    position: 'fixed',
+    pointerEvents: 'none',
+    zIndex: '10000',
+    background: 'rgba(20, 20, 20, 0.62)',
+    color: '#fff',
+    padding: '2px 7px',
+    borderRadius: '4px',
+    fontSize: '11.5px',
+    fontWeight: '600',
+    fontVariantNumeric: 'tabular-nums',
+    whiteSpace: 'nowrap',
+    display: 'none',
+  });
+  document.body.appendChild(drawDistanceEl);
+  return drawDistanceEl;
+}
+
+function showDrawDistance(text, e) {
+  const el = ensureDrawDistanceEl();
+  el.textContent = text;
+  el.style.left = `${e.clientX + 16}px`;
+  el.style.top  = `${e.clientY + 18}px`;
+  el.style.display = 'block';
+}
+
+function hideDrawDistance() {
+  if (drawDistanceEl) drawDistanceEl.style.display = 'none';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -1813,16 +1856,39 @@ function setupCanvasEvents() {
       drawCrosshair(pointer.x, pointer.y);
     }
 
-    if (!drawingMode) return;
+    if (!drawingMode) { hideDrawDistance(); return; }
 
     if (currentTool === 'rectangle' && currentRectangle) {
       updateDrawingRectangle(pointer);
+      if (rectangleStartPoint) {
+        const f = getPixelToMeterFactor();
+        const w = Math.abs(pointer.x - rectangleStartPoint.x) * f;
+        const h = Math.abs(pointer.y - rectangleStartPoint.y) * f;
+        showDrawDistance(`${w.toFixed(2)} × ${h.toFixed(2)} m`, options.e);
+      }
     } else if (currentTool === 'polygon' && currentPolygon) {
       updatePolygonPreview(pointer, options.e.shiftKey);
+      if (currentPoints.length > 0) {
+        const last = currentPoints[currentPoints.length - 1];
+        const end = options.e.shiftKey ? snapToAngle(last, pointer) : pointer;
+        showDrawDistance(dimMeasurementText(Math.hypot(end.x - last.x, end.y - last.y)), options.e);
+      }
     } else if (currentTool === 'line' && currentLine) {
       updateLinePreview(pointer, options.e.shiftKey);
+      if (currentPoints.length > 0) {
+        const last = currentPoints[currentPoints.length - 1];
+        const end = options.e.shiftKey ? snapToAngle(last, pointer) : pointer;
+        showDrawDistance(dimMeasurementText(Math.hypot(end.x - last.x, end.y - last.y)), options.e);
+      }
     } else if (currentTool === 'dimension') {
       dimHandleMove(pointer, options.e);
+      if (dimPhase === 1 && dimP1) {
+        const pt = options.e.shiftKey ? snapToAngle(dimP1, pointer) : pointer;
+        showDrawDistance(dimMeasurementText(Math.hypot(pt.x - dimP1.x, pt.y - dimP1.y)), options.e);
+      } else {
+        // Phase 2 (Parallel-Offset): das Mass steht bereits in der Vorschau selbst
+        hideDrawDistance();
+      }
     } else if (currentTool === 'text' && textPreviewRect) {
       updateTextDrawing(pointer);
     }
@@ -2219,6 +2285,20 @@ function updateLabelQuickList() {
     });
     container.appendChild(item);
   });
+
+  // Aktives Label in den sichtbaren Bereich holen (Liste hat max-height + overflow).
+  // Nur den Scroll der Liste selbst anpassen – kein scrollIntoView, das würde
+  // u.U. auch die Seitenleiste/Seite mitscrollen.
+  const active = container.querySelector('.label-quick-item.active');
+  if (active) {
+    const cRect = container.getBoundingClientRect();
+    const iRect = active.getBoundingClientRect();
+    if (iRect.top < cRect.top) {
+      container.scrollTop += iRect.top - cRect.top;
+    } else if (iRect.bottom > cRect.bottom) {
+      container.scrollTop += iRect.bottom - cRect.bottom;
+    }
+  }
 }
 
 /**
@@ -2239,6 +2319,8 @@ function cleanupCurrentTool() {
   } else if (currentTool === 'text') {
     resetTextDrawing();
   }
+
+  hideDrawDistance();
 
   if (canvas) {
     canvas.renderAll();
@@ -2262,6 +2344,7 @@ function resetAllDrawingStates() {
   // Text field drawing state
   if (textPreviewRect) { canvas?.remove(textPreviewRect); textPreviewRect = null; }
   textStartPoint = null;
+  hideDrawDistance();
 }
 
 /**
@@ -2349,6 +2432,7 @@ function finishDrawingRectangle() {
   drawingMode = false;
   currentRectangle = null;
   rectangleStartPoint = null;
+  hideDrawDistance();
   canvas.renderAll();
 }
 
@@ -2690,6 +2774,7 @@ function resetPolygonDrawing() {
   drawingMode = false;
   currentPolygon = null;
   currentPoints = [];
+  hideDrawDistance();
 }
 
 /**
@@ -3028,6 +3113,7 @@ function resetLineDrawing() {
   drawingMode = false;
   currentLine = null;
   currentPoints = [];
+  hideDrawDistance();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3204,6 +3290,7 @@ function resetDimDrawing() {
   dimP1 = null;
   dimP2 = null;
   drawingMode = false;
+  hideDrawDistance();
 }
 
 // 3-click flow: click 1 → start, click 2 → end, click 3 → place at current offset.
