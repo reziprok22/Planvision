@@ -559,13 +559,23 @@ const safeFileBase = (name) => sanitizeFileBase(name, 'Planli');
 
 // ── Plan erstellen (annotated PDF) ────────────────────────────────────────────
 
-export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCanvasData, labels, projectName }) {
+export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageManifest, pageCanvasData, labels, projectName }) {
     const labelMap = Object.fromEntries((labels || []).map(l => [l.id, l]));
 
     let pdfDoc;
 
     if (pdfBlob) {
-        pdfDoc = await PDFDocument.load(await pdfBlob.arrayBuffer());
+        // Rebuild the page order/selection from the manifest — after
+        // duplicate/delete/reorder, pdfBlob's own page order no longer
+        // matches the app's. sourcePageIndex still points at the right
+        // page in the ORIGINAL pdfBlob (duplicates copy it twice, deleted
+        // pages are simply never copied). See CLAUDE.md "Seiten-Management".
+        const srcDoc = await PDFDocument.load(await pdfBlob.arrayBuffer());
+        pdfDoc = await PDFDocument.create();
+        for (const entry of pageManifest) {
+            const [copiedPage] = await pdfDoc.copyPages(srcDoc, [entry.sourcePageIndex - 1]);
+            pdfDoc.addPage(copiedPage);
+        }
     } else {
         // No original PDF — build one from page images
         pdfDoc = await PDFDocument.create();
@@ -589,8 +599,8 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
     const pdfPages = pdfDoc.getPages();
 
     for (let i = 0; i < pdfPages.length; i++) {
-        const pageNum     = i + 1;
-        const canvasData  = pageCanvasData[pageNum] || pageCanvasData[String(pageNum)];
+        const pageId       = pageManifest[i]?.id;
+        const canvasData  = pageCanvasData[pageId];
         const annotations = canvasData?.canvas_annotations || [];
         const dimensions  = canvasData?.canvas_dimensions || [];
         const textNotes   = canvasData?.canvas_text_notes || [];
@@ -599,9 +609,9 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
         const page = pdfPages[i];
         const T = makeDisplayTransform(page);
 
-        // pageImageUrls is 0-based: original page `pageNum` → index pageNum - 1
+        // pageImageUrls is in the same (app-manifest) order as pdfPages
         // The rendered image is in display orientation → scale against display size
-        const imgDim = pageImageUrls[pageNum - 1] ? await loadImgDimensions(pageImageUrls[pageNum - 1]) : null;
+        const imgDim = pageImageUrls[i] ? await loadImgDimensions(pageImageUrls[i]) : null;
         const imgW   = imgDim?.w || T.displayW;
         const imgH   = imgDim?.h || T.displayH;
         const sx = T.displayW / imgW;
@@ -625,7 +635,7 @@ export async function exportAnnotatedPdfClient({ pdfBlob, pageImageUrls, pageCan
 
 // ── Bericht erstellen (report PDF) ───────────────────────────────────────────
 
-export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, labels, projectName }) {
+export async function exportReportPdfClient({ pageImageUrls, pageManifest, pageCanvasData, labels, projectName }) {
     const labelMap = Object.fromEntries((labels || []).map(l => [l.id, l]));
     const A4_W = 595, A4_H = 842;
     const MARGIN = 40;
@@ -637,8 +647,9 @@ export async function exportReportPdfClient({ pageImageUrls, pageCanvasData, lab
     const dateStr = new Date().toLocaleDateString('de-DE');
 
     for (let i = 0; i < pageImageUrls.length; i++) {
-        const pageNum    = i + 1;
-        const canvasData = pageCanvasData[pageNum] || pageCanvasData[String(pageNum)];
+        const pageNum    = i + 1; // display position — used only for the header text below
+        const pageId     = pageManifest[i]?.id;
+        const canvasData = pageCanvasData[pageId];
         const annotations = (canvasData?.canvas_annotations || [])
             .filter(a => a.objectType === 'annotation');
 

@@ -3,13 +3,15 @@
  *
  * ZIP structure:
  *   metadata.json      – project name, page count, format version
- *   canvas_data.json   – all-page canvas annotations (multi_page_canvas_v1)
+ *   canvas_data.json   – all-page canvas annotations, keyed by pageId, plus
+ *                        page_manifest (ordered [{id, sourcePageIndex,
+ *                        width_mm, height_mm}] — see CLAUDE.md "Seiten-Management")
  *   labels.json        – unified label definitions
- *   settings.json      – per-page analysis settings
+ *   settings.json      – per-page analysis settings, keyed by pageId
  *   pages/
  *     page_1.jpg
  *     page_2.jpg
- *     …
+ *     …               (positional — display order at save time)
  */
 
 import JSZip from 'jszip';
@@ -24,11 +26,17 @@ import { sanitizeFileBase } from './pdf-handler.js';
 //       canvas_text_labels und id/labelText, canvas_dimensions und
 //       canvas_text_notes pro Seite), labels.json, settings.json, pages/,
 //       optional original.pdf sowie legend_position pro Seite.
+//   2 – Seiten-Management (Duplizieren/Löschen/Reihenfolge): canvas_data.json
+//       bekommt page_manifest — eine geordnete Liste [{id, sourcePageIndex,
+//       width_mm, height_mm}], die die Anzeigereihenfolge sowie die Zuordnung
+//       jeder Seite zur Original-PDF-Seite (für Analyse + PDF-Export) trägt.
+//       `pages` (canvas_data.json) und settings.json sind ab jetzt per
+//       stabiler pageId statt Seitenzahl geschlüsselt. `pages/page_N.jpg`
+//       bleibt weiterhin positionsbasiert (Anzeigereihenfolge zum Speicherzeitpunkt) —
+//       Duplikate landen als eigene page_N.jpg, auch wenn sie dieselbe
+//       Original-PDF-Seite referenzieren.
 //
-// (Vor dem Live-Gang auf v1 zurückgesetzt – es gibt noch keine echten
-//  Projektdateien im Umlauf, daher keine Legacy-Migration nötig.)
-//
-const CURRENT_VERSION = 1;
+const CURRENT_VERSION = 2;
 
 // ── Migration layer ───────────────────────────────────────────────────────────
 
@@ -47,8 +55,23 @@ function detectVersion(metadata) {
 function migrateCanvasData(canvasData, fromVersion) {
   if (fromVersion >= CURRENT_VERSION) return canvasData;
 
-  // No migrations yet – v1 is the base format. Add "if (fromVersion < N) { … }"
-  // blocks here when the schema changes (see CLAUDE.md, "ZIP Format Versioning").
+  if (fromVersion < 2) {
+    // v1 had no page manifest — page identity WAS the page number, and
+    // `pages`/settings.json were keyed by that same number. Reusing those
+    // number strings as pageIds means `pages` needs no remapping at all;
+    // we only need to synthesize the ordered manifest itself. width_mm/
+    // height_mm are backfilled from settings.json by the caller (project.js),
+    // which still has the per-page format values at load time.
+    const total = canvasData.total_pages || Object.keys(canvasData.pages || {}).length;
+    canvasData.page_manifest = Array.from({ length: total }, (_, i) => ({
+      id: String(i + 1),
+      sourcePageIndex: i + 1,
+      width_mm: null,
+      height_mm: null,
+    }));
+    canvasData.current_page_id = canvasData.page_manifest[0]?.id ?? null;
+  }
+
   return canvasData;
 }
 

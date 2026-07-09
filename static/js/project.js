@@ -233,9 +233,21 @@ async function handleLoad(file) {
   try {
     const { metadata, canvasData, labels, settings, imageUrls, pdfBlob } = await loadProjectFromZip(file);
 
+    // Rebuild the page manifest: canvasData.page_manifest carries id/
+    // sourcePageIndex/size in display order (see project-zip.js migration for
+    // older v1 ZIPs); imageUrls (from the ZIP's pages/ folder) is in the same
+    // order, so we zip them together. width_mm/height_mm backfilled from
+    // settings.json for migrated v1 projects, which never stored them there.
+    const fullManifest = (canvasData.page_manifest || []).map((entry, i) => ({
+      ...entry,
+      imageUrl: imageUrls[i],
+      width_mm:  entry.width_mm  ?? Math.round(parseFloat(settings[entry.id]?.format_width)  || 210),
+      height_mm: entry.height_mm ?? Math.round(parseFloat(settings[entry.id]?.format_height) || 297),
+    }));
+    pdfModule.setPageManifest(fullManifest);
+
     // Restore state
     if (window.initializePageCanvasData) window.initializePageCanvasData(canvasData);
-    pdfModule.setPdfNavigationState(1, metadata.page_count, imageUrls);
     pdfModule.setPageSettings(settings);
     pdfModule.setPdfSessionId(null);
 
@@ -246,17 +258,7 @@ async function handleLoad(file) {
       pdfModule.setOriginalPdfBlob(pdfBlob);
     }
 
-    // Build page sizes from settings
-    const pageSizes = [];
-    for (let i = 1; i <= metadata.page_count; i++) {
-      const s = settings[i] || settings[String(i)];
-      pageSizes.push(s ? {
-        width_mm:  Math.round(parseFloat(s.format_width)  || 210),
-        height_mm: Math.round(parseFloat(s.format_height) || 297)
-      } : null);
-    }
-
-    initSidebarFromProject(metadata.project_name, imageUrls, pageSizes);
+    initSidebarFromProject(metadata.project_name);
 
     const resultsSection = document.getElementById('resultsSection');
     if (resultsSection) resultsSection.style.display = 'block';
@@ -267,8 +269,8 @@ async function handleLoad(file) {
     // Sync all sidebar scale dropdowns with loaded settings
     if (window.syncAllPageScalesInSidebar) window.syncAllPageScalesInSidebar();
 
-    // Navigate to page 1 – loads its settings into UI fields
-    if (window.navigateToPageNoAnalysis) window.navigateToPageNoAnalysis(1, imageUrls);
+    // Navigate to the first page – loads its settings into UI fields
+    if (window.navigateToPageNoAnalysis) window.navigateToPageNoAnalysis(fullManifest[0]?.id);
 
     document.title = `Planli – ${metadata.project_name}`;
     updateStatus(status, 'Projekt geladen ✓', 'success');
@@ -321,6 +323,7 @@ async function runPdfExport(startMsg, successMsg, exporter, eventName) {
     sendTrainingData();
     await exporter({
       pageImageUrls: pdfModule.getAllPdfPages(),
+      pageManifest:  pdfModule.getPageManifest(),
       pageCanvasData,
       labels:        getAllLabels(),
       projectName:   getUploadedBaseName() || document.title.replace('Planli – ', '') || 'Planli',

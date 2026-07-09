@@ -6,12 +6,17 @@
  * is ready to use. Analysis is triggered manually per page.
  */
 
-import { getCsrfToken } from './pdf-handler.js';
+import {
+  getCsrfToken,
+  initPageManifestFromUpload,
+  getPageManifest,
+} from './pdf-handler.js';
 
 // ── Internal state ──────────────────────────────────────────────────
+// Page data itself (order, ids, image URLs, sizes) lives in pdf-handler.js's
+// page manifest — this module is a view over it. Only upload-specific state
+// (session, filename) stays local.
 let currentSessionId = null;
-let uploadedPages    = [];       // URL paths (for frontend)
-let uploadedPageSizes = [];      // [{width_mm, height_mm}] per page
 let currentFileName  = '';
 
 // ── DOM refs ─────────────────────────────────────────────────────────
@@ -20,11 +25,13 @@ let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
     leftLoader;
 
 // ── Callbacks wired by main.js ────────────────────────────────────────
-let onPageClickCallback  = null;
+let onPageClickCallback   = null;
 let onScaleChangeCallback = null;
+let onPageActionCallback  = null; // (action, pageId) => void — duplicate/delete/move
 
 export function setOnPageClick(fn)   { onPageClickCallback = fn; }
 export function setOnScaleChange(fn) { onScaleChangeCallback = fn; }
+export function setOnPageAction(fn)  { onPageActionCallback = fn; }
 
 const COMMON_SCALES = [20, 50, 100, 200, 500, 1000];
 
@@ -82,8 +89,6 @@ export function setupUploadModal() {
 /** Reset all state and UI to initial "waiting for file" */
 function resetUploadModal() {
     currentSessionId   = null;
-    uploadedPages      = [];
-    uploadedPageSizes  = [];
     currentFileName    = '';
 
     if (dropZone)       dropZone.style.display   = 'block';
@@ -96,7 +101,6 @@ function resetUploadModal() {
 
 // ── Accessors used by main.js ─────────────────────────────────────────
 export function getSessionId()    { return currentSessionId; }
-export function getPageSizes()    { return uploadedPageSizes; }
 
 /**
  * Base name of the currently loaded plan (uploaded filename without extension),
@@ -137,23 +141,23 @@ async function handleFile(file) {
         }
 
         const data = await response.json();
-        currentSessionId  = data.session_id;
-        uploadedPages     = data.all_pages || [];
-        uploadedPageSizes = (data.page_sizes || []).map(s => ({
+        currentSessionId = data.session_id;
+        const allPages = data.all_pages || [];
+        const pageSizes = (data.page_sizes || []).map(s => ({
             width_mm:  Math.round(s[0]),
             height_mm: Math.round(s[1])
         }));
 
+        // Build the page manifest (single source of truth for page order/identity)
+        initPageManifestFromUpload(allPages, pageSizes);
+
         showFileInfo(file.name);
-        buildPageList(data.page_count || 1);
+        buildPageList();
 
         // Tell main.js that upload is ready
         if (typeof window.onUploadReady === 'function') {
             window.onUploadReady({
                 session_id:    currentSessionId,
-                page_count:    data.page_count || 1,
-                all_pages:     uploadedPages,
-                page_sizes:    uploadedPageSizes,
                 is_pdf:        data.is_pdf,
                 original_file: data.is_pdf ? file : null
             });
@@ -186,44 +190,56 @@ function showFileInfo(name) {
 }
 
 /**
- * Build the page list in the left sidebar.
- * @param {number} count  Total page count
+ * (Re)build the page list in the left sidebar from the current page manifest.
+ * Call after any structural change (upload, ZIP load, duplicate/delete/reorder).
  */
-function buildPageList(count) {
+export function buildPageList() {
     if (!pageList || !pageListSection) return;
 
-    pageList.innerHTML = '';
-    if (pageCountBadge) pageCountBadge.textContent = count;
+    const manifest = getPageManifest();
+    const activeId = pageList.querySelector('.page-list-item.active')?.dataset.pageId;
 
-    for (let i = 1; i <= count; i++) {
-        const size = uploadedPageSizes[i - 1];
-        const sizeText = size ? `${size.width_mm} × ${size.height_mm} mm` : '';
+    pageList.innerHTML = '';
+    if (pageCountBadge) pageCountBadge.textContent = manifest.length;
+
+    const scaleOptions = COMMON_SCALES.map(s =>
+        `<option value="${s}" ${s === 100 ? 'selected' : ''}>${s}</option>`
+    ).join('');
+
+    manifest.forEach((entry, idx) => {
+        const position = idx + 1;
+        const sizeText = entry.width_mm ? `${entry.width_mm} × ${entry.height_mm} mm` : '';
+        const isFirst = idx === 0;
+        const isLast  = idx === manifest.length - 1;
+        const canDelete = manifest.length > 1;
 
         const li = document.createElement('li');
         li.className = 'page-list-item';
-        li.dataset.page = i;
-
-        const scaleOptions = COMMON_SCALES.map(s =>
-            `<option value="${s}" ${s === 100 ? 'selected' : ''}>${s}</option>`
-        ).join('');
+        li.dataset.pageId = entry.id;
 
         li.innerHTML = `
             <img class="page-thumb"
-                 src="${uploadedPages[i-1] || ''}"
-                 alt="Seite ${i}"
+                 src="${entry.imageUrl || ''}"
+                 alt="Seite ${position}"
                  loading="lazy">
             <span class="page-label">
-                Seite ${i}
+                Seite ${position}
                 ${sizeText ? `<span class="page-size-hint">${sizeText}</span>` : ''}
                 <span class="page-scale-control">
                     <span class="scale-prefix">1:</span>
-                    <select class="page-scale-select" data-page="${i}">
+                    <select class="page-scale-select" data-page-id="${entry.id}">
                         ${scaleOptions}
                         <option value="custom">Eigener…</option>
                     </select>
-                    <input type="number" class="page-scale-custom" data-page="${i}"
+                    <input type="number" class="page-scale-custom" data-page-id="${entry.id}"
                            min="1" value="100" style="display:none">
                 </span>
+            </span>
+            <span class="page-actions">
+                <button class="page-action-btn" data-action="up" ${isFirst ? 'disabled' : ''} title="Seite nach oben">▲</button>
+                <button class="page-action-btn" data-action="down" ${isLast ? 'disabled' : ''} title="Seite nach unten">▼</button>
+                <button class="page-action-btn" data-action="duplicate" title="Seite duplizieren">⧉</button>
+                <button class="page-action-btn" data-action="delete" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Seite löschen' : 'Die letzte Seite kann nicht gelöscht werden'}">✕</button>
             </span>
         `;
 
@@ -240,51 +256,60 @@ function buildPageList(count) {
                 scaleInput.focus();
             } else {
                 scaleInput.style.display = 'none';
-                if (onScaleChangeCallback) onScaleChangeCallback(i, parseFloat(scaleSelect.value));
+                if (onScaleChangeCallback) onScaleChangeCallback(entry.id, parseFloat(scaleSelect.value));
             }
         });
 
         scaleInput.addEventListener('blur', () => {
             const val = parseFloat(scaleInput.value);
-            if (val > 0 && onScaleChangeCallback) onScaleChangeCallback(i, val);
+            if (val > 0 && onScaleChangeCallback) onScaleChangeCallback(entry.id, val);
         });
         scaleInput.addEventListener('keydown', e => { if (e.key === 'Enter') scaleInput.blur(); });
 
+        // Page actions (duplicate/delete/move) — stop propagation so it doesn't navigate
+        li.querySelector('.page-actions').addEventListener('click', e => {
+            e.stopPropagation();
+            const btn = e.target.closest('.page-action-btn');
+            if (!btn || btn.disabled) return;
+            if (onPageActionCallback) onPageActionCallback(btn.dataset.action, entry.id);
+        });
+
         li.addEventListener('click', () => {
-            document.querySelectorAll('.page-list-item').forEach(el => el.classList.remove('active'));
-            li.classList.add('active');
-            if (onPageClickCallback) onPageClickCallback(i);
+            if (onPageClickCallback) onPageClickCallback(entry.id);
         });
 
         pageList.appendChild(li);
-    }
+    });
+
+    // Restore highlight (rebuilds tear down and recreate all <li> nodes)
+    if (activeId) setActivePageInList(activeId);
 
     pageListSection.style.display = 'block';
 }
 
 /**
  * Initialize the sidebar for a loaded project (no file upload flow).
- * Mirrors what handleFile() does after a successful upload.
+ * Mirrors what handleFile() does after a successful upload. Assumes the page
+ * manifest has already been restored via pdf-handler's setPageManifest().
  */
-export function initSidebarFromProject(projectName, imageUrls, pageSizes) {
+export function initSidebarFromProject(projectName) {
   // Drop any session from a previously uploaded file — otherwise analyses of
   // the loaded project would run against the old project's server session
   currentSessionId  = null;
-  uploadedPages     = imageUrls || [];
-  uploadedPageSizes = pageSizes  || [];
   currentFileName   = projectName;
 
   showFileInfo(projectName);
-  buildPageList(imageUrls.length);
-  setActivePageInList(1);
+  buildPageList();
+  const firstId = getPageManifest()[0]?.id;
+  if (firstId) setActivePageInList(firstId);
 }
 
 /**
  * Update the scale dropdown for a specific page from outside (e.g. after ZIP load).
  */
-export function setPageScaleInSidebar(pageNumber, scale) {
-    const select = document.querySelector(`.page-scale-select[data-page="${pageNumber}"]`);
-    const input  = document.querySelector(`.page-scale-custom[data-page="${pageNumber}"]`);
+export function setPageScaleInSidebar(pageId, scale) {
+    const select = document.querySelector(`.page-scale-select[data-page-id="${pageId}"]`);
+    const input  = document.querySelector(`.page-scale-custom[data-page-id="${pageId}"]`);
     if (!select) return;
     if (COMMON_SCALES.includes(scale)) {
         select.value = String(scale);
@@ -299,9 +324,9 @@ export function setPageScaleInSidebar(pageNumber, scale) {
  * Set the active page highlight in the sidebar list.
  * Called from main.js when page changes.
  */
-export function setActivePageInList(pageNumber) {
+export function setActivePageInList(pageId) {
     document.querySelectorAll('.page-list-item').forEach(el => {
-        el.classList.toggle('active', parseInt(el.dataset.page) === pageNumber);
+        el.classList.toggle('active', el.dataset.pageId === String(pageId));
     });
 }
 

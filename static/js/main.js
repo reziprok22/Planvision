@@ -20,18 +20,23 @@ import {
 import {
   resetPdfState,
   getPdfSessionId,
-  getPdfPageData,
   getPageSettings,
   getAllPdfPages,
   setPdfSessionId,
-  setPdfPageData,
   setPageSettings,
-  setPdfNavigationState,
   setOriginalPdfBlob,
   getOriginalPdfBlob,
   autoFontScale,
   getCsrfToken,
-  isLightColor
+  isLightColor,
+  getPageManifest,
+  setPageManifest,
+  getPageEntry,
+  getPageIndexById,
+  setCurrentPageId,
+  duplicatePageInManifest,
+  deletePageFromManifest,
+  movePageInManifest,
 } from './pdf-handler.js';
 import { setupProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
@@ -39,10 +44,11 @@ import {
   setupUploadModal,
   setOnPageClick,
   setOnScaleChange,
+  setOnPageAction,
   setActivePageInList,
   setPageScaleInSidebar,
   getSessionId as getUploadSessionId,
-  getPageSizes
+  buildPageList as rebuildSidebarPageList
 } from './upload-modal.js';
 
 // Fabric.js v6 ES6 modules imported successfully
@@ -78,8 +84,11 @@ let imageContainer = null;
 let uploadedImage = null;
 
 // Multi-Page Canvas State Management
-let pageCanvasData    = {}; // Store canvas data for each page: { "1": canvasData, "2": canvasData, ... }
-let currentPageNumber = 1;
+// Keyed by the stable pageId from pdf-handler.js's page manifest (NOT by
+// display position) — this survives duplicate/delete/reorder. See CLAUDE.md
+// "Seiten-Management".
+let pageCanvasData  = {}; // { "<pageId>": canvasData, ... }
+let currentPageId   = null;
 
 // Make canvas globally available for label validation (labels.js);
 // getPageCanvasData/getCurrentPageNumber werden in initApp() gesetzt.
@@ -765,10 +774,10 @@ function loadCanvasData(canvasData) {
 /**
  * Convert predictions to canvas data format (for new uploads only)
  */
-function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
+function convertPredictionsToCanvasData(predictions, pageId = currentPageId) {
   if (!predictions || predictions.length === 0) {
     return {
-      page_number: pageNumber,
+      page_id: pageId,
       canvas_annotations: [],
       annotation_count: 0,
       canvas_available: true
@@ -856,7 +865,7 @@ function convertPredictionsToCanvasData(predictions, pageNumber = 1) {
   }).filter(Boolean);
   
   return {
-    page_number: pageNumber,
+    page_id: pageId,
     canvas_annotations: canvasAnnotations,
     annotation_count: canvasAnnotations.length,
     canvas_available: true,
@@ -3737,14 +3746,14 @@ function calculatePolylineLength(points) {
 /**
  * Collect current canvas annotations in Fabric.js format for saving
  * Multi-Page version: collects data for the current page
- * @param {number} pageNumber - The current page number
+ * @param {string} pageId - The current page's stable id (pdf-handler.js manifest)
  * @returns {Object} Canvas data with all annotations and metadata for this page
  */
-function collectCurrentCanvasData(pageNumber = 1) {
+function collectCurrentCanvasData(pageId = currentPageId) {
   if (!canvas) {
     console.warn('No canvas available for data collection');
     return {
-      page_number: pageNumber,
+      page_id: pageId,
       canvas_annotations: [],
       annotation_count: 0,
       canvas_available: false
@@ -3809,7 +3818,7 @@ function collectCurrentCanvasData(pageNumber = 1) {
   const legendObj = canvas.getObjects().find(obj => obj.objectType === 'legend');
 
   return {
-    page_number: pageNumber,
+    page_id: pageId,
     canvas_annotations: canvasAnnotations,
     canvas_text_labels: canvasTextLabels,
     canvas_dimensions: canvasDimensions,
@@ -3827,27 +3836,27 @@ function collectCurrentCanvasData(pageNumber = 1) {
 
 /**
  * Save current canvas state to page-specific storage
- * @param {number} pageNum - Page number to save to
+ * @param {string} pageId - Page id to save to
  */
-function saveCurrentPageCanvasData(pageNum = currentPageNumber) {
-  if (canvas) {
-    const canvasData = collectCurrentCanvasData(pageNum);
-    pageCanvasData[pageNum] = canvasData;
-    console.log(`Saved canvas data for page ${pageNum}: ${canvasData.annotation_count} annotations`);
+function saveCurrentPageCanvasData(pageId = currentPageId) {
+  if (canvas && pageId != null) {
+    const canvasData = collectCurrentCanvasData(pageId);
+    pageCanvasData[pageId] = canvasData;
+    console.log(`Saved canvas data for page ${pageId}: ${canvasData.annotation_count} annotations`);
   }
 }
 
 /**
  * Load canvas data for a specific page
- * @param {number} pageNum - Page number to load
+ * @param {string} pageId - Page id to load
  */
-function loadPageCanvasData(pageNum) {
-  const canvasData = pageCanvasData[pageNum];
+function loadPageCanvasData(pageId) {
+  const canvasData = pageCanvasData[pageId];
   if (canvasData && canvasData.canvas_available) {
-    console.log(`Loading canvas data for page ${pageNum}: ${canvasData.annotation_count} annotations`);
+    console.log(`Loading canvas data for page ${pageId}: ${canvasData.annotation_count} annotations`);
     loadCanvasData(canvasData);
   } else {
-    console.log(`No canvas data available for page ${pageNum}`);
+    console.log(`No canvas data available for page ${pageId}`);
     // Clear canvas for empty page
     if (canvas) {
       canvas.clear();
@@ -3857,17 +3866,18 @@ function loadPageCanvasData(pageNum) {
 }
 
 /**
- * Set current page number and handle page switching
- * @param {number} pageNum - New current page number
+ * Set current page id and handle page switching
+ * @param {string} pageId - New current page id
  */
-function setCurrentPage(pageNum) {
-  if (pageNum !== currentPageNumber) {
+function setCurrentPage(pageId) {
+  if (pageId !== currentPageId) {
     // Save current page before switching
-    saveCurrentPageCanvasData(currentPageNumber);
-    
+    saveCurrentPageCanvasData(currentPageId);
+
     // Switch to new page
-    currentPageNumber = pageNum;
-    console.log(`Switched to page ${currentPageNumber}`);
+    currentPageId = pageId;
+    setCurrentPageId(pageId);
+    console.log(`Switched to page ${currentPageId}`);
   }
 }
 
@@ -3876,9 +3886,10 @@ function setCurrentPage(pageNum) {
  * @param {Object} projectCanvasData - Canvas data from loaded project
  */
 function initializePageCanvasData(projectCanvasData) {
-  // Multi-page format: load all pages
+  // Multi-page format: load all pages (keyed by pageId)
   pageCanvasData = { ...projectCanvasData.pages };
-  currentPageNumber = 1;
+  currentPageId = getPageManifest()[0]?.id ?? null;
+  setCurrentPageId(currentPageId);
   // Clear the previous project's canvas immediately (mirrors onUploadReady):
   // its annotations must never linger visibly or be collected into the new data.
   if (canvas) canvas.clear();
@@ -3887,21 +3898,21 @@ function initializePageCanvasData(projectCanvasData) {
 
 /**
  * Collect Canvas data for ALL pages in a multi-page project
- * @returns {Object} Canvas data organized by page number
+ * @returns {Object} Canvas data organized by page id, plus the page manifest
+ *   (order + source-PDF mapping) needed to reconstruct duplicate/delete/reorder.
  */
 function collectAllPagesCanvasData() {
   // Save current page first
-  saveCurrentPageCanvasData(currentPageNumber);
-  
-  // Get current page info from PDF module
-  const allPages = getAllPdfPages();
-  const totalPages = allPages ? allPages.length : 1;
-  
+  saveCurrentPageCanvasData(currentPageId);
+
+  const manifest = getPageManifest();
+
   return {
-    format: 'multi_page_canvas_v1',
-    total_pages: totalPages,
+    format: 'multi_page_canvas_v2',
+    total_pages: manifest.length,
     pages: { ...pageCanvasData }, // Include all pages with data
-    current_page: currentPageNumber,
+    page_manifest: manifest.map(({ id, sourcePageIndex, width_mm, height_mm }) => ({ id, sourcePageIndex, width_mm, height_mm })),
+    current_page_id: currentPageId,
     saved_at: new Date().toISOString()
   };
 }
@@ -3915,7 +3926,11 @@ async function analyzeCurrentPage() {
   const btn = document.getElementById('runDetectionBtn');
   const loader = document.getElementById('loader');
   const errorMessage = document.getElementById('errorMessage');
-  const analyzePageNum = currentPageNumber;
+  const analyzePageId = currentPageId;
+  // The server always addresses pages by their position in the ORIGINAL PDF
+  // (uploads/page_<N>.jpg) — that's sourcePageIndex, not the display position,
+  // which can differ after duplicate/delete/reorder.
+  const analyzePageNum = getPageEntry(analyzePageId)?.sourcePageIndex;
 
   // UI: busy state FIRST – set the "Analysiert…" spinner immediately on click,
   // before any (possibly slow) work like re-uploading the PDF for project-loaded
@@ -3984,7 +3999,7 @@ async function analyzeCurrentPage() {
       const aiSelect = document.getElementById('aiLabelSelect');
       const targetLabelId = aiSelect?.value ? parseInt(aiSelect.value) : null;
 
-      const existing = collectCurrentCanvasData(currentPageNumber);
+      const existing = collectCurrentCanvasData(analyzePageId);
 
       // Keep: all user annotations + AI annotations of a different label
       const kept = existing.canvas_annotations.filter(a =>
@@ -4004,7 +4019,7 @@ async function analyzeCurrentPage() {
 
       // New AI annotations: first drop AI-vs-AI duplicates (keep highest score),
       // then drop those overlapping a same-label user annotation
-      const aiData = convertPredictionsToCanvasData(data.predictions, currentPageNumber);
+      const aiData = convertPredictionsToCanvasData(data.predictions, analyzePageId);
       const dedupedAi = dedupeAnnotationsByScore(aiData.canvas_annotations);
       const filteredAi = dedupedAi.filter(a => {
         const box = specBBox(a);
@@ -4024,7 +4039,7 @@ async function analyzeCurrentPage() {
       };
 
       loadCanvasData(merged);
-      pageCanvasData[currentPageNumber] = merged;
+      pageCanvasData[analyzePageId] = merged;
     }
 
     updateResultsTable();
@@ -4072,12 +4087,12 @@ async function initApp() {
   });
   
    // ── New upload flow: called by upload-modal.js after successful /upload ──
+  // The page manifest itself is already built by upload-modal.js (it owns the
+  // /upload response) before this fires — see initPageManifestFromUpload().
   window.onUploadReady = function(uploadInfo) {
     console.log('Upload ready:', uploadInfo);
 
-    // Store session + all pages in PDF handler so navigation and project-save work
     setPdfSessionId(uploadInfo.session_id);
-    setPdfNavigationState(1, uploadInfo.page_count, uploadInfo.all_pages);
 
     // Full reset for new upload – clear all previous project state
     pageCanvasData   = {};
@@ -4088,13 +4103,11 @@ async function initApp() {
     // even for pages the user never opens (lazy init previously left them blank,
     // which dropped their real format on reload). DPI/scale/AI-label use the same
     // UI defaults that page 1 gets on first visit.
-    const detectedSizes = uploadInfo.page_sizes || [];
     const initialSettings = {};
-    for (let p = 1; p <= uploadInfo.page_count; p++) {
-      const s = detectedSizes[p - 1];
-      initialSettings[p] = {
-        format_width:  s ? (s.width_mm  ?? Math.round(s[0] ?? 210)) : 210,
-        format_height: s ? (s.height_mm ?? Math.round(s[1] ?? 297)) : 297,
+    for (const entry of getPageManifest()) {
+      initialSettings[entry.id] = {
+        format_width:  entry.width_mm  ?? 210,
+        format_height: entry.height_mm ?? 297,
         dpi:           parseFloat(document.getElementById('dpi')?.value)        || 150,
         plan_scale:    parseFloat(document.getElementById('planScale')?.value)  || 100,
         ai_label:      parseInt(document.getElementById('aiLabelSelect')?.value) || null,
@@ -4116,14 +4129,16 @@ async function initApp() {
     const analyzeBtn = document.getElementById('analyzeCurrentPageBtn');
     if (analyzeBtn) analyzeBtn.disabled = false;
 
-    // Navigate to page 1 (just display image, no analysis)
-    navigateToPageNoAnalysis(1, uploadInfo.all_pages, uploadInfo.page_sizes);
+    // Navigate to the first page (just display image, no analysis)
+    currentPageId = null; // force navigateToPageNoAnalysis to treat this as a real switch
+    navigateToPageNoAnalysis(getPageManifest()[0]?.id);
   };
 
   /** Persist current UI field values into pageSettings for the given page. */
-  function saveCurrentPageSettings(pageNum) {
+  function saveCurrentPageSettings(pageId) {
+    if (pageId == null) return;
     const current = getPageSettings();
-    current[pageNum] = {
+    current[pageId] = {
       format_width:  parseFloat(document.getElementById('formatWidth')?.value)  || 210,
       format_height: parseFloat(document.getElementById('formatHeight')?.value) || 297,
       dpi:           parseFloat(document.getElementById('dpi')?.value)           || 150,
@@ -4134,9 +4149,9 @@ async function initApp() {
   }
 
   /** Restore saved pageSettings into UI fields for the given page. */
-  function loadPageSettingsToUI(pageNum) {
+  function loadPageSettingsToUI(pageId) {
     const settings = getPageSettings();
-    const s = settings[pageNum] || settings[String(pageNum)];
+    const s = settings[pageId];
     if (!s) return;
     const fw    = document.getElementById('formatWidth');
     const fh    = document.getElementById('formatHeight');
@@ -4152,47 +4167,45 @@ async function initApp() {
       aiSel.value = s.ai_label;
     }
     // Keep sidebar dropdown in sync
-    if (s.plan_scale != null) setPageScaleInSidebar(pageNum, s.plan_scale);
+    if (s.plan_scale != null) setPageScaleInSidebar(pageId, s.plan_scale);
   }
 
   /**
    * Navigate to a page without running the AI – just show the image.
    * Called from the left sidebar page list and from onUploadReady.
    */
-  function navigateToPageNoAnalysis(pageNumber, allPages, pageSizes) {
-    const pages = allPages || getAllPdfPages();
-    if (!pages || pages.length === 0) return;
-
-    const imageUrl = pages[pageNumber - 1];
+  function navigateToPageNoAnalysis(pageId) {
+    const entry = getPageEntry(pageId);
+    if (!entry) return;
+    const imageUrl = entry.imageUrl;
     if (!imageUrl) return;
 
     // Save current page settings before switching
-    if (currentPageNumber !== pageNumber) {
-      saveCurrentPageSettings(currentPageNumber);
+    if (currentPageId != null && currentPageId !== pageId) {
+      saveCurrentPageSettings(currentPageId);
     }
 
-    // Update page state (saves the outgoing page's canvas data, sets currentPageNumber)
-    setCurrentPage(pageNumber);
+    // Update page state (saves the outgoing page's canvas data, sets currentPageId)
+    setCurrentPage(pageId);
 
     // Sync sidebar highlight
-    setActivePageInList(pageNumber);
+    setActivePageInList(pageId);
 
-    // Restore per-page settings (format, DPI, scale) – falls back to pageSizes for fresh uploads
+    // Restore per-page settings (format, DPI, scale) – falls back to the manifest's
+    // detected size for fresh/never-visited pages
     const savedSettings = getPageSettings();
-    if (savedSettings[pageNumber] || savedSettings[String(pageNumber)]) {
-      loadPageSettingsToUI(pageNumber);
+    if (savedSettings[pageId]) {
+      loadPageSettingsToUI(pageId);
     } else {
-      // First visit: initialise from PDF-detected page sizes + current DPI/scale defaults
-      const sizes = pageSizes || getPageSizes();
-      if (sizes && sizes[pageNumber - 1]) {
-        const s = sizes[pageNumber - 1];
+      // First visit: initialise from PDF-detected page size + current DPI/scale defaults
+      if (entry.width_mm != null) {
         const fw = document.getElementById('formatWidth');
         const fh = document.getElementById('formatHeight');
-        if (fw) fw.value = s.width_mm ?? Math.round(s[0] ?? 210);
-        if (fh) fh.value = s.height_mm ?? Math.round(s[1] ?? 297);
+        if (fw) fw.value = entry.width_mm;
+        if (fh) fh.value = entry.height_mm;
       }
       // Persist these initial values so they're included in ZIP saves
-      saveCurrentPageSettings(pageNumber);
+      saveCurrentPageSettings(pageId);
     }
 
     // Load image into canvas. Das HTML-<img> bleibt versteckt – Fabric rendert es
@@ -4205,16 +4218,16 @@ async function initApp() {
     if (emptyState) emptyState.style.display = 'none';
     uploadedImage.onload = function() {
       // Check if we already have canvas data for this page (e.g. after analysis)
-      if (pageCanvasData[pageNumber]) {
-        loadPageCanvasData(pageNumber);
+      if (pageCanvasData[pageId]) {
+        loadPageCanvasData(pageId);
       } else {
         // Empty canvas – just show the image
         if (canvas) {
           canvas.clear();
         }
         initCanvas();
-        pageCanvasData[pageNumber] = {
-          page_number: pageNumber,
+        pageCanvasData[pageId] = {
+          page_id: pageId,
           canvas_annotations: [],
           annotation_count: 0,
           canvas_available: true
@@ -4230,6 +4243,60 @@ async function initApp() {
   }
   // Expose for upload-modal page-click callback
   window.navigateToPageNoAnalysis = navigateToPageNoAnalysis;
+
+  /**
+   * Handle a page action from the sidebar (Duplizieren/Löschen/Reihenfolge).
+   * Always flushes the live canvas + UI settings into storage first, so an
+   * operation on the currently active page picks up its latest state.
+   */
+  function handlePageAction(action, pageId) {
+    saveCurrentPageCanvasData(currentPageId);
+    saveCurrentPageSettings(currentPageId);
+
+    if (action === 'duplicate') {
+      const newEntry = duplicatePageInManifest(pageId);
+      if (!newEntry) return;
+      // Full duplicate — Massstab, Annotationen, Legende etc. — see CLAUDE.md
+      // "Seiten-Management": each entry is independent after this.
+      if (pageCanvasData[pageId]) {
+        pageCanvasData[newEntry.id] = structuredClone(pageCanvasData[pageId]);
+      }
+      const settings = getPageSettings();
+      if (settings[pageId]) {
+        settings[newEntry.id] = structuredClone(settings[pageId]);
+        setPageSettings(settings);
+      }
+      rebuildSidebarPageList();
+      navigateToPageNoAnalysis(newEntry.id);
+      return;
+    }
+
+    if (action === 'delete') {
+      const wasCurrent = pageId === currentPageId;
+      let fallbackId = null;
+      if (wasCurrent) {
+        const manifest = getPageManifest();
+        const idx = manifest.findIndex(e => e.id === pageId);
+        fallbackId = manifest[idx + 1]?.id ?? manifest[idx - 1]?.id ?? null;
+      }
+      if (!deletePageFromManifest(pageId)) {
+        alert('Die letzte Seite kann nicht gelöscht werden.');
+        return;
+      }
+      delete pageCanvasData[pageId];
+      rebuildSidebarPageList();
+      if (wasCurrent && fallbackId) {
+        currentPageId = null; // force a real switch even though the id looks "new" to us
+        navigateToPageNoAnalysis(fallbackId);
+      }
+      return;
+    }
+
+    if (action === 'up' || action === 'down') {
+      movePageInManifest(pageId, action === 'up' ? -1 : 1);
+      rebuildSidebarPageList();
+    }
+  }
   
   // Editor is always active - setup canvas events when canvas is ready
   // Canvas events will be set up in initCanvas() when editor is active
@@ -4461,17 +4528,17 @@ async function initApp() {
   setupUploadModal();
 
   // Wire sidebar page-click → navigate without auto-analysis
-  setOnPageClick((pageNumber) => {
-    navigateToPageNoAnalysis(pageNumber);
+  setOnPageClick((pageId) => {
+    navigateToPageNoAnalysis(pageId);
   });
 
   // When user changes scale in sidebar → update hidden input + pageSettings + canvas labels
-  setOnScaleChange((pageNum, scale) => {
+  setOnScaleChange((pageId, scale) => {
     const scaleInput = document.getElementById('planScale');
     if (scaleInput) scaleInput.value = scale;
     const current = getPageSettings();
-    const existing = current[pageNum] || current[String(pageNum)] || {};
-    current[pageNum] = { ...existing, plan_scale: scale };
+    const existing = current[pageId] || {};
+    current[pageId] = { ...existing, plan_scale: scale };
     setPageSettings(current);
     // Refresh canvas labels and results table with new scale
     refreshAllCanvasLabels();
@@ -4479,6 +4546,9 @@ async function initApp() {
     updateResultsTable();
     updateSummary();
   });
+
+  // Wire sidebar page actions: Duplizieren/Löschen/Reihenfolge
+  setOnPageAction(handlePageAction);
 
   // Wire "Fenster erkennen" button
 
@@ -4504,13 +4574,12 @@ async function initApp() {
   }, {
     pdfModule: {
       getPdfSessionId,
-      getPdfPageData,
       getPageSettings,
       getAllPdfPages,
+      getPageManifest,
       setPdfSessionId,
-      setPdfPageData,
       setPageSettings,
-      setPdfNavigationState,
+      setPageManifest,
       getOriginalPdfBlob,
       setOriginalPdfBlob
     }
@@ -4522,7 +4591,8 @@ async function initApp() {
   // Make essential functions globally available for inter-module communication
   window.collectAllPagesCanvasData = collectAllPagesCanvasData;
   window.initializePageCanvasData = initializePageCanvasData;
-  window.getCurrentPageNumber = () => currentPageNumber;
+  // 1-based display position (not the internal pageId) — used e.g. for bug reports
+  window.getCurrentPageNumber = () => getPageIndexById(currentPageId);
   // JPEG of the currently visible canvas viewport (used by bug reports)
   window.getCanvasScreenshotBlob = async () => {
     if (!canvas) return null;
@@ -4550,7 +4620,7 @@ async function initApp() {
   // A save side effect here would leak the previous project's canvas into
   // freshly loaded page data when labels.js queries during a ZIP load.
   window.getPageCanvasData = () => ({ ...pageCanvasData });
-  window.saveCurrentPageCanvas = () => saveCurrentPageCanvasData(currentPageNumber);
+  window.saveCurrentPageCanvas = () => saveCurrentPageCanvasData(currentPageId);
 
   // Resize canvas when container size changes (e.g. right panel collapse/expand)
   window.addEventListener('resize', function() {
@@ -4579,8 +4649,8 @@ async function initApp() {
   // Update all sidebar scale dropdowns at once (called after ZIP load)
   window.syncAllPageScalesInSidebar = function() {
     const settings = getPageSettings();
-    for (const [page, s] of Object.entries(settings)) {
-      if (s && s.plan_scale != null) setPageScaleInSidebar(parseInt(page), s.plan_scale);
+    for (const [pageId, s] of Object.entries(settings)) {
+      if (s && s.plan_scale != null) setPageScaleInSidebar(pageId, s.plan_scale);
     }
   };
 
