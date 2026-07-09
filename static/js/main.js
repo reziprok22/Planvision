@@ -312,7 +312,16 @@ function initCanvas() {
     return;
   }
   
-  // Remove existing canvas
+  // Alte Fabric-Instanz entsorgen: dispose() entfernt den Wrapper-Div samt
+  // Upper-Canvas aus dem DOM und hängt Fabrics Event-Listener ab. Ohne das
+  // bleibt pro Seitenwechsel ein verwaister .canvas-container zurück
+  // (DOM-/Speicher-Leak, Performance sinkt mit jedem Wechsel).
+  if (canvas) {
+    canvas.dispose();
+    canvas = null;
+  }
+  // Remove existing canvas element. Muss NACH dispose() passieren: dispose
+  // setzt das ursprüngliche <canvas>-Element anstelle des Wrappers zurück ins DOM.
   const existingCanvas = document.getElementById('annotationCanvas');
   if (existingCanvas) {
     existingCanvas.remove();
@@ -564,9 +573,18 @@ function clampScrollToImageBounds() {
 
 /**
  * Setup enhanced scrolling for the image container. shift+mousewheel = horizonal scroll
+ *
+ * Die Listener hängen am persistenten #imageContainer und dürfen nur EINMAL
+ * registriert werden — initCanvas() läuft aber bei jedem Seitenwechsel. Ohne
+ * Guard stapeln sich die Handler: Shift+Wheel springt dann N×H_SCROLL_STEP
+ * und jedes Scroll-Event rendert den Canvas N-fach (Ruckeln). Die Handler
+ * greifen auf die Modul-Variable `canvas` zu und folgen damit automatisch
+ * der jeweils aktuellen Canvas-Instanz.
  */
+let containerScrollingSetup = false;
 function setupContainerScrolling() {
-  if (!imageContainer) return;
+  if (!imageContainer || containerScrollingSetup) return;
+  containerScrollingSetup = true;
 
   // macOS: Ctrl+Klick ist der Sekundärklick und öffnet das Kontextmenü, was den
   // Ctrl+Ziehen-Duplizieren-Drag unterbricht. Im Canvas-Bereich gibt es kein
