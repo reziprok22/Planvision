@@ -87,6 +87,47 @@ export async function setupLabels(elements) {
   applyChangesBtn.addEventListener('click', applyAllChanges);
   cancelChangesBtn.addEventListener('click', cancelChanges);
 
+  // Delegated listeners for the label table — rows are re-rendered on every
+  // refresh, so all row interaction is handled once here instead of re-binding
+  labelTableBody.addEventListener('input', function(event) {
+    const input = event.target;
+    if (input.classList.contains('opacity-slider')) {
+      const opacityValue = input.nextElementSibling;
+      if (opacityValue && opacityValue.classList.contains('opacity-value')) {
+        opacityValue.textContent = input.value + '%';
+      }
+      input.title = `Opacity: ${input.value}%`;
+    }
+    if (input.classList.contains('inline-edit') && input.dataset.id) {
+      handleInlineEdit(event);
+    }
+  });
+
+  labelTableBody.addEventListener('click', function(event) {
+    const btn = event.target.closest('button');
+    if (!btn) return;
+    if (btn.classList.contains('save-label-btn')) {
+      saveNewLabel();
+    } else if (btn.classList.contains('copy-label-btn')) {
+      copyLabel(parseInt(btn.dataset.id));
+    } else if (btn.classList.contains('delete-label-btn')) {
+      // Ohne data-id ist es der Abbrechen-Button der "Neues Label"-Zeile
+      if (btn.dataset.id) {
+        deleteLabel(parseInt(btn.dataset.id));
+      } else {
+        hideForm();
+      }
+    } else if (btn.classList.contains('layer-move-btn')) {
+      moveLabelLayer(parseInt(btn.dataset.id), btn.dataset.direction);
+    }
+  });
+
+  labelTableBody.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter' && event.target.id === 'newLabel-name') {
+      saveNewLabel();
+    }
+  });
+
   // Update UI with current labels
   updateUIForLabels();
 }
@@ -166,48 +207,9 @@ function refreshLabelTable() {
     
     labelTableBody.appendChild(row);
   });
-  
-  // Event listeners for inline editing
-  document.querySelectorAll('.inline-edit').forEach(input => {
-    input.addEventListener('input', handleInlineEdit);
 
-    // Special handling for opacity slider to update display and tooltip
-    if (input.classList.contains('opacity-slider')) {
-      input.addEventListener('input', function() {
-        const opacityValue = this.nextElementSibling;
-        if (opacityValue && opacityValue.classList.contains('opacity-value')) {
-          opacityValue.textContent = this.value + '%';
-        }
-        this.title = `Opacity: ${this.value}%`;
-      });
-    }
-  });
-  
-  // Event listeners for Copy buttons
-  document.querySelectorAll('.copy-label-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const labelId = parseInt(this.dataset.id);
-      copyLabel(labelId);
-    });
-  });
+  // Row interaction is handled via delegation on labelTableBody (see setupLabels)
 
-  // Event listeners for Delete buttons
-  document.querySelectorAll('.delete-label-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const labelId = parseInt(this.dataset.id);
-      deleteLabel(labelId);
-    });
-  });
-  
-  // Event listeners for Layer Move buttons
-  document.querySelectorAll('.layer-move-btn').forEach(btn => {
-    btn.addEventListener('click', function() {
-      const labelId = parseInt(this.dataset.id);
-      const direction = this.dataset.direction;
-      moveLabelLayer(labelId, direction);
-    });
-  });
-  
   // Show/hide batch action buttons based on changes
   updateBatchActionVisibility();
 }
@@ -358,17 +360,7 @@ function showAddLabelForm() {
   `;
   labelTableBody.appendChild(tr);
 
-  tr.querySelector('.opacity-slider').addEventListener('input', function() {
-    tr.querySelector('#newLabel-opacity-val').textContent = this.value + '%';
-    this.title = `Opacity: ${this.value}%`;
-  });
-
-  tr.querySelector('.save-label-btn').addEventListener('click', saveNewLabel);
-  tr.querySelector('.delete-label-btn').addEventListener('click', hideForm);
-
-  tr.querySelector('#newLabel-name').addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') saveNewLabel();
-  });
+  // Slider, Speichern/Abbrechen und Enter laufen über die Delegation (setupLabels)
 
   tr.querySelector('#newLabel-name').focus();
 }
