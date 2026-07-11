@@ -108,6 +108,9 @@ BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
 # (accounts.models.Subscription). Preis wie auf der Landingpage.
 TRIAL_DAYS = 30
 LICENSE_PRICE_CHF = 240
+# Projektlimit der (kommenden) Online-Ablage: Default für neue User;
+# pro User im Admin überschreibbar (Subscription.max_projects, z.B. 100/200).
+DEFAULT_MAX_PROJECTS = 50
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'

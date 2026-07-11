@@ -194,3 +194,25 @@ class KontoAndReadOnlyTests(TestCase):
         response = self.client.get(reverse('app'))
         self.assertContains(response, 'window.PLANLI_READ_ONLY = false')
         self.assertNotContains(response, 'read-only-banner')
+
+
+class MaxProjectsTests(TestCase):
+    def test_default_limit_from_settings(self):
+        sub = subscription_for(_make_user())
+        self.assertEqual(sub.max_projects, 50)
+
+    def test_limit_is_per_user(self):
+        sub_a = subscription_for(_make_user('a@example.ch'))
+        sub_b = subscription_for(_make_user('b@example.ch'))
+        sub_b.max_projects = 200
+        sub_b.save()
+        sub_a.refresh_from_db()
+        self.assertEqual(sub_a.max_projects, 50)
+        self.assertEqual(sub_b.max_projects, 200)
+
+    @override_settings(BETA_MODE=False)
+    def test_konto_shows_limit(self):
+        _make_user()
+        self.client.login(username='test@example.ch', password='sicher-genug-42')
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, 'bis zu 50 Projekte')

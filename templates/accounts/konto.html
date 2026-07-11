@@ -87,6 +87,10 @@
                 <dd>{{ sub.trial_ends|date:"d.m.Y" }}</dd>
             </div>
             {% endif %}
+            <div class="konto-row">
+                <dt>Projektlimit</dt>
+                <dd>bis zu {{ sub.max_projects }} Projekte</dd>
+            </div>
             {% if sub.is_paid %}
             <div class="konto-row">
                 <dt>Bezahlt bis</dt>

@@ -8,7 +8,8 @@ from .models import Subscription
 
 @admin.register(Subscription)
 class SubscriptionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'status_label', 'trial_ends', 'paid_until', 'created_at')
+    list_display = ('user', 'status_label', 'trial_ends', 'paid_until', 'max_projects', 'created_at')
+    list_editable = ('max_projects',)  # Projektlimit direkt in der Liste anpassbar
     search_fields = ('user__username',)
     actions = ('extend_one_year',)
 

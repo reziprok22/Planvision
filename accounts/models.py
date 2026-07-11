@@ -6,6 +6,10 @@ from django.db import models
 from django.utils import timezone
 
 
+def default_max_projects():
+    return settings.DEFAULT_MAX_PROJECTS
+
+
 class Subscription(models.Model):
     """Trial-/Abo-Status eines Users.
 
@@ -16,6 +20,13 @@ class Subscription(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='subscription')
     trial_ends = models.DateTimeField()
     paid_until = models.DateField(null=True, blank=True)
+    # Wie viele Projekte dieser User in der (kommenden) Online-Ablage halten darf.
+    # Pro User individuell (z.B. 50/100/200 je nach Plan), Default aus den Settings.
+    # Durchgesetzt wird das Limit erst mit der Online-Projektablage — beim Bauen
+    # dieses Features hier nachschlagen: Gate beim "In der Cloud speichern".
+    max_projects = models.PositiveIntegerField(
+        default=default_max_projects,
+        help_text='Max. Anzahl online gespeicherter Projekte für diesen User.')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
