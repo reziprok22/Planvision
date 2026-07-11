@@ -188,7 +188,8 @@ a.header-menu-item {
 }
 
 body.read-only .tool-button[data-tool]:not([data-tool="select"]),
-body.read-only .analyze-page-btn {
+body.read-only .analyze-page-btn,
+body.read-only #manageLabelBtn {
     opacity: 0.4;
     pointer-events: none;
 }

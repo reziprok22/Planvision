@@ -4364,6 +4364,7 @@ async function initApp() {
 
   // Track held drawing-tool keys for scroll-to-cycle
   document.addEventListener('keydown', function(e) {
+    if (READ_ONLY) return;
     const key = e.key.toLowerCase();
     if ((key === 'q' || key === 'w' || key === 'e') && !e.ctrlKey && !e.metaKey) {
       heldDrawingKey = key;
@@ -4405,6 +4406,15 @@ async function initApp() {
     // Don't fire when typing in an input, textarea or select
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    // Read-Only: alle bearbeitenden Shortcuts sperren (Undo/Redo, Kopieren/
+    // Einfügen, Löschen, Pfeil-Verschieben, Werkzeuge, Label-Manager).
+    // Erlaubt bleiben nur Ansicht-Aktionen: Speichern/Öffnen, Escape, Hilfe.
+    if (READ_ONLY) {
+      const allowed = e.key === 'Escape' || e.key === '?'
+        || ((e.ctrlKey || e.metaKey) && ['s', 'S', 'o', 'O'].includes(e.key));
+      if (!allowed) return;
+    }
 
     // Ctrl / Cmd shortcuts
     if (e.ctrlKey || e.metaKey) {
