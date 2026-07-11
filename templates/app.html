@@ -503,6 +503,21 @@
                     <input type="checkbox" id="consentTrainingToggle">
                 </label>
                 <a class="header-menu-hint" href="{% url 'datenschutz' %}" target="_blank" rel="noopener">Was wird geteilt?</a>
+                {% if user.is_authenticated %}
+                <div class="header-menu-sep"></div>
+                <div class="header-menu-account" title="Angemeldet als {{ user.email|default:user.username }}">{{ user.email|default:user.username }}</div>
+                <form method="post" action="{% url 'logout' %}" class="header-menu-logout-form">
+                    {% csrf_token %}
+                    <button type="submit" class="header-menu-item" role="menuitem">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M5.5 12H2.8A0.8 0.8 0 0 1 2 11.2V2.8A0.8 0.8 0 0 1 2.8 2h2.7"/>
+                            <polyline points="9,4 12,7 9,10"/>
+                            <line x1="12" y1="7" x2="5.5" y2="7"/>
+                        </svg>
+                        Abmelden
+                    </button>
+                </form>
+                {% endif %}
             </div>
         </div>
         <div class="header-actions">

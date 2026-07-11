@@ -751,7 +751,7 @@
                 Plan exportieren mit wenigen Klicks – <strong>direkt im Browser.</strong>
             </p>
             <div class="hero-cta">
-                <a href="{% url 'app' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">Beta testen</a>
+                <a href="{% url 'app' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">{% if beta_mode %}Beta testen{% else %}Kostenlos testen{% endif %}</a>
                 <a href="#features" class="btn btn-outline btn-lg">Mehr erfahren</a>
             </div>
             {% if beta_mode %}

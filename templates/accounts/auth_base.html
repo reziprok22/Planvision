@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+    <style>
+        .auth-wrap {
+            flex: 1 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 56px 20px 88px;
+            background:
+                radial-gradient(ellipse 70% 55% at 50% -10%, var(--slate-50), transparent),
+                var(--white);
+        }
+
+        .auth-card {
+            background: var(--white);
+            border: 1px solid var(--slate-100);
+            border-radius: 12px;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.07);
+            padding: 2.5rem;
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .auth-card h1 {
+            font-size: 1.6rem;
+            font-weight: 900;
+            letter-spacing: -0.03em;
+            line-height: 1.2;
+            color: var(--slate-900);
+            margin-bottom: 0.4rem;
+        }
+
+        .auth-card p.subtitle {
+            color: var(--slate-400);
+            margin-bottom: 1.8rem;
+            font-size: 0.9rem;
+        }
+
+        .auth-card label {
+            display: block;
+            margin-bottom: 0.35rem;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--slate-600);
+        }
+
+        .auth-card input[type="text"],
+        .auth-card input[type="email"],
+        .auth-card input[type="password"] {
+            width: 100%;
+            padding: 0.65rem 0.9rem;
+            background: var(--white);
+            border: 1px solid var(--slate-200);
+            border-radius: var(--radius);
+            color: var(--slate-800);
+            font-size: 0.95rem;
+            font-family: var(--font);
+            margin-bottom: 1.1rem;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+
+        .auth-card input:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(255, 107, 0, 0.12);
+        }
+
+        .auth-card .btn {
+            width: 100%;
+            justify-content: center;
+            padding: 0.75rem;
+            font-size: 0.95rem;
+            background: var(--primary);
+            color: var(--white);
+            border: 1px solid var(--primary);
+        }
+
+        .auth-card .btn:hover {
+            background: var(--primary-hover);
+            border-color: var(--primary-hover);
+        }
+
+        .help-text {
+            font-size: 0.78rem;
+            color: var(--slate-400);
+            margin: -0.8rem 0 1rem;
+        }
+
+        .help-text ul { padding-left: 1.1rem; }
+        .help-text li { margin-bottom: 0.1rem; }
+
+        .link-row {
+            margin-top: 1.4rem;
+            text-align: center;
+            font-size: 0.875rem;
+            color: var(--slate-400);
+        }
+
+        .link-row a {
+            color: var(--primary);
+            font-weight: 600;
+            text-decoration: none;
+        }
+
+        .link-row a:hover { text-decoration: underline; }
+
+        .error {
+            background: #FEF2F2;
+            border: 1px solid #FECACA;
+            border-radius: var(--radius);
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.2rem;
+            color: #B91C1C;
+            font-size: 0.875rem;
+        }
+
+        .error-list {
+            color: #B91C1C;
+            font-size: 0.8rem;
+            margin: -0.7rem 0 0.9rem;
+            padding-left: 1.1rem;
+        }
+
+        .info {
+            background: #F0FDF4;
+            border: 1px solid #BBF7D0;
+            border-radius: var(--radius);
+            padding: 0.75rem 1rem;
+            margin-bottom: 1.2rem;
+            color: #15803D;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+    </style>
+{% endblock %}
+
+{% block body %}
+<main class="auth-wrap">
+    <div class="auth-card">
+        {% block card %}{% endblock %}
+    </div>
+</main>
+{% endblock %}

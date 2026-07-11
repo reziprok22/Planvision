@@ -1,83 +1,28 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Anmelden | Planli</title>
-    {% load static %}
-    <link rel="icon" type="image/svg+xml" href="{% static 'favicon/favicon.svg' %}">
-    <link rel="icon" href="{% static 'favicon/favicon.ico' %}">
-    <style>
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #0f0f0f;
-            color: #e0e0e0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .auth-card {
-            background: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 12px;
-            padding: 2.5rem;
-            width: 100%;
-            max-width: 400px;
-        }
-        h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
-        p.subtitle { color: #888; margin-bottom: 2rem; font-size: 0.9rem; }
-        label { display: block; margin-bottom: 0.4rem; font-size: 0.85rem; color: #aaa; }
-        input[type="text"], input[type="password"] {
-            width: 100%;
-            padding: 0.65rem 0.9rem;
-            background: #111;
-            border: 1px solid #333;
-            border-radius: 8px;
-            color: #e0e0e0;
-            font-size: 0.95rem;
-            margin-bottom: 1.2rem;
-        }
-        input:focus { outline: none; border-color: #4a9eff; }
-        .btn {
-            width: 100%;
-            padding: 0.75rem;
-            background: #4a9eff;
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-size: 1rem;
-            cursor: pointer;
-            font-weight: 600;
-        }
-        .btn:hover { background: #3a8eef; }
-        .link-row { margin-top: 1.5rem; text-align: center; font-size: 0.875rem; color: #888; }
-        .link-row a { color: #4a9eff; text-decoration: none; }
-        .error { background: #2a1010; border: 1px solid #5a2020; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.2rem; color: #ff7070; font-size: 0.875rem; }
-    </style>
-</head>
-<body>
-    <div class="auth-card">
-        <h1>Willkommen zurück</h1>
-        <p class="subtitle">Melde dich an um fortzufahren.</p>
+{% extends "accounts/auth_base.html" %}
 
-        {% if form.errors %}
-            <div class="error">Benutzername oder Passwort falsch.</div>
-        {% endif %}
+{% block title %}Anmelden | Planli{% endblock %}
 
-        <form method="post">
-            {% csrf_token %}
-            <label for="id_username">Benutzername</label>
-            <input type="text" name="username" id="id_username" autocomplete="username" autofocus>
-            <label for="id_password">Passwort</label>
-            <input type="password" name="password" id="id_password" autocomplete="current-password">
-            <button type="submit" class="btn">Anmelden</button>
-        </form>
+{% block card %}
+    <h1>Willkommen zurück</h1>
+    <p class="subtitle">Melde dich an um fortzufahren.</p>
 
-        <div class="link-row">
-            Noch kein Konto? <a href="{% url 'register' %}">Registrieren</a>
-        </div>
+    {% if form.errors %}
+        <div class="error">E-Mail oder Passwort falsch.</div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+        <label for="id_username">E-Mail</label>
+        <input type="email" name="username" id="id_username" autocomplete="email" autofocus>
+        <label for="id_password">Passwort</label>
+        <input type="password" name="password" id="id_password" autocomplete="current-password">
+        <button type="submit" class="btn">Anmelden</button>
+    </form>
+
+    <div class="link-row">
+        <a href="{% url 'password_reset' %}">Passwort vergessen?</a>
     </div>
-</body>
-</html>
+    <div class="link-row">
+        Noch kein Konto? <a href="{% url 'register' %}">Registrieren</a>
+    </div>
+{% endblock %}

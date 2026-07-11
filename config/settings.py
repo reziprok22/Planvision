@@ -50,6 +50,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.analytics',
+                'core.context_processors.beta_mode',
             ],
         },
     },
@@ -100,11 +101,26 @@ PROJECT_RETENTION_DAYS = int(os.environ.get('PROJECT_RETENTION_DAYS', 14))
 #     unerratbarer Session-UUID statt per Ownership-Prüfung.
 #   - In der App erscheint das "Beta"-Badge, auf der Landingpage der Beta-Banner.
 # Für den Produktivbetrieb mit Accounts: auf False setzen (beendet die Beta-Phase).
-BETA_MODE = True
+# Lokal testbar via Env: BETA_MODE=False python manage.py runserver
+BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+# E-Mail-Versand (Passwort-Reset). Ohne DJANGO_EMAIL_HOST landen Mails in der
+# Konsole (Dev). Für den Server die DJANGO_EMAIL_*-Variablen in der
+# systemd-Unit setzen (SMTP-Zugangsdaten des Mail-Anbieters).
+if os.environ.get('DJANGO_EMAIL_HOST'):
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.environ['DJANGO_EMAIL_HOST']
+    EMAIL_PORT = int(os.environ.get('DJANGO_EMAIL_PORT', 587))
+    EMAIL_HOST_USER = os.environ.get('DJANGO_EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.environ.get('DJANGO_EMAIL_HOST_PASSWORD', '')
+    EMAIL_USE_TLS = os.environ.get('DJANGO_EMAIL_USE_TLS', 'True') == 'True'
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', 'Planli <noreply@planli.net>')
 
 # Plausible-Analytics: Domain wie im Plausible-Dashboard angelegt (z. B. 'planli.net').
 # Leer = deaktiviert; sobald gesetzt, wird das Tracking-Snippet auf allen Seiten geladen.

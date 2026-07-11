@@ -152,6 +152,20 @@ header h1 {
     text-decoration: underline;
 }
 
+.header-menu-account {
+    padding: 2px 10px 4px;
+    font-size: 0.75em;
+    color: #999;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.header-menu-logout-form {
+    width: 100%;
+    margin: 0;
+}
+
 h1, h2 {
     margin: 0;
     color: inherit;

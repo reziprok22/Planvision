@@ -127,17 +127,21 @@ The application requires a pre-trained Faster R-CNN model at:
 
 ### Authentication
 - Django's built-in `django.contrib.auth` handles users, sessions, and password hashing
-- Login: `/accounts/login/` — Logout: `/accounts/logout/` — Register: `/accounts/register/`
+- **E-Mail + password only** (no visible username): registration/login use the email as the internal `username` (lowercased) via `EmailUserCreationForm`/`EmailAuthenticationForm` in `accounts/forms.py` — no custom user model
+- Login: `/accounts/login/` — Logout: `/accounts/logout/` (POST) — Register: `/accounts/register/`
+- Password reset: `/accounts/password-reset/` (full Django flow; templates in `templates/accounts/`, mail via `EMAIL_*` settings — console backend in dev, SMTP via `DJANGO_EMAIL_*` env vars in prod)
+- Auth pages share a card layout: `templates/accounts/auth_base.html`
+- Logged-in users see their email + "Abmelden" (POST form) in the app header burger menu; the landing nav shows "Anmelden" when logged out (non-beta)
 - Admin panel available at `/admin/` (requires superuser) — includes the bug report list
 - All API endpoints are CSRF-protected; the frontend sends `X-CSRFToken` from the cookie (set via `@ensure_csrf_cookie` on the app view)
-- `BETA_MODE` (settings, env-overridable): when True (beta default), all endpoints work without login, projects are stored with `user=NULL` (access guarded only by the unguessable session UUID), and the "Beta" badge shows next to the app logo
+- `BETA_MODE` (settings, env-overridable, default **True**): when True, all endpoints work without login, projects are stored with `user=NULL` (access guarded only by the unguessable session UUID), and the "Beta" badge shows next to the app logo. The whole login flow is built and dormant behind this switch; test locally via `BETA_MODE=False python manage.py runserver`. Exposed to all templates via the `beta_mode` context processor
 
 ### Django Settings (config/settings.py)
 - `SECRET_KEY`: reads from env var `DJANGO_SECRET_KEY` (falls back to insecure dev key)
 - `DEBUG`: reads from env var `DJANGO_DEBUG` (default `True`)
 - `ALLOWED_HOSTS`: reads from env var `DJANGO_ALLOWED_HOSTS`
 - `SECURE_PROXY_SSL_HEADER` + `CSRF_TRUSTED_ORIGINS`: HTTPS/CSRF behind the nginx proxy (planli.net)
-- `BETA_MODE`: beta switch, default True; env var `BETA_MODE=False` re-enables login
+- `BETA_MODE`: beta switch, default True; env var `BETA_MODE=False` enables the login requirement
 - `PROJECTS_DIR`: `BASE_DIR / 'projects'` — `BUG_REPORTS_DIR`: `BASE_DIR / 'bug_reports'` — `TRAINING_DATA_DIR`: `BASE_DIR / 'training_data_opt-in'` (all gitignored)
 - `PROJECT_RETENTION_DAYS`: default 14 (env-overridable); how long `projects/<uuid>/` is kept before the cleanup command deletes it
 - `PDF_DPI = 150` (server always renders at 150 DPI — frontend has no DPI input, only a hidden field), `JPEG_QUALITY = 70`
