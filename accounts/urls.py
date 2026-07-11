@@ -10,6 +10,7 @@ urlpatterns = [
     ), name='login'),
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('register/', views.register, name='register'),
+    path('konto/', views.konto, name='konto'),
 
     # Passwort-Reset (E-Mail-Versand gemäss EMAIL_*-Settings)
     path('password-reset/', auth_views.PasswordResetView.as_view(

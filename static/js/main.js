@@ -96,6 +96,13 @@ let currentPageId   = null;
 // getPageCanvasData/getCurrentPageNumber werden in initApp() gesetzt.
 window.getCanvas = () => canvas;
 
+// Read-Only-Modus: Trial/Lizenz abgelaufen (Flag setzt app.html vor dem Bundle).
+// Ansehen, Zoomen, Öffnen und Exportieren bleiben erlaubt; Zeichnen, Bearbeiten
+// und KI-Analyse sind gesperrt (Analyse zusätzlich serverseitig).
+const READ_ONLY = !!window.PLANLI_READ_ONLY;
+const READ_ONLY_MSG = 'Deine Testphase ist abgelaufen — Bearbeiten und KI-Analyse '
+  + 'sind nur mit aktiver Lizenz möglich. Lizenz: Menü → Konto.';
+
 // Editor state
 let currentTool = 'select';
 let drawingMode = false;
@@ -366,6 +373,14 @@ function initCanvas() {
   canvas.defaultCursor = 'default';
   canvas.hoverCursor = selectMode ? 'move' : 'crosshair';
   canvas.moveCursor = 'default';
+
+  if (READ_ONLY) {
+    // Zentrale Sperre: ohne Hit-Testing ist kein Objekt anklick-/selektierbar,
+    // egal was einzelne Objekte als selectable/evented gesetzt haben.
+    canvas.selection = false;
+    canvas.skipTargetFind = true;
+    canvas.hoverCursor = 'default';
+  }
   
   // Improve selection tolerance for thin lines and complex shapes
   canvas.targetFindTolerance = 10;      // 10px tolerance around objects
@@ -1551,7 +1566,7 @@ async function applyHistoryState(stateJson) {
   if (annotations.length) {
     const objects = await util.enlivenObjects(annotations);
     for (const obj of objects) {
-      obj.set({ selectable: currentTool === 'select', evented: currentTool === 'select' });
+      obj.set({ selectable: currentTool === 'select' && !READ_ONLY, evented: currentTool === 'select' && !READ_ONLY });
       if (obj.type === 'polyline') obj.set('objectCaching', false);
       canvas.add(obj);
       obj.setCoords();
@@ -2099,6 +2114,7 @@ function setupCanvasEvents() {
  * Set Current Tool
  */
 function setTool(toolName) {
+  if (READ_ONLY) toolName = 'select'; // nur Ansicht: Werkzeuge bleiben gesperrt
   if (editingPolygon) exitPolygonEditMode();
   if (editingDimension) exitDimensionEditMode();
 
@@ -2122,11 +2138,11 @@ function setTool(toolName) {
   // Update canvas selection mode (Auswahl-Modul)
   if (canvas) {
     if (toolName === 'select') {
-      canvas.selection = true; // Es können mehrere Objekte gleichzeitig mit Auswahlrahmen ausgewählt werden
-      canvas.skipTargetFind = false; // Hit-Testing wieder an, damit Objekte anklickbar sind
+      canvas.selection = !READ_ONLY; // Es können mehrere Objekte gleichzeitig mit Auswahlrahmen ausgewählt werden
+      canvas.skipTargetFind = READ_ONLY; // Hit-Testing wieder an, damit Objekte anklickbar sind (Read-Only: aus)
       canvas.defaultCursor = 'default';
-      canvas.hoverCursor = 'move';
-      canvas.forEachObject(obj => {
+      canvas.hoverCursor = READ_ONLY ? 'default' : 'move';
+      if (!READ_ONLY) canvas.forEachObject(obj => {
         // Nur Annotation-Objekte selektierbar machen, nicht Text-Labels
         if (obj.objectType === 'annotation' || obj.objectType === 'dimension' || obj.objectType === 'textNote') {
           obj.selectable = true;
@@ -3925,6 +3941,7 @@ function collectAllPagesCanvasData() {
  * Does NOT auto-trigger – only runs when the user clicks the button.
  */
 async function analyzeCurrentPage() {
+  if (READ_ONLY) { alert(READ_ONLY_MSG); return; }
   const btn = document.getElementById('runDetectionBtn');
   const loader = document.getElementById('loader');
   const errorMessage = document.getElementById('errorMessage');
@@ -4325,6 +4342,7 @@ async function initApp() {
   // und Erkennungsliste leben hier. Der Toolbar-Button öffnet das Modal.
   const windowDetectModal = document.getElementById('windowDetectModal');
   const openDetectModal = () => {
+    if (READ_ONLY) { alert(READ_ONLY_MSG); return; }
     if (!windowDetectModal) return;
     updateDetectionTable();          // show the persisted list for this page
     windowDetectModal.style.display = 'block';

@@ -104,6 +104,11 @@ PROJECT_RETENTION_DAYS = int(os.environ.get('PROJECT_RETENTION_DAYS', 14))
 # Lokal testbar via Env: BETA_MODE=False python manage.py runserver
 BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
 
+# Kostenlose Testphase ab Registrierung; danach Read-Only bis zur Zahlung
+# (accounts.models.Subscription). Preis wie auf der Landingpage.
+TRIAL_DAYS = 30
+LICENSE_PRICE_CHF = 240
+
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'

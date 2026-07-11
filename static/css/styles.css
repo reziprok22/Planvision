@@ -166,6 +166,33 @@ header h1 {
     margin: 0;
 }
 
+a.header-menu-item {
+    text-decoration: none;
+}
+
+/* ── Read-Only-Modus (Trial/Lizenz abgelaufen) ──
+   Hauptsperre sitzt in main.js (setTool/skipTargetFind) und serverseitig
+   (analyze_page 403); hier nur die sichtbare Deaktivierung der Buttons. */
+.read-only-banner {
+    background: #FFF7ED;
+    border-bottom: 1px solid #FED7AA;
+    color: #9A3412;
+    font-size: 0.85em;
+    text-align: center;
+    padding: 6px 16px;
+}
+
+.read-only-banner a {
+    color: #C2410C;
+    font-weight: 700;
+}
+
+body.read-only .tool-button[data-tool]:not([data-tool="select"]),
+body.read-only .analyze-page-btn {
+    opacity: 0.4;
+    pointer-events: none;
+}
+
 h1, h2 {
     margin: 0;
     color: inherit;

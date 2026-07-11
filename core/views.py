@@ -21,6 +21,7 @@ from django.utils import timezone
 from django.conf import settings
 
 from .models import Project, BugReport, AnalysisEvent
+from accounts.models import subscription_for
 
 from pdf2image import convert_from_path
 from PyPDF2 import PdfReader
@@ -50,6 +51,14 @@ def _access_denied(request):
     return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
 
 
+def _read_only(request):
+    """True, wenn Trial/Lizenz abgelaufen ist → nur noch Ansehen/Exportieren,
+    keine KI-Analyse und kein Bearbeiten. Im BETA_MODE nie."""
+    if settings.BETA_MODE or not request.user.is_authenticated:
+        return False
+    return not subscription_for(request.user).is_active
+
+
 def _get_project(request, project_id):
     """Projekt mit Ownership-Prüfung holen (im BETA_MODE nur per ID).
     Gibt None zurück, wenn nicht gefunden, kein Zugriff oder ungültige ID."""
@@ -66,7 +75,10 @@ def _get_project(request, project_id):
 def app(request):
     if not settings.BETA_MODE and not request.user.is_authenticated:
         return redirect_to_login(request.get_full_path())
-    return render(request, 'app.html', {'beta_mode': settings.BETA_MODE})
+    return render(request, 'app.html', {
+        'beta_mode': settings.BETA_MODE,
+        'read_only': _read_only(request),
+    })
 
 
 def datenschutz(request):
@@ -338,6 +350,9 @@ def analyze_page(request):
     denied = _access_denied(request)
     if denied:
         return denied
+    if _read_only(request):
+        return JsonResponse({'error': 'Deine Testphase ist abgelaufen — die KI-Analyse '
+                             'ist nur mit aktiver Lizenz verfügbar.'}, status=403)
 
     request_start = time.time()
     performance_metrics = {}

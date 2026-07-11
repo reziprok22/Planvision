@@ -327,8 +327,12 @@
         <li><a href="/#faq">FAQ</a></li>
     </ul>
     <div class="nav-right">
-        {% if not beta_mode and not user.is_authenticated %}
-        <a href="{% url 'login' %}" class="nav-login">Anmelden</a>
+        {% if not beta_mode %}
+            {% if user.is_authenticated %}
+            <a href="{% url 'konto' %}" class="nav-login">Konto</a>
+            {% else %}
+            <a href="{% url 'login' %}" class="nav-login">Anmelden</a>
+            {% endif %}
         {% endif %}
         <a href="{% url 'app' %}" class="btn btn-primary" onclick="window.plausible && window.plausible('CTA: Base')">Jetzt starten</a>
         <button class="nav-toggle" id="navToggle" type="button" aria-label="Menü öffnen" aria-expanded="false" aria-controls="navLinks">

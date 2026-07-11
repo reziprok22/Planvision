@@ -447,7 +447,7 @@
     </style>
     {% include "_plausible.html" %}
 </head>
-<body>
+<body{% if read_only %} class="read-only"{% endif %}>
 
     <header>
         <h1>Planli<span class="brand-accent"></span>{% if beta_mode %}<span class="beta-badge" title="Kostenlose Beta-Phase">Beta</span>{% endif %}</h1>
@@ -506,6 +506,13 @@
                 {% if user.is_authenticated %}
                 <div class="header-menu-sep"></div>
                 <div class="header-menu-account" title="Angemeldet als {{ user.email|default:user.username }}">{{ user.email|default:user.username }}</div>
+                <a class="header-menu-item" href="{% url 'konto' %}" role="menuitem">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="7" cy="4.5" r="2.5"/>
+                        <path d="M2 12.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/>
+                    </svg>
+                    Konto
+                </a>
                 <form method="post" action="{% url 'logout' %}" class="header-menu-logout-form">
                     {% csrf_token %}
                     <button type="submit" class="header-menu-item" role="menuitem">
@@ -561,6 +568,12 @@
             </button>
         </div>
     </header>
+    {% if read_only %}
+    <div class="read-only-banner">
+        Testphase abgelaufen — Projekte können angesehen und exportiert, aber nicht bearbeitet werden.
+        <a href="{% url 'konto' %}">Lizenz kaufen</a>
+    </div>
+    {% endif %}
 
     <!-- Hidden file input for left column upload -->
     <input type="file" id="leftFileInput" accept=".pdf">
@@ -1057,6 +1070,7 @@
     </div>
 
     <!-- ==================== SCRIPTS ==================== -->
+    <script>window.PLANLI_READ_ONLY = {{ read_only|yesno:"true,false" }};</script>
     <script src="{% static 'dist/js/main.js' %}"></script>
 
     <script>

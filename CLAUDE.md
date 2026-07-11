@@ -136,6 +136,12 @@ The application requires a pre-trained Faster R-CNN model at:
 - All API endpoints are CSRF-protected; the frontend sends `X-CSRFToken` from the cookie (set via `@ensure_csrf_cookie` on the app view)
 - `BETA_MODE` (settings, env-overridable, default **True**): when True, all endpoints work without login, projects are stored with `user=NULL` (access guarded only by the unguessable session UUID), and the "Beta" badge shows next to the app logo. The whole login flow is built and dormant behind this switch; test locally via `BETA_MODE=False python manage.py runserver`. Exposed to all templates via the `beta_mode` context processor
 
+### Trial & Lizenz (Subscription)
+- `accounts/models.py`: `Subscription` (OneToOne zu User, `trial_ends`, `paid_until`). Trial startet bei der Registrierung (`TRIAL_DAYS = 30`); Alt-User ohne Subscription bekommen sie lazy via `subscription_for()` (Trial ab `date_joined`)
+- Zahlung läuft (vorerst) **manuell ohne Stripe**: Konto-Seite `/accounts/konto/` zeigt Status/Preis (`LICENSE_PRICE_CHF = 240`) mit "Rechnung anfordern"-Mailto; nach Zahlungseingang Admin-Action "Um 1 Jahr verlängern" (setzt `paid_until`). Ein späterer Stripe-Webhook würde nur dasselbe Feld setzen
+- **Abgelaufen ⇒ Read-Only**: Ansehen, Projekte öffnen und PDF-Export bleiben erlaubt; gesperrt sind KI-Analyse (serverseitig: `analyze_page` → 403 via `_read_only()` in `core/views.py`) sowie Zeichnen/Bearbeiten (frontend: `window.PLANLI_READ_ONLY` → `main.js` erzwingt Select-Tool und `canvas.skipTargetFind`, CSS `body.read-only` graut die Buttons aus, Banner unter dem Header)
+- Im BETA_MODE komplett inaktiv (kein Gate, kein Banner)
+
 ### Django Settings (config/settings.py)
 - `SECRET_KEY`: reads from env var `DJANGO_SECRET_KEY` (falls back to insecure dev key)
 - `DEBUG`: reads from env var `DJANGO_DEBUG` (default `True`)

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Konto | Planli{% endblock %}
+
+{% block extra_head %}
+    <style>
+        .konto-card {
+            background: var(--white);
+            border: 1px solid var(--slate-100);
+            border-radius: 12px;
+            box-shadow: 0 16px 40px rgba(15, 23, 42, 0.07);
+            padding: 2rem 2.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .konto-card h2 {
+            margin-top: 0 !important;
+            border-bottom: none !important;
+        }
+
+        .konto-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            padding: 0.7rem 0;
+            border-bottom: 1px solid var(--slate-50);
+            font-size: 0.95rem;
+        }
+
+        .konto-row:last-child { border-bottom: none; }
+        .konto-row dt { color: var(--slate-400); flex-shrink: 0; }
+        .konto-row dd { color: var(--slate-800); font-weight: 600; text-align: right; overflow-wrap: anywhere; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 3px 12px;
+            border-radius: 999px;
+            font-size: 0.82rem;
+            font-weight: 700;
+        }
+
+        .status-trial { background: #FFF7ED; color: #C2410C; border: 1px solid #FED7AA; }
+        .status-paid { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
+        .status-expired { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
+
+        .price-line {
+            font-size: 1.6rem;
+            font-weight: 900;
+            letter-spacing: -0.02em;
+            color: var(--slate-900);
+        }
+
+        .price-line sup { font-size: 0.85rem; font-weight: 700; color: var(--slate-400); margin-right: 2px; }
+        .price-line .period { font-size: 0.85rem; font-weight: 500; color: var(--slate-400); }
+
+        .konto-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 1.2rem; }
+        .logout-form { display: inline; }
+        .logout-form .btn { font-family: var(--font); }
+    </style>
+{% endblock %}
+
+{% block heading %}Konto{% endblock %}
+{% block subheading %}<p>Dein Planli-Zugang auf einen Blick.</p>{% endblock %}
+
+{% block content %}
+    <div class="konto-card">
+        <dl>
+            <div class="konto-row">
+                <dt>E-Mail</dt>
+                <dd>{{ user.email|default:user.username }}</dd>
+            </div>
+            <div class="konto-row">
+                <dt>Status</dt>
+                <dd>
+                    {% if sub.is_paid %}
+                        <span class="status-badge status-paid">{{ sub.status_label }}</span>
+                    {% elif sub.in_trial %}
+                        <span class="status-badge status-trial">{{ sub.status_label }}</span>
+                    {% else %}
+                        <span class="status-badge status-expired">{{ sub.status_label }}</span>
+                    {% endif %}
+                </dd>
+            </div>
+            {% if sub.in_trial %}
+            <div class="konto-row">
+                <dt>Testphase endet am</dt>
+                <dd>{{ sub.trial_ends|date:"d.m.Y" }}</dd>
+            </div>
+            {% endif %}
+            {% if sub.is_paid %}
+            <div class="konto-row">
+                <dt>Bezahlt bis</dt>
+                <dd>{{ sub.paid_until|date:"d.m.Y" }}</dd>
+            </div>
+            <div class="konto-row">
+                <dt>Verlängerung</dt>
+                <dd>Rechnung folgt rechtzeitig per E-Mail — keine automatische Abbuchung</dd>
+            </div>
+            {% endif %}
+        </dl>
+    </div>
+
+    {% if not sub.is_paid %}
+    <div class="konto-card">
+        <h2>Jahreslizenz</h2>
+        <p class="price-line"><sup>CHF</sup>{{ price_chf }} <span class="period">pro Nutzer / Jahr</span></p>
+        {% if sub.in_trial %}
+        <p>Nach der Testphase kannst du deine Projekte weiterhin öffnen, ansehen und als PDF exportieren —
+           Messen, Bearbeiten und die KI-Analyse brauchen eine Lizenz.</p>
+        {% else %}
+        <p>Deine Testphase ist abgelaufen. Du kannst deine Projekte weiterhin öffnen, ansehen und als PDF
+           exportieren — für Messen, Bearbeiten und die KI-Analyse brauchst du eine Lizenz.</p>
+        {% endif %}
+        <p>Die Zahlung läuft unkompliziert per Rechnung: kurze E-Mail an uns, du erhältst eine
+           QR-Rechnung, und nach Zahlungseingang wird dein Konto für ein Jahr freigeschaltet.</p>
+        <div class="konto-actions">
+            <a class="btn btn-primary"
+               href="mailto:gruezi@bauphysiklengg.ch?subject=Planli%20Jahreslizenz&body=Guten%20Tag%0A%0AIch%20m%C3%B6chte%20eine%20Planli-Jahreslizenz%20f%C3%BCr%20das%20Konto%20{{ user.email|urlencode }}%20bestellen.%0A%0ARechnungsadresse%3A%0A">
+               Rechnung anfordern</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="konto-actions">
+        <a href="{% url 'app' %}" class="btn btn-primary">Zur App</a>
+        <form method="post" action="{% url 'logout' %}" class="logout-form">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-dark">Abmelden</button>
+        </form>
+    </div>
+{% endblock %}
+
+{% block back_link %}{% endblock %}
