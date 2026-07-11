@@ -184,6 +184,10 @@ async function handleFile(file) {
         // Build the page manifest (single source of truth for page order/identity)
         initPageManifestFromUpload(allPages, pageSizes);
 
+        // Online-Ablage: frischer Upload = neues Projekt (nicht das zuvor
+        // geöffnete Cloud-Projekt überschreiben)
+        if (typeof window.planliCloudNewUpload === 'function') window.planliCloudNewUpload();
+
         showFileInfo(file.name);
         buildPageList();
 

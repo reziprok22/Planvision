@@ -503,6 +503,22 @@
                     <input type="checkbox" id="consentTrainingToggle">
                 </label>
                 <a class="header-menu-hint" href="{% url 'datenschutz' %}" target="_blank" rel="noopener">Was wird geteilt?</a>
+                {% if cloud_enabled %}
+                <div class="header-menu-sep"></div>
+                <button id="downloadProjectBtn" class="header-menu-item" role="menuitem" title="Projekt als .planli-Datei auf deinen Rechner sichern">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 1.5v7M4.2 6 7 8.8 9.8 6"/>
+                        <path d="M2 10.5v1.2c0 .4.4.8.8.8h8.4c.4 0 .8-.4.8-.8v-1.2"/>
+                    </svg>
+                    Als Datei herunterladen
+                </button>
+                <button id="openLocalFileBtn" class="header-menu-item" role="menuitem" title="Eine lokale .planli-Datei öffnen">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1.5 4.5v6c0 .6.4 1 1 1h9c.6 0 1-.4 1-1V5.5c0-.6-.4-1-1-1H7L5.8 3H2.5c-.6 0-1 .4-1 1v.5Z"/>
+                    </svg>
+                    Von Datei öffnen
+                </button>
+                {% endif %}
                 {% if user.is_authenticated %}
                 <div class="header-menu-sep"></div>
                 <div class="header-menu-account" title="Angemeldet als {{ user.email|default:user.username }}">{{ user.email|default:user.username }}</div>
@@ -572,6 +588,25 @@
     <div class="read-only-banner">
         Testphase abgelaufen — Projekte können angesehen und exportiert, aber nicht bearbeitet werden.
         <a href="{% url 'konto' %}">Lizenz kaufen</a>
+    </div>
+    {% endif %}
+    {% if cloud_enabled %}
+    <!-- Online-Ablage: Startansicht mit den gespeicherten Projekten. Overlay über
+         dem Editor (Header bleibt bedienbar); "Neues Projekt" oder Öffnen blendet aus. -->
+    <div id="cloudDashboard" class="cloud-dashboard">
+        <div class="cloud-dashboard-inner">
+            <div class="cloud-dash-head">
+                <h2>Meine Projekte</h2>
+                <span id="cloudProjectCount" class="cloud-count"></span>
+                <button id="cloudNewProjectBtn" class="cloud-new-btn">+ Neues Projekt</button>
+                <button id="cloudCloseBtn" class="cloud-close-btn" title="Zurück zum Editor">✕</button>
+            </div>
+            <div id="cloudProjectList" class="cloud-project-list">
+                <div class="cloud-empty">Lädt…</div>
+            </div>
+            <p class="cloud-dash-hint">„Speichern“ (Ctrl+S) legt dein Projekt hier ab.
+               Als Datei sichern oder öffnen: Menü → „Als Datei herunterladen“ / „Von Datei öffnen“.</p>
+        </div>
     </div>
     {% endif %}
 
@@ -1070,7 +1105,10 @@
     </div>
 
     <!-- ==================== SCRIPTS ==================== -->
-    <script>window.PLANLI_READ_ONLY = {{ read_only|yesno:"true,false" }};</script>
+    <script>
+      window.PLANLI_READ_ONLY = {{ read_only|yesno:"true,false" }};
+      window.PLANLI_CLOUD = {{ cloud_enabled|yesno:"true,false" }};
+    </script>
     <script src="{% static 'dist/js/main.js' %}"></script>
 
     <script>

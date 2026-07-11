@@ -20,7 +20,7 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.conf import settings
 
-from .models import Project, BugReport, AnalysisEvent
+from .models import Project, BugReport, AnalysisEvent, StoredProject
 from accounts.models import subscription_for
 
 from pdf2image import convert_from_path
@@ -78,6 +78,8 @@ def app(request):
     return render(request, 'app.html', {
         'beta_mode': settings.BETA_MODE,
         'read_only': _read_only(request),
+        # Online-Ablage nur mit Login (in der Beta sieht sie mangels Login niemand)
+        'cloud_enabled': request.user.is_authenticated,
     })
 
 
@@ -566,3 +568,125 @@ def save_training_data(request):
     except Exception as e:
         logger.exception("save_training_data error")
         return JsonResponse({'error': str(e)}, status=500)
+
+
+# ── Online-Ablage ("Meine Projekte") ─────────────────────────────────────────
+# Dauerhaft gespeicherte .planli-ZIPs pro User (identisch zum lokalen
+# "Speichern"-Export). Braucht immer einen eingeloggten User — auch im
+# BETA_MODE (dort sieht die UI mangels Login schlicht niemand).
+
+def _cloud_denied(request):
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Nicht angemeldet'}, status=401)
+    return None
+
+
+def _get_stored_project(request, project_id):
+    """Eigenes Cloud-Projekt holen; None bei fremd/nicht gefunden/ungültiger ID."""
+    try:
+        return StoredProject.objects.filter(id=project_id, user=request.user).first()
+    except (ValueError, ValidationError):
+        return None
+
+
+def cloud_list(request):
+    denied = _cloud_denied(request)
+    if denied:
+        return denied
+    projects = [{
+        'id': str(p.id),
+        'name': p.name,
+        'size_bytes': p.size_bytes,
+        'updated_at': timezone.localtime(p.updated_at).strftime('%d.%m.%Y %H:%M'),
+    } for p in request.user.stored_projects.all()]
+    return JsonResponse({
+        'projects': projects,
+        'limit': subscription_for(request.user).max_projects,
+    })
+
+
+@require_POST
+def cloud_save(request):
+    """Projekt-ZIP speichern: mit project_id überschreiben, sonst neu anlegen.
+    Gates: Read-Only (abgelaufen), Projektlimit (nur beim Anlegen), Grössen-Deckel."""
+    denied = _cloud_denied(request)
+    if denied:
+        return denied
+    if _read_only(request):
+        return JsonResponse({'error': 'Deine Testphase bzw. Lizenz ist abgelaufen — '
+                             'Online-Speichern ist nur mit aktiver Lizenz möglich.'}, status=403)
+
+    upload = request.FILES.get('project_zip')
+    if not upload:
+        return JsonResponse({'error': 'Keine Projektdatei erhalten'}, status=400)
+    if upload.size > settings.MAX_PROJECT_MB * 1024 * 1024:
+        return JsonResponse({'error': f'Projekt zu gross (max. {settings.MAX_PROJECT_MB} MB). '
+                             'Tipp: sehr grosse Original-PDFs vor dem Hochladen verkleinern.'}, status=413)
+
+    name = (request.POST.get('name') or '').strip()[:200]
+    project_id = request.POST.get('project_id')
+
+    if project_id:
+        project = _get_stored_project(request, project_id)
+        if project is None:
+            return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+        if name:
+            project.name = name
+    else:
+        limit = subscription_for(request.user).max_projects
+        if request.user.stored_projects.count() >= limit:
+            return JsonResponse({'error': f'Projektlimit erreicht ({limit} Projekte). '
+                                 'Lösche nicht mehr benötigte Projekte (vorher ggf. herunterladen) '
+                                 'oder kontaktiere uns für ein höheres Limit.'}, status=403)
+        project = StoredProject(user=request.user, name=name or 'Unbenanntes Projekt')
+
+    settings.CLOUD_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(project.file_path, 'wb') as f:
+        for chunk in upload.chunks():
+            f.write(chunk)
+    project.size_bytes = upload.size
+    project.save()
+    return JsonResponse({'id': str(project.id), 'name': project.name})
+
+
+def cloud_download(request, project_id):
+    denied = _cloud_denied(request)
+    if denied:
+        return denied
+    project = _get_stored_project(request, project_id)
+    if project is None or not project.file_path.exists():
+        raise Http404
+    project.last_opened_at = timezone.now()
+    project.save(update_fields=['last_opened_at'])
+    return FileResponse(open(project.file_path, 'rb'), as_attachment=True,
+                        filename=f'{project.name}.planli')
+
+
+@require_POST
+def cloud_rename(request, project_id):
+    denied = _cloud_denied(request)
+    if denied:
+        return denied
+    project = _get_stored_project(request, project_id)
+    if project is None:
+        return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+    name = (request.POST.get('name') or '').strip()[:200]
+    if not name:
+        return JsonResponse({'error': 'Name darf nicht leer sein'}, status=400)
+    project.name = name
+    project.save(update_fields=['name', 'updated_at'])
+    return JsonResponse({'id': str(project.id), 'name': project.name})
+
+
+@require_POST
+def cloud_delete(request, project_id):
+    """Löschen ist bewusst auch im Read-Only-Modus erlaubt (gibt Speicher frei)."""
+    denied = _cloud_denied(request)
+    if denied:
+        return denied
+    project = _get_stored_project(request, project_id)
+    if project is None:
+        return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+    project.file_path.unlink(missing_ok=True)
+    project.delete()
+    return JsonResponse({'status': 'ok'})

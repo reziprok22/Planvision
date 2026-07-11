@@ -7,6 +7,7 @@ env
 fasterrcnn_model
 training_data_opt-in
 projects
+cloud_projects
 bug_reports
 node_modules
 db.sqlite3

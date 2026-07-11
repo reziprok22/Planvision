@@ -16,4 +16,10 @@ urlpatterns = [
     path('save_training_data', views.save_training_data, name='save_training_data'),
     path('report_bug', views.report_bug, name='report_bug'),
     path('project_files/<str:project_id>/<path:filename>', views.serve_project_file, name='serve_project_file'),
+    # Online-Ablage ("Meine Projekte")
+    path('cloud/projects', views.cloud_list, name='cloud_list'),
+    path('cloud/projects/save', views.cloud_save, name='cloud_save'),
+    path('cloud/projects/<uuid:project_id>/download', views.cloud_download, name='cloud_download'),
+    path('cloud/projects/<uuid:project_id>/rename', views.cloud_rename, name='cloud_rename'),
+    path('cloud/projects/<uuid:project_id>/delete', views.cloud_delete, name='cloud_delete'),
 ]

@@ -108,9 +108,14 @@ BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
 # (accounts.models.Subscription). Preis wie auf der Landingpage.
 TRIAL_DAYS = 30
 LICENSE_PRICE_CHF = 240
-# Projektlimit der (kommenden) Online-Ablage: Default für neue User;
+# Projektlimit der Online-Ablage: Default für neue User;
 # pro User im Admin überschreibbar (Subscription.max_projects, z.B. 100/200).
 DEFAULT_MAX_PROJECTS = 50
+# Online-Ablage: dauerhaft gespeicherte .planli-Projekte pro User
+# (StoredProject). Wie training_data_opt-in nie vom Cleanup berührt.
+CLOUD_PROJECTS_DIR = BASE_DIR / 'cloud_projects'
+# Stiller technischer Deckel pro Projekt (Ausreisser-Schutz, kein beworbenes Limit)
+MAX_PROJECT_MB = 200
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'

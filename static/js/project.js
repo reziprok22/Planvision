@@ -9,6 +9,12 @@ import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-cl
 import { getCsrfToken } from './pdf-handler.js';
 
 let saveProjectBtn, loadProjectBtn, exportPdfBtn, exportAnnotatedPdfBtn;
+
+// Online-Ablage: aktiv sobald eingeloggt (Flag setzt app.html). currentCloudProjectId
+// hält das gerade geöffnete Cloud-Projekt — Speichern überschreibt es dann statt
+// ein neues anzulegen. Null = nächstes Speichern legt ein neues Projekt an.
+let cloudEnabled = false;
+let currentCloudProjectId = null;
 let zipFileInput;
 let pdfModule;
 
@@ -26,8 +32,11 @@ export function setupProject(elements, modules) {
   zipFileInput.style.display = 'none';
   document.body.appendChild(zipFileInput);
 
+  cloudEnabled = !!window.PLANLI_CLOUD;
+
   if (saveProjectBtn)        saveProjectBtn.addEventListener('click',        handleSave);
-  if (loadProjectBtn)        loadProjectBtn.addEventListener('click',        () => zipFileInput.click());
+  if (loadProjectBtn)        loadProjectBtn.addEventListener('click',
+    () => cloudEnabled ? openDashboard() : zipFileInput.click());
   if (exportPdfBtn)          exportPdfBtn.addEventListener('click',          exportPdf);
   if (exportAnnotatedPdfBtn) exportAnnotatedPdfBtn.addEventListener('click', exportAnnotatedPdf);
 
@@ -37,6 +46,7 @@ export function setupProject(elements, modules) {
   });
 
   setupBugReport();
+  if (cloudEnabled) setupCloud();
 }
 
 /**
@@ -209,6 +219,10 @@ async function handleSave() {
   const baseName = getUploadedBaseName();
   const projectName = baseName || `Planli ${new Date().toLocaleDateString('de-DE')}`;
 
+  // Eingeloggt: Speichern legt das Projekt online ab ("Meine Projekte").
+  // Der Datei-Download bleibt im Menü als "Als Datei herunterladen".
+  if (cloudEnabled) return saveToCloud(projectName);
+
   const status = showStatus('Projekt wird gespeichert…');
   try {
     await saveProjectAsZip({
@@ -223,9 +237,32 @@ async function handleSave() {
   }
 }
 
+/** Datei-Download (.planli) — bisheriges Speichern, jetzt Menüpunkt. */
+async function handleDownload() {
+  if (!pdfModule.getAllPdfPages().length) {
+    alert('Bitte zuerst eine Datei hochladen.');
+    return;
+  }
+  const projectName = getUploadedBaseName() || `Planli ${new Date().toLocaleDateString('de-DE')}`;
+  const status = showStatus('Projekt wird heruntergeladen…');
+  try {
+    await saveProjectAsZip({
+      ...collectZipParams(projectName),
+      onProgress: (pct) => { status.textContent = `Projekt wird heruntergeladen… ${pct}%`; }
+    });
+    updateStatus(status, 'Datei heruntergeladen ✓', 'success');
+  } catch (err) {
+    updateStatus(status, `Fehler: ${err.message}`, 'error');
+  }
+}
+
 // ── Load ─────────────────────────────────────────────────────────────────────
 
 async function handleLoad(file) {
+  // Lokale Datei geladen → nächstes Speichern legt ein NEUES Cloud-Projekt an.
+  // (Beim Öffnen aus der Cloud setzt openCloudProject die ID danach wieder.)
+  currentCloudProjectId = null;
+
   const loader = document.getElementById('loader');
   const status = showStatus('Projekt wird geladen…');
   if (loader) loader.style.display = 'block';
@@ -362,4 +399,153 @@ function updateStatus(div, msg, type = 'info') {
     div.style.opacity = '0';
     setTimeout(() => div.remove(), 500);
   }, 3000);
+}
+
+// ── Online-Ablage ("Meine Projekte") ─────────────────────────────────────────
+// Speichern (Ctrl+S) legt das Projekt-ZIP serverseitig ab; das Dashboard ist
+// die Startansicht für eingeloggte Nutzer und listet alle Cloud-Projekte.
+
+function setupCloud() {
+  document.getElementById('cloudNewProjectBtn')?.addEventListener('click', () => {
+    currentCloudProjectId = null;
+    hideDashboard();
+  });
+  document.getElementById('cloudCloseBtn')?.addEventListener('click', hideDashboard);
+  document.getElementById('downloadProjectBtn')?.addEventListener('click', handleDownload);
+  document.getElementById('openLocalFileBtn')?.addEventListener('click', () => {
+    hideDashboard();
+    zipFileInput.click();
+  });
+  if (loadProjectBtn) loadProjectBtn.title = 'Meine Projekte [Ctrl + O]';
+
+  // Frischer PDF-Upload (Dropzone) = neues Projekt → beim Speichern nicht das
+  // zuvor geöffnete Cloud-Projekt überschreiben. Hook wird von upload-modal.js
+  // nach erfolgreichem Upload aufgerufen.
+  window.planliCloudNewUpload = () => { currentCloudProjectId = null; };
+
+  openDashboard(); // Startansicht
+}
+
+function hideDashboard() {
+  const dash = document.getElementById('cloudDashboard');
+  if (dash) dash.style.display = 'none';
+}
+
+async function openDashboard() {
+  const dash = document.getElementById('cloudDashboard');
+  if (!dash) return;
+  dash.style.display = 'block';
+  const listEl = document.getElementById('cloudProjectList');
+  try {
+    const res = await fetch('/cloud/projects', { headers: { 'X-CSRFToken': getCsrfToken() } });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Laden fehlgeschlagen');
+    renderDashboard(data);
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<div class="cloud-empty">Fehler: ${err.message}</div>`;
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return '–';
+  const mb = bytes / (1024 * 1024);
+  return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function renderDashboard({ projects, limit }) {
+  const listEl  = document.getElementById('cloudProjectList');
+  const countEl = document.getElementById('cloudProjectCount');
+  if (countEl) countEl.textContent = `${projects.length} von ${limit} Projekten`;
+  if (!listEl) return;
+
+  if (!projects.length) {
+    listEl.innerHTML = '<div class="cloud-empty">Noch keine Projekte gespeichert.<br>'
+      + 'Starte mit „+ Neues Projekt“ und speichere mit Ctrl+S — dein Projekt erscheint dann hier.</div>';
+    return;
+  }
+
+  listEl.innerHTML = '';
+  projects.forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'cloud-project-row';
+
+    const name = document.createElement('span');
+    name.className = 'cloud-project-name';
+    name.textContent = p.name;
+
+    const meta = document.createElement('span');
+    meta.className = 'cloud-project-meta';
+    meta.textContent = `${p.updated_at} · ${formatBytes(p.size_bytes)}`;
+
+    const renameBtn = document.createElement('button');
+    renameBtn.className = 'cloud-row-btn';
+    renameBtn.textContent = 'Umbenennen';
+    renameBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const newName = prompt('Neuer Projektname:', p.name);
+      if (!newName || newName.trim() === '' || newName === p.name) return;
+      const fd = new FormData();
+      fd.append('name', newName.trim());
+      const res = await fetch(`/cloud/projects/${p.id}/rename`, {
+        method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
+      if (res.ok) openDashboard();
+      else alert('Umbenennen fehlgeschlagen.');
+    });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'cloud-row-btn danger';
+    deleteBtn.textContent = 'Löschen';
+    deleteBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Projekt „${p.name}“ endgültig löschen?\nTipp: vorher über „Öffnen“ + Menü → „Als Datei herunterladen“ sichern.`)) return;
+      const res = await fetch(`/cloud/projects/${p.id}/delete`, {
+        method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+      if (res.ok) {
+        if (currentCloudProjectId === p.id) currentCloudProjectId = null;
+        openDashboard();
+      } else {
+        alert('Löschen fehlgeschlagen.');
+      }
+    });
+
+    row.append(name, meta, renameBtn, deleteBtn);
+    row.addEventListener('click', () => openCloudProject(p));
+    listEl.appendChild(row);
+  });
+}
+
+async function openCloudProject(p) {
+  const status = showStatus(`„${p.name}“ wird geladen…`);
+  try {
+    const res = await fetch(`/cloud/projects/${p.id}/download`);
+    if (!res.ok) throw new Error('Download fehlgeschlagen');
+    const blob = await res.blob();
+    hideDashboard();
+    await handleLoad(new File([blob], `${p.name}.planli`, { type: 'application/zip' }));
+    currentCloudProjectId = p.id; // Speichern überschreibt ab jetzt dieses Projekt
+    updateStatus(status, `„${p.name}“ geladen ✓`, 'success');
+  } catch (err) {
+    updateStatus(status, `Fehler: ${err.message}`, 'error');
+  }
+}
+
+async function saveToCloud(projectName) {
+  const status = showStatus('Projekt wird online gespeichert…');
+  try {
+    const blob = await buildProjectZipBlob(collectZipParams(projectName));
+    const fd = new FormData();
+    fd.append('project_zip', new File([blob], 'project.planli', { type: 'application/zip' }));
+    if (currentCloudProjectId) fd.append('project_id', currentCloudProjectId);
+    else fd.append('name', projectName);
+    const res = await fetch('/cloud/projects/save', {
+      method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+    currentCloudProjectId = data.id;
+    updateStatus(status, 'Online gespeichert ✓', 'success');
+    window.plausible?.('Projekt online gespeichert');
+  } catch (err) {
+    console.error('Cloud save error:', err);
+    updateStatus(status, `Fehler: ${err.message}`, 'error');
+  }
 }

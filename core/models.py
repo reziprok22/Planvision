@@ -1,6 +1,34 @@
 import uuid
+from django.conf import settings as django_settings
 from django.db import models
 from django.contrib.auth.models import User
+
+
+class StoredProject(models.Model):
+    """Online-Ablage: pro User dauerhaft gespeicherte .planli-Projekte
+    ("In der Cloud speichern"). Die Datei ist das identische, selbst-enthaltende
+    Projekt-ZIP wie beim lokalen Speichern — geladen wird sie über denselben
+    Pfad wie "Öffnen". Limit pro User: Subscription.max_projects (Gate beim
+    Anlegen in cloud_save). Nicht vom projects/-Cleanup berührt."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='stored_projects')
+    name = models.CharField(max_length=200)
+    size_bytes = models.BigIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    # Für die spätere Inaktivitäts-Archivierung (12 Monate) schon mitgeführt.
+    last_opened_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-updated_at']
+
+    def __str__(self):
+        return f"{self.name} ({self.user.username})"
+
+    @property
+    def file_path(self):
+        return django_settings.CLOUD_PROJECTS_DIR / f'{self.id}.planli'
 
 
 class Project(models.Model):
