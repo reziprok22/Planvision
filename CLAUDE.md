@@ -132,7 +132,7 @@ The application requires a pre-trained Faster R-CNN model at:
 - Password reset: `/accounts/password-reset/` (full Django flow; templates in `templates/accounts/`, mail via `EMAIL_*` settings — console backend in dev, SMTP via `DJANGO_EMAIL_*` env vars in prod)
 - Auth pages share a card layout: `templates/accounts/auth_base.html`
 - Logged-in users see their email + "Abmelden" (POST form) in the app header burger menu; the landing nav shows "Anmelden" when logged out (non-beta)
-- Admin panel available at `/admin/` (requires superuser) — includes the bug report list
+- Admin panel available at `/vitruv/` (requires superuser; deliberately not the default `/admin/` to avoid bot scanners — never list this path in robots.txt or public pages) — includes the bug report list
 - All API endpoints are CSRF-protected; the frontend sends `X-CSRFToken` from the cookie (set via `@ensure_csrf_cookie` on the app view)
 - `BETA_MODE` (settings, env-overridable, default **True**): when True, all endpoints work without login, projects are stored with `user=NULL` (access guarded only by the unguessable session UUID), and the "Beta" badge shows next to the app logo. The whole login flow is built and dormant behind this switch; test locally via `BETA_MODE=False python manage.py runserver`. Exposed to all templates via the `beta_mode` context processor
 

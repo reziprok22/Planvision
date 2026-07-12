@@ -75,4 +75,4 @@
         </div>
 {% endblock %}
 
-{% block back_link %}<a href="/admin/" class="btn btn-outline-dark back-link">← Zum Admin</a>{% endblock %}
+{% block back_link %}<a href="{% url 'admin:index' %}" class="btn btn-outline-dark back-link">← Zum Admin</a>{% endblock %}

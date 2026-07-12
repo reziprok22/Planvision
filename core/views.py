@@ -102,9 +102,11 @@ def agb(request):
 
 
 def robots_txt(request):
+    # Den Admin-Pfad (/vitruv/) hier bewusst NICHT auflisten: robots.txt ist
+    # öffentlich und würde den unauffälligen Pfad an Scanner verraten.
+    # Crawler finden ihn ohnehin nicht, da nichts darauf verlinkt.
     lines = [
         'User-agent: *',
-        'Disallow: /admin/',
         'Disallow: /accounts/',
         'Disallow: /project_files/',
         '',
