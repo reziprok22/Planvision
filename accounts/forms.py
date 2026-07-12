@@ -22,8 +22,13 @@ class EmailUserCreationForm(UserCreationForm):
 
     def clean_email(self):
         email = self.cleaned_data['email'].lower()
-        if User.objects.filter(username__iexact=email).exists():
-            raise forms.ValidationError('Mit dieser E-Mail-Adresse existiert bereits ein Konto.')
+        existing = User.objects.filter(username__iexact=email).first()
+        if existing:
+            if existing.is_active:
+                raise forms.ValidationError('Mit dieser E-Mail-Adresse existiert bereits ein Konto.')
+            # Unbestätigtes altes Konto (Verifikations-Mail nie angeklickt) —
+            # Registrierung einfach neu starten statt einer Sackgasse.
+            existing.delete()
         return email
 
     def save(self, commit=True):
@@ -41,3 +46,11 @@ class EmailAuthenticationForm(AuthenticationForm):
 
     def clean_username(self):
         return self.cleaned_data['username'].lower()
+
+    def confirm_login_allowed(self, user):
+        if not user.is_active:
+            raise forms.ValidationError(
+                'Dieses Konto ist noch nicht bestätigt. Bitte klicke auf den '
+                'Bestätigungslink, den wir dir per E-Mail geschickt haben.',
+                code='inactive',
+            )

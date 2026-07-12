@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+</head>
+<body style="margin:0; padding:0; background:#F8FAFC; font-family:Arial, Helvetica, sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F8FAFC; padding:32px 16px;">
+<tr><td align="center">
+<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#FFFFFF; border-radius:12px; border:1px solid #E2E8F0; padding:32px; max-width:480px;">
+<tr><td style="font-size:16px; line-height:1.5; color:#1E293B;">
+<p style="margin:0 0 16px;">Guten Tag</p>
+<p style="margin:0 0 24px;">Fast fertig, bitte bestätige deine E-Mail-Adresse, um dein Planli-Konto zu aktivieren:</p>
+<p style="margin:0 0 24px;">
+<a href="{{ protocol }}://{{ domain }}{% url 'verify_email' uidb64=uid token=token %}"
+   style="display:inline-block; background:#FF6B00; color:#FFFFFF; text-decoration:none; padding:12px 24px; border-radius:8px; font-weight:bold;">
+E-Mail-Adresse bestätigen
+</a>
+</p>
+<p style="margin:0 0 16px; font-size:13px; color:#64748B;">Falls die Schaltfläche nicht funktioniert, kopiere diesen Link in deinen Browser:<br>
+<a href="{{ protocol }}://{{ domain }}{% url 'verify_email' uidb64=uid token=token %}" style="color:#FF6B00; word-break:break-all;">{{ protocol }}://{{ domain }}{% url 'verify_email' uidb64=uid token=token %}</a>
+</p>
+<p style="margin:0 0 16px;">Falls du kein Konto bei Planli erstellt hast, kannst du diese E-Mail ignorieren.</p>
+<p style="margin:24px 0 0; color:#64748B;">Freundliche Grüsse<br>Planli</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>

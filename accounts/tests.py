@@ -10,21 +10,25 @@ from .models import Subscription, subscription_for
 
 
 class RegistrationTests(TestCase):
-    def test_register_with_email_creates_user(self):
+    def test_register_with_email_creates_inactive_user_and_sends_verification(self):
         response = self.client.post(reverse('register'), {
             'email': 'Test@Example.CH',
             'password1': 'sicher-genug-42',
             'password2': 'sicher-genug-42',
         })
-        self.assertRedirects(response, '/app/', fetch_redirect_response=False)
+        self.assertRedirects(response, reverse('verify_email_sent'))
         user = User.objects.get()
         # E-Mail wird kleingeschrieben als Username UND als E-Mail gespeichert
         self.assertEqual(user.username, 'test@example.ch')
         self.assertEqual(user.email, 'test@example.ch')
-        # Nach der Registrierung direkt eingeloggt
-        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        # Konto erst nach Klick auf den Bestätigungslink aktiv, noch nicht eingeloggt
+        self.assertFalse(user.is_active)
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ['test@example.ch'])
+        self.assertIn('/accounts/verify-email/', mail.outbox[0].body)
 
-    def test_register_rejects_duplicate_email(self):
+    def test_register_rejects_duplicate_active_email(self):
         User.objects.create_user(username='test@example.ch', email='test@example.ch', password='x')
         response = self.client.post(reverse('register'), {
             'email': 'TEST@example.ch',
@@ -34,6 +38,73 @@ class RegistrationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'existiert bereits ein Konto')
         self.assertEqual(User.objects.count(), 1)
+
+    def test_register_again_with_unverified_email_restarts_verification(self):
+        stale = User.objects.create_user(
+            username='test@example.ch', email='test@example.ch', password='x', is_active=False)
+        response = self.client.post(reverse('register'), {
+            'email': 'test@example.ch',
+            'password1': 'sicher-genug-42',
+            'password2': 'sicher-genug-42',
+        })
+        self.assertRedirects(response, reverse('verify_email_sent'))
+        self.assertEqual(User.objects.count(), 1)
+        new_user = User.objects.get()
+        self.assertNotEqual(new_user.pk, stale.pk)
+        self.assertFalse(new_user.is_active)
+
+
+def _extract_link(outbox_index, path_fragment):
+    link = next(line for line in mail.outbox[outbox_index].body.splitlines()
+                if path_fragment in line).strip()
+    return '/' + link.split('://', 1)[1].split('/', 1)[1]
+
+
+class EmailVerificationTests(TestCase):
+    def test_verify_link_activates_and_logs_in(self):
+        self.client.post(reverse('register'), {
+            'email': 'test@example.ch',
+            'password1': 'sicher-genug-42',
+            'password2': 'sicher-genug-42',
+        })
+        link = _extract_link(0, '/accounts/verify-email/')
+        response = self.client.get(link, follow=True)
+        self.assertRedirects(response, reverse('app'))
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertTrue(User.objects.get().is_active)
+
+    def test_verify_link_is_single_use(self):
+        self.client.post(reverse('register'), {
+            'email': 'test@example.ch',
+            'password1': 'sicher-genug-42',
+            'password2': 'sicher-genug-42',
+        })
+        link = _extract_link(0, '/accounts/verify-email/')
+        self.client.get(link)
+        self.client.logout()
+        response = self.client.get(link)
+        self.assertContains(response, 'ungültig', status_code=200)
+
+    def test_bogus_token_shows_invalid_page(self):
+        user = User.objects.create_user(
+            username='test@example.ch', email='test@example.ch', password='x', is_active=False)
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        response = self.client.get(f'/accounts/verify-email/{uid}/bogus-token/')
+        self.assertContains(response, 'ungültig', status_code=200)
+
+    def test_inactive_user_cannot_login(self):
+        User.objects.create_user(
+            username='test@example.ch', email='test@example.ch', password='sicher-genug-42',
+            is_active=False)
+        response = self.client.post(reverse('login'), {
+            'username': 'test@example.ch',
+            'password': 'sicher-genug-42',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'noch nicht bestätigt')
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
 
 
 class LoginTests(TestCase):

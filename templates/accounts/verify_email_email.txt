@@ -1,0 +1,10 @@
+Guten Tag
+
+fast fertig, bitte bestätige deine E-Mail-Adresse, um dein Planli-Konto zu aktivieren:
+
+{{ protocol }}://{{ domain }}{% url 'verify_email' uidb64=uid token=token %}
+
+Falls du kein Konto bei Planli erstellt hast, kannst du diese E-Mail ignorieren.
+
+Freundliche Grüsse
+Planli

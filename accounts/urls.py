@@ -12,10 +12,15 @@ urlpatterns = [
     path('register/', views.register, name='register'),
     path('konto/', views.konto, name='konto'),
 
+    # E-Mail-Verifikation nach der Registrierung
+    path('verify-email/sent/', views.verify_email_sent, name='verify_email_sent'),
+    path('verify-email/<uidb64>/<token>/', views.verify_email, name='verify_email'),
+
     # Passwort-Reset (E-Mail-Versand gemäss EMAIL_*-Settings)
     path('password-reset/', auth_views.PasswordResetView.as_view(
         template_name='accounts/password_reset.html',
         email_template_name='accounts/password_reset_email.txt',
+        html_email_template_name='accounts/password_reset_email.html',
         subject_template_name='accounts/password_reset_subject.txt',
     ), name='password_reset'),
     path('password-reset/done/', auth_views.PasswordResetDoneView.as_view(

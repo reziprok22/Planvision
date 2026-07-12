@@ -1,0 +1,19 @@
+{% extends "accounts/auth_base.html" %}
+
+{% block title %}Link ungültig | Planli{% endblock %}
+
+{% block card %}
+    <h1>Link ungültig oder abgelaufen</h1>
+    <p class="subtitle">Dieser Bestätigungslink wurde bereits verwendet oder ist nicht mehr gültig.</p>
+
+    <div class="info">
+        Registriere dich erneut mit derselben E-Mail-Adresse — wir schicken dir dann einen neuen Bestätigungslink.
+    </div>
+
+    <div class="link-row">
+        <a href="{% url 'register' %}">Zur Registrierung</a>
+    </div>
+    <div class="link-row">
+        <a href="{% url 'login' %}">Zurück zur Anmeldung</a>
+    </div>
+{% endblock %}

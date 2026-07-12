@@ -1,0 +1,16 @@
+{% extends "accounts/auth_base.html" %}
+
+{% block title %}E-Mail bestätigen | Planli{% endblock %}
+
+{% block card %}
+    <h1>Fast geschafft</h1>
+    <p class="subtitle">Wir haben dir einen Bestätigungslink per E-Mail geschickt. Klicke darauf, um dein Konto zu aktivieren.</p>
+
+    <div class="info">
+        Keine E-Mail erhalten? Prüfe den Spam-Ordner oder registriere dich erneut mit derselben Adresse, wir schicken dir dann einen neuen Link.
+    </div>
+
+    <div class="link-row">
+        <a href="{% url 'login' %}">Zurück zur Anmeldung</a>
+    </div>
+{% endblock %}

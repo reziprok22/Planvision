@@ -72,6 +72,14 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
+# Neue Konten sind bis zur E-Mail-Verifikation is_active=False. Das Standard-
+# ModelBackend würde solche User beim Login-Versuch schon vor der
+# Passwortprüfung stillschweigend verwerfen (generische Fehlermeldung) —
+# AllowAllUsersModelBackend lässt sie bis zu confirm_login_allowed()
+# (EmailAuthenticationForm) durch, wo die Meldung "Konto noch nicht
+# bestätigt" ausgegeben wird.
+AUTHENTICATION_BACKENDS = ['django.contrib.auth.backends.AllowAllUsersModelBackend']
+
 LANGUAGE_CODE = 'de-ch'
 TIME_ZONE = 'Europe/Zurich'
 USE_I18N = True
@@ -102,7 +110,7 @@ PROJECT_RETENTION_DAYS = int(os.environ.get('PROJECT_RETENTION_DAYS', 14))
 #   - In der App erscheint das "Beta"-Badge, auf der Landingpage der Beta-Banner.
 # Für den Produktivbetrieb mit Accounts: auf False setzen (beendet die Beta-Phase).
 # Lokal testbar via Env: BETA_MODE=False python manage.py runserver
-BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
+BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'False'
 
 # Kostenlose Testphase ab Registrierung; danach Read-Only bis zur Zahlung
 # (accounts.models.Subscription). Preis wie auf der Landingpage.
