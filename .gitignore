@@ -11,6 +11,8 @@ cloud_projects
 bug_reports
 node_modules
 db.sqlite3
+db.sqlite3-wal
+db.sqlite3-shm
 core/management/commands/Ergebnisse
 
 # Einzelne Datei ignorieren

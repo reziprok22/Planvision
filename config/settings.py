@@ -70,10 +70,29 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# SQLite-Tuning für gunicorn mit mehreren Workern:
+# - WAL: Leser blockieren Schreiber nicht mehr (Standard-Journal tut das);
+#   legt db.sqlite3-wal/-shm neben die DB (gitignored, Backup nutzt eh die
+#   Online-Backup-API und ist davon unabhängig)
+# - synchronous=NORMAL: empfohlene Paarung mit WAL (volle Integrität bei
+#   App-Crash; nur bei OS-/Stromausfall können letzte Commits fehlen)
+# - timeout: Schreiber warten bis 20 s auf das Lock statt sofort
+#   "database is locked" zu werfen
+# - transaction_mode=IMMEDIATE: Schreib-Transaktionen nehmen das Lock sofort
+#   statt erst beim ersten Write — verhindert die Lock-Upgrade-Falle, bei
+#   der das timeout nicht greift
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
+        'OPTIONS': {
+            'transaction_mode': 'IMMEDIATE',
+            'timeout': 20,
+            'init_command': (
+                'PRAGMA journal_mode=WAL;'
+                'PRAGMA synchronous=NORMAL;'
+            ),
+        },
     }
 }
 
