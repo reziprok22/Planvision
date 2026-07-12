@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Beta-Backup für Planvision: sichert db.sqlite3 (konsistent), bug_reports/
-# und cloud_projects/ (Online-Ablage: Hardlink-Snapshots, KEEP_DAYS zurück).
+# Beta-Backup für Planvision: sichert db.sqlite3 (konsistent), bug_reports/,
+# training_data_opt-in/ und cloud_projects/ (Online-Ablage: Hardlink-Snapshots,
+# KEEP_DAYS zurück).
 # Bewusst NICHT projects/ (gross, transient, fremde Pläne -> Datenschutz/Retention).
 #
 # Einrichtung:
@@ -49,7 +50,15 @@ if [ -d "$APP_DIR/bug_reports" ]; then
   echo "$(date '+%F %T')  bug_reports gesichert -> $BACKUP_DIR/bug_reports/"
 fi
 
-# 3) cloud_projects/ (Online-Ablage, dauerhafte Kundendaten): tagesweise
+# 3) training_data_opt-in/ spiegeln (unwiederbringliche Nutzer-Spenden; server-
+#    seitig nie verändert/gelöscht, daher reicht akkumulierendes rsync ohne --delete).
+if [ -d "$APP_DIR/training_data_opt-in" ]; then
+  mkdir -p "$BACKUP_DIR/training_data_opt-in"
+  rsync -a "$APP_DIR/training_data_opt-in/" "$BACKUP_DIR/training_data_opt-in/"
+  echo "$(date '+%F %T')  training_data_opt-in gesichert -> $BACKUP_DIR/training_data_opt-in/"
+fi
+
+# 4) cloud_projects/ (Online-Ablage, dauerhafte Kundendaten): tagesweise
 #    Snapshots mit Hardlinks (--link-dest) — unveränderte Dateien belegen
 #    keinen zusätzlichen Platz, trotzdem KEEP_DAYS Stände zum Zurückgehen
 #    (schützt auch gegen versehentliches Löschen, nicht nur Plattenausfall).
@@ -66,7 +75,8 @@ if [ -d "$APP_DIR/cloud_projects" ]; then
   echo "$(date '+%F %T')  cloud_projects gesichert -> $CP_DEST"
 fi
 
-# 4) Rotation: alte Stände entfernen (bug_reports werden bewusst nicht rotiert).
+# 5) Rotation: alte Stände entfernen (bug_reports und training_data_opt-in
+#    werden bewusst nicht rotiert).
 #    cloud_projects-Snapshots nach Name (=Datum) rotieren, nicht nach mtime —
 #    rsync -a überträgt die Quell-Zeitstempel auf die Snapshot-Verzeichnisse.
 find "$BACKUP_DIR/db" -name 'db-*.sqlite3' -type f -mtime +"$KEEP_DAYS" -delete
