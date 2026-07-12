@@ -110,7 +110,7 @@ PROJECT_RETENTION_DAYS = int(os.environ.get('PROJECT_RETENTION_DAYS', 14))
 #   - In der App erscheint das "Beta"-Badge, auf der Landingpage der Beta-Banner.
 # Für den Produktivbetrieb mit Accounts: auf False setzen (beendet die Beta-Phase).
 # Lokal testbar via Env: BETA_MODE=False python manage.py runserver
-BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'False'
+BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
 
 # Kostenlose Testphase ab Registrierung; danach Read-Only bis zur Zahlung
 # (accounts.models.Subscription). Preis wie auf der Landingpage.
