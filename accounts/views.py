@@ -1,6 +1,4 @@
 from django.conf import settings
-from django.contrib import messages
-from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
@@ -51,6 +49,8 @@ def verify_email_sent(request):
 
 
 def verify_email(request, uidb64, token):
+    """Bewusst ohne Auto-Login: der Mail-Link wäre sonst ein Session-Ticket
+    für jeden, der ihn abgreift (weitergeleitete Mail, geteiltes Postfach)."""
     try:
         user = User.objects.get(pk=force_str(urlsafe_base64_decode(uidb64)))
     except (TypeError, ValueError, OverflowError, User.DoesNotExist):
@@ -59,9 +59,14 @@ def verify_email(request, uidb64, token):
     if user is not None and email_verification_token.check_token(user, token):
         user.is_active = True
         user.save()
-        login(request, user)
-        messages.success(request, 'E-Mail-Adresse bestätigt — willkommen bei Planli!')
-        return redirect('app')
+        return render(request, 'accounts/verify_email_done.html')
+
+    # Token verbraucht, Konto aber schon aktiv: Mail-Scanner (z.B. Outlook
+    # SafeLinks) rufen Links vorab per GET auf und konsumieren den Token,
+    # bevor der User klickt. Dann nicht "ungültig" zeigen, sondern zum
+    # Login führen.
+    if user is not None and user.is_active:
+        return render(request, 'accounts/verify_email_done.html')
 
     return render(request, 'accounts/verify_email_invalid.html')
 

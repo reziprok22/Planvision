@@ -53,6 +53,22 @@ class RegistrationTests(TestCase):
         self.assertNotEqual(new_user.pk, stale.pk)
         self.assertFalse(new_user.is_active)
 
+    def test_register_does_not_delete_deactivated_used_account(self):
+        # Im Admin gesperrtes Konto (is_active=False, aber schon mal
+        # eingeloggt) darf nicht per anonymer Registrierung löschbar sein.
+        banned = User.objects.create_user(
+            username='test@example.ch', email='test@example.ch', password='x', is_active=False)
+        banned.last_login = timezone.now()
+        banned.save()
+        response = self.client.post(reverse('register'), {
+            'email': 'test@example.ch',
+            'password1': 'sicher-genug-42',
+            'password2': 'sicher-genug-42',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'existiert bereits ein Konto')
+        self.assertEqual(User.objects.get().pk, banned.pk)
+
 
 def _extract_link(outbox_index, path_fragment):
     link = next(line for line in mail.outbox[outbox_index].body.splitlines()
@@ -61,19 +77,22 @@ def _extract_link(outbox_index, path_fragment):
 
 
 class EmailVerificationTests(TestCase):
-    def test_verify_link_activates_and_logs_in(self):
+    def test_verify_link_activates_without_login(self):
+        # Bewusst kein Auto-Login: der Mail-Link soll kein Session-Ticket sein
         self.client.post(reverse('register'), {
             'email': 'test@example.ch',
             'password1': 'sicher-genug-42',
             'password2': 'sicher-genug-42',
         })
         link = _extract_link(0, '/accounts/verify-email/')
-        response = self.client.get(link, follow=True)
-        self.assertRedirects(response, reverse('app'))
-        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        response = self.client.get(link)
+        self.assertContains(response, 'bestätigt')
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
         self.assertTrue(User.objects.get().is_active)
 
-    def test_verify_link_is_single_use(self):
+    def test_verify_link_second_click_shows_done_not_invalid(self):
+        # Mail-Scanner rufen den Link vorab auf und verbrauchen den Token;
+        # der echte Klick danach soll zum Login führen statt "ungültig"
         self.client.post(reverse('register'), {
             'email': 'test@example.ch',
             'password1': 'sicher-genug-42',
@@ -81,9 +100,10 @@ class EmailVerificationTests(TestCase):
         })
         link = _extract_link(0, '/accounts/verify-email/')
         self.client.get(link)
-        self.client.logout()
         response = self.client.get(link)
-        self.assertContains(response, 'ungültig', status_code=200)
+        self.assertContains(response, 'bestätigt', status_code=200)
+        self.assertNotContains(response, 'ungültig')
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
 
     def test_bogus_token_shows_invalid_page(self):
         user = User.objects.create_user(

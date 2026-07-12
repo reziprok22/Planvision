@@ -1,0 +1,16 @@
+{% extends "accounts/auth_base.html" %}
+
+{% block title %}E-Mail bestätigt | Planli{% endblock %}
+
+{% block card %}
+    <h1>E-Mail-Adresse bestätigt</h1>
+    <p class="subtitle">Dein Konto ist aktiviert.</p>
+
+    <div class="info">
+        Du kannst dich jetzt mit deiner E-Mail-Adresse und deinem Passwort anmelden.
+    </div>
+
+    <div class="link-row">
+        <a href="{% url 'login' %}">Zur Anmeldung</a>
+    </div>
+{% endblock %}

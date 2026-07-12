@@ -24,7 +24,12 @@ class EmailUserCreationForm(UserCreationForm):
         email = self.cleaned_data['email'].lower()
         existing = User.objects.filter(username__iexact=email).first()
         if existing:
-            if existing.is_active:
+            # is_active=False heisst nicht zwingend "nie bestätigt": im Admin
+            # gesperrte Konten tragen dasselbe Flag. Gelöscht (und die
+            # Registrierung neu gestartet) wird nur ein nachweislich nie
+            # benutztes Konto — sonst könnte ein anonymer POST ein gesperrtes
+            # Konto samt Subscription und Cloud-Projekten wegräumen.
+            if existing.is_active or existing.last_login is not None:
                 raise forms.ValidationError('Mit dieser E-Mail-Adresse existiert bereits ein Konto.')
             # Unbestätigtes altes Konto (Verifikations-Mail nie angeklickt) —
             # Registrierung einfach neu starten statt einer Sackgasse.
