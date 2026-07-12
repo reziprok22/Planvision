@@ -15,6 +15,18 @@ SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 # Erlaubte Origins für CSRF-geschützte POSTs (Upload, Analyse, Bug-Report)
 CSRF_TRUSTED_ORIGINS = ['https://planli.net', 'https://www.planli.net']
 
+# Produktions-Härtung (nur wenn DEBUG aus, damit lokal http://localhost
+# weiter funktioniert). SECURE_SSL_REDIRECT (check-Warnung W008) bleibt
+# bewusst weg: nginx leitet Port 80 schon per 301 auf HTTPS um, Django
+# sieht nie einen unverschlüsselten Request.
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True   # Session-Cookie nur über HTTPS
+    CSRF_COOKIE_SECURE = True      # CSRF-Cookie nur über HTTPS
+    # HSTS: Browser merken sich, planli.net nur per HTTPS anzusteuern.
+    # Konservativ 30 Tage; wenn länger problemlos, auf 31536000 (1 Jahr)
+    # erhöhen. Kein includeSubDomains/preload (www hat eigenen Redirect).
+    SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
