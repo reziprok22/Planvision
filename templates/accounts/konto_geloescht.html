@@ -1,0 +1,17 @@
+{% extends "accounts/auth_base.html" %}
+
+{% block title %}Konto gelöscht | Planli{% endblock %}
+
+{% block card %}
+    <h1>Konto gelöscht</h1>
+    <p class="subtitle">Dein Planli-Konto und alle zugehörigen Daten wurden entfernt.</p>
+
+    <div class="info">
+        Danke, dass du Planli ausprobiert hast. Du kannst jederzeit mit einer
+        neuen Registrierung zurückkommen.
+    </div>
+
+    <div class="link-row">
+        <a href="{% url 'landing' %}">Zur Startseite</a>
+    </div>
+{% endblock %}

@@ -56,6 +56,18 @@
         .konto-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 1.2rem; }
         .logout-form { display: inline; }
         .logout-form .btn { font-family: var(--font); }
+
+        .konto-delete-link {
+            margin-top: 2rem;
+            font-size: 0.82rem;
+        }
+
+        .konto-delete-link a {
+            color: var(--slate-400);
+            text-decoration: underline;
+        }
+
+        .konto-delete-link a:hover { color: #B91C1C; }
     </style>
 {% endblock %}
 
@@ -132,6 +144,10 @@
             <button type="submit" class="btn btn-outline-dark">Abmelden</button>
         </form>
     </div>
+
+    <p class="konto-delete-link">
+        <a href="{% url 'konto_loeschen' %}">Konto löschen</a>
+    </p>
 {% endblock %}
 
 {% block back_link %}{% endblock %}

@@ -130,6 +130,7 @@ The application requires a pre-trained Faster R-CNN model at:
 - **E-Mail + password only** (no visible username): registration/login use the email as the internal `username` (lowercased) via `EmailUserCreationForm`/`EmailAuthenticationForm` in `accounts/forms.py` — no custom user model
 - Login: `/accounts/login/` — Logout: `/accounts/logout/` (POST) — Register: `/accounts/register/`
 - Password reset: `/accounts/password-reset/` (full Django flow; templates in `templates/accounts/`, mail via `EMAIL_*` settings — console backend in dev, SMTP via `DJANGO_EMAIL_*` env vars in prod)
+- Konto löschen: `/accounts/konto/loeschen/` (Link auf der Konto-Seite) — **sofortige harte Löschung** (DSGVO Art. 17) nach Passwort-Bestätigung: Dateien explizit weg (`cloud_projects/`, `projects/<uuid>/`, `training_data_opt-in/` bei consent), DB via CASCADE (BugReport/AnalysisEvent bleiben per SET_NULL anonymisiert), danach Bestätigungs-Mail (best-effort). Superuser/Staff sind von der Web-UI-Löschung ausgenommen. Bewusst keine 30-Tage-Frist: ein Soft-Delete via `is_active` würde mit der E-Mail-Verifikation kollidieren
 - Auth pages share a card layout: `templates/accounts/auth_base.html`
 - Logged-in users see their email + "Abmelden" (POST form) in the app header burger menu; the landing nav shows "Anmelden" when logged out (non-beta)
 - Admin panel available at `/vitruv/` (requires superuser; deliberately not the default `/admin/` to avoid bot scanners — never list this path in robots.txt or public pages) — includes the bug report list

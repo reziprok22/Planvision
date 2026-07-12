@@ -1,0 +1,63 @@
+{% extends "accounts/auth_base.html" %}
+
+{% block title %}Konto löschen | Planli{% endblock %}
+
+{% block extra_head %}
+    {{ block.super }}
+    <style>
+        .danger-list {
+            font-size: 0.875rem;
+            color: var(--slate-600);
+            margin: 0 0 1.4rem;
+            padding-left: 1.2rem;
+            line-height: 1.6;
+        }
+
+        .auth-card .btn-danger {
+            background: #B91C1C;
+            border-color: #B91C1C;
+        }
+
+        .auth-card .btn-danger:hover {
+            background: #991B1B;
+            border-color: #991B1B;
+        }
+    </style>
+{% endblock %}
+
+{% block card %}
+    <h1>Konto löschen</h1>
+    <p class="subtitle">Dieser Schritt kann nicht rückgängig gemacht werden.</p>
+
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <p style="font-size: 0.9rem; color: var(--slate-800); margin-bottom: 0.8rem;">
+        Mit der Löschung deines Kontos werden unwiderruflich entfernt:
+    </p>
+    <ul class="danger-list">
+        <li><strong>{{ cloud_project_count }} online gespeicherte{{ cloud_project_count|pluralize:"s," }} Projekt{{ cloud_project_count|pluralize:",e" }}</strong> — lade sie vorher bei Bedarf als Datei herunter</li>
+        <li>Deine hochgeladenen Pläne und Analysedaten</li>
+        <li>Freiwillig geteilte Trainingsdaten</li>
+        {% if sub.is_paid %}<li>Deine laufende Lizenz ({{ sub.status_label }}) — ohne Rückerstattung</li>
+        {% elif sub.in_trial %}<li>Deine laufende Testphase ({{ sub.status_label }})</li>{% endif %}
+    </ul>
+    <p style="font-size: 0.78rem; color: var(--slate-400); margin-bottom: 1.4rem;">
+        Bereits gemeldete Fehlerberichte und anonyme Nutzungsstatistiken bleiben ohne
+        Bezug zu deiner Person erhalten.
+    </p>
+
+    {% if not user.is_superuser and not user.is_staff %}
+    <form method="post">
+        {% csrf_token %}
+        <label for="id_password">Zur Bestätigung dein Passwort</label>
+        <input type="password" name="password" id="id_password" autocomplete="current-password" required autofocus>
+        <button type="submit" class="btn btn-danger">Konto endgültig löschen</button>
+    </form>
+    {% endif %}
+
+    <div class="link-row">
+        <a href="{% url 'konto' %}">Abbrechen — zurück zum Konto</a>
+    </div>
+{% endblock %}

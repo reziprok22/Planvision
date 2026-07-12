@@ -1,4 +1,8 @@
+import logging
+import shutil
+
 from django.conf import settings
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
@@ -10,6 +14,8 @@ from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from .forms import EmailUserCreationForm
 from .models import subscription_for
 from .tokens import email_verification_token
+
+logger = logging.getLogger(__name__)
 
 
 def _send_verification_email(request, user):
@@ -76,4 +82,61 @@ def konto(request):
     return render(request, 'accounts/konto.html', {
         'sub': subscription_for(request.user),
         'price_chf': settings.LICENSE_PRICE_CHF,
+    })
+
+
+def _delete_user_files(user):
+    """Alle Dateien des Users auf der Platte entfernen. Die DB-Zeilen räumt
+    danach `user.delete()` per CASCADE ab (BugReport/AnalysisEvent bleiben
+    via SET_NULL anonymisiert für die Statistik erhalten)."""
+    for stored in user.stored_projects.all():
+        stored.file_path.unlink(missing_ok=True)
+    for project in user.projects.all():
+        shutil.rmtree(settings.PROJECTS_DIR / str(project.id), ignore_errors=True)
+        # Trainingsdaten sind zwar mit Einwilligung gespeichert, aber dem User
+        # zuordenbar — bei Kontolöschung werden sie deshalb mitentfernt.
+        if project.consent_training:
+            shutil.rmtree(settings.TRAINING_DATA_DIR / str(project.id), ignore_errors=True)
+
+
+def _send_deletion_email(email):
+    subject = render_to_string('accounts/konto_geloescht_subject.txt').strip()
+    text_body = render_to_string('accounts/konto_geloescht_email.txt')
+    html_body = render_to_string('accounts/konto_geloescht_email.html')
+    message = EmailMultiAlternatives(subject, text_body, to=[email])
+    message.attach_alternative(html_body, 'text/html')
+    message.send()
+
+
+@login_required
+def konto_loeschen(request):
+    """Selbstlöschung des Kontos: Passwort-Bestätigung, dann sofortige harte
+    Löschung (DSGVO Art. 17 / revDSG) inkl. aller Dateien, danach
+    Bestätigungs-Mail an die bisherige Adresse."""
+    user = request.user
+    error = None
+
+    # Admin-Konten nicht über die Web-UI löschbar (Schutz vor Aussperrung
+    # und vor Missbrauch einer offenen Admin-Session).
+    if user.is_superuser or user.is_staff:
+        error = 'Admin-Konten können nicht über diese Seite gelöscht werden.'
+    elif request.method == 'POST':
+        if user.check_password(request.POST.get('password', '')):
+            email = user.email
+            _delete_user_files(user)
+            user.delete()
+            logout(request)
+            try:
+                _send_deletion_email(email)
+            except Exception:
+                # Konto ist weg — eine fehlgeschlagene Mail soll das nicht
+                # als Fehler erscheinen lassen.
+                logger.exception('Bestätigungs-Mail nach Kontolöschung fehlgeschlagen')
+            return render(request, 'accounts/konto_geloescht.html')
+        error = 'Das Passwort ist nicht korrekt.'
+
+    return render(request, 'accounts/konto_loeschen.html', {
+        'error': error,
+        'cloud_project_count': user.stored_projects.count(),
+        'sub': subscription_for(user),
     })

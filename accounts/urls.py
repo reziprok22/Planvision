@@ -11,6 +11,7 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(), name='logout'),
     path('register/', views.register, name='register'),
     path('konto/', views.konto, name='konto'),
+    path('konto/loeschen/', views.konto_loeschen, name='konto_loeschen'),
 
     # E-Mail-Verifikation nach der Registrierung
     path('verify-email/sent/', views.verify_email_sent, name='verify_email_sent'),
