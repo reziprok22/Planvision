@@ -16,19 +16,56 @@ Langfristiges Ziel: Du baust dir eine Liste von Beta-Testern auf, die das Tool l
 - 1 bis 2 Posts pro Woche: Wichtigster Faktor ist Kontinuität (regelmässigkeit statt intensivität). B2B-Bereich in der Schweiz: Dienstag, Mittwoch und Donnerstagmorgen zwischen 07:30 und 09:30 Uhr (wenn die Leute ins Büro kommen oder den ersten Kaffee trinken) oder kurz vor der Mittagspause.
 - Die Magie passiet in den Kommentaren: Wenn jemand den Post kommentiert, antworte sachlich und professionel drauf. Jeder Kommentart schiebt deinen Post wieder in die Feeds von deren Kontaken. So multiplizierst du deine Reichtweite.
 
-**Post 1**
-Auf der Suche nach einem schnellen Tool für das PDF-Planausmass in frühen Projektphasen?
-Teste Planli – eine neue Web-App, die direkt im Browser läuft. Optimiert für die effiziente Ermittlung von Flächen und Längen, wenn noch kein CAD- oder BIM-Modell vorliegt.
-Das Tool ist in der aktuellen Beta-Phase komplett kostenlos und ohne Anmeldung nutzbar.
-Über Feedback aus der Praxis (von Architekten, Planern oder Bauleiter-Kollegen) freue ich mich.
-Link zum Tool im ersten Kommentar. 👇
+**Post 1 vom 2026-07-09**
+Kennst du das? Zu viel Zeit mit dem Ausmass von Gebäuden verbracht? ⏱️
+
+In frühen Projektphasen brauchst du schnell Flächen aus PDF-Plänen – aber CAD ist noch nicht da. 
+
+Genau dafür habe ich Planli gebaut! 
+
+Eine einfache Web-App, die Flächen und Längen direkt aus deinem Browser ermittelt. Es gibt sogar ein KI-Feature zur automatischen Fenstererkennung! ✨
+
+- Kostenlos während der Beta 
+- Keine Anmeldung erforderlich 
+- Direkt im Browser nutzbar
+
+👉 Probiere es auf www.planli.net aus!
+
+Feedback wäre sehr hilfreich!
+
+**Post 2 vom 2026-07-XX** (Fokus: KI-Fenstererkennung)
+Fenster zählen. Von Hand. Auf 40 Plänen. 🪟
+
+Für den U-Wert-Nachweis oder eine GEAK-Vorabschätzung reicht "ungefähr" nicht – aber jedes Fenster einzeln in jedem Grundriss suchen und ausmessen, frisst locker einen halben Nachmittag.
+
+Deshalb steckt in Planli eine KI, die Fenster (und Türen, Wände, Dachflächen) automatisch im Plan erkennt und einzeichnet. Du kontrollierst, korrigierst wo nötig – fertig ist, was sonst Stunden dauert.
+
+- Erkennung direkt im Browser, kein Zusatzprogramm
+- Du bleibst in der Kontrolle: jede Erkennung ist editierbar
+- Noch kostenlos während der Beta
+
+👉 Link im ersten Kommentar.
+
+Wie zuverlässig ist eure Erfahrung mit KI-Tools im Planungsalltag – eher Zeitgewinn oder mehr Kontrollaufwand als Nutzen? Bin gespannt auf eure Meinung!
+
+**Content-Ideen für die nächsten 6-8 Wochen** (1 Kernthema/Woche, 1-2 Posts daraus)
+1. *(erledigt, 07-09)* Pain Point allgemein: Zeitverlust beim Ausmass in frühen Projektphasen
+2. *(diese Woche)* Feature-Spotlight: KI-Fenstererkennung (Post 2 oben)
+3. Pain Point spezifisch: Energiebezugsfläche (EBF) für GEAK/Vorprojekt von Hand berechnen
+4. Origin Story: Warum ein Bauphysiker ein eigenes Web-Tool baut statt Adobe/CAD zu nutzen
+5. Vorher/Nachher mit Screenshot: ein reales Plan-Beispiel, Zeit gestoppt (z.B. "18 Min. → 3 Min.")
+6. Tipps & Tricks: Bemassungstool oder Massstab-Kalibrierung kurz erklärt (kleines GIF/Screenshot)
+7. Social Proof: erstes Zitat/Feedback eines Beta-Testers (sobald vorhanden – aktiv danach fragen!)
+8. Ausblick/Dringlichkeit: Preise gelten ab Herbst, jetzt in der Beta kostenlos testen und Feedback geben
+
+Reihenfolge flexibel je nachdem, was gerade Resonanz bringt – Feature-Posts (2, 6) und Pain-Point-Posts (1, 3) sich abwechselnd einplanen, Origin Story (4) eignet sich gut als "persönlicherer" Post zwischendurch.
 
 # E-Mail Signatur
 
 **Var. 1 (Fokus auf Nutzen)**
 a) P.S.: Schnelles und einfaches Planausmass direkt im Browser? Teste Planli – aktuell in der Beta-Phase komplett kostenlos und ohne Anmeldung: [Hier Pläne ausmessen ↗]
 
-b) P.S.: Digitales PDF-Ausmass direkt im Browser ohne Anmeldung? Teste das neue Webtool Planli in der aktuellen Beta-Phase komplett kostenlos: [planli.ch ↗] -> Favorit
+b) P.S.: Digitales PDF-Ausmass direkt im Browser ohne Anmeldung? Teste das neue Webtool Planli in der aktuellen Beta-Phase komplett kostenlos: [Hier Pläne ausmessen ↗](https://planli.net/?utm_source=email_signature&utm_medium=email&utm_campaign=beta) -> Favorit
 
 **Var. 2 (Fokus auf die KI)**
 Mache ich nicht.
@@ -36,7 +73,7 @@ Mache ich nicht.
 **Tipps**
 - Visuelle Trennung: Setze vor das „P.S.“ oder „Übrigens“ ein, zwei Leerzeilen Abstand zu deiner restlichen Signatur, damit es sofort ins Auge springt.
 - Link: Mach nicht den ganzen Text zum Link, sondern nur den Call-to-Action am Ende (z. B. das fettgedruckte in den Klammern). Das wirkt sauberer.
-- Tracking (Für später): Wenn du kannst, nutze einen Link mit einem sogenannten UTM-Parameter (z.B. planli.ch/?utm_source=email_sig), damit du später in Analytics genau siehst, wie viele Leute über deine E-Mail-Signatur auf die Website kommen.
+- Tracking: ✅ erledigt – Link trägt `utm_source=email_signature&utm_medium=email&utm_campaign=beta`, taucht in Plausible unter Sources → UTM Tags getrennt auf. `planli.ch` leitet 301 auf `planli.net` weiter und behält dabei die Query-Parameter (getestet 2026-07-13), beide Domains funktionieren also gleichwertig als Linkziel.
 
 
 # Google Ads:
