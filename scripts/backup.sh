@@ -2,14 +2,17 @@
 #
 # Beta-Backup für Planvision: sichert db.sqlite3 (konsistent), bug_reports/,
 # training_data_opt-in/ und cloud_projects/ (Online-Ablage: Hardlink-Snapshots,
-# KEEP_DAYS zurück).
+# KEEP_DAYS zurück). Danach Offsite-Sync nach pCloud via rclone (verschlüsseltes
+# Remote RCLONE_REMOTE).
 # Bewusst NICHT projects/ (gross, transient, fremde Pläne -> Datenschutz/Retention).
 #
 # Einrichtung:
-#   1. Pfade unten anpassen (APP_DIR, BACKUP_DIR).
-#   2. chmod +x scripts/backup.sh
-#   3. Testlauf:  ./scripts/backup.sh
-#   4. Cron (täglich 03:30), via `crontab -e`:
+#   1. Pfade unten anpassen (APP_DIR, BACKUP_DIR, RCLONE_REMOTE).
+#   2. rclone-Remote einrichten (`rclone config`); fehlt rclone/Remote, wird der
+#      Offsite-Schritt mit WARN übersprungen (lokales Backup läuft trotzdem).
+#   3. chmod +x scripts/backup.sh
+#   4. Testlauf:  ./scripts/backup.sh
+#   5. Cron (täglich 03:30), via `crontab -e`:
 #        30 3 * * * /opt/Planvision/scripts/backup.sh >> /var/log/planvision-backup.log 2>&1
 #
 set -euo pipefail
@@ -18,6 +21,7 @@ set -euo pipefail
 APP_DIR="/opt/Planvision"            # Projektverzeichnis auf dem Server
 BACKUP_DIR="/opt/backups/planvision" # Zielverzeichnis (idealerweise andere Platte/Mount)
 KEEP_DAYS=30                          # so viele Tage DB-Backups aufbewahren
+RCLONE_REMOTE="pcloud-e2ee-debian:backups"  # rclone-Ziel für den Offsite-Sync
 # ────────────────────────────────────────────────────────────────────────────────
 
 DB_FILE="$APP_DIR/db.sqlite3"
@@ -82,5 +86,38 @@ fi
 find "$BACKUP_DIR/db" -name 'db-*.sqlite3' -type f -mtime +"$KEEP_DAYS" -delete
 ls -1d "$BACKUP_DIR/cloud_projects"/????-??-??_* 2>/dev/null | head -n -"$KEEP_DAYS" | xargs -r rm -rf
 echo "$(date '+%F %T')  Rotation: Stände älter als $KEEP_DAYS Tage/Läufe entfernt"
+
+# 6) Offsite-Sync nach pCloud (rclone, verschlüsseltes Remote).
+#    db/, bug_reports/ und training_data_opt-in/ werden aus BACKUP_DIR gespiegelt
+#    (Rotation der DB-Stände überträgt sich so automatisch aufs Remote).
+#    cloud_projects/ wird NICHT aus den Hardlink-Snapshots hochgeladen — rclone
+#    kennt keine Hardlinks, das würde KEEP_DAYS volle Kopien bedeuten. Stattdessen
+#    direkt aus der Quelle spiegeln; geänderte/gelöschte Dateien wandern per
+#    --backup-dir in datierte Versions-Ordner (gleiche Schutzwirkung, ohne Duplikate).
+if ! command -v rclone >/dev/null 2>&1; then
+  echo "$(date '+%F %T')  WARN: rclone nicht installiert – Offsite-Sync übersprungen"
+elif ! rclone listremotes | grep -q "^${RCLONE_REMOTE%%:*}:$"; then
+  echo "$(date '+%F %T')  WARN: rclone-Remote '${RCLONE_REMOTE%%:*}' nicht konfiguriert – Offsite-Sync übersprungen"
+else
+  rclone sync "$BACKUP_DIR/db" "$RCLONE_REMOTE/db"
+  rclone sync "$BACKUP_DIR/bug_reports" "$RCLONE_REMOTE/bug_reports"
+  if [ -d "$BACKUP_DIR/training_data_opt-in" ]; then
+    rclone sync "$BACKUP_DIR/training_data_opt-in" "$RCLONE_REMOTE/training_data_opt-in"
+  fi
+  if [ -d "$APP_DIR/cloud_projects" ]; then
+    rclone sync "$APP_DIR/cloud_projects" "$RCLONE_REMOTE/cloud_projects" \
+      --backup-dir "$RCLONE_REMOTE/cloud_projects_versionen/$STAMP"
+    # Versions-Ordner nach Name (=Datum) rotieren, analog zur lokalen Rotation.
+    CUTOFF="$(date -d "-$KEEP_DAYS days" +%F)"
+    { rclone lsf --dirs-only "$RCLONE_REMOTE/cloud_projects_versionen" 2>/dev/null || true; } \
+      | while IFS= read -r vdir; do
+          vdir="${vdir%/}"
+          if [[ "${vdir%%_*}" < "$CUTOFF" ]]; then
+            rclone purge "$RCLONE_REMOTE/cloud_projects_versionen/$vdir"
+          fi
+        done
+  fi
+  echo "$(date '+%F %T')  Offsite-Sync -> $RCLONE_REMOTE abgeschlossen"
+fi
 
 echo "$(date '+%F %T')  Backup fertig."
