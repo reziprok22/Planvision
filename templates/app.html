@@ -94,7 +94,11 @@
             white-space: nowrap;
             flex: 1;
             color: #444;
+            cursor: pointer; /* Klick = Projekt umbenennen (upload-modal.js) */
         }
+        .file-info-bar .file-name:hover { text-decoration: underline; }
+        body.read-only .file-info-bar .file-name { cursor: default; }
+        body.read-only .file-info-bar .file-name:hover { text-decoration: none; }
         .file-info-bar .change-file-btn {
             margin-left: auto;
             background: none;
@@ -551,12 +555,12 @@
                 </svg>
                 Speichern
             </button>
-            <button id="loadProjectBtn" class="header-action-btn" title="Projekt laden [Ctrl + O]">
+            <button id="loadProjectBtn" class="header-action-btn" title="{% if cloud_enabled %}Meine Projekte [Ctrl + O]{% else %}Projekt laden [Ctrl + O]{% endif %}">
                 <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
                     <path d="M1.5 5.5 V11.5 H11.5 V5.5 Z"/>
                     <path d="M1.5 5.5 V3.5 H5 L6.5 5.5"/>
                 </svg>
-                Öffnen
+                {% if cloud_enabled %}Meine Projekte{% else %}Öffnen{% endif %}
             </button>
             {% comment %} Vorübergehend deaktiviert: Report-Funktion wird überarbeitet.
                Handler (exportPdf) und Logik (exportReportPdfClient) bleiben im Code.
@@ -595,17 +599,63 @@
          dem Editor (Header bleibt bedienbar); "Neues Projekt" oder Öffnen blendet aus. -->
     <div id="cloudDashboard" class="cloud-dashboard">
         <div class="cloud-dashboard-inner">
-            <div class="cloud-dash-head">
-                <h2>Meine Projekte</h2>
-                <span id="cloudProjectCount" class="cloud-count"></span>
-                <button id="cloudNewProjectBtn" class="cloud-new-btn">+ Neues Projekt</button>
-                <button id="cloudCloseBtn" class="cloud-close-btn" title="Zurück zum Editor">✕</button>
+            <!-- Linke Spalte: ersetzt im Dashboard das Burger-Menü (dort ausgeblendet).
+                 Anleitung/Verbesserung/Bug sind Proxy-Buttons auf die Menü-Einträge. -->
+            <aside class="cloud-side">
+                <button id="dashOnboardingBtn" class="cloud-side-item">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 3.2 C5.6 2.3 3.8 2.1 2 2.4 V11 c1.8-.3 3.6-.1 5 .8 1.4-.9 3.2-1.1 5-.8 V2.4 C10.2 2.1 8.4 2.3 7 3.2 Z"/>
+                        <line x1="7" y1="3.2" x2="7" y2="12"/>
+                    </svg>
+                    Anleitung
+                </button>
+                <button id="dashSuggestBtn" class="cloud-side-item">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 1.5a3.8 3.8 0 0 0-2.3 6.8c.5.4.8.9.8 1.5h3c0-.6.3-1.1.8-1.5A3.8 3.8 0 0 0 7 1.5Z"/>
+                        <line x1="5.5" y1="12" x2="8.5" y2="12"/>
+                    </svg>
+                    Verbesserung vorschlagen
+                </button>
+                <button id="dashReportBugBtn" class="cloud-side-item">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg">
+                        <ellipse cx="7" cy="8" rx="3" ry="4"/>
+                        <path d="M7 4V2.5M4.8 5 3 3.5M9.2 5 11 3.5M4 8H1.5M12.5 8H10M4.8 11 3 12.5M9.2 11 11 12.5"/>
+                    </svg>
+                    Bug melden
+                </button>
+                <div class="cloud-side-sep"></div>
+                <div class="cloud-side-account" title="Angemeldet als {{ user.email|default:user.username }}">{{ user.email|default:user.username }}</div>
+                <a class="cloud-side-item" href="{% url 'konto' %}">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="7" cy="4.5" r="2.5"/>
+                        <path d="M2 12.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/>
+                    </svg>
+                    Konto
+                </a>
+                <form method="post" action="{% url 'logout' %}" class="cloud-side-logout-form">
+                    {% csrf_token %}
+                    <button type="submit" class="cloud-side-item">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M5.5 12H2.8A0.8 0.8 0 0 1 2 11.2V2.8A0.8 0.8 0 0 1 2.8 2h2.7"/>
+                            <polyline points="9,4 12,7 9,10"/>
+                            <line x1="12" y1="7" x2="5.5" y2="7"/>
+                        </svg>
+                        Abmelden
+                    </button>
+                </form>
+            </aside>
+            <div class="cloud-main">
+                <div class="cloud-dash-head">
+                    <h2>Meine Projekte</h2>
+                    <span id="cloudProjectCount" class="cloud-count"></span>
+                    <button id="cloudOpenFileBtn" class="cloud-file-btn" title="Eine lokale .planli-Datei öffnen">Von Datei öffnen</button>
+                    <button id="cloudNewProjectBtn" class="cloud-new-btn">+ Neues Projekt</button>
+                    <button id="cloudCloseBtn" class="cloud-close-btn" title="Weiterarbeiten am geöffneten Projekt">← Zurück zum Editor</button>
+                </div>
+                <div id="cloudProjectList" class="cloud-project-list">
+                    <div class="cloud-empty">Lädt…</div>
+                </div>
             </div>
-            <div id="cloudProjectList" class="cloud-project-list">
-                <div class="cloud-empty">Lädt…</div>
-            </div>
-            <p class="cloud-dash-hint">„Speichern“ (Ctrl+S) legt dein Projekt hier ab.
-               Als Datei sichern oder öffnen: Menü → „Als Datei herunterladen“ / „Von Datei öffnen“.</p>
         </div>
     </div>
     {% endif %}
@@ -635,7 +685,7 @@
             <!-- File info (shown after upload) -->
             <div class="file-info-bar" id="leftFileInfo" style="display:none">
                 <span class="file-icon">📄</span>
-                <span class="file-name" id="leftFileName">–</span>
+                <span class="file-name" id="leftFileName" title="Klicken, um das Projekt umzubenennen">–</span>
                 <button class="change-file-btn" id="changeFileBtn" title="Andere Datei laden">+ Neu</button>
             </div>
 

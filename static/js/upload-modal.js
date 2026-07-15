@@ -105,9 +105,16 @@ export function setupUploadModal() {
     });
 
     // ── "Change file" button ──
-    if (changeFileBtn) changeFileBtn.addEventListener('click', () => {
-        resetUploadModal();
-        fileInput.click();
+    if (changeFileBtn) changeFileBtn.addEventListener('click', startNewProject);
+
+    // ── Projektname umbenennen (Klick auf den Namen) ──
+    // Der angezeigte Name ist der kanonische Projektname: er landet beim
+    // Speichern in der Cloud/ZIP-metadata und benennt Downloads/PDF-Exporte.
+    if (fileNameEl) fileNameEl.addEventListener('click', () => {
+        if (window.PLANLI_READ_ONLY || !currentFileName) return;
+        const newName = prompt('Projektname:', getUploadedBaseName());
+        if (!newName || !newName.trim()) return;
+        setProjectName(newName.trim());
     });
 
     // ── "Seiten anhängen" (append an additional PDF to the current project) ──
@@ -117,6 +124,18 @@ export function setupUploadModal() {
         appendFileInput.value = '';
     });
 
+}
+
+/**
+ * Neues Projekt beginnen: Sidebar UND Editor (Canvas, Ergebnis-Spalte) auf den
+ * Ausgangszustand zurücksetzen. Bewusst KEIN automatischer Datei-Dialog — der
+ * leere Editor zeigt die Drop-Zone, Drag & Drop und "Datei auswählen" stehen
+ * gleichwertig offen. Gemeinsamer Flow für "+ Neu" (Sidebar) und
+ * "+ Neues Projekt" (Projektübersicht).
+ */
+export function startNewProject() {
+    resetUploadModal();
+    if (typeof window.planliResetEditor === 'function') window.planliResetEditor();
 }
 
 /** Reset all state and UI to initial "waiting for file" */
@@ -141,7 +160,17 @@ export function getSessionId()    { return currentSessionId; }
  * generic label. Empty string when nothing is loaded yet.
  */
 export function getUploadedBaseName() {
-  return (currentFileName || '').replace(/\.[^.]+$/, '').trim();
+  // Nur echte Dateiendungen strippen — Projektnamen dürfen Punkte enthalten ("Plan v1.2")
+  return (currentFileName || '').replace(/\.(pdf|planli|plan|zip)$/i, '').trim();
+}
+
+/**
+ * Set the canonical project name (rename in the editor, or the cloud name
+ * winning over the ZIP's metadata name after opening from "Meine Projekte").
+ */
+export function setProjectName(name) {
+  currentFileName = name;
+  if (fileNameEl) fileNameEl.textContent = name;
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────

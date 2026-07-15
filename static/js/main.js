@@ -4141,6 +4141,44 @@ async function initApp() {
     navigateToPageNoAnalysis(getPageManifest()[0]?.id);
   };
 
+  /**
+   * Editor komplett auf den Ausgangszustand ("Noch kein Plan geladen") zurücksetzen.
+   * Aufgerufen von "+ Neu" in der Sidebar und "+ Neues Projekt" in der Projekt-
+   * übersicht (upload-modal.js), BEVOR der PDF-Dialog aufgeht — bricht der Nutzer
+   * ihn ab, bleibt so kein altes Projekt (Canvas/Ergebnis-Spalte) sichtbar zurück.
+   */
+  window.planliResetEditor = function() {
+    if (editingPolygon)   exitPolygonEditMode();
+    if (editingDimension) exitDimensionEditMode();
+    if (canvas) { canvas.dispose(); canvas = null; }
+    // dispose() setzt das nackte <canvas> zurück ins DOM (siehe initCanvas)
+    document.getElementById('annotationCanvas')?.remove();
+    document.getElementById('scrollSpacer')?.remove();
+    if (uploadedImage) {
+      uploadedImage.onload = null;
+      uploadedImage.removeAttribute('src');
+      uploadedImage.style.display = 'none';
+    }
+    const emptyState = document.getElementById('canvasEmptyState');
+    if (emptyState) emptyState.style.display = '';
+
+    pageCanvasData  = {};
+    currentPageId   = null;
+    selectedObjects = [];
+    initHistory();
+    resetPdfState();
+
+    // Ergebnis-Spalte zurück auf die Platzhalter des App-Starts
+    const summary = document.getElementById('summary');
+    if (summary) summary.innerHTML = '<p><em>Keine Analyse durchgeführt.</em></p>';
+    const resultsBody = document.getElementById('resultsBody');
+    if (resultsBody) resultsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; '
+      + 'color:#999; font-style:italic; padding:20px;">'
+      + 'Laden Sie eine Datei hoch und analysieren Sie eine Seite.</td></tr>';
+    const analyzeBtn = document.getElementById('analyzeCurrentPageBtn');
+    if (analyzeBtn) analyzeBtn.disabled = true;
+  };
+
   /** Persist current UI field values into pageSettings for the given page. */
   function saveCurrentPageSettings(pageId) {
     if (pageId == null) return;
@@ -4406,6 +4444,14 @@ async function initApp() {
     // Don't fire when typing in an input, textarea or select
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+    // Projektübersicht (Cloud-Dashboard) offen: der Editor dahinter ist unsichtbar,
+    // seine Shortcuts würden blind wirken (z.B. Ctrl+S den verdeckten Zustand
+    // speichern). Alles sperren; bei Ctrl+S/O zusätzlich den Browser-Dialog verhindern.
+    if (document.body.classList.contains('dashboard-open')) {
+      if ((e.ctrlKey || e.metaKey) && ['s', 'S', 'o', 'O'].includes(e.key)) e.preventDefault();
+      return;
+    }
 
     // Read-Only: alle bearbeitenden Shortcuts sperren (Undo/Redo, Kopieren/
     // Einfügen, Löschen, Pfeil-Verschieben, Werkzeuge, Label-Manager).

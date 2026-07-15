@@ -211,9 +211,72 @@ header {
     padding: 90px 20px 40px; /* Platz für den darüberliegenden Header */
 }
 
+/* Dashboard-Modus (body-Klasse, gesetzt in project.js): Editor-Aktionen im
+   Header ausblenden (Speichern/Exportieren würden den unsichtbaren Zustand
+   hinter dem Overlay treffen) — ebenso das ganze Burger-Menü: seine dashboard-
+   relevanten Einträge zeigt die permanente linke Spalte (.cloud-side). */
+body.dashboard-open .header-actions,
+body.dashboard-open .header-menu {
+    display: none;
+}
+
 .cloud-dashboard-inner {
-    max-width: 760px;
+    /* Linke Options-Spalte + Hauptbereich; Hauptbereich breit genug,
+       dass die Kopfzeile (Titel + Zähler + 3 Buttons) einzeilig bleibt */
+    max-width: 1190px;
     margin: 0 auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 32px;
+}
+
+/* Linke Spalte: die Optionen des Burger-Menüs, dauerhaft sichtbar */
+.cloud-side {
+    flex: 0 0 218px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.cloud-side-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 9px 12px;
+    font-size: 0.9rem;
+    color: #444;
+    text-align: left;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.cloud-side-item:hover { background: #e9eaee; }
+.cloud-side-item svg { flex-shrink: 0; }
+
+.cloud-side-sep {
+    height: 1px;
+    background: #e3e3e3;
+    margin: 10px 0;
+}
+
+.cloud-side-account {
+    color: #999;
+    font-size: 0.78rem;
+    padding: 0 12px 4px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.cloud-side-logout-form { margin: 0; }
+
+.cloud-main {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .cloud-dash-head {
@@ -246,21 +309,27 @@ header {
     font-size: 0.9rem;
     font-weight: 700;
     cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .cloud-new-btn:hover { background: #E05E00; }
 
+/* Sekundäre Buttons in der Kopfzeile: "Von Datei öffnen" und "← Zurück zum Editor" */
+.cloud-file-btn,
 .cloud-close-btn {
     background: transparent;
     border: 1px solid #d5d5d5;
     border-radius: 6px;
-    width: 34px;
-    height: 34px;
-    font-size: 0.95rem;
-    color: #666;
+    padding: 8px 14px;
+    font-size: 0.9rem;
+    color: #555;
     cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
+.cloud-file-btn:hover,
 .cloud-close-btn:hover { background: #ececec; }
 
 .cloud-project-list {
@@ -317,13 +386,6 @@ header {
     text-align: center;
     color: #999;
     font-size: 0.9rem;
-}
-
-.cloud-dash-hint {
-    margin-top: 14px;
-    color: #999;
-    font-size: 0.8rem;
-    text-align: center;
 }
 
 h1, h2 {
@@ -908,7 +970,7 @@ button:hover {
 .modal {
     display: none;
     position: fixed;
-    z-index: 1000;
+    z-index: 1350; /* über Cloud-Dashboard (1200) und Header (1290) — Anleitung/Bug melden sind auch aus der Projektübersicht erreichbar */
     left: 0;
     top: 0;
     width: 100%;

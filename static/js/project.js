@@ -3,7 +3,7 @@
  */
 
 import { setCurrentLabels, getAllLabels } from './labels.js';
-import { initSidebarFromProject, getUploadedBaseName } from './upload-modal.js';
+import { initSidebarFromProject, getUploadedBaseName, setProjectName, startNewProject } from './upload-modal.js';
 import { saveProjectAsZip, buildProjectZipBlob, loadProjectFromZip } from './project-zip.js';
 import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-client.js';
 import { getCsrfToken } from './pdf-handler.js';
@@ -41,7 +41,10 @@ export function setupProject(elements, modules) {
   if (exportAnnotatedPdfBtn) exportAnnotatedPdfBtn.addEventListener('click', exportAnnotatedPdf);
 
   zipFileInput.addEventListener('change', () => {
-    if (zipFileInput.files[0]) handleLoad(zipFileInput.files[0]);
+    if (zipFileInput.files[0]) {
+      hideDashboard(); // erst bei tatsächlicher Dateiwahl — Abbrechen lässt die Übersicht offen
+      handleLoad(zipFileInput.files[0]);
+    }
     zipFileInput.value = '';
   });
 
@@ -407,16 +410,26 @@ function updateStatus(div, msg, type = 'info') {
 
 function setupCloud() {
   document.getElementById('cloudNewProjectBtn')?.addEventListener('click', () => {
+    // Macht, was es sagt: leerer Editor mit sichtbarer Drop-Zone. Nie nur das
+    // Overlay schliessen — sonst zeigt der Editor das alte Projekt, aber Ctrl+S
+    // würde davon ein Duplikat als neues Cloud-Projekt anlegen.
     currentCloudProjectId = null;
     hideDashboard();
+    startNewProject();
   });
   document.getElementById('cloudCloseBtn')?.addEventListener('click', hideDashboard);
   document.getElementById('downloadProjectBtn')?.addEventListener('click', handleDownload);
-  document.getElementById('openLocalFileBtn')?.addEventListener('click', () => {
-    hideDashboard();
-    zipFileInput.click();
-  });
-  if (loadProjectBtn) loadProjectBtn.title = 'Meine Projekte [Ctrl + O]';
+  document.getElementById('openLocalFileBtn')?.addEventListener('click', () => zipFileInput.click());
+  document.getElementById('cloudOpenFileBtn')?.addEventListener('click', () => zipFileInput.click());
+
+  // Linke Options-Spalte: Proxy auf die (im Dashboard ausgeblendeten) Burger-
+  // Menü-Einträge — gleiche Handler, keine doppelte Logik. Konto/Abmelden sind
+  // direkt Link bzw. POST-Form im Markup.
+  const sideProxies = { dashOnboardingBtn: 'onboardingBtn', dashSuggestBtn: 'suggestBtn', dashReportBugBtn: 'reportBugBtn' };
+  for (const [sideId, menuId] of Object.entries(sideProxies)) {
+    document.getElementById(sideId)?.addEventListener('click',
+      () => document.getElementById(menuId)?.click());
+  }
 
   // Frischer PDF-Upload (Dropzone) = neues Projekt → beim Speichern nicht das
   // zuvor geöffnete Cloud-Projekt überschreiben. Hook wird von upload-modal.js
@@ -429,12 +442,20 @@ function setupCloud() {
 function hideDashboard() {
   const dash = document.getElementById('cloudDashboard');
   if (dash) dash.style.display = 'none';
+  document.body.classList.remove('dashboard-open');
 }
 
 async function openDashboard() {
   const dash = document.getElementById('cloudDashboard');
   if (!dash) return;
   dash.style.display = 'block';
+  // Dashboard-Modus: blendet die Editor-Aktionen im Header/Menü aus (CSS) und
+  // sperrt die Editor-Shortcuts (Keydown-Handler in main.js).
+  document.body.classList.add('dashboard-open');
+  // "Zurück zum Editor" (✕) nur anbieten, wenn dahinter auch ein Plan geladen ist —
+  // beim App-Start führte er sonst in einen leeren Editor.
+  const closeBtn = document.getElementById('cloudCloseBtn');
+  if (closeBtn) closeBtn.style.display = pdfModule.getAllPdfPages().length ? '' : 'none';
   const listEl = document.getElementById('cloudProjectList');
   try {
     const res = await fetch('/cloud/projects', { headers: { 'X-CSRFToken': getCsrfToken() } });
@@ -488,8 +509,13 @@ function renderDashboard({ projects, limit }) {
       fd.append('name', newName.trim());
       const res = await fetch(`/cloud/projects/${p.id}/rename`, {
         method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
-      if (res.ok) openDashboard();
-      else alert('Umbenennen fehlgeschlagen.');
+      if (res.ok) {
+        // Ist das Projekt gerade im Editor geöffnet, dort mit umbenennen
+        if (currentCloudProjectId === p.id) setProjectName(newName.trim());
+        openDashboard();
+      } else {
+        alert('Umbenennen fehlgeschlagen.');
+      }
     });
 
     const deleteBtn = document.createElement('button');
@@ -523,6 +549,9 @@ async function openCloudProject(p) {
     hideDashboard();
     await handleLoad(new File([blob], `${p.name}.planli`, { type: 'application/zip' }));
     currentCloudProjectId = p.id; // Speichern überschreibt ab jetzt dieses Projekt
+    // Der Cloud-Name gewinnt über den (evtl. veralteten) Namen in der ZIP-metadata —
+    // ein Umbenennen im Dashboard wirkt so auch im Editor und in Exporten.
+    setProjectName(p.name);
     updateStatus(status, `„${p.name}“ geladen ✓`, 'success');
   } catch (err) {
     updateStatus(status, `Fehler: ${err.message}`, 'error');
@@ -535,8 +564,10 @@ async function saveToCloud(projectName) {
     const blob = await buildProjectZipBlob(collectZipParams(projectName));
     const fd = new FormData();
     fd.append('project_zip', new File([blob], 'project.planli', { type: 'application/zip' }));
+    // Name immer mitsenden: beim Überschreiben aktualisiert der Server den
+    // Cloud-Namen mit — Editor-Umbenennungen erscheinen so auch im Dashboard.
+    fd.append('name', projectName);
     if (currentCloudProjectId) fd.append('project_id', currentCloudProjectId);
-    else fd.append('name', projectName);
     const res = await fetch('/cloud/projects/save', {
       method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
     const data = await res.json().catch(() => ({}));
