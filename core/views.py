@@ -20,7 +20,7 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 from django.conf import settings
 
-from .models import Project, BugReport, AnalysisEvent, StoredProject
+from .models import Project, BugReport, AnalysisEvent, StoredProject, FeedbackResponse
 from accounts.models import subscription_for
 
 from pdf2image import convert_from_path
@@ -84,6 +84,11 @@ def app(request):
         'read_only': _read_only(request),
         # Online-Ablage nur mit Login (in der Beta sieht sie mangels Login niemand)
         'cloud_enabled': request.user.is_authenticated,
+        # Feedback-Dankeschön: Banner nur, solange der User es noch nicht
+        # eingelöst hat (erste Feedback-Antwort verlängert die Testphase).
+        'feedback_reward': (request.user.is_authenticated and
+                            not FeedbackResponse.objects.filter(user=request.user).exists()),
+        'feedback_reward_months': settings.FEEDBACK_REWARD_DAYS // 30,
     })
 
 
@@ -530,6 +535,44 @@ def report_bug(request):
 
     except Exception as e:
         logger.exception("report_bug error")
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@require_POST
+def submit_feedback(request):
+    """Feedback-Modal (drei feste Fragen). Nur mit Login — die erste Antwort
+    pro User verlängert als Dankeschön die Testphase auf FEEDBACK_REWARD_DAYS
+    ab heute (kein Code-System; bewusst auch für abgelaufene Trials möglich)."""
+    if not request.user.is_authenticated:
+        return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
+    try:
+        positive = (request.POST.get('positive') or '').strip()
+        improve  = (request.POST.get('improve') or '').strip()
+        missing  = (request.POST.get('missing') or '').strip()
+        if not (positive and improve and missing):
+            return JsonResponse({'error': 'Bitte beantworte alle drei Fragen.'}, status=400)
+
+        first = not FeedbackResponse.objects.filter(user=request.user).exists()
+        FeedbackResponse.objects.create(
+            user=request.user,
+            positive=positive[:5000],
+            improve=improve[:5000],
+            missing=missing[:5000],
+            reward_granted=first,
+        )
+
+        payload = {'status': 'ok', 'reward_granted': first}
+        if first:
+            sub = subscription_for(request.user)
+            # max(): eine bereits längere Trial wird nie verkürzt
+            sub.trial_ends = max(sub.trial_ends,
+                                 timezone.now() + timedelta(days=settings.FEEDBACK_REWARD_DAYS))
+            sub.save(update_fields=['trial_ends'])
+            payload['trial_ends'] = timezone.localtime(sub.trial_ends).strftime('%d.%m.%Y')
+        return JsonResponse(payload)
+
+    except Exception as e:
+        logger.exception("submit_feedback error")
         return JsonResponse({'error': str(e)}, status=500)
 
 

@@ -56,6 +56,7 @@ export function setupProject(elements, modules) {
   });
 
   setupBugReport();
+  setupFeedback();
   if (cloudEnabled) setupCloud();
 }
 
@@ -206,6 +207,88 @@ async function handleBugReportSubmit(closeModal) {
     updateStatus(status, preset.success, 'success');
   } catch (err) {
     console.error('Bug report error:', err);
+    alert('Senden fehlgeschlagen: ' + err.message);
+  } finally {
+    submit.disabled = false;
+    submit.textContent = 'Senden';
+  }
+}
+
+// ── Feedback (drei feste Fragen, Dankeschön = verlängerte Testphase) ─────────
+// UI existiert nur eingeloggt (app.html); die erste Antwort pro User verlängert
+// serverseitig die Trial. Banner ("×" ausgeblendet via localStorage) und Modal
+// teilen sich den Endpoint /feedback.
+
+const FEEDBACK_BANNER_DISMISSED_KEY = 'feedback_banner_dismissed';
+
+function setupFeedback() {
+  const modal  = document.getElementById('feedbackModal');
+  const submit = document.getElementById('feedbackSubmit');
+  if (!modal || !submit) return;  // nicht eingeloggt → kein Feedback-UI
+
+  const banner = document.getElementById('feedbackBanner');
+  const hideBanner = () => { if (banner) banner.style.display = 'none'; };
+  try {
+    if (localStorage.getItem(FEEDBACK_BANNER_DISMISSED_KEY)) hideBanner();
+  } catch { /* ignore */ }
+
+  const open  = () => { modal.style.display = 'block'; document.getElementById('feedbackPositive')?.focus(); };
+  const close = () => { modal.style.display = 'none'; };
+
+  document.getElementById('feedbackBtn')?.addEventListener('click', open);
+  document.getElementById('feedbackBannerBtn')?.addEventListener('click', open);
+  document.getElementById('feedbackBannerClose')?.addEventListener('click', () => {
+    hideBanner();
+    try { localStorage.setItem(FEEDBACK_BANNER_DISMISSED_KEY, '1'); } catch { /* ignore */ }
+  });
+  document.getElementById('feedbackModalClose')?.addEventListener('click', close);
+  document.getElementById('feedbackCancel')?.addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  submit.addEventListener('click', () => handleFeedbackSubmit(close, hideBanner));
+}
+
+async function handleFeedbackSubmit(closeModal, hideBanner) {
+  const fields = ['feedbackPositive', 'feedbackImprove', 'feedbackMissing'];
+  const [positive, improve, missing] = fields.map(
+    (id) => (document.getElementById(id)?.value || '').trim());
+  if (!positive || !improve || !missing) {
+    alert('Bitte beantworte alle drei Fragen.');
+    return;
+  }
+
+  const submit = document.getElementById('feedbackSubmit');
+  submit.disabled = true;
+  submit.textContent = 'Wird gesendet…';
+
+  try {
+    const fd = new FormData();
+    fd.append('positive', positive);
+    fd.append('improve', improve);
+    fd.append('missing', missing);
+
+    const res = await fetch('/feedback', {
+      method: 'POST',
+      body: fd,
+      headers: { 'X-CSRFToken': getCsrfToken() },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+
+    fields.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+    closeModal();
+    hideBanner();
+    const msg = data.reward_granted && data.trial_ends
+      ? `Danke für dein Feedback! Deine Testphase läuft neu bis ${data.trial_ends} ✓`
+      : 'Danke für dein Feedback ✓';
+    updateStatus(showStatus(msg), msg, 'success');
+    // Das Dankeschön hebt eine bereits abgelaufene Trial wieder auf — dann neu
+    // laden, damit der Read-Only-Modus (Server-Flag) tatsächlich verschwindet.
+    if (data.reward_granted && window.PLANLI_READ_ONLY) {
+      setTimeout(() => location.reload(), 2500);
+    }
+  } catch (err) {
+    console.error('Feedback error:', err);
     alert('Senden fehlgeschlagen: ' + err.message);
   } finally {
     submit.disabled = false;
@@ -471,7 +554,7 @@ function setupCloud() {
   // Linke Options-Spalte: Proxy auf die (im Dashboard ausgeblendeten) Burger-
   // Menü-Einträge — gleiche Handler, keine doppelte Logik. Konto/Abmelden sind
   // direkt Link bzw. POST-Form im Markup.
-  const sideProxies = { dashOnboardingBtn: 'onboardingBtn', dashSuggestBtn: 'suggestBtn', dashReportBugBtn: 'reportBugBtn' };
+  const sideProxies = { dashOnboardingBtn: 'onboardingBtn', dashSuggestBtn: 'suggestBtn', dashReportBugBtn: 'reportBugBtn', dashFeedbackBtn: 'feedbackBtn' };
   for (const [sideId, menuId] of Object.entries(sideProxies)) {
     document.getElementById(sideId)?.addEventListener('click',
       () => document.getElementById(menuId)?.click());

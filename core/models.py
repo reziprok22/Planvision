@@ -77,6 +77,30 @@ class BugReport(models.Model):
         return f"#{self.pk} [{self.get_report_type_display()}] {username}: {self.text[:50]}"
 
 
+class FeedbackResponse(models.Model):
+    """Strukturiertes Nutzer-Feedback (drei feste Fragen) aus dem Feedback-Modal
+    der App. Die erste Antwort pro User verlängert als Dankeschön die Testphase
+    auf FEEDBACK_REWARD_DAYS (Variante „einfach": ab heute, kein Code-System).
+    Nur mit Login — der User ist damit immer bekannt, SET_NULL greift nur bei
+    Konto-Löschung (Feedback bleibt anonymisiert erhalten, wie BugReport)."""
+
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='feedback_responses')
+    positive = models.TextField('Was ist gut?')
+    improve = models.TextField('Was muss verbessert werden?')
+    missing = models.TextField('Was fehlt?')
+    # Hat genau diese Einsendung die Trial-Verlängerung ausgelöst? (Nur die
+    # erste pro User — weiteres Feedback ist willkommen, gibt aber nichts mehr.)
+    reward_granted = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        username = self.user.username if self.user else 'gelöschtes Konto'
+        return f"#{self.pk} {username}: {self.positive[:50]}"
+
+
 class AnalysisEvent(models.Model):
     """Serverseitiges Beta-Tracking: ein Eintrag pro durchgeführter Seitenanalyse.
     session_key dient als anonymer Besucher-Proxy für die Wiederkehr-Schätzung."""

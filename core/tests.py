@@ -9,7 +9,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import subscription_for
-from .models import StoredProject
+from .models import FeedbackResponse, StoredProject
 
 CLOUD_TMP = Path(tempfile.mkdtemp(prefix='planli_cloud_test_'))
 
@@ -108,3 +108,55 @@ class CloudStorageTests(TestCase):
         response = self.client.get(reverse('app'))
         self.assertContains(response, 'window.PLANLI_CLOUD = true')
         self.assertContains(response, 'cloudDashboard')
+
+
+class FeedbackTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='test@example.ch', email='test@example.ch', password='pw')
+        self.client.login(username='test@example.ch', password='pw')
+
+    def _submit(self, **overrides):
+        data = {'positive': 'KI-Erkennung', 'improve': 'Zoom', 'missing': 'DXF-Export', **overrides}
+        return self.client.post(reverse('submit_feedback'), data)
+
+    def test_requires_login(self):
+        self.client.logout()
+        self.assertEqual(self._submit().status_code, 401)
+
+    def test_all_three_answers_required(self):
+        response = self._submit(missing='')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(FeedbackResponse.objects.count(), 0)
+
+    def test_first_feedback_extends_trial(self):
+        response = self._submit()
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['reward_granted'])
+        self.assertIn('trial_ends', data)
+        sub = subscription_for(self.user)
+        # 180 Tage ab jetzt (mit etwas Toleranz)
+        self.assertGreater(sub.trial_ends, timezone.now() + timedelta(days=179))
+        self.assertTrue(FeedbackResponse.objects.get().reward_granted)
+
+    def test_second_feedback_grants_no_second_reward(self):
+        self._submit()
+        first_ends = subscription_for(self.user).trial_ends
+        response = self._submit(positive='Immer noch gut')
+        self.assertFalse(response.json()['reward_granted'])
+        self.assertEqual(subscription_for(self.user).trial_ends, first_ends)
+        self.assertEqual(FeedbackResponse.objects.count(), 2)
+
+    def test_expired_trial_is_revived(self):
+        sub = subscription_for(self.user)
+        sub.trial_ends = timezone.now() - timedelta(days=10)
+        sub.save()
+        self._submit()
+        self.assertTrue(subscription_for(self.user).is_active)
+
+    @override_settings(BETA_MODE=False)
+    def test_banner_only_until_first_feedback(self):
+        self.assertContains(self.client.get(reverse('app')), 'feedbackBanner')
+        self._submit()
+        self.assertNotContains(self.client.get(reverse('app')), 'feedbackBanner')

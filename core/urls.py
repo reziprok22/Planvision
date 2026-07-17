@@ -15,6 +15,7 @@ urlpatterns = [
     path('analyze_page', views.analyze_page, name='analyze_page'),
     path('save_training_data', views.save_training_data, name='save_training_data'),
     path('report_bug', views.report_bug, name='report_bug'),
+    path('feedback', views.submit_feedback, name='submit_feedback'),
     path('project_files/<str:project_id>/<path:filename>', views.serve_project_file, name='serve_project_file'),
     # Online-Ablage ("Meine Projekte")
     path('cloud/projects', views.cloud_list, name='cloud_list'),

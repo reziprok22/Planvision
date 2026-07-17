@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Project, BugReport, AnalysisEvent
+from .models import Project, BugReport, AnalysisEvent, FeedbackResponse
 
 
 @admin.register(Project)
@@ -16,6 +16,26 @@ class AnalysisEventAdmin(admin.ModelAdmin):
     list_display = ('id', 'created_at', 'user', 'session_key', 'page_number')
     list_filter = ('created_at',)
     readonly_fields = ('created_at', 'session_key', 'user', 'page_number')
+
+
+@admin.register(FeedbackResponse)
+class FeedbackResponseAdmin(admin.ModelAdmin):
+    list_display = ('id', 'created_at', 'user', 'short_positive', 'short_improve', 'short_missing', 'reward_granted')
+    list_filter = ('reward_granted', 'created_at')
+    search_fields = ('positive', 'improve', 'missing', 'user__username')
+    readonly_fields = ('user', 'positive', 'improve', 'missing', 'reward_granted', 'created_at')
+
+    @admin.display(description='Was ist gut?')
+    def short_positive(self, obj):
+        return obj.positive[:60]
+
+    @admin.display(description='Was muss besser werden?')
+    def short_improve(self, obj):
+        return obj.improve[:60]
+
+    @admin.display(description='Was fehlt?')
+    def short_missing(self, obj):
+        return obj.missing[:60]
 
 
 @admin.register(BugReport)

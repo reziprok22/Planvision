@@ -147,6 +147,10 @@ BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
 # (accounts.models.Subscription). Preis wie auf der Landingpage.
 TRIAL_DAYS = 30
 LICENSE_PRICE_CHF = 240
+# Feedback-Dankeschön (Akquise-Phase): Wer die drei Feedback-Fragen in der App
+# beantwortet, bekommt einmalig eine auf 6 Monate verlängerte Testphase
+# (trial_ends = jetzt + FEEDBACK_REWARD_DAYS, siehe core.views.submit_feedback).
+FEEDBACK_REWARD_DAYS = 180
 # Projektlimit der Online-Ablage: Default für neue User;
 # pro User im Admin überschreibbar (Subscription.max_projects, z.B. 100/200).
 DEFAULT_MAX_PROJECTS = 50
