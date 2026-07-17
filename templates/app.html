@@ -1158,6 +1158,7 @@
     <script>
       window.PLANLI_READ_ONLY = {{ read_only|yesno:"true,false" }};
       window.PLANLI_CLOUD = {{ cloud_enabled|yesno:"true,false" }};
+      window.PLANLI_DEMO_URL = "{% static 'demo/demo.planli' %}";
     </script>
     <script src="{% static 'dist/js/main.js' %}"></script>
 

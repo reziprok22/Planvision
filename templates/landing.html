@@ -17,6 +17,22 @@
             border-color: var(--slate-400);
         }
 
+        /* "Live-Demo ansehen": inverser Primary (gefüllt dunkel) — bewusst keine
+           dritte Markenfarbe; hebt sich neben dem Orange ab, ohne zu konkurrieren. */
+        .btn-demo {
+            background: var(--slate-900);
+            color: var(--white);
+            border-color: var(--slate-900);
+        }
+
+        .btn-demo:hover {
+            background: var(--slate-800);
+            border-color: var(--slate-800);
+            color: var(--white);
+        }
+
+        .btn-demo .play-icon { flex-shrink: 0; }
+
         .btn-lg {
             padding: 14px 30px;
             font-size: 0.95rem;
@@ -752,7 +768,12 @@
             </p>
             <div class="hero-cta">
                 <a href="{% url 'app' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">{% if beta_mode %}Beta testen{% else %}Kostenlos testen{% endif %}</a>
-                <a href="#features" class="btn btn-outline btn-lg">Mehr erfahren</a>
+                <a href="{% url 'app' %}?demo=1" class="btn btn-demo btn-lg" onclick="window.plausible && window.plausible('CTA: Demo Hero')">
+                    <svg class="play-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                        <path d="M2.5 1.5v9l8-4.5-8-4.5Z"/>
+                    </svg>
+                    Live-Demo
+                </a>
             </div>
             {% if beta_mode %}
             <p class="hero-note">Während der Beta-Phase kostenlos &nbsp;·&nbsp; Ohne Anmeldung</p>

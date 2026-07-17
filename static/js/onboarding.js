@@ -164,7 +164,11 @@ export function setupOnboarding() {
   // Toolbar-Button: jederzeit erneut öffnen.
   document.getElementById('onboardingBtn')?.addEventListener('click', () => open(0));
 
-  // Erstbesuch → automatisch zeigen.
+  // Erstbesuch → automatisch zeigen. Ausnahme Demo-Modus (/app?demo=1):
+  // das Modal würde den frisch geladenen Demo-Plan verdecken, und die
+  // Upload-Anleitung passt nicht zum Demo-Einstieg. Das Seen-Flag bleibt
+  // ungesetzt — beim nächsten normalen Besuch kommt das Onboarding wie üblich.
+  if (new URLSearchParams(window.location.search).has('demo')) return;
   let seen = false;
   try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch (e) { /* ignore */ }
   if (!seen) open(0);

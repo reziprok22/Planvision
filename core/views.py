@@ -73,7 +73,11 @@ def _get_project(request, project_id):
 
 @ensure_csrf_cookie  # CSRF-Cookie immer setzen — nötig für die API-POSTs des Frontends
 def app(request):
-    if not settings.BETA_MODE and not request.user.is_authenticated:
+    # Demo-Modus (?demo=1, Landingpage-Button): auch ohne Login zugänglich.
+    # Rendert nur die App-Shell — geladen wird das statische Demo-Projekt,
+    # alle API-Endpoints bleiben login-geschützt (_access_denied).
+    is_demo = 'demo' in request.GET
+    if not settings.BETA_MODE and not request.user.is_authenticated and not is_demo:
         return redirect_to_login(request.get_full_path())
     return render(request, 'app.html', {
         'beta_mode': settings.BETA_MODE,

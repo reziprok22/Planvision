@@ -40,7 +40,7 @@ import {
   deletePageFromManifest,
   movePageInManifest,
 } from './pdf-handler.js';
-import { setupProject } from './project.js';
+import { setupProject, maybeLoadDemoProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
 import {
   setupUploadModal,
@@ -4770,6 +4770,10 @@ async function initApp() {
       if (s && s.plan_scale != null) setPageScaleInSidebar(pageId, s.plan_scale);
     }
   };
+
+  // /app?demo=1 (Landingpage): fertig analysiertes Demo-Projekt laden.
+  // Bewusst als letzter Schritt — braucht die window-Hooks von oben.
+  maybeLoadDemoProject();
 
 }
 

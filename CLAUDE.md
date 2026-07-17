@@ -126,6 +126,14 @@ The application requires a pre-trained Faster R-CNN model at:
 - **Auto font scale**: all on-canvas text sizes (annotation labels, legend, dimension text, text-note start size) are A4-tuned base values multiplied by `autoFontScale(imgW, imgH)` (`pdf-handler.js`): `clamp((shortSide / 1240)^0.6, 1, 5)` — page-size-based because the server always renders at 150 DPI, damped since large plans tend to have finer detail (A4 = 1×, A3 ≈ 1.2×, A0 ≈ 2.3×). Computed per page; the PDF export applies the same factor so canvas and export match. No user setting by design.
 - **beforeunload-Warnung via Dirty-Tracking**: `projectDirty` (main.js) — gesetzt an den Content-Änderungs-Trichtern (`saveHistorySnapshot(seed=false)`, Undo/Redo, Massstab-Änderung, Seiten-Aktionen, `onPagesAppended`, Label-Manager via `window.planliMarkProjectDirty`), gelöscht nach erfolgreichem Speichern (Cloud **und** .planli-Download) und Projekt-Load (`window.planliMarkProjectSaved` aus project.js) sowie bei frischem Upload/Editor-Reset. Wichtig: Basis-Snapshots nach Seitenwechsel/`loadCanvasData` laufen mit `saveHistorySnapshot(true)` (Seed — kein Nutzereingriff, darf nicht dirty setzen). Nur Ansehen (z.B. Demo) warnt so nie beim Schliessen. Debug-Getter: `window.planliProjectIsDirty()`.
 
+### Demo-Modus (Landingpage → App)
+- Hero-Button „Demo ansehen" (Plausible-Event `CTA: Demo Hero`) verlinkt auf `/app?demo=1`
+- `maybeLoadDemoProject()` (project.js, aufgerufen am Ende von `initApp` in main.js — braucht die window-Hooks) lädt `static/demo/demo.planli` (URL via `window.PLANLI_DEMO_URL` aus app.html) über den normalen `handleLoad`-Pfad: fertig analysiertes Projekt, keine KI-Analyse, keine Serverlast. Fehlt die Datei → Fehler-Toast + leerer Editor
+- Die Demo-Datei ist ein normales `.planli`-Export-ZIP, eingecheckt als `static/demo/demo.planli` (siehe README dort); klein halten (1–2 Seiten, < ~3 MB)
+- Auch ohne Login zugänglich, wenn `BETA_MODE=False`: die `app`-View lässt `?demo=1` anonym durch (nur App-Shell; alle API-Endpoints bleiben login-geschützt)
+- Das Erstbesuch-Onboarding-Modal wird im Demo-Modus unterdrückt (onboarding.js, Seen-Flag bleibt ungesetzt)
+
+
 ### Authentication
 - Django's built-in `django.contrib.auth` handles users, sessions, and password hashing
 - **E-Mail + password only** (no visible username): registration/login use the email as the internal `username` (lowercased) via `EmailUserCreationForm`/`EmailAuthenticationForm` in `accounts/forms.py` — no custom user model

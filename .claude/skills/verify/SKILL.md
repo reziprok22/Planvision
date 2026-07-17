@@ -16,6 +16,7 @@ BETA_MODE=False env/bin/python manage.py runserver 8765 --noreload
 - `BETA_MODE=False` aktiviert Login/Trial/Cloud-Ablage (Default True = alles offen, anonyme Sessions).
 - E-Mails landen im Dev auf der Server-Konsole (Console-Backend) — Betreff mit Umlauten erscheint MIME-codiert (`=?utf-8?q?...?=`).
 - Nach JS-Änderungen in `static/js/` zuerst `npm run build` (Template lädt `dist/js/main.js`).
+- **Template-Änderungen brauchen einen Server-Neustart**: Django ≥4.1 cached Templates auch im Dev, und `--noreload` invalidiert den Cache nie — der Server serviert sonst still das alte Template.
 
 ## Testdaten & Flows
 

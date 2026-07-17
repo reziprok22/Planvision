@@ -322,11 +322,41 @@ async function handleLoad(file) {
     // bis der Nutzer tatsächlich etwas ändert.
     window.planliMarkProjectSaved?.();
     updateStatus(status, 'Projekt geladen ✓', 'success');
+    return true;
   } catch (err) {
     console.error('ZIP load error:', err);
     updateStatus(status, `Fehler beim Laden: ${err.message}`, 'error');
+    return false;
   } finally {
     if (loader) loader.style.display = 'none';
+  }
+}
+
+/**
+ * Demo-Modus: /app?demo=1 (Demo-Button auf der Landingpage) lädt das statisch
+ * mitgelieferte, fertig analysierte Demo-Projekt (static/demo/demo.planli)
+ * über den normalen ZIP-Lade-Pfad — keine KI-Analyse, keine Serverlast.
+ * Wird von main.js am Ende von initApp aufgerufen, denn erst dort stehen die
+ * window-Hooks (initializePageCanvasData etc.) bereit, die handleLoad braucht.
+ */
+export async function maybeLoadDemoProject() {
+  if (!new URLSearchParams(window.location.search).has('demo')) return;
+  const url = window.PLANLI_DEMO_URL;
+  if (!url) return;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    // Eingeloggt wäre sonst das Dashboard die Startansicht — Demo geht vor.
+    hideDashboard();
+    // handleLoad zeigt seine eigenen Statusmeldungen (laden/✓/Fehler).
+    const ok = await handleLoad(new File([blob], 'Demo.planli', { type: 'application/zip' }));
+    if (ok) window.plausible?.('Demo geladen');
+  } catch (err) {
+    console.warn('Demo load failed:', err);
+    const status = showStatus('Demo wird geladen…');
+    updateStatus(status, 'Demo konnte nicht geladen werden.', 'error');
   }
 }
 
