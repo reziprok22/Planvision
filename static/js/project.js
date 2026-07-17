@@ -282,6 +282,10 @@ async function handleLoad(file) {
     const fullManifest = (canvasData.page_manifest || []).map((entry, i) => ({
       ...entry,
       imageUrl: imageUrls[i],
+      // v3-ZIPs, die vor dem Fix in collectAllPagesCanvasData gespeichert
+      // wurden, tragen kein sourcePdfIndex — 1 (die Original-PDF) ist für
+      // alle Nicht-"Anhängen"-Projekte die korrekte Zuordnung.
+      sourcePdfIndex: entry.sourcePdfIndex ?? 1,
       width_mm:  entry.width_mm  ?? Math.round(parseFloat(settings[entry.id]?.format_width)  || 210),
       height_mm: entry.height_mm ?? Math.round(parseFloat(settings[entry.id]?.format_height) || 297),
     }));

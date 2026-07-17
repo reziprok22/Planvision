@@ -3929,7 +3929,7 @@ function collectAllPagesCanvasData() {
     format: 'multi_page_canvas_v2',
     total_pages: manifest.length,
     pages: { ...pageCanvasData }, // Include all pages with data
-    page_manifest: manifest.map(({ id, sourcePageIndex, width_mm, height_mm }) => ({ id, sourcePageIndex, width_mm, height_mm })),
+    page_manifest: manifest.map(({ id, sourcePdfIndex, sourcePageIndex, width_mm, height_mm }) => ({ id, sourcePdfIndex, sourcePageIndex, width_mm, height_mm })),
     current_page_id: currentPageId,
     saved_at: new Date().toISOString()
   };
