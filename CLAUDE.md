@@ -124,6 +124,7 @@ The application requires a pre-trained Faster R-CNN model at:
 - Canvas coordinates are synchronized with image zoom levels
 - Editor mode allows adding, editing, and deleting annotations
 - **Auto font scale**: all on-canvas text sizes (annotation labels, legend, dimension text, text-note start size) are A4-tuned base values multiplied by `autoFontScale(imgW, imgH)` (`pdf-handler.js`): `clamp((shortSide / 1240)^0.6, 1, 5)` — page-size-based because the server always renders at 150 DPI, damped since large plans tend to have finer detail (A4 = 1×, A3 ≈ 1.2×, A0 ≈ 2.3×). Computed per page; the PDF export applies the same factor so canvas and export match. No user setting by design.
+- **beforeunload-Warnung via Dirty-Tracking**: `projectDirty` (main.js) — gesetzt an den Content-Änderungs-Trichtern (`saveHistorySnapshot(seed=false)`, Undo/Redo, Massstab-Änderung, Seiten-Aktionen, `onPagesAppended`, Label-Manager via `window.planliMarkProjectDirty`), gelöscht nach erfolgreichem Speichern (Cloud **und** .planli-Download) und Projekt-Load (`window.planliMarkProjectSaved` aus project.js) sowie bei frischem Upload/Editor-Reset. Wichtig: Basis-Snapshots nach Seitenwechsel/`loadCanvasData` laufen mit `saveHistorySnapshot(true)` (Seed — kein Nutzereingriff, darf nicht dirty setzen). Nur Ansehen (z.B. Demo) warnt so nie beim Schliessen. Debug-Getter: `window.planliProjectIsDirty()`.
 
 ### Authentication
 - Django's built-in `django.contrib.auth` handles users, sessions, and password hashing

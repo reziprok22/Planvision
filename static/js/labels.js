@@ -306,6 +306,9 @@ function applyAllChanges() {
   hasUnsavedChanges = false;
   updateBatchActionVisibility();
   closeLabelManager();
+
+  // Label-Definitionen sind Teil des Projekt-ZIPs → beforeunload-Warnung scharf
+  window.planliMarkProjectDirty?.();
 }
 
 /**

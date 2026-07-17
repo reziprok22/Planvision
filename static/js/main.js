@@ -204,6 +204,13 @@ let undoStack = [];      // serialised states; top = current state
 let redoStack = [];
 let isHistoryAction = false; // true while restoring a state (prevents recursive saves)
 
+// Ungespeicherte Änderungen seit dem letzten Speichern/Laden — steuert die
+// beforeunload-Warnung. Gesetzt an den Content-Änderungs-Trichtern (History-
+// Snapshots, Undo/Redo, Massstab, Seiten-Aktionen, Label-Manager), gelöscht
+// von project.js nach erfolgreichem Speichern (Cloud oder .planli-Datei) und
+// nach Projekt-Load. Reines Ansehen (z.B. Demo) warnt so nie.
+let projectDirty = false;
+
 // Event timing control
 let isProcessingClick = false;
 let isPageSwitching = false; // Prevent canvas events during page switches
@@ -783,7 +790,7 @@ function loadCanvasData(canvasData) {
     if (canvasData.legend_position) {
       buildCanvasLegend(canvasData.legend_position);
     }
-    saveHistorySnapshot();
+    saveHistorySnapshot(true); // Seed: programmatisches Laden, kein Nutzereingriff
   }, 100);
 }
 
@@ -1536,7 +1543,11 @@ function initHistory() {
   redoStack = [];
 }
 
-function saveHistorySnapshot() {
+/**
+ * @param {boolean} seed – true nur für den Basis-Snapshot nach Seitenwechsel/-load:
+ * der repräsentiert keinen Nutzereingriff und darf projectDirty nicht setzen.
+ */
+function saveHistorySnapshot(seed = false) {
   if (isHistoryAction || isPageSwitching || !canvas) return;
   const state = JSON.stringify({
     annotations: JSON.parse(serializeAnnotations()),
@@ -1547,6 +1558,7 @@ function saveHistorySnapshot() {
   undoStack.push(state);
   if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
   redoStack = [];
+  if (!seed) projectDirty = true;
 }
 
 async function applyHistoryState(stateJson) {
@@ -1592,6 +1604,9 @@ async function undoHistory() {
   if (undoStack.length < 2) return;
   redoStack.push(undoStack.pop());
   await applyHistoryState(undoStack[undoStack.length - 1]);
+  // Konservativ: könnte exakt den gespeicherten Stand wiederherstellen,
+  // das wissen wir hier aber nicht — lieber einmal zu viel warnen.
+  projectDirty = true;
 }
 
 async function redoHistory() {
@@ -1599,6 +1614,7 @@ async function redoHistory() {
   const state = redoStack.pop();
   undoStack.push(state);
   await applyHistoryState(state);
+  projectDirty = true;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4103,6 +4119,7 @@ async function initApp() {
 
     // Full reset for new upload – clear all previous project state
     pageCanvasData   = {};
+    projectDirty     = false; // frischer Upload: noch nichts, das verloren gehen könnte
     setAllSourcePdfBlobs({});
 
     // Pre-initialise a settings block for EVERY page from the detected PDF sizes,
@@ -4165,6 +4182,7 @@ async function initApp() {
     pageCanvasData  = {};
     currentPageId   = null;
     selectedObjects = [];
+    projectDirty    = false;
     initHistory();
     resetPdfState();
 
@@ -4281,7 +4299,7 @@ async function initApp() {
       updateResultsTable();
       updateSummary();
       // Reset undo/redo history for each new page
-      setTimeout(() => { initHistory(); saveHistorySnapshot(); }, 200);
+      setTimeout(() => { initHistory(); saveHistorySnapshot(true); }, 200);
     };
     // No cache-busting: a page's rendered JPG never changes within a session
     // (re-analysis only touches annotations, not the image) — letting the
@@ -4310,6 +4328,7 @@ async function initApp() {
       };
     }
     setPageSettings(settings);
+    projectDirty = true; // angehängte Seiten sind Teil des Projekts → speicherwürdig
     navigateToPageNoAnalysis(newEntries[0].id);
   };
 
@@ -4335,6 +4354,7 @@ async function initApp() {
         settings[newEntry.id] = structuredClone(settings[pageId]);
         setPageSettings(settings);
       }
+      projectDirty = true;
       rebuildSidebarPageList();
       navigateToPageNoAnalysis(newEntry.id);
       return;
@@ -4356,6 +4376,7 @@ async function initApp() {
         return;
       }
       delete pageCanvasData[pageId];
+      projectDirty = true;
       rebuildSidebarPageList();
       if (wasCurrent && fallbackId) {
         currentPageId = null; // force a real switch even though the id looks "new" to us
@@ -4366,6 +4387,7 @@ async function initApp() {
 
     if (action === 'up' || action === 'down') {
       movePageInManifest(pageId, action === 'up' ? -1 : 1);
+      projectDirty = true;
       rebuildSidebarPageList();
     }
   }
@@ -4413,19 +4435,15 @@ async function initApp() {
     if (key === heldDrawingKey) heldDrawingKey = null;
   });
 
-  // Warnung vor versehentlichem Schliessen/Neuladen, sobald Annotationen vorliegen.
-  // Projekte werden nur clientseitig als ZIP gesichert – ohne diese Abfrage gingen
-  // Markierungen beim Schliessen verlustlos verloren. Nur warnen, wenn es wirklich
-  // etwas zu verlieren gibt (live auf der aktuellen Seite ODER auf anderen Seiten),
-  // sonst nervt der Dialog bei jedem Schliessen. Den angezeigten Text gibt der
-  // Browser vor – er ist nicht anpassbar.
+  // Warnung vor versehentlichem Schliessen/Neuladen — aber nur, wenn es seit dem
+  // letzten Speichern (Cloud oder .planli-Datei) bzw. Projekt-Load ungespeicherte
+  // Änderungen gibt (projectDirty). Frisch geladene oder gespeicherte Projekte —
+  // insbesondere die nur angeschaute Demo — lassen sich so ohne Dialog schliessen.
+  // Den angezeigten Text gibt der Browser vor – er ist nicht anpassbar.
   window.addEventListener('beforeunload', (e) => {
-    const liveWork   = canvas && canvas.getObjects().some(o => o.objectType === 'annotation');
-    const storedWork = Object.values(pageCanvasData).some(p => p && p.annotation_count > 0);
-    if (liveWork || storedWork) {
-      e.preventDefault();
-      e.returnValue = ''; // für Chrome/Safari erforderlich, um den Dialog auszulösen
-    }
+    if (!projectDirty) return;
+    e.preventDefault();
+    e.returnValue = ''; // für Chrome/Safari erforderlich, um den Dialog auszulösen
   });
 
   // Show a "copy" cursor while Ctrl/Alt is held in select mode, to hint that
@@ -4631,6 +4649,7 @@ async function initApp() {
     const existing = current[pageId] || {};
     current[pageId] = { ...existing, plan_scale: scale };
     setPageSettings(current);
+    projectDirty = true; // Massstab ändert berechnete Flächen/Längen → speicherwürdig
     // Refresh canvas labels and results table with new scale
     refreshAllCanvasLabels();
     refreshAllDimensions();
@@ -4712,6 +4731,13 @@ async function initApp() {
   // freshly loaded page data when labels.js queries during a ZIP load.
   window.getPageCanvasData = () => ({ ...pageCanvasData });
   window.saveCurrentPageCanvas = () => saveCurrentPageCanvasData(currentPageId);
+
+  // Dirty-Tracking-Hooks für andere Module: project.js meldet erfolgreiches
+  // Speichern/Laden (löscht die beforeunload-Warnung), labels.js meldet
+  // Label-Änderungen (setzt sie).
+  window.planliMarkProjectSaved = () => { projectDirty = false; };
+  window.planliMarkProjectDirty = () => { projectDirty = true; };
+  window.planliProjectIsDirty   = () => projectDirty; // read-only, für Tests/Debugging
 
   // Resize canvas when container size changes (e.g. right panel collapse/expand)
   window.addEventListener('resize', function() {

@@ -232,6 +232,7 @@ async function handleSave() {
       ...collectZipParams(projectName),
       onProgress: (pct) => { status.textContent = `Projekt wird gespeichert… ${pct}%`; }
     });
+    window.planliMarkProjectSaved?.();
     updateStatus(status, 'Projekt gespeichert ✓', 'success');
     window.plausible?.('Projekt gespeichert');
   } catch (err) {
@@ -253,6 +254,7 @@ async function handleDownload() {
       ...collectZipParams(projectName),
       onProgress: (pct) => { status.textContent = `Projekt wird heruntergeladen… ${pct}%`; }
     });
+    window.planliMarkProjectSaved?.();
     updateStatus(status, 'Datei heruntergeladen ✓', 'success');
   } catch (err) {
     updateStatus(status, `Fehler: ${err.message}`, 'error');
@@ -316,6 +318,9 @@ async function handleLoad(file) {
     if (window.navigateToPageNoAnalysis) window.navigateToPageNoAnalysis(fullManifest[0]?.id);
 
     document.title = `Planli – ${metadata.project_name}`;
+    // Frisch geladen = gespeicherter Stand → keine beforeunload-Warnung,
+    // bis der Nutzer tatsächlich etwas ändert.
+    window.planliMarkProjectSaved?.();
     updateStatus(status, 'Projekt geladen ✓', 'success');
   } catch (err) {
     console.error('ZIP load error:', err);
@@ -577,6 +582,7 @@ async function saveToCloud(projectName) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
     currentCloudProjectId = data.id;
+    window.planliMarkProjectSaved?.();
     updateStatus(status, 'Online gespeichert ✓', 'success');
     window.plausible?.('Projekt online gespeichert');
   } catch (err) {
