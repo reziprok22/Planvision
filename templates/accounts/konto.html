@@ -42,6 +42,16 @@
         .status-trial { background: #FFF7ED; color: #C2410C; border: 1px solid #FED7AA; }
         .status-paid { background: #F0FDF4; color: #15803D; border: 1px solid #BBF7D0; }
         .status-expired { background: #FEF2F2; color: #B91C1C; border: 1px solid #FECACA; }
+        .status-beta { background: #FFF7ED; color: #C2410C; border: 1px solid #FED7AA; }
+
+        .beta-note {
+            background: #FFF7ED;
+            border: 1px solid #FED7AA;
+            border-radius: 8px;
+            padding: 0.9rem 1.1rem;
+            color: #9A3412;
+            font-size: 0.9rem;
+        }
 
         .price-line {
             font-size: 1.6rem;
@@ -55,7 +65,6 @@
 
         .konto-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 1.2rem; }
         .logout-form { display: inline; }
-        .logout-form .btn { font-family: var(--font); }
 
         .konto-delete-link {
             margin-top: 2rem;
@@ -86,6 +95,8 @@
                 <dd>
                     {% if sub.is_paid %}
                         <span class="status-badge status-paid">{{ sub.status_label }}</span>
+                    {% elif beta_mode %}
+                        <span class="status-badge status-beta">Beta-Phase — kostenlos &amp; unbeschränkt</span>
                     {% elif sub.in_trial %}
                         <span class="status-badge status-trial">{{ sub.status_label }}</span>
                     {% else %}
@@ -93,7 +104,7 @@
                     {% endif %}
                 </dd>
             </div>
-            {% if sub.in_trial %}
+            {% if sub.in_trial and not beta_mode %}
             <div class="konto-row">
                 <dt>Testphase endet am</dt>
                 <dd>{{ sub.trial_ends|date:"d.m.Y" }}</dd>
@@ -119,6 +130,12 @@
     {% if not sub.is_paid %}
     <div class="konto-card">
         <h2>Jahreslizenz</h2>
+        {% if beta_mode %}
+        <p class="beta-note">
+            Während der Beta-Phase ist Planli für alle registrierten Nutzer:innen komplett kostenlos. Eine Lizenz brauchst du erst nach Ende der Beta-Phase;
+            wir informieren dich rechtzeitig, sobald sich das ändert.
+        </p>
+        {% else %}
         <p class="price-line"><sup>CHF</sup>{{ price_chf }} <span class="period">pro Nutzer / Jahr</span></p>
         {% if sub.in_trial %}
         <p>Nach der Testphase kannst du deine Projekte weiterhin öffnen, ansehen und als PDF exportieren —
@@ -134,6 +151,7 @@
                href="mailto:gruezi@bauphysiklengg.ch?subject=Planli%20Jahreslizenz&body=Guten%20Tag%0A%0AIch%20m%C3%B6chte%20eine%20Planli-Jahreslizenz%20f%C3%BCr%20das%20Konto%20{{ user.email|urlencode }}%20bestellen.%0A%0ARechnungsadresse%3A%0A">
                Rechnung anfordern</a>
         </div>
+        {% endif %}
     </div>
     {% endif %}
 

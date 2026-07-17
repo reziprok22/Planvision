@@ -155,8 +155,10 @@
             gap: 7px;
             padding: 10px 22px;
             border-radius: var(--radius);
+            font-family: var(--font); /* <button> erbt Font/Line-Height nicht wie <a> vom Body — sonst andere Höhe als <a class="btn"> */
             font-size: 0.88rem;
             font-weight: 700;
+            line-height: 1.2;
             letter-spacing: -0.01em;
             cursor: pointer;
             text-decoration: none;
@@ -232,6 +234,85 @@
         .page a:not(.btn) { color: var(--primary); }
 
         .back-link { margin-top: 2.5rem; }
+
+        /* ── APP-SHELL (Konto & Co.) ──
+           Linke Spalte (_app_sidebar.html) + Seiteninhalt nebeneinander;
+           dieselben Klassennamen wie in static/css/styles.css (Dashboard-
+           Overlay), hier aber mit den Design-Tokens der Konto-Seite. */
+        .app-shell-layout {
+            display: flex;
+            align-items: flex-start;
+            gap: 28px;
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 48px 48px 96px;
+        }
+
+        .app-shell-layout .page {
+            max-width: none;
+            margin: 0;
+            padding: 8px 0 0;
+        }
+
+        .app-side {
+            flex: 0 0 218px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            background: var(--white);
+            border: 1px solid var(--slate-100);
+            border-radius: 10px;
+            padding: 10px;
+            align-self: flex-start;
+            position: sticky;
+            top: 76px;
+        }
+
+        .app-side-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            width: 100%;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            padding: 9px 12px;
+            font-size: 0.88rem;
+            font-family: var(--font);
+            color: var(--slate-600);
+            text-align: left;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .app-side-item:hover { background: var(--slate-50); }
+        .app-side-item svg { flex-shrink: 0; }
+
+        .app-side-nav-item.active {
+            background: #FFF3E0;
+            color: #C2410C;
+            font-weight: 700;
+        }
+
+        .app-side-nav-item.active svg { color: #C2410C; }
+        .app-side-nav-item.active:hover { background: #FFE7C8; }
+
+        .app-side-sep {
+            height: 1px;
+            background: var(--slate-100);
+            margin: 10px 0;
+        }
+
+        .app-side-account {
+            color: var(--slate-400);
+            font-size: 0.76rem;
+            padding: 0 12px 6px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .app-side-logout-form { margin: 0; }
 
         /* ── FOOTER ── */
         footer {
@@ -311,6 +392,9 @@
             .nav-links li:last-child a { border-bottom: none; }
             .page { padding: 48px 20px 72px; }
             footer { padding: 36px 20px; }
+            .app-shell-layout { flex-direction: column; padding: 24px 20px 48px; }
+            .app-shell-layout .page { padding: 24px 0 0; }
+            .app-side { width: 100%; position: static; }
         }
     </style>
     {% block extra_head %}{% endblock %}
@@ -318,9 +402,15 @@
 </head>
 <body>
 
-<!-- ── NAV ── -->
+<!-- ── NAV ──
+     App-Seiten (Konto & Co., app_shell=True im View-Context — siehe
+     accounts.views.konto) zeigen nur das Logo: Features/Preise/FAQ sind
+     Marketing-Anker, die einen eingeloggten Nutzer von seiner Kontoseite
+     zurück auf die Landingpage reissen würden. Navigation übernimmt dort
+     die linke Spalte (_app_sidebar.html). -->
 <nav>
     <a href="/" class="nav-logo">Planli</a>
+    {% if not app_shell %}
     <ul class="nav-links" id="navLinks">
         <li><a href="/#features">Features</a></li>
         <li><a href="/#pricing">Preise</a></li>
@@ -334,26 +424,36 @@
             <a href="{% url 'login' %}" class="nav-login">Anmelden</a>
             {% endif %}
         {% endif %}
+        {% if beta_mode %}
         <a href="{% url 'app' %}" class="btn btn-primary" onclick="window.plausible && window.plausible('CTA: Base')">Jetzt starten</a>
+        {% elif user.is_authenticated %}
+        <a href="{% url 'app' %}" class="btn btn-primary" onclick="window.plausible && window.plausible('CTA: Base')">Zur App</a>
+        {% else %}
+        <a href="{% url 'register' %}" class="btn btn-primary" onclick="window.plausible && window.plausible('CTA: Base')">Kostenlos testen</a>
+        {% endif %}
         <button class="nav-toggle" id="navToggle" type="button" aria-label="Menü öffnen" aria-expanded="false" aria-controls="navLinks">
             <span></span><span></span><span></span>
         </button>
     </div>
+    {% endif %}
 </nav>
 
 {% block body %}
-<main class="page">
-    <div class="page-header">
-        {% block header %}
-        <h1>{% block heading %}{% endblock %}</h1>
-        {% block subheading %}{% endblock %}
-        {% endblock %}
-    </div>
+<div{% if app_shell %} class="app-shell-layout"{% endif %}>
+    {% if app_shell %}{% include "_app_sidebar.html" with active=active_nav %}{% endif %}
+    <main class="page{% if app_shell %} app-shell-main{% endif %}">
+        <div class="page-header">
+            {% block header %}
+            <h1>{% block heading %}{% endblock %}</h1>
+            {% block subheading %}{% endblock %}
+            {% endblock %}
+        </div>
 
-    {% block content %}{% endblock %}
+        {% block content %}{% endblock %}
 
-    {% block back_link %}<a href="/" class="btn btn-outline-dark back-link">← Zurück zur Startseite</a>{% endblock %}
-</main>
+        {% block back_link %}<a href="/" class="btn btn-outline-dark back-link">← Zurück zur Startseite</a>{% endblock %}
+    </main>
+</div>
 {% endblock %}
 
 <!-- ── FOOTER ── -->

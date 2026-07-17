@@ -1,0 +1,72 @@
+<!-- Gemeinsame linke Spalte für eingeloggte App-Seiten (Projektübersicht,
+     Konto) — sorgt für durchgehende Navigation zwischen beiden. Eingebunden
+     per Include-Tag mit active="dashboard" (app.html, Dashboard) bzw.
+     active="konto" (base.html, wenn app_shell gesetzt ist — siehe
+     accounts/views.py konto()). Gleiche Klassennamen/IDs in beiden
+     Kontexten, aber zwei getrennte CSS-Definitionen (styles.css fürs
+     Dashboard-Overlay, base.html-<style> für Konto), da die Seiten zwei
+     unterschiedliche Stylesheets laden. -->
+<aside class="app-side">
+    <div class="app-side-account" title="Angemeldet als {{ user.email|default:user.username }}">{{ user.email|default:user.username }}</div>
+
+    <a class="app-side-item app-side-nav-item{% if active == 'dashboard' %} active{% endif %}" href="{% url 'app' %}">
+        <svg width="14" height="14" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <path d="M1.5 5.5 V11.5 H11.5 V5.5 Z"/>
+            <path d="M1.5 5.5 V3.5 H5 L6.5 5.5"/>
+        </svg>
+        Projektübersicht
+    </a>
+    <a class="app-side-item app-side-nav-item{% if active == 'konto' %} active{% endif %}" href="{% url 'konto' %}">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="7" cy="4.5" r="2.5"/>
+            <path d="M2 12.5c0-2.5 2.2-4 5-4s5 1.5 5 4"/>
+        </svg>
+        Konto
+    </a>
+
+    {% if active == 'dashboard' %}
+    <div class="app-side-sep"></div>
+    <button id="dashOnboardingBtn" class="app-side-item" type="button">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7 3.2 C5.6 2.3 3.8 2.1 2 2.4 V11 c1.8-.3 3.6-.1 5 .8 1.4-.9 3.2-1.1 5-.8 V2.4 C10.2 2.1 8.4 2.3 7 3.2 Z"/>
+            <line x1="7" y1="3.2" x2="7" y2="12"/>
+        </svg>
+        Anleitung
+    </button>
+    <button id="dashSuggestBtn" class="app-side-item" type="button">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <path d="M7 1.5a3.8 3.8 0 0 0-2.3 6.8c.5.4.8.9.8 1.5h3c0-.6.3-1.1.8-1.5A3.8 3.8 0 0 0 7 1.5Z"/>
+            <line x1="5.5" y1="12" x2="8.5" y2="12"/>
+        </svg>
+        Verbesserung vorschlagen
+    </button>
+    <button id="dashReportBugBtn" class="app-side-item" type="button">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg">
+            <ellipse cx="7" cy="8" rx="3" ry="4"/>
+            <path d="M7 4V2.5M4.8 5 3 3.5M9.2 5 11 3.5M4 8H1.5M12.5 8H10M4.8 11 3 12.5M9.2 11 11 12.5"/>
+        </svg>
+        Bug melden
+    </button>
+    <button id="dashFeedbackBtn" class="app-side-item" type="button">
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12.5 9c0 .55-.45 1-1 1H5L1.5 12.8V2.5c0-.55.45-1 1-1h9c.55 0 1 .45 1 1Z"/>
+            <line x1="4" y1="4.5" x2="10" y2="4.5"/>
+            <line x1="4" y1="7" x2="7.5" y2="7"/>
+        </svg>
+        Feedback geben
+    </button>
+    {% endif %}
+
+    <div class="app-side-sep"></div>
+    <form method="post" action="{% url 'logout' %}" class="app-side-logout-form">
+        {% csrf_token %}
+        <button type="submit" class="app-side-item">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                <path d="M5.5 12H2.8A0.8 0.8 0 0 1 2 11.2V2.8A0.8 0.8 0 0 1 2.8 2h2.7"/>
+                <polyline points="9,4 12,7 9,10"/>
+                <line x1="12" y1="7" x2="5.5" y2="7"/>
+            </svg>
+            Abmelden
+        </button>
+    </form>
+</aside>

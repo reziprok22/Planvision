@@ -82,6 +82,10 @@ def konto(request):
     return render(request, 'accounts/konto.html', {
         'sub': subscription_for(request.user),
         'price_chf': settings.LICENSE_PRICE_CHF,
+        # App-Shell-Chrome (base.html): linke Spalte statt Marketing-Nav —
+        # siehe templates/_app_sidebar.html.
+        'app_shell': True,
+        'active_nav': 'konto',
     })
 
 

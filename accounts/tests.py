@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core import mail
 from django.test import TestCase, override_settings
@@ -285,6 +286,31 @@ class KontoAndReadOnlyTests(TestCase):
         response = self.client.get(reverse('app'))
         self.assertContains(response, 'window.PLANLI_READ_ONLY = false')
         self.assertNotContains(response, 'read-only-banner')
+
+    @override_settings(BETA_MODE=True)
+    def test_konto_shows_beta_note_instead_of_price(self):
+        """Während der Beta ist der Zugriff ohnehin unbeschränkt (_read_only()
+        greift nie) — Preis/Rechnungs-CTA wären dann irreführend."""
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, 'Während der Beta-Phase ist Planli')
+        self.assertNotContains(response, 'Rechnung anfordern')
+        self.assertNotContains(response, str(settings.LICENSE_PRICE_CHF))
+
+    @override_settings(BETA_MODE=True)
+    def test_konto_status_badge_neutral_during_beta_even_if_expired(self):
+        """Der Status-Badge darf während der Beta nicht 'Abgelaufen' zeigen —
+        _read_only() greift in der Beta nie, Lesen+Bearbeiten bleibt offen."""
+        _expire(self.user)
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, 'status-badge status-beta')
+        self.assertNotContains(response, 'Abgelaufen')
+        self.assertNotContains(response, 'Testphase endet am')
+
+    def test_konto_status_badge_shows_expired_outside_beta(self):
+        _expire(self.user)
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, 'status-badge status-expired')
+        self.assertNotContains(response, 'status-badge status-beta')
 
 
 class MaxProjectsTests(TestCase):

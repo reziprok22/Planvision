@@ -110,6 +110,32 @@ class CloudStorageTests(TestCase):
         self.assertContains(response, 'cloudDashboard')
 
 
+class LandingCtaTests(TestCase):
+    """Primär-CTAs (Nav, Hero, Preise): ausgeloggt (non-beta) zur Registrierung
+    statt via /app/ in die Login-Sackgasse; eingeloggt direkt in die App."""
+
+    @override_settings(BETA_MODE=False)
+    def test_logged_out_ctas_point_to_register(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, reverse('register'))
+        self.assertContains(response, 'Kostenlos testen')
+        self.assertNotContains(response, 'Zur App')
+
+    @override_settings(BETA_MODE=False)
+    def test_logged_in_ctas_point_to_app(self):
+        User.objects.create_user(username='a@example.ch', password='pw')
+        self.client.login(username='a@example.ch', password='pw')
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, 'Zur App')
+        self.assertNotContains(response, reverse('register'))
+
+    @override_settings(BETA_MODE=True)
+    def test_beta_ctas_unchanged(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, 'Beta testen')
+        self.assertNotContains(response, reverse('register'))
+
+
 class FeedbackTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(

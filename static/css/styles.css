@@ -257,31 +257,44 @@ header {
 /* Dashboard-Modus (body-Klasse, gesetzt in project.js): Editor-Aktionen im
    Header ausblenden (Speichern/Exportieren würden den unsichtbaren Zustand
    hinter dem Overlay treffen) — ebenso das ganze Burger-Menü: seine dashboard-
-   relevanten Einträge zeigt die permanente linke Spalte (.cloud-side). */
+   relevanten Einträge zeigt die permanente linke Spalte (.app-side). */
 body.dashboard-open .header-actions,
 body.dashboard-open .header-menu {
     display: none;
 }
 
 .cloud-dashboard-inner {
-    /* Linke Options-Spalte + Hauptbereich; Hauptbereich breit genug,
-       dass die Kopfzeile (Titel + Zähler + 3 Buttons) einzeilig bleibt */
+    /* Linke Spalte + Hauptbereich; Hauptbereich breit genug, dass die
+       Kopfzeile (Titel + Zähler + 3 Buttons) einzeilig bleibt */
     max-width: 1190px;
     margin: 0 auto;
     display: flex;
     align-items: flex-start;
-    gap: 32px;
+    gap: 28px;
 }
 
-/* Linke Spalte: die Optionen des Burger-Menüs, dauerhaft sichtbar */
-.cloud-side {
+/* Linke Spalte (templates/_app_sidebar.html): gemeinsam mit der Konto-Seite
+   (dort per base.html-<style> nochmal definiert — zwei Stylesheets, ein
+   Klassenname, gleiche Optik) für durchgehende Navigation zwischen
+   Projektübersicht und Konto. Eigene weisse Karte statt im Seitenhintergrund
+   zu verschwimmen — dafür die #f5f6f8-Fläche des Dashboards als Kontrast. */
+.app-side {
+    box-sizing: border-box; /* sonst wächst die Spalte durch Padding/Rahmen über die 218px flex-basis hinaus */
     flex: 0 0 218px;
     display: flex;
     flex-direction: column;
     gap: 2px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px;
+    align-self: flex-start;
+    position: sticky;
+    top: 90px;
 }
 
-.cloud-side-item {
+.app-side-item {
+    box-sizing: border-box; /* sonst ragt der aktive Hintergrund (width:100% + Padding) über die Spalte hinaus */
     display: flex;
     align-items: center;
     gap: 9px;
@@ -297,25 +310,34 @@ body.dashboard-open .header-menu {
     cursor: pointer;
 }
 
-.cloud-side-item:hover { background: #e9eaee; }
-.cloud-side-item svg { flex-shrink: 0; }
+.app-side-item:hover { background: #f3f4f6; }
+.app-side-item svg { flex-shrink: 0; }
 
-.cloud-side-sep {
+.app-side-nav-item.active {
+    background: #FFF3E0;
+    color: #C2410C;
+    font-weight: 700;
+}
+
+.app-side-nav-item.active svg { color: #C2410C; }
+.app-side-nav-item.active:hover { background: #FFE7C8; }
+
+.app-side-sep {
     height: 1px;
     background: #e3e3e3;
     margin: 10px 0;
 }
 
-.cloud-side-account {
+.app-side-account {
     color: #999;
     font-size: 0.78rem;
-    padding: 0 12px 4px;
+    padding: 0 12px 6px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.cloud-side-logout-form { margin: 0; }
+.app-side-logout-form { margin: 0; }
 
 .cloud-main {
     flex: 1 1 auto;

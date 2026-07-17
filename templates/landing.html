@@ -767,7 +767,14 @@
                 Plan exportieren mit wenigen Klicks – <strong>direkt im Browser.</strong>
             </p>
             <div class="hero-cta">
-                <a href="{% url 'app' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">{% if beta_mode %}Beta testen{% else %}Kostenlos testen{% endif %}</a>
+                {# Ausgeloggt (non-beta) zur Registrierung statt via /app/ zum Login #}
+                {% if beta_mode %}
+                <a href="{% url 'app' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">Beta testen</a>
+                {% elif user.is_authenticated %}
+                <a href="{% url 'app' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">Zur App</a>
+                {% else %}
+                <a href="{% url 'register' %}" class="btn btn-primary btn-lg" onclick="window.plausible && window.plausible('CTA: Hero')">Kostenlos testen</a>
+                {% endif %}
                 <a href="{% url 'app' %}?demo=1" class="btn btn-demo btn-lg" onclick="window.plausible && window.plausible('CTA: Demo Hero')">
                     <svg class="play-icon" width="12" height="12" viewBox="0 0 12 12" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                         <path d="M2.5 1.5v9l8-4.5-8-4.5Z"/>
@@ -951,7 +958,7 @@
                 <li>KI-Objekterkennung</li>
                 <li>PDF-Export &amp; annotierter Plan</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-primary" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Einzel')">Kostenlos starten</a>
+            <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-primary" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Einzel')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>
         </div>
 
         <div class="plan-card">
@@ -963,7 +970,7 @@
                 <li>Alle Funktionen aus Einzel</li>
                 <li>Organisations-Konto mit Sitzplatzverwaltung</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Team')">Kostenlos starten</a>
+            <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Team')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>
         </div>
 
         <div class="plan-card">
@@ -975,7 +982,7 @@
                 <li>Alle Funktionen aus Einzel</li>
                 <li>Organisations-Konto mit Sitzplatzverwaltung</li>
             </ul>
-            <a href="{% url 'app' %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Grosses Team')">Kostenlos starten</a>
+            <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Grosses Team')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>
             <p class="plan-note">Mehr als 20 Nutzer? <a href="mailto:gruezi@bauphysiklengg.ch?subject=Planli%20Team-Angebot">Individuelles Angebot anfragen</a></p>
         </div>
 
