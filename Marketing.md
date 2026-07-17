@@ -1,3 +1,12 @@
+# Marketing-Plan
+- Stand 2026-07-14: Die Bouncerate mit 60% (27 unique visitors) ist zu hoch. 
+- Auf der Website ein Demo-Button einrichten, der bereits ein Plan enthält. -> Kann man direkt Fenstertool testen
+- Zusätzlich kann ich beim normalen Anmelden, die Online-Plan-Ablage anbieten.
+- In der Demo, kann ich beim speichern -> pop-up aufspringen indem gezeigt wird lokal speichern oder Planli-Online-Ablage verwenden (Anmeldung nötig).
+- Plan-Download: https://www.bau-doch-selber.de/forum/haus-katalog.html
+
+
+
 # LinkedIn
 Sommerloch ist evtl. gar kein Nachteil. Es kann auch ein Vorteil sein, weil die Leute zeit haben, ein Tool auszuprobieren und nicht daurend in Meetings stecken. -> Sommerloch-Vorteil.
 

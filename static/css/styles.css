@@ -315,7 +315,7 @@ body.dashboard-open .header-menu {
 
 .cloud-new-btn:hover { background: #E05E00; }
 
-/* Sekundäre Buttons in der Kopfzeile: "Von Datei öffnen" und "← Zurück zum Editor" */
+/* Sekundäre Buttons in der Kopfzeile: ".planli-Datei importieren" und "← Zurück zum Editor" */
 .cloud-file-btn,
 .cloud-close-btn {
     background: transparent;
@@ -336,8 +336,12 @@ body.dashboard-open .header-menu {
     background: #fff;
     border: 1px solid #e3e3e3;
     border-radius: 10px;
-    overflow: hidden;
+    /* Kein overflow:hidden — das "⋯"-Zeilenmenü ragt über die Liste hinaus.
+       Die runden Ecken übernehmen stattdessen die erste/letzte Zeile. */
 }
+
+.cloud-project-row:first-child { border-radius: 10px 10px 0 0; }
+.cloud-project-row:last-child  { border-radius: 0 0 10px 10px; }
 
 .cloud-project-row {
     display: flex;
@@ -380,6 +384,50 @@ body.dashboard-open .header-menu {
 
 .cloud-row-btn:hover { background: #f0f0f0; }
 .cloud-row-btn.danger:hover { background: #fdecec; border-color: #e5b5b5; color: #b33; }
+
+/* "⋯"-Menü pro Projektzeile */
+.cloud-row-actions {
+    position: relative;
+    flex: 0 0 auto;
+}
+
+.cloud-row-menu-btn {
+    font-weight: 700;
+    padding: 5px 12px;
+}
+
+.cloud-row-menu {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 4px);
+    z-index: 10;
+    flex-direction: column;
+    min-width: 200px;
+    padding: 4px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.cloud-row-menu.open { display: flex; }
+
+.cloud-row-menu-item {
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    padding: 8px 10px;
+    font-size: 0.85rem;
+    color: #444;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.cloud-row-menu-item:hover { background: #f3f3f5; }
+.cloud-row-menu-item.danger { color: #b33; }
+.cloud-row-menu-item.danger:hover { background: #fdecec; }
 
 .cloud-empty {
     padding: 40px 20px;

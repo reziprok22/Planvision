@@ -40,12 +40,19 @@ export function setupProject(elements, modules) {
   if (exportPdfBtn)          exportPdfBtn.addEventListener('click',          exportPdf);
   if (exportAnnotatedPdfBtn) exportAnnotatedPdfBtn.addEventListener('click', exportAnnotatedPdf);
 
-  zipFileInput.addEventListener('change', () => {
-    if (zipFileInput.files[0]) {
-      hideDashboard(); // erst bei tatsächlicher Dateiwahl — Abbrechen lässt die Übersicht offen
-      handleLoad(zipFileInput.files[0]);
-    }
+  zipFileInput.addEventListener('change', async () => {
+    const file = zipFileInput.files[0];
     zipFileInput.value = '';
+    if (!file) return;
+    hideDashboard(); // erst bei tatsächlicher Dateiwahl — Abbrechen lässt die Übersicht offen
+    const ok = await handleLoad(file);
+    // Import = direkt als neues Cloud-Projekt ablegen — kein zusätzliches
+    // manuelles Speichern nötig. (handleLoad hat currentCloudProjectId genullt,
+    // saveToCloud legt also neu an und merkt sich die ID fürs Überschreiben.)
+    // Read-Only: Ansehen erlaubt, Speichern gäbe 403 — dann gar nicht versuchen.
+    if (ok && cloudEnabled && !window.PLANLI_READ_ONLY) {
+      await saveToCloud(getUploadedBaseName() || `Planli ${new Date().toLocaleDateString('de-DE')}`);
+    }
   });
 
   setupBugReport();
@@ -223,7 +230,7 @@ async function handleSave() {
   const projectName = baseName || `Planli ${new Date().toLocaleDateString('de-DE')}`;
 
   // Eingeloggt: Speichern legt das Projekt online ab ("Meine Projekte").
-  // Der Datei-Download bleibt im Menü als "Als Datei herunterladen".
+  // Der Datei-Download bleibt im Menü als ".planli-Datei exportieren".
   if (cloudEnabled) return saveToCloud(projectName);
 
   const status = showStatus('Projekt wird gespeichert…');
@@ -475,7 +482,14 @@ function setupCloud() {
   // nach erfolgreichem Upload aufgerufen.
   window.planliCloudNewUpload = () => { currentCloudProjectId = null; };
 
+  // Klick irgendwo anders schliesst offene "⋯"-Zeilenmenüs
+  document.addEventListener('click', closeRowMenus);
+
   openDashboard(); // Startansicht
+}
+
+function closeRowMenus() {
+  document.querySelectorAll('.cloud-row-menu.open').forEach(m => m.classList.remove('open'));
 }
 
 function hideDashboard() {
@@ -537,11 +551,31 @@ function renderDashboard({ projects, limit }) {
     meta.className = 'cloud-project-meta';
     meta.textContent = `${p.updated_at} · ${formatBytes(p.size_bytes)}`;
 
-    const renameBtn = document.createElement('button');
-    renameBtn.className = 'cloud-row-btn';
-    renameBtn.textContent = 'Umbenennen';
-    renameBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
+    // "⋯"-Menü pro Zeile: Umbenennen / .planli-Export / Löschen
+    const actions = document.createElement('div');
+    actions.className = 'cloud-row-actions';
+
+    const menuBtn = document.createElement('button');
+    menuBtn.className = 'cloud-row-btn cloud-row-menu-btn';
+    menuBtn.textContent = '⋯';
+    menuBtn.title = 'Optionen';
+
+    const menu = document.createElement('div');
+    menu.className = 'cloud-row-menu';
+
+    const addItem = (label, onClick, danger = false) => {
+      const item = document.createElement('button');
+      item.className = 'cloud-row-menu-item' + (danger ? ' danger' : '');
+      item.textContent = label;
+      item.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeRowMenus();
+        onClick();
+      });
+      menu.appendChild(item);
+    };
+
+    addItem('Umbenennen', async () => {
       const newName = prompt('Neuer Projektname:', p.name);
       if (!newName || newName.trim() === '' || newName === p.name) return;
       const fd = new FormData();
@@ -557,12 +591,13 @@ function renderDashboard({ projects, limit }) {
       }
     });
 
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'cloud-row-btn danger';
-    deleteBtn.textContent = 'Löschen';
-    deleteBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (!confirm(`Projekt „${p.name}“ endgültig löschen?\nTipp: vorher über „Öffnen“ + Menü → „Als Datei herunterladen“ sichern.`)) return;
+    // Direkt-Download des gespeicherten ZIPs — ohne das Projekt zu öffnen
+    addItem('.planli-Datei exportieren', () => {
+      window.location.href = `/cloud/projects/${p.id}/download`;
+    });
+
+    addItem('Löschen', async () => {
+      if (!confirm(`Projekt „${p.name}“ endgültig löschen?\nTipp: vorher über „⋯“ → „.planli-Datei exportieren“ sichern.`)) return;
       const res = await fetch(`/cloud/projects/${p.id}/delete`, {
         method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
       if (res.ok) {
@@ -571,9 +606,17 @@ function renderDashboard({ projects, limit }) {
       } else {
         alert('Löschen fehlgeschlagen.');
       }
+    }, true);
+
+    menuBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const wasOpen = menu.classList.contains('open');
+      closeRowMenus(); // nur ein offenes Menü zugleich
+      if (!wasOpen) menu.classList.add('open');
     });
 
-    row.append(name, meta, renameBtn, deleteBtn);
+    actions.append(menuBtn, menu);
+    row.append(name, meta, actions);
     row.addEventListener('click', () => openCloudProject(p));
     listEl.appendChild(row);
   });
