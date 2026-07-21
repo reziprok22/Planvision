@@ -55,8 +55,8 @@ class Subscription(models.Model):
             return f"Lizenz aktiv bis {self.paid_until.strftime('%d.%m.%Y')}"
         if self.in_trial:
             days = self.trial_days_left
-            return f"Testphase — noch {days} Tag{'' if days == 1 else 'e'}"
-        return 'Abgelaufen — nur Ansicht'
+            return f"Testphase, noch {days} Tag{'' if days == 1 else 'e'}"
+        return 'Abgelaufen, nur Ansicht'
 
 
 def subscription_for(user):

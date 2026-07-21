@@ -37,15 +37,15 @@
         Mit der Löschung deines Kontos werden unwiderruflich entfernt:
     </p>
     <ul class="danger-list">
-        <li><strong>{{ cloud_project_count }} online gespeicherte{{ cloud_project_count|pluralize:"s," }} Projekt{{ cloud_project_count|pluralize:",e" }}</strong> — lade sie vorher bei Bedarf als Datei herunter</li>
+        <li><strong>{{ cloud_project_count }} online gespeicherte{{ cloud_project_count|pluralize:"s," }} Projekt{{ cloud_project_count|pluralize:",e" }}</strong>, lade sie vorher bei Bedarf als Datei herunter</li>
         <li>Deine hochgeladenen Pläne und Analysedaten</li>
-        {% if sub.is_paid %}<li>Deine laufende Lizenz ({{ sub.status_label }}) — ohne Rückerstattung</li>
+        {% if sub.is_paid %}<li>Deine laufende Lizenz ({{ sub.status_label }}), ohne Rückerstattung</li>
         {% elif sub.in_trial %}<li>Deine laufende Testphase ({{ sub.status_label }})</li>{% endif %}
     </ul>
     <p style="font-size: 0.78rem; color: var(--slate-400); margin-bottom: 1.4rem;">
         Bereits gemeldete Fehlerberichte und anonyme Nutzungsstatistiken bleiben ohne
         Bezug zu deiner Person erhalten. Freiwillig zur KI-Verbesserung freigegebene
-        Trainingsdaten bleiben ebenfalls bestehen — sie sind bereits anonymisiert und
+        Trainingsdaten bleiben ebenfalls bestehen, sie sind bereits anonymisiert und
         nicht mit deinem Konto verknüpft gespeichert.
     </p>
 
@@ -59,6 +59,6 @@
     {% endif %}
 
     <div class="link-row">
-        <a href="{% url 'konto' %}">Abbrechen — zurück zum Konto</a>
+        <a href="{% url 'konto' %}">Abbrechen</a>
     </div>
 {% endblock %}
