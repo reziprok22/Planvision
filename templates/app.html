@@ -454,7 +454,7 @@
 <body{% if read_only %} class="read-only"{% endif %}>
 
     <header>
-        <h1>Planli<span class="brand-accent"></span>{% if beta_mode %}<span class="beta-badge" title="Kostenlose Beta-Phase">Beta</span>{% endif %}</h1>
+        <h1>Planli<span class="brand-accent"></span>{% if beta_pricing %}<span class="beta-badge" title="Kostenlose Beta-Phase">Beta</span>{% endif %}</h1>
 
         <div class="header-menu">
             <button id="headerMenuBtn" class="header-action-btn" aria-haspopup="true" aria-expanded="false" title="Mehr">
@@ -549,7 +549,7 @@
         </div>
         <div class="header-actions">
             {% if user.is_authenticated %}
-            <button id="feedbackBtn" class="header-action-btn" title="Dein Feedback zu Planli — drei kurze Fragen">
+            <button id="feedbackBtn" class="header-action-btn" title="Dein Feedback zu Planli, beantworte drei kurze Fragen">
                 <svg width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
                     <path d="M11.5 8.5c0 .55-.45 1-1 1H4.5L1.5 12V2.5c0-.55.45-1 1-1h8c.55 0 1 .45 1 1Z"/>
                     <line x1="4" y1="4.5" x2="9" y2="4.5"/>
@@ -600,7 +600,7 @@
     </header>
     {% if read_only %}
     <div class="read-only-banner">
-        Testphase abgelaufen — Projekte können angesehen und exportiert, aber nicht bearbeitet werden.
+        Testphase abgelaufen, Projekte können angesehen und exportiert, aber nicht bearbeitet werden.
         <a href="{% url 'konto' %}">Lizenz kaufen</a>
     </div>
     {% endif %}
@@ -996,10 +996,10 @@
             <h3>Dein Feedback zu Planli</h3>
             <p style="font-size:0.85em; color:#666; margin:4px 0 14px;">
                 {% if feedback_reward %}
-                Danke, dass du dir Zeit nimmst — als Dankeschön verlängert sich deine Testphase
+                Danke, dass du dir Zeit nimmst, als Dankeschön verlängert sich deine Testphase
                 nach dem Absenden auf {{ feedback_reward_months }}&nbsp;Monate.
                 {% else %}
-                Danke, dass du dir nochmals Zeit nimmst — dein Feedback fliesst direkt in die Weiterentwicklung ein.
+                Danke, dass du dir nochmals Zeit nimmst, dein Feedback fliesst direkt in die Weiterentwicklung ein.
                 {% endif %}
             </p>
             <label style="display:block; margin:0 0 12px; font-size:0.85em; color:#444; font-weight:600;">

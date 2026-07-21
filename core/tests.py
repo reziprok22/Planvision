@@ -90,7 +90,7 @@ class CloudStorageTests(TestCase):
         self.assertEqual(StoredProject.objects.count(), 0)
         self.assertFalse((CLOUD_TMP / f'{project_id}.planli').exists())
 
-    @override_settings(BETA_MODE=False)
+    @override_settings(BETA_PRICING=False)
     def test_read_only_user_cannot_save_but_can_open_and_delete(self):
         project_id = self._save().json()['id']
         sub = subscription_for(self.user)

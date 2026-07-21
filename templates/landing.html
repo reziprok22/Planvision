@@ -669,7 +669,7 @@
                 "description": "Ausmass-Software für Bauplan-PDFs: Flächen und Längen direkt im Browser messen, Fenster per KI erkennen, Ergebnis als PDF exportieren.",
                 "offers": {
                     "@type": "Offer",
-                    {% if beta_mode %}"price": "0",{% else %}"price": "240",{% endif %}
+                    {% if beta_pricing %}"price": "0",{% else %}"price": "240",{% endif %}
                     "priceCurrency": "CHF"
                 }
             },
@@ -737,8 +737,8 @@
                         "name": "Gibt es eine kostenlose Testphase?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            {% if beta_mode %}
-                            "text": "Ja. Während der aktuellen Beta-Phase kannst du Planli komplett kostenlos und ohne Anmeldung testen."
+                            {% if beta_pricing %}
+                            "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar."
                             {% else %}
                             "text": "Ja. Nach der Registrierung steht dir eine 30-tägige kostenlose Testphase zur Verfügung."
                             {% endif %}
@@ -782,8 +782,8 @@
                     Live-Demo
                 </a>
             </div>
-            {% if beta_mode %}
-            <p class="hero-note">Während der Beta-Phase kostenlos &nbsp;·&nbsp; Ohne Anmeldung</p>
+            {% if beta_pricing %}
+            <p class="hero-note">Während der Beta-Phase kostenlos &nbsp;·&nbsp; Keine Kreditkarte erforderlich</p>
             {% else %}
             <p class="hero-note">30 Tage kostenlos testen &nbsp;·&nbsp; Keine Kreditkarte erforderlich</p>
             {% endif %}
@@ -842,7 +842,7 @@
                 </svg>
             </div>
             <h3>KI-Fenstererkennung</h3>
-            <p>Die integrierte Objekterkennung findet Fenster automatisch — du prüfst nur noch nach.</p>
+            <p>Die integrierte Objekterkennung findet Fenster automatisch, du prüfst nur noch nach.</p>
         </div>
 
         <div class="feature-card">
@@ -931,13 +931,13 @@
 <!-- ── PRICING ── -->
 <section class="pricing" id="pricing">
     <div class="section-label">Preismodell</div>
-    {% if beta_mode %}
+    {% if beta_pricing %}
     <h2 class="section-title">Aktuell kostenlos</h2>
     <p class="section-sub">Planli befindet sich in der Beta-Phase.</p>
 
     <div class="beta-notice">
-        <strong>Während der Beta-Phase ist die Nutzung kostenlos.</strong>
-        Ohne Anmeldung loslegen.
+        <strong>Während der Beta-Phase ist die Nutzung nach kostenloser Registrierung komplett kostenlos.</strong>
+        Jetzt loslegen.
     </div>
     {% else %}
     <h2 class="section-title">Kaufe Planli</h2>
@@ -1049,9 +1049,11 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
         <details>
             <summary>Gibt es eine kostenlose Testphase?</summary>
                 <p class="faq-answer">
-                    Ja. Während der aktuellen Beta-Phase kannst du Planli komplett kostenlos und sogar ohne Anmeldung direkt testen. 
-                    <br><br>
-                    Nach dem offiziellen Start steht dir eine 30-tägige Testphase zur Verfügung. Für diese reguläre Testphase genügen dann die Registrierung mit einer E-Mail-Adresse und ein Passwort.
+                    {% if beta_pricing %}
+                    Ja. Während der aktuellen Beta-Phase ist Planli nach einer kostenlosen Registrierung mit E-Mail-Adresse und Passwort komplett kostenlos nutzbar.
+                    {% else %}
+                    Ja. Nach der Registrierung mit einer E-Mail-Adresse und einem Passwort steht dir eine 30-tägige kostenlose Testphase zur Verfügung.
+                    {% endif %}
                 </p>
         </details>
 

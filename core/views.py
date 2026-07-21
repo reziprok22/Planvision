@@ -53,8 +53,9 @@ def _access_denied(request):
 
 def _read_only(request):
     """True, wenn Trial/Lizenz abgelaufen ist → nur noch Ansehen/Exportieren,
-    keine KI-Analyse und kein Bearbeiten. Im BETA_MODE nie."""
-    if settings.BETA_MODE or not request.user.is_authenticated:
+    keine KI-Analyse und kein Bearbeiten. Bei BETA_PRICING nie (unabhängig
+    von BETA_MODE/Login-Pflicht)."""
+    if settings.BETA_PRICING or not request.user.is_authenticated:
         return False
     return not subscription_for(request.user).is_active
 
@@ -364,7 +365,7 @@ def analyze_page(request):
     if denied:
         return denied
     if _read_only(request):
-        return JsonResponse({'error': 'Deine Testphase ist abgelaufen — die KI-Analyse '
+        return JsonResponse({'error': 'Deine Testphase ist abgelaufen, die KI-Analyse '
                              'ist nur mit aktiver Lizenz verfügbar.'}, status=403)
 
     request_start = time.time()
@@ -621,8 +622,8 @@ def save_training_data(request):
 
 # ── Online-Ablage ("Meine Projekte") ─────────────────────────────────────────
 # Dauerhaft gespeicherte .planli-ZIPs pro User (identisch zum lokalen
-# "Speichern"-Export). Braucht immer einen eingeloggten User — auch im
-# BETA_MODE (dort sieht die UI mangels Login schlicht niemand).
+# "Speichern"-Export). Braucht immer einen eingeloggten User — unabhängig
+# von BETA_MODE/BETA_PRICING.
 
 def _cloud_denied(request):
     if not request.user.is_authenticated:
@@ -662,7 +663,7 @@ def cloud_save(request):
     if denied:
         return denied
     if _read_only(request):
-        return JsonResponse({'error': 'Deine Testphase bzw. Lizenz ist abgelaufen — '
+        return JsonResponse({'error': 'Deine Testphase bzw. Lizenz ist abgelaufen, '
                              'Online-Speichern ist nur mit aktiver Lizenz möglich.'}, status=403)
 
     upload = request.FILES.get('project_zip')

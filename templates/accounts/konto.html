@@ -95,8 +95,8 @@
                 <dd>
                     {% if sub.is_paid %}
                         <span class="status-badge status-paid">{{ sub.status_label }}</span>
-                    {% elif beta_mode %}
-                        <span class="status-badge status-beta">Beta-Phase — kostenlos &amp; unbeschränkt</span>
+                    {% elif beta_pricing %}
+                        <span class="status-badge status-beta">Beta-Phase, kostenlos &amp; unbeschränkt</span>
                     {% elif sub.in_trial %}
                         <span class="status-badge status-trial">{{ sub.status_label }}</span>
                     {% else %}
@@ -104,7 +104,7 @@
                     {% endif %}
                 </dd>
             </div>
-            {% if sub.in_trial and not beta_mode %}
+            {% if sub.in_trial and not beta_pricing %}
             <div class="konto-row">
                 <dt>Testphase endet am</dt>
                 <dd>{{ sub.trial_ends|date:"d.m.Y" }}</dd>
@@ -121,7 +121,7 @@
             </div>
             <div class="konto-row">
                 <dt>Verlängerung</dt>
-                <dd>Rechnung folgt rechtzeitig per E-Mail — keine automatische Abbuchung</dd>
+                <dd>Rechnung folgt rechtzeitig per E-Mail, keine automatische Abbuchung</dd>
             </div>
             {% endif %}
         </dl>
@@ -130,7 +130,7 @@
     {% if not sub.is_paid %}
     <div class="konto-card">
         <h2>Jahreslizenz</h2>
-        {% if beta_mode %}
+        {% if beta_pricing %}
         <p class="beta-note">
             Während der Beta-Phase ist Planli für alle registrierten Nutzer:innen komplett kostenlos. Eine Lizenz brauchst du erst nach Ende der Beta-Phase;
             wir informieren dich rechtzeitig, sobald sich das ändert.
@@ -138,11 +138,11 @@
         {% else %}
         <p class="price-line"><sup>CHF</sup>{{ price_chf }} <span class="period">pro Nutzer / Jahr</span></p>
         {% if sub.in_trial %}
-        <p>Nach der Testphase kannst du deine Projekte weiterhin öffnen, ansehen und als PDF exportieren —
+        <p>Nach der Testphase kannst du deine Projekte weiterhin öffnen, ansehen und als PDF exportieren,
            Messen, Bearbeiten und die KI-Analyse brauchen eine Lizenz.</p>
         {% else %}
         <p>Deine Testphase ist abgelaufen. Du kannst deine Projekte weiterhin öffnen, ansehen und als PDF
-           exportieren — für Messen, Bearbeiten und die KI-Analyse brauchst du eine Lizenz.</p>
+           exportieren, für Messen, Bearbeiten und die KI-Analyse brauchst du eine Lizenz.</p>
         {% endif %}
         <p>Die Zahlung läuft unkompliziert per Rechnung: kurze E-Mail an uns, du erhältst eine
            QR-Rechnung, und nach Zahlungseingang wird dein Konto für ein Jahr freigeschaltet.</p>

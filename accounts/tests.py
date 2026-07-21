@@ -225,7 +225,7 @@ class SubscriptionTests(TestCase):
         self.assertTrue(sub.is_active)
 
 
-@override_settings(BETA_MODE=False)
+@override_settings(BETA_PRICING=False)
 class AnalyzeGateTests(TestCase):
     """analyze_page: 403 nach Ablauf, sonst passiert das Gate (dann 404,
     weil kein Projekt existiert — die Analyse selbst läuft hier nie)."""
@@ -244,14 +244,14 @@ class AnalyzeGateTests(TestCase):
         response = self.client.post(reverse('analyze_page'), {'session_id': 'x'})
         self.assertNotEqual(response.status_code, 403)
 
-    @override_settings(BETA_MODE=True)
+    @override_settings(BETA_MODE=True, BETA_PRICING=True)
     def test_beta_mode_has_no_gate(self):
         response = self.client.post(reverse('analyze_page'), {'session_id': 'x'})
         self.assertNotEqual(response.status_code, 403)
         self.assertNotEqual(response.status_code, 401)
 
 
-@override_settings(BETA_MODE=False)
+@override_settings(BETA_PRICING=False)
 class KontoAndReadOnlyTests(TestCase):
     def setUp(self):
         self.user = _make_user()
@@ -287,7 +287,7 @@ class KontoAndReadOnlyTests(TestCase):
         self.assertContains(response, 'window.PLANLI_READ_ONLY = false')
         self.assertNotContains(response, 'read-only-banner')
 
-    @override_settings(BETA_MODE=True)
+    @override_settings(BETA_PRICING=True)
     def test_konto_shows_beta_note_instead_of_price(self):
         """Während der Beta ist der Zugriff ohnehin unbeschränkt (_read_only()
         greift nie) — Preis/Rechnungs-CTA wären dann irreführend."""
@@ -296,7 +296,7 @@ class KontoAndReadOnlyTests(TestCase):
         self.assertNotContains(response, 'Rechnung anfordern')
         self.assertNotContains(response, str(settings.LICENSE_PRICE_CHF))
 
-    @override_settings(BETA_MODE=True)
+    @override_settings(BETA_PRICING=True)
     def test_konto_status_badge_neutral_during_beta_even_if_expired(self):
         """Der Status-Badge darf während der Beta nicht 'Abgelaufen' zeigen —
         _read_only() greift in der Beta nie, Lesen+Bearbeiten bleibt offen."""

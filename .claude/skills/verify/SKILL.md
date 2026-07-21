@@ -10,10 +10,10 @@ description: Planvision/planli lokal starten und Änderungen end-to-end über HT
 ```bash
 # Immer das venv nutzen; --noreload vermeidet doppeltes ML-Model-Laden.
 # Achtung: Start dauert wegen Model-Load einige Sekunden (GPU-Init).
-BETA_MODE=False env/bin/python manage.py runserver 8765 --noreload
+env/bin/python manage.py runserver 8765 --noreload
 ```
 
-- `BETA_MODE=False` aktiviert Login/Trial/Cloud-Ablage (Default True = alles offen, anonyme Sessions).
+- `BETA_MODE` (Default jetzt **False**) und `BETA_PRICING` (Default **True**) sind unabhängig: `BETA_MODE=True` erlaubt anonymen Zugriff auf `/app` (Session-UUID statt Login — für lokale Tests des alten anonymen Flows); `BETA_PRICING=False` aktiviert Trial-Ablauf/Read-Only + echten Preis auf der Konto-Seite. Normalerweise beide auf Default lassen: Login nötig (ausser `/app/?demo=1`), aber kostenlos/nie read-only.
 - E-Mails landen im Dev auf der Server-Konsole (Console-Backend) — Betreff mit Umlauten erscheint MIME-codiert (`=?utf-8?q?...?=`).
 - Nach JS-Änderungen in `static/js/` zuerst `npm run build` (Template lädt `dist/js/main.js`).
 - **Template-Änderungen brauchen einen Server-Neustart**: Django ≥4.1 cached Templates auch im Dev, und `--noreload` invalidiert den Cache nie — der Server serviert sonst still das alte Template.

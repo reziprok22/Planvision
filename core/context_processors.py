@@ -7,5 +7,10 @@ def analytics(request):
 
 
 def beta_mode(request):
-    """Stellt BETA_MODE allen Templates bereit (Nav-Login-Link, Beta-Badge etc.)."""
+    """Stellt BETA_MODE allen Templates bereit (Nav-Login-Link etc.)."""
     return {'beta_mode': settings.BETA_MODE}
+
+
+def beta_pricing(request):
+    """Stellt BETA_PRICING allen Templates bereit (Beta-Badge, Preis-/Read-Only-Hinweise)."""
+    return {'beta_pricing': settings.BETA_PRICING}

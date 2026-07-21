@@ -63,6 +63,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.analytics',
                 'core.context_processors.beta_mode',
+                'core.context_processors.beta_pricing',
             ],
         },
     },
@@ -133,18 +134,27 @@ TRAINING_DATA_DIR = BASE_DIR / 'training_data_opt-in'
 # Aufbewahrungsdauer für projects/<uuid>/ (Arbeits-/Zwischenspeicher).
 PROJECT_RETENTION_DAYS = int(os.environ.get('PROJECT_RETENTION_DAYS', 14))
 
-# BETA_MODE: zentraler Schalter für die Beta-Phase. Wenn True, löst er aus:
+# BETA_MODE: Schalter für anonymen Zugriff (kein Login). Wenn True, löst er aus:
 #   - Kein Login nötig: alle Endpunkte (App, Upload, Analyse, Bug-Reports)
 #     funktionieren ohne Anmeldung.
 #   - Projekte werden anonym gespeichert (user=NULL); Zugriff nur per
 #     unerratbarer Session-UUID statt per Ownership-Prüfung.
-#   - In der App erscheint das "Beta"-Badge, auf der Landingpage der Beta-Banner.
-# Für den Produktivbetrieb mit Accounts: auf False setzen (beendet die Beta-Phase).
-# Lokal testbar via Env: BETA_MODE=False python manage.py runserver
-BETA_MODE = os.environ.get('BETA_MODE', 'True') == 'True'
+# Ab False (jetzt Default) verlangt /app ein Login (ausser ?demo=1) — die
+# Online-Ablage ("Meine Projekte") braucht ohnehin immer ein Konto und war in
+# der Beta sonst mangels Login-Einstieg für niemanden erreichbar.
+# Lokal testbar via Env: BETA_MODE=True python manage.py runserver
+BETA_MODE = os.environ.get('BETA_MODE', 'False') == 'True'
+
+# BETA_PRICING: unabhängig von BETA_MODE. Wenn True, bleibt _read_only()
+# (Trial-/Lizenz-Ablauf) für alle deaktiviert, Konto-Seite und Landingpage
+# zeigen statt Preis/"Rechnung anfordern" den Beta-Hinweis ("kostenlos &
+# unbeschränkt"). So bleibt die Nutzung während der Beta-Phase komplett
+# kostenlos, obwohl (ab BETA_MODE=False) ein Login nötig ist.
+BETA_PRICING = os.environ.get('BETA_PRICING', 'True') == 'True'
 
 # Kostenlose Testphase ab Registrierung; danach Read-Only bis zur Zahlung
-# (accounts.models.Subscription). Preis wie auf der Landingpage.
+# (accounts.models.Subscription) — sofern BETA_PRICING nicht aktiv ist.
+# Preis wie auf der Landingpage.
 TRIAL_DAYS = 30
 LICENSE_PRICE_CHF = 240
 # Feedback-Dankeschön (Akquise-Phase): Wer die drei Feedback-Fragen in der App
