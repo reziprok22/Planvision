@@ -166,7 +166,7 @@ export function getUploadedBaseName() {
 
 /**
  * Set the canonical project name (rename in the editor, or the cloud name
- * winning over the ZIP's metadata name after opening from "Meine Projekte").
+ * winning over the ZIP's metadata name after opening from "Projektübersicht").
  */
 export function setProjectName(name) {
   currentFileName = name;

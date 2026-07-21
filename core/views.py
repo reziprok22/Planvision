@@ -569,7 +569,9 @@ def submit_feedback(request):
             sub.trial_ends = max(sub.trial_ends,
                                  timezone.now() + timedelta(days=settings.FEEDBACK_REWARD_DAYS))
             sub.save(update_fields=['trial_ends'])
-            payload['trial_ends'] = timezone.localtime(sub.trial_ends).strftime('%d.%m.%Y')
+            # Monatszahl statt konkretem Datum: die Belohnung greift erst nach der
+            # Beta (trial_ends ist bis dahin belanglos), ein Datum wäre irreführend.
+            payload['reward_months'] = settings.FEEDBACK_REWARD_DAYS // 30
         return JsonResponse(payload)
 
     except Exception as e:

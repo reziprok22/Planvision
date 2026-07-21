@@ -27,6 +27,12 @@ class Subscription(models.Model):
     max_projects = models.PositiveIntegerField(
         default=default_max_projects,
         help_text='Max. Anzahl online gespeicherter Projekte für diesen User.')
+    # Zeitpunkt, zu dem der Bestätigungslink aus der Registrierungs-Mail
+    # aufgerufen wurde. Bewusst getrennt von User.is_active, das ein Admin auch
+    # manuell setzen kann — dieses Feld belegt ausschliesslich die E-Mail-
+    # Verifikation. Kann durch Mail-Scanner (SafeLinks o.ä.) vor dem echten
+    # Klick gesetzt werden, siehe verify_email() in accounts/views.py.
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

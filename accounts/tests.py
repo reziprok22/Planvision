@@ -91,6 +91,21 @@ class EmailVerificationTests(TestCase):
         self.assertFalse(response.wsgi_request.user.is_authenticated)
         self.assertTrue(User.objects.get().is_active)
 
+    def test_verify_link_records_timestamp(self):
+        # Der Klick auf den Bestätigungslink soll den Zeitpunkt festhalten
+        # (getrennt von is_active, das ein Admin auch manuell setzt)
+        from .models import subscription_for
+        self.client.post(reverse('register'), {
+            'email': 'test@example.ch',
+            'password1': 'sicher-genug-42',
+            'password2': 'sicher-genug-42',
+        })
+        user = User.objects.get()
+        self.assertIsNone(subscription_for(user).email_verified_at)
+        link = _extract_link(0, '/accounts/verify-email/')
+        self.client.get(link)
+        self.assertIsNotNone(subscription_for(user).email_verified_at)
+
     def test_verify_link_second_click_shows_done_not_invalid(self):
         # Mail-Scanner rufen den Link vorab auf und verbrauchen den Token;
         # der echte Klick danach soll zum Login führen statt "ungültig"
@@ -215,7 +230,7 @@ class SubscriptionTests(TestCase):
     def test_expired_trial_is_inactive(self):
         sub = _expire(_make_user())
         self.assertFalse(sub.is_active)
-        self.assertEqual(sub.status_label, 'Abgelaufen — nur Ansicht')
+        self.assertEqual(sub.status_label, 'Abgelaufen, nur Ansicht')
 
     def test_paid_overrides_expired_trial(self):
         sub = _expire(_make_user())

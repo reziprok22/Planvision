@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
 from django.shortcuts import render, redirect
 from django.template.loader import render_to_string
+from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
@@ -65,6 +66,13 @@ def verify_email(request, uidb64, token):
     if user is not None and email_verification_token.check_token(user, token):
         user.is_active = True
         user.save()
+        # Zeitpunkt der Bestätigung festhalten (getrennt von is_active, das ein
+        # Admin auch manuell setzt). Nur beim ersten Mal — der Token ist
+        # Single-Use, daher läuft dieser Zweig pro Konto genau einmal.
+        sub = subscription_for(user)
+        if sub.email_verified_at is None:
+            sub.email_verified_at = timezone.now()
+            sub.save(update_fields=['email_verified_at'])
         return render(request, 'accounts/verify_email_done.html')
 
     # Token verbraucht, Konto aber schon aktiv: Mail-Scanner (z.B. Outlook

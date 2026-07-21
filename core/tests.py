@@ -1,9 +1,12 @@
 import tempfile
 from datetime import timedelta
+from io import StringIO
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -160,7 +163,7 @@ class FeedbackTests(TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertTrue(data['reward_granted'])
-        self.assertIn('trial_ends', data)
+        self.assertEqual(data['reward_months'], settings.FEEDBACK_REWARD_DAYS // 30)
         sub = subscription_for(self.user)
         # 180 Tage ab jetzt (mit etwas Toleranz)
         self.assertGreater(sub.trial_ends, timezone.now() + timedelta(days=179))
@@ -186,3 +189,62 @@ class FeedbackTests(TestCase):
         self.assertContains(self.client.get(reverse('app')), 'feedbackBanner')
         self._submit()
         self.assertNotContains(self.client.get(reverse('app')), 'feedbackBanner')
+
+
+@override_settings(TRIAL_DAYS=30, FEEDBACK_REWARD_DAYS=180)
+class ResetTrialsCommandTests(TestCase):
+    def _make(self, email, **kwargs):
+        return User.objects.create_user(username=email, email=email, password='pw', **kwargs)
+
+    def test_resets_feedback_and_standard_users_from_now(self):
+        # Feedback-User mit halb verbrauchtem Zähler, Standard-User längst abgelaufen
+        fb = self._make('fb@example.ch')
+        fb_sub = subscription_for(fb)
+        fb_sub.trial_ends = timezone.now() + timedelta(days=20)
+        fb_sub.save()
+        FeedbackResponse.objects.create(user=fb, positive='a', improve='b', missing='c')
+
+        plain = self._make('plain@example.ch')
+        plain_sub = subscription_for(plain)
+        plain_sub.trial_ends = timezone.now() - timedelta(days=5)  # abgelaufen
+        plain_sub.save()
+
+        call_command('reset_trials', stdout=StringIO())
+
+        now = timezone.now()
+        # Feedback-User: volle 180 Tage ab jetzt (nicht die alten 20)
+        self.assertGreater(subscription_for(fb).trial_ends, now + timedelta(days=179))
+        # Standard-User: frische 30 Tage ab jetzt (wieder aktiv)
+        plain_ends = subscription_for(plain).trial_ends
+        self.assertGreater(plain_ends, now + timedelta(days=29))
+        self.assertLess(plain_ends, now + timedelta(days=31))
+        self.assertTrue(subscription_for(plain).is_active)
+
+    def test_skips_staff_and_paid_by_default(self):
+        staff = self._make('staff@example.ch', is_staff=True)
+        staff_sub = subscription_for(staff)
+        staff_sub.trial_ends = timezone.now() - timedelta(days=5)
+        staff_sub.save()
+
+        paid = self._make('paid@example.ch')
+        paid_sub = subscription_for(paid)
+        paid_sub.trial_ends = timezone.now() - timedelta(days=5)
+        paid_sub.paid_until = timezone.localdate() + timedelta(days=365)
+        paid_sub.save()
+
+        call_command('reset_trials', stdout=StringIO())
+
+        # Beide unangetastet: Staff (intern) und bezahlte Lizenz
+        self.assertLess(subscription_for(staff).trial_ends, timezone.now())
+        self.assertLess(subscription_for(paid).trial_ends, timezone.now())
+
+    def test_dry_run_changes_nothing(self):
+        u = self._make('dry@example.ch')
+        sub = subscription_for(u)
+        sub.trial_ends = timezone.now() - timedelta(days=5)
+        sub.save()
+        before = subscription_for(u).trial_ends
+
+        call_command('reset_trials', '--dry-run', stdout=StringIO())
+
+        self.assertEqual(subscription_for(u).trial_ends, before)

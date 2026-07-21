@@ -55,6 +55,14 @@ export function setupProject(elements, modules) {
     }
   });
 
+  // Logo oben links = Link zur Projektübersicht (Dashboard). Als Overlay öffnen
+  // statt /app/ neu zu laden, damit ungespeicherte Arbeit erhalten bleibt; das
+  // href bleibt als Fallback ohne JS.
+  const brandLogo = document.getElementById('brandLogo');
+  if (brandLogo && cloudEnabled) {
+    brandLogo.addEventListener('click', (e) => { e.preventDefault(); openDashboard(); });
+  }
+
   setupBugReport();
   setupFeedback();
   if (cloudEnabled) setupCloud();
@@ -278,8 +286,8 @@ async function handleFeedbackSubmit(closeModal, hideBanner) {
     fields.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
     closeModal();
     hideBanner();
-    const msg = data.reward_granted && data.trial_ends
-      ? `Danke für dein Feedback! Deine Testphase läuft neu bis ${data.trial_ends} ✓`
+    const msg = data.reward_granted && data.reward_months
+      ? `Danke für dein Feedback! Du kannst Planli nach der Beta-Phase ${data.reward_months} Monate kostenlos nutzen ✓`
       : 'Danke für dein Feedback ✓';
     updateStatus(showStatus(msg), msg, 'success');
     // Das Dankeschön hebt eine bereits abgelaufene Trial wieder auf — dann neu
@@ -312,7 +320,7 @@ async function handleSave() {
   const baseName = getUploadedBaseName();
   const projectName = baseName || `Planli ${new Date().toLocaleDateString('de-DE')}`;
 
-  // Eingeloggt: Speichern legt das Projekt online ab ("Meine Projekte").
+  // Eingeloggt: Speichern legt das Projekt online ab ("Projektübersicht").
   // Der Datei-Download bleibt im Menü als ".planli-Datei exportieren".
   if (cloudEnabled) return saveToCloud(projectName);
 
@@ -533,7 +541,7 @@ function updateStatus(div, msg, type = 'info') {
   }, 3000);
 }
 
-// ── Online-Ablage ("Meine Projekte") ─────────────────────────────────────────
+// ── Online-Ablage ("Projektübersicht") ───────────────────────────────────────
 // Speichern (Ctrl+S) legt das Projekt-ZIP serverseitig ab; das Dashboard ist
 // die Startansicht für eingeloggte Nutzer und listet alle Cloud-Projekte.
 
