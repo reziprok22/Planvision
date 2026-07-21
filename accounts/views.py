@@ -92,15 +92,16 @@ def konto(request):
 def _delete_user_files(user):
     """Alle Dateien des Users auf der Platte entfernen. Die DB-Zeilen räumt
     danach `user.delete()` per CASCADE ab (BugReport/AnalysisEvent bleiben
-    via SET_NULL anonymisiert für die Statistik erhalten)."""
+    via SET_NULL anonymisiert für die Statistik erhalten).
+
+    Trainingsdaten (training_data_opt-in/) bleiben bewusst erhalten: laut
+    Datenschutzerklärung sind freigegebene Exporte bereits anonymisiert und
+    nicht mit dem Konto verknüpft gespeichert; der CASCADE-Delete der
+    Project-Zeile kappt die letzte Verknüpfung zum User."""
     for stored in user.stored_projects.all():
         stored.file_path.unlink(missing_ok=True)
     for project in user.projects.all():
         shutil.rmtree(settings.PROJECTS_DIR / str(project.id), ignore_errors=True)
-        # Trainingsdaten sind zwar mit Einwilligung gespeichert, aber dem User
-        # zuordenbar — bei Kontolöschung werden sie deshalb mitentfernt.
-        if project.consent_training:
-            shutil.rmtree(settings.TRAINING_DATA_DIR / str(project.id), ignore_errors=True)
 
 
 def _send_deletion_email(email):

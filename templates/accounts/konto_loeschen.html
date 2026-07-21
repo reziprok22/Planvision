@@ -39,13 +39,14 @@
     <ul class="danger-list">
         <li><strong>{{ cloud_project_count }} online gespeicherte{{ cloud_project_count|pluralize:"s," }} Projekt{{ cloud_project_count|pluralize:",e" }}</strong> — lade sie vorher bei Bedarf als Datei herunter</li>
         <li>Deine hochgeladenen Pläne und Analysedaten</li>
-        <li>Freiwillig geteilte Trainingsdaten</li>
         {% if sub.is_paid %}<li>Deine laufende Lizenz ({{ sub.status_label }}) — ohne Rückerstattung</li>
         {% elif sub.in_trial %}<li>Deine laufende Testphase ({{ sub.status_label }})</li>{% endif %}
     </ul>
     <p style="font-size: 0.78rem; color: var(--slate-400); margin-bottom: 1.4rem;">
         Bereits gemeldete Fehlerberichte und anonyme Nutzungsstatistiken bleiben ohne
-        Bezug zu deiner Person erhalten.
+        Bezug zu deiner Person erhalten. Freiwillig zur KI-Verbesserung freigegebene
+        Trainingsdaten bleiben ebenfalls bestehen — sie sind bereits anonymisiert und
+        nicht mit deinem Konto verknüpft gespeichert.
     </p>
 
     {% if not user.is_superuser and not user.is_staff %}
