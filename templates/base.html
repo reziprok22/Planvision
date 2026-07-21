@@ -254,6 +254,14 @@
             padding: 8px 0 0;
         }
 
+        /* Hauptspalte muss im Flex-Row schrumpfen dürfen (min-width:0),
+           sonst zwingt die breiteste Zeile die ganze Seite über die
+           Viewport-Breite → horizontales Abschneiden */
+        .app-shell-main {
+            flex: 1;
+            min-width: 0;
+        }
+
         .app-side {
             flex: 0 0 218px;
             display: flex;

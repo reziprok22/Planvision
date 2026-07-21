@@ -77,6 +77,19 @@
         }
 
         .konto-delete-link a:hover { color: #B91C1C; }
+
+        @media (max-width: 560px) {
+            .konto-card { padding: 1.4rem 1.25rem; }
+
+            /* Label über Wert stapeln statt seitlich quetschen —
+               so bleibt der lange E-Mail-/Status-Text lesbar */
+            .konto-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 4px;
+            }
+            .konto-row dd { text-align: left; }
+        }
     </style>
 {% endblock %}
 
@@ -148,7 +161,7 @@
            QR-Rechnung, und nach Zahlungseingang wird dein Konto für ein Jahr freigeschaltet.</p>
         <div class="konto-actions">
             <a class="btn btn-primary"
-               href="mailto:gruezi@bauphysiklengg.ch?subject=Planli%20Jahreslizenz&body=Guten%20Tag%0A%0AIch%20m%C3%B6chte%20eine%20Planli-Jahreslizenz%20f%C3%BCr%20das%20Konto%20{{ user.email|urlencode }}%20bestellen.%0A%0ARechnungsadresse%3A%0A">
+               href="mailto:info@planli.net?subject=Planli%20Jahreslizenz&body=Guten%20Tag%0A%0AIch%20m%C3%B6chte%20eine%20Planli-Jahreslizenz%20f%C3%BCr%20das%20Konto%20{{ user.email|urlencode }}%20bestellen.%0A%0ARechnungsadresse%3A%0A">
                Rechnung anfordern</a>
         </div>
         {% endif %}
