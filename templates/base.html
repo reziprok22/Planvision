@@ -415,7 +415,11 @@
      accounts.views.konto) zeigen nur das Logo: Features/Preise/FAQ sind
      Marketing-Anker, die einen eingeloggten Nutzer von seiner Kontoseite
      zurück auf die Landingpage reissen würden. Navigation übernimmt dort
-     die linke Spalte (_app_sidebar.html). -->
+     die linke Spalte (_app_sidebar.html).
+     Auth-Seiten (Anmelden/Registrieren/Passwort — auth_base.html) sind ein
+     Sonderfall ohne View-Flag: sie ueberschreiben den nav-Block direkt auf
+     Logo-only, damit die Marketing-Links dort nicht ablenken. -->
+{% block nav %}
 <nav>
     <a href="/" class="nav-logo">Planli</a>
     {% if not app_shell %}
@@ -445,6 +449,7 @@
     </div>
     {% endif %}
 </nav>
+{% endblock %}
 
 {% block body %}
 <div{% if app_shell %} class="app-shell-layout"{% endif %}>

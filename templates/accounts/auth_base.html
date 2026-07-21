@@ -136,6 +136,14 @@
     </style>
 {% endblock %}
 
+{# Auth-Seiten brauchen keine Marketing-Nav (Features/Preise/FAQ) — nur das Logo,
+   zurueck zur Startseite. Cross-Links zwischen Login/Register liefert die .link-row. #}
+{% block nav %}
+<nav>
+    <a href="/" class="nav-logo">Planli</a>
+</nav>
+{% endblock %}
+
 {% block body %}
 <main class="auth-wrap">
     <div class="auth-card">
