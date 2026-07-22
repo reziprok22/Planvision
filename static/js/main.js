@@ -85,6 +85,19 @@ let canvas = null;
 let imageContainer = null;
 let uploadedImage = null;
 
+// Mipmap-Kette fürs Plan-Downsampling (siehe applyImageSmoothingQuality / buildMipmaps).
+// bgImgRef = das Fabric-Hintergrundbild, dessen Element beim Rauszoomen gegen eine
+// vorgerechnete, kleinere Stufe getauscht wird. mipLevels[0] ist immer das
+// Original (uploadedImage), jede weitere Stufe halbiert die vorige.
+let bgImgRef = null;
+let mipLevels = null;
+let currentMipLevel = 0;
+// Mip-Downsample-Mischung: 0 = reines Mitteln (blass), 1 = reiner Darkest-Pixel
+// (sehr schwarz/kräftig). Dazwischen bleiben dünne Linien dunkler als der
+// Durchschnitt, ohne hart/überkräftig zu wirken. 0.3 per Sichtvergleich in
+// Chrome + Firefox kalibriert (satt genug, ohne überschwarz zu wirken).
+const MIP_DARKEN_STRENGTH = 0.3;
+
 // Multi-Page Canvas State Management
 // Keyed by the stable pageId from pdf-handler.js's page manifest (NOT by
 // display position) — this survives duplicate/delete/reorder. See CLAUDE.md
@@ -348,6 +361,109 @@ function applyImageSmoothingQuality() {
 }
 
 /**
+ * Halbiert ein RGBA-Pixelfeld mit einer Mischung aus Mittelwert und dunkelstem
+ * Pixel (Min-Filter). Pro 2×2-Block: Durchschnittsfarbe UND die Farbe des
+ * dunkelsten Pixels (nach Luminanz) berechnen, dann linear mischen —
+ * out = avg + strength·(dark − avg). strength=0 ⇒ reines Mitteln (blass, wie
+ * drawImage), strength=1 ⇒ reiner Darkest-Pixel (sehr kräftig). Dazwischen
+ * bleiben dünne dunkle Linien beim Rauszoomen kräftiger als der Durchschnitt,
+ * ohne hart/überschwarz zu wirken. Uint8ClampedArray rundet/klemmt automatisch.
+ */
+function halveDarkest(src, sw, sh, strength) {
+  const nw = Math.max(1, sw >> 1), nh = Math.max(1, sh >> 1);
+  const dst = new Uint8ClampedArray(nw * nh * 4);
+  for (let y = 0; y < nh; y++) {
+    const sy0 = 2 * y, sy1 = Math.min(sy0 + 1, sh - 1);
+    for (let x = 0; x < nw; x++) {
+      const sx0 = 2 * x, sx1 = Math.min(sx0 + 1, sw - 1);
+      const i0 = (sy0 * sw + sx0) * 4, i1 = (sy0 * sw + sx1) * 4;
+      const i2 = (sy1 * sw + sx0) * 4, i3 = (sy1 * sw + sx1) * 4;
+      // Luminanz (Rec. 601) – kleinster Wert = dunkelster Pixel gewinnt.
+      let bi = i0, bl = src[i0] * 0.299 + src[i0 + 1] * 0.587 + src[i0 + 2] * 0.114, l;
+      if ((l = src[i1] * 0.299 + src[i1 + 1] * 0.587 + src[i1 + 2] * 0.114) < bl) { bl = l; bi = i1; }
+      if ((l = src[i2] * 0.299 + src[i2 + 1] * 0.587 + src[i2 + 2] * 0.114) < bl) { bl = l; bi = i2; }
+      if ((l = src[i3] * 0.299 + src[i3 + 1] * 0.587 + src[i3 + 2] * 0.114) < bl) { bl = l; bi = i3; }
+      const di = (y * nw + x) * 4;
+      // Pro Kanal: Durchschnitt + strength·(dunkelster − Durchschnitt).
+      const aR = (src[i0]     + src[i1]     + src[i2]     + src[i3]) * 0.25;
+      const aG = (src[i0 + 1] + src[i1 + 1] + src[i2 + 1] + src[i3 + 1]) * 0.25;
+      const aB = (src[i0 + 2] + src[i1 + 2] + src[i2 + 2] + src[i3 + 2]) * 0.25;
+      const aA = (src[i0 + 3] + src[i1 + 3] + src[i2 + 3] + src[i3 + 3]) * 0.25;
+      dst[di]     = aR + strength * (src[bi]     - aR);
+      dst[di + 1] = aG + strength * (src[bi + 1] - aG);
+      dst[di + 2] = aB + strength * (src[bi + 2] - aB);
+      dst[di + 3] = aA + strength * (src[bi + 3] - aA);
+    }
+  }
+  return { data: dst, w: nw, h: nh };
+}
+
+/**
+ * Baut eine Mipmap-Kette aus dem Original-Bitmap durch wiederholtes Halbieren
+ * mit Darkest-Pixel-Downsample (siehe halveDarkest). Beim Rauszoomen zeichnen
+ * wir dann die passend kleine, linien-satte Stufe statt das volle Bitmap → der
+ * Browser skaliert nur noch minimal, und dünne dunkle Linien bleiben in JEDEM
+ * Browser (auch Firefox) kräftig statt zu verwässern/verschwinden.
+ * Stufen bis min. Seitenlänge ~256px. Fällt bei getImageData-Fehler (CORS-taint
+ * oder Canvas-Grössenlimit) auf "keine Mipmaps" zurück → dann greift der
+ * browser-native 'high'-Pfad (applyImageSmoothingQuality) wie zuvor.
+ */
+function buildMipmaps(img) {
+  const MIN_SIDE = 256;
+  const levels = [{ el: img, w: img.naturalWidth, h: img.naturalHeight }];
+  let sw = img.naturalWidth, sh = img.naturalHeight;
+  if (Math.min(sw, sh) <= MIN_SIDE) return levels;
+
+  const base = document.createElement('canvas');
+  base.width = sw; base.height = sh;
+  const bctx = base.getContext('2d', { willReadFrequently: true });
+  bctx.drawImage(img, 0, 0);
+  let src;
+  try {
+    src = bctx.getImageData(0, 0, sw, sh).data;
+  } catch (e) {
+    console.warn('Mipmap-Aufbau übersprungen (getImageData fehlgeschlagen):', e);
+    return levels;
+  }
+
+  while (Math.min(sw, sh) > MIN_SIDE) {
+    const h = halveDarkest(src, sw, sh, MIP_DARKEN_STRENGTH);
+    const c = document.createElement('canvas');
+    c.width = h.w; c.height = h.h;
+    c.getContext('2d').putImageData(new ImageData(h.data, h.w, h.h), 0, 0);
+    levels.push({ el: c, w: h.w, h: h.h });
+    src = h.data; sw = h.w; sh = h.h;
+  }
+  return levels;
+}
+
+/**
+ * Tauscht das Element des Hintergrundbilds gegen die kleinste Mipmap-Stufe, die
+ * bei aktuellem Zoom noch mindestens so gross wie die Anzeigegrösse ist (natW×zoom).
+ * So skaliert der Browser die Stufe höchstens ~2× herunter — kein Linienverlust,
+ * in jedem Browser gleich. scaleX/scaleY bilden die Stufe wieder auf die
+ * Natural-Koordinaten ab, damit Positionen/Zoom-Transform unverändert stimmen.
+ */
+function updateBackgroundMip(zoom) {
+  if (!canvas || !bgImgRef || !mipLevels || mipLevels.length <= 1) return;
+  const dispW = mipLevels[0].w * zoom;
+  let lvl = 0;
+  for (let i = 1; i < mipLevels.length; i++) {
+    if (mipLevels[i].w >= dispW) lvl = i; else break;
+  }
+  if (lvl === currentMipLevel) return;
+  currentMipLevel = lvl;
+  const m = mipLevels[lvl];
+  bgImgRef.setElement(m.el);
+  bgImgRef.set({
+    scaleX: mipLevels[0].w / m.w,
+    scaleY: mipLevels[0].h / m.h,
+    dirty: true
+  });
+  canvas.requestRenderAll();
+}
+
+/**
  * Initialize canvas
  */
 function initCanvas() {
@@ -447,6 +563,12 @@ function initCanvas() {
     excludeFromExport: true
   });
   canvas.backgroundImage = bgImg;
+  // Mipmap-Kette für linien-erhaltendes Downsampling beim Rauszoomen aufbauen.
+  // Pro Seite neu (initCanvas läuft bei jedem Upload/Seitenwechsel); die alten
+  // Offscreen-Canvases werden mit der alten Kette vom GC eingesammelt.
+  bgImgRef = bgImg;
+  mipLevels = buildMipmaps(uploadedImage);
+  currentMipLevel = 0;
   canvas.renderAll();
 
   // Direkt nach dem (Neu-)Erzeugen des Canvas ist das Hintergrund-Bitmap manchmal
@@ -532,6 +654,7 @@ function initCanvas() {
       if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl - OVERSCAN}px,${st - OVERSCAN}px)`;
       hideTextLabelsDuringZoom();
       canvas.setViewportTransform([newZoom, 0, 0, newZoom, OVERSCAN - sl, OVERSCAN - st]);
+      updateBackgroundMip(newZoom);
 
       // Refresh bounding-box cache of the active drawing object so Fabric
       // doesn't skip it as "off-screen" after the viewport transform changes.
@@ -604,6 +727,7 @@ function fitToViewport() {
   imageContainer.scrollTop  = 0;
   canvas.setViewportTransform([zoom, 0, 0, zoom, OVERSCAN, OVERSCAN]);
   if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${-OVERSCAN}px, ${-OVERSCAN}px)`;
+  updateBackgroundMip(zoom);
   canvas.renderAll();
 }
 
