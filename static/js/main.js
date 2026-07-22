@@ -328,6 +328,26 @@ function setupToolButtons() {
 }
 
 /**
+ * High-Quality-Downsampling für den Plan-Hintergrund.
+ * Beim Rauszoomen skaliert der Browser das 150-DPI-Bitmap über drawImage stark
+ * herunter. Default ist imageSmoothingQuality:'low' (billiges bilineares Sampling),
+ * das dünne 1px-Linien zwischen den Abtastpunkten schlicht überspringt → Linien
+ * verschwinden. 'high' erzwingt in Chrome ein mehrstufiges Downsampling nahe am
+ * Flächen-Averaging, sodass dünne Linien als Grau erhalten bleiben statt zu
+ * verschwinden. Muss nach jedem setWidth/setHeight erneut gesetzt werden, weil
+ * das Zuweisen von Canvas-width/height den 2D-Kontext-State auf Default resettet.
+ */
+function applyImageSmoothingQuality() {
+  if (!canvas) return;
+  for (const ctx of [canvas.getContext(), canvas.contextTop]) {
+    if (ctx) {
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+    }
+  }
+}
+
+/**
  * Initialize canvas
  */
 function initCanvas() {
@@ -404,6 +424,7 @@ function initCanvas() {
   // Buffer = viewport + overscan margin on all sides (see OVERSCAN).
   canvas.setWidth(containerW  + 2 * OVERSCAN);
   canvas.setHeight(containerH + 2 * OVERSCAN);
+  applyImageSmoothingQuality();
 
   // Scroll spacer: invisible div that creates the virtual scroll area for the container.
   // Sized to natW × natH initially; zoom handler resizes it.
@@ -4749,6 +4770,7 @@ async function initApp() {
       const bh = h + 2 * OVERSCAN;
       canvas.setWidth(bw);
       canvas.setHeight(bh);
+      applyImageSmoothingQuality();
       if (canvas.wrapperEl) {
         canvas.wrapperEl.style.width  = bw + 'px';
         canvas.wrapperEl.style.height = bh + 'px';
