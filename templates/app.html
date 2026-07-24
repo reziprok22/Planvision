@@ -467,7 +467,7 @@
 <body{% if read_only %} class="read-only"{% endif %}>
 
     <header>
-        <h1>{% if cloud_enabled %}<a href="{% url 'app' %}" id="brandLogo" class="brand-link" title="Zur Projektübersicht">Planli</a>{% else %}Planli{% endif %}<span class="brand-accent"></span>{% if beta_pricing %}<span class="beta-badge" title="Kostenlose Beta-Phase">Beta</span>{% endif %}</h1>
+        <h1>{% if cloud_enabled %}<a href="{% url 'app' %}" id="brandLogo" class="brand-link" title="Zur Projektübersicht">Planli</a>{% elif is_demo %}<a href="{% url 'landing' %}" id="brandLogo" class="brand-link" title="Zur Startseite">Planli</a>{% else %}Planli{% endif %}<span class="brand-accent"></span>{% if beta_pricing %}<span class="beta-badge" title="Kostenlose Beta-Phase">Beta</span>{% endif %}</h1>
 
         <div class="header-menu">
             <button id="headerMenuBtn" class="header-action-btn" aria-haspopup="true" aria-expanded="false" title="Mehr">
@@ -1027,17 +1027,31 @@
                 {% endif %}
             </p>
             <label style="display:block; margin:0 0 12px; font-size:0.85em; color:#444; font-weight:600;">
-                Was gefällt dir an Planli?
+                Welche Rolle beschreibt deine Tätigkeit am besten?
+                <select id="feedbackRole"
+                        style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; font-family:inherit; font-weight:normal; margin-top:4px; background:#fff;">
+                    <option value="" selected disabled>Bitte wählen…</option>
+                    <option value="energieberater">Energieberater</option>
+                    <option value="architekt">Architekt</option>
+                    <option value="bauleiter">Bauleiter</option>
+                    <option value="handwerker">Handwerker</option>
+                    <option value="sonstiges">Sonstiges</option>
+                </select>
+                <input id="feedbackRoleOther" type="text" maxlength="120" placeholder="Deine Tätigkeit"
+                       style="display:none; width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; font-family:inherit; font-weight:normal; margin-top:6px;">
+            </label>
+            <label style="display:block; margin:0 0 12px; font-size:0.85em; color:#444; font-weight:600;">
+                Was gefällt dir an Planli am besten?
                 <textarea id="feedbackPositive" rows="3" placeholder="Was funktioniert gut? Was würdest du vermissen?"
                           style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; font-family:inherit; font-weight:normal; resize:vertical; margin-top:4px;"></textarea>
             </label>
             <label style="display:block; margin:0 0 12px; font-size:0.85em; color:#444; font-weight:600;">
-                Was muss verbessert werden?
-                <textarea id="feedbackImprove" rows="3" placeholder="Was ist umständlich, unklar oder fehlerhaft?"
+                Wo gab es Probleme oder Unklarheiten bei der Nutzung?
+                <textarea id="feedbackImprove" rows="3" placeholder="Was war umständlich, unklar oder fehlerhaft?"
                           style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; font-family:inherit; font-weight:normal; resize:vertical; margin-top:4px;"></textarea>
             </label>
             <label style="display:block; margin:0; font-size:0.85em; color:#444; font-weight:600;">
-                Was fehlt dir?
+                Welche Funktion fehlt dir für deinen Alltag?
                 <textarea id="feedbackMissing" rows="3" placeholder="Welche Funktion würde dir am meisten bringen?"
                           style="width:100%; box-sizing:border-box; padding:8px; border:1px solid #ccc; border-radius:6px; font-size:0.9em; font-family:inherit; font-weight:normal; resize:vertical; margin-top:4px;"></textarea>
             </label>

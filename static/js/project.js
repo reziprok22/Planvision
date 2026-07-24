@@ -253,13 +253,34 @@ function setupFeedback() {
   document.getElementById('feedbackCancel')?.addEventListener('click', close);
   modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
 
+  // Freitextfeld nur bei Rolle „Sonstiges" einblenden.
+  const roleSel = document.getElementById('feedbackRole');
+  const roleOther = document.getElementById('feedbackRoleOther');
+  roleSel?.addEventListener('change', () => {
+    const show = roleSel.value === 'sonstiges';
+    if (roleOther) {
+      roleOther.style.display = show ? 'block' : 'none';
+      if (show) roleOther.focus(); else roleOther.value = '';
+    }
+  });
+
   submit.addEventListener('click', () => handleFeedbackSubmit(close, hideBanner));
 }
 
 async function handleFeedbackSubmit(closeModal, hideBanner) {
+  const role = (document.getElementById('feedbackRole')?.value || '').trim();
+  const roleOther = (document.getElementById('feedbackRoleOther')?.value || '').trim();
   const fields = ['feedbackPositive', 'feedbackImprove', 'feedbackMissing'];
   const [positive, improve, missing] = fields.map(
     (id) => (document.getElementById(id)?.value || '').trim());
+  if (!role) {
+    alert('Bitte wähle deine Rolle.');
+    return;
+  }
+  if (role === 'sonstiges' && !roleOther) {
+    alert('Bitte gib deine Tätigkeit an.');
+    return;
+  }
   if (!positive || !improve || !missing) {
     alert('Bitte beantworte alle drei Fragen.');
     return;
@@ -271,6 +292,8 @@ async function handleFeedbackSubmit(closeModal, hideBanner) {
 
   try {
     const fd = new FormData();
+    fd.append('role', role);
+    if (role === 'sonstiges') fd.append('role_other', roleOther);
     fd.append('positive', positive);
     fd.append('improve', improve);
     fd.append('missing', missing);
@@ -284,6 +307,9 @@ async function handleFeedbackSubmit(closeModal, hideBanner) {
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
 
     fields.forEach((id) => { const el = document.getElementById(id); if (el) el.value = ''; });
+    const roleEl = document.getElementById('feedbackRole'); if (roleEl) roleEl.value = '';
+    const roleOtherEl = document.getElementById('feedbackRoleOther');
+    if (roleOtherEl) { roleOtherEl.value = ''; roleOtherEl.style.display = 'none'; }
     closeModal();
     hideBanner();
     const msg = data.reward_granted && data.reward_months

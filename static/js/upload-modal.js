@@ -136,6 +136,9 @@ export function setupUploadModal() {
 export function startNewProject() {
     resetUploadModal();
     if (typeof window.planliResetEditor === 'function') window.planliResetEditor();
+    // Beim Einstieg in den leeren Editor die Erstbesuch-Anleitung anbieten
+    // (einmalig via localStorage) — bewusst hier statt über der Projektübersicht.
+    if (typeof window.planliMaybeShowOnboarding === 'function') window.planliMaybeShowOnboarding();
 }
 
 /** Reset all state and UI to initial "waiting for file" */

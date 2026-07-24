@@ -85,6 +85,8 @@ def app(request):
         'read_only': _read_only(request),
         # Online-Ablage nur mit Login (in der Beta sieht sie mangels Login niemand)
         'cloud_enabled': request.user.is_authenticated,
+        # Demo ohne Login: Logo verlinkt zurück auf die Landingpage
+        'is_demo': is_demo,
         # Feedback-Dankeschön: Banner nur, solange der User es noch nicht
         # eingelöst hat (erste Feedback-Antwort verlängert die Testphase).
         'feedback_reward': (request.user.is_authenticated and
@@ -547,15 +549,24 @@ def submit_feedback(request):
     if not request.user.is_authenticated:
         return JsonResponse({'error': 'Nicht autorisiert'}, status=401)
     try:
+        role       = (request.POST.get('role') or '').strip()
+        role_other = (request.POST.get('role_other') or '').strip()
         positive = (request.POST.get('positive') or '').strip()
         improve  = (request.POST.get('improve') or '').strip()
         missing  = (request.POST.get('missing') or '').strip()
         if not (positive and improve and missing):
             return JsonResponse({'error': 'Bitte beantworte alle drei Fragen.'}, status=400)
+        valid_roles = {c[0] for c in FeedbackResponse.ROLE_CHOICES}
+        if role not in valid_roles:
+            return JsonResponse({'error': 'Bitte wähle deine Rolle.'}, status=400)
+        if role == 'sonstiges' and not role_other:
+            return JsonResponse({'error': 'Bitte gib deine Tätigkeit an.'}, status=400)
 
         first = not FeedbackResponse.objects.filter(user=request.user).exists()
         FeedbackResponse.objects.create(
             user=request.user,
+            role=role,
+            role_other=(role_other[:120] if role == 'sonstiges' else ''),
             positive=positive[:5000],
             improve=improve[:5000],
             missing=missing[:5000],

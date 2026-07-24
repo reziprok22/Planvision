@@ -164,10 +164,25 @@ export function setupOnboarding() {
   // Toolbar-Button: jederzeit erneut öffnen.
   document.getElementById('onboardingBtn')?.addEventListener('click', () => open(0));
 
-  // Erstbesuch → automatisch zeigen. Ausnahme Demo-Modus (/app?demo=1):
-  // das Modal würde den frisch geladenen Demo-Plan verdecken, und die
-  // Upload-Anleitung passt nicht zum Demo-Einstieg. Das Seen-Flag bleibt
-  // ungesetzt — beim nächsten normalen Besuch kommt das Onboarding wie üblich.
+  // Erstbesuch-Anleitung erscheint nur beim EDITOR-Einstieg für ein neues
+  // Projekt (Upload-/Massstab-Anleitung), nie über der Projektübersicht: bei
+  // eingeloggten Nutzern ist das Dashboard die Startansicht, dort würde das
+  // Modal nur den leeren Überblick verdecken. Deshalb kein Auto-Open hier,
+  // sondern ein Hook, den der "Neues Projekt"-Flow (upload-modal.js) auslöst.
+  // Für den Fall, dass der Editor bereits die Startansicht ist (kein Dashboard,
+  // z.B. BETA_MODE ohne Login), zeigen wir es direkt beim Setup.
+  window.planliMaybeShowOnboarding = maybeAutoOpen;
+  if (!document.body.classList.contains('dashboard-open')) maybeAutoOpen();
+}
+
+/**
+ * Öffnet die Anleitung automatisch beim ersten Editor-Einstieg — einmalig
+ * (localStorage-Flag), nie im Demo-Modus (/app?demo=1), wo das Modal den
+ * frisch geladenen Demo-Plan verdecken würde. Das Seen-Flag bleibt im Demo
+ * ungesetzt, damit die Anleitung beim nächsten echten Neu-Projekt kommt.
+ */
+function maybeAutoOpen() {
+  if (!steps.length || isVisible()) return;
   if (new URLSearchParams(window.location.search).has('demo')) return;
   let seen = false;
   try { seen = localStorage.getItem(SEEN_KEY) === '1'; } catch (e) { /* ignore */ }

@@ -20,10 +20,10 @@ class AnalysisEventAdmin(admin.ModelAdmin):
 
 @admin.register(FeedbackResponse)
 class FeedbackResponseAdmin(admin.ModelAdmin):
-    list_display = ('id', 'created_at', 'user', 'short_positive', 'short_improve', 'short_missing', 'reward_granted')
-    list_filter = ('reward_granted', 'created_at')
-    search_fields = ('positive', 'improve', 'missing', 'user__username')
-    readonly_fields = ('user', 'positive', 'improve', 'missing', 'reward_granted', 'created_at')
+    list_display = ('id', 'created_at', 'user', 'role', 'role_other', 'short_positive', 'short_improve', 'short_missing', 'reward_granted')
+    list_filter = ('role', 'reward_granted', 'created_at')
+    search_fields = ('positive', 'improve', 'missing', 'role_other', 'user__username')
+    readonly_fields = ('user', 'role', 'role_other', 'positive', 'improve', 'missing', 'reward_granted', 'created_at')
 
     @admin.display(description='Was ist gut?')
     def short_positive(self, obj):

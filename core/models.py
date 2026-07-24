@@ -84,10 +84,24 @@ class FeedbackResponse(models.Model):
     Nur mit Login — der User ist damit immer bekannt, SET_NULL greift nur bei
     Konto-Löschung (Feedback bleibt anonymisiert erhalten, wie BugReport)."""
 
+    # Rolle des Nutzers — Akquise-Auswertung: Feedback lässt sich nach Zielgruppe
+    # filtern (Energieberater/Architekt/… haben oft ganz unterschiedliche Bedürfnisse).
+    # Pro Einsendung gespeichert, nicht am User — kein Extra-Modellumbau nötig.
+    ROLE_CHOICES = [
+        ('energieberater', 'Energieberater'),
+        ('architekt', 'Architekt'),
+        ('bauleiter', 'Bauleiter'),
+        ('handwerker', 'Handwerker'),
+        ('sonstiges', 'Sonstiges'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='feedback_responses')
-    positive = models.TextField('Was ist gut?')
-    improve = models.TextField('Was muss verbessert werden?')
-    missing = models.TextField('Was fehlt?')
+    role = models.CharField('Rolle', max_length=32, choices=ROLE_CHOICES, blank=True)
+    # Freitext, nur wenn role == 'sonstiges' — die konkrete Tätigkeit.
+    role_other = models.CharField('Rolle (Sonstiges)', max_length=120, blank=True)
+    positive = models.TextField('Was gefällt am besten?')
+    improve = models.TextField('Wo gab es Probleme/Unklarheiten?')
+    missing = models.TextField('Welche Funktion fehlt?')
     # Hat genau diese Einsendung die Trial-Verlängerung ausgelöst? (Nur die
     # erste pro User — weiteres Feedback ist willkommen, gibt aber nichts mehr.)
     reward_granted = models.BooleanField(default=False)
