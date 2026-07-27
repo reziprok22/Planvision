@@ -87,11 +87,13 @@ class FeedbackResponse(models.Model):
     # Rolle des Nutzers — Akquise-Auswertung: Feedback lässt sich nach Zielgruppe
     # filtern (Energieberater/Architekt/… haben oft ganz unterschiedliche Bedürfnisse).
     # Pro Einsendung gespeichert, nicht am User — kein Extra-Modellumbau nötig.
+    # Labels als Tätigkeitsfeld (nicht Personenbezeichnung) formuliert — genderneutral
+    # ohne Sonderzeichen. Values bleiben unverändert (bestehende Daten/Frontend).
     ROLE_CHOICES = [
-        ('energieberater', 'Energieberater'),
-        ('architekt', 'Architekt'),
-        ('bauleiter', 'Bauleiter'),
-        ('handwerker', 'Handwerker'),
+        ('energieberater', 'Energieberatung'),
+        ('architekt', 'Architektur'),
+        ('bauleiter', 'Bauleitung'),
+        ('handwerker', 'Handwerk'),
         ('sonstiges', 'Sonstiges'),
     ]
 
