@@ -27,11 +27,63 @@ let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
     changeFileBtn, pageListSection, pageList, pageCountBadge,
     leftLoader, appendFileInput, appendPageBtn;
 
-// Thumbnails reuse the full-resolution page image (there's no separate small
-// render) — so loading one really does prefetch that page. Native
-// loading="lazy" is too generous about what counts as "near the viewport"
-// for that to be free; this IntersectionObserver only starts a download once
-// a thumbnail is actually about to be shown; see CLAUDE.md "Seiten-Management".
+// ── Seiten-Vorschaubilder ────────────────────────────────────────────
+// Die Liste zeigt 28×36 px (siehe .page-thumb in app.html), das Seitenrender
+// hat aber 150 DPI. Es direkt als <img src> zu benutzen hiess: eine A1-Seite
+// als 3508×4967-Bitmap dekodieren (69.7 MB) für 1008 sichtbare Pixel —
+// 17'000-fache Überabtastung, bei 10 Seiten ~700 MB. Der Browser wirft die
+// Bitmaps unter diesem Druck wieder weg und muss sie beim nächsten Neuzeichnen
+// des Listeneintrags (schon ein :hover reicht) neu dekodieren: das waren die
+// 1–2 s Verzögerung beim Drüberfahren.
+//
+// Deshalb wird pro Bild EINMAL ein kleines Vorschaubild erzeugt.
+// createImageBitmap dekodiert direkt heruntergerechnet, statt erst das volle
+// Bitmap aufzubauen: 256 px breit ≈ 0.37 MB statt 69.7 MB.
+const THUMB_WIDTH = 256;
+
+// Schlüssel ist die Bild-URL, nicht die Seiten-ID: duplizierte Seiten teilen
+// sich dasselbe Vorschaubild, und der Neuaufbau der Liste (buildPageList wirft
+// sie bei jeder Seiten-Aktion komplett weg) kostet nichts mehr.
+const thumbCache = new Map();   // imageUrl -> Promise<objectURL>
+
+function getThumbUrl(imageUrl) {
+    const cached = thumbCache.get(imageUrl);
+    if (cached) return cached;
+
+    const pending = (async () => {
+        const blob   = await fetch(imageUrl).then(r => r.blob());
+        const bitmap = await createImageBitmap(blob, {
+            resizeWidth: THUMB_WIDTH, resizeQuality: 'medium' });
+        const canvas = document.createElement('canvas');
+        canvas.width  = bitmap.width;
+        canvas.height = bitmap.height;
+        canvas.getContext('2d').drawImage(bitmap, 0, 0);
+        bitmap.close();
+        const small = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.8));
+        return URL.createObjectURL(small);
+    })().catch(e => {
+        // Kein Vorschaubild ist besser als ein hängender Ladezustand — und
+        // deutlich besser als der alte Vollbild-Fallback.
+        console.warn('Vorschaubild fehlgeschlagen:', e);
+        thumbCache.delete(imageUrl);
+        return '';
+    });
+
+    thumbCache.set(imageUrl, pending);
+    return pending;
+}
+
+/** Objekt-URLs freigeben — sonst sammeln sie sich über mehrere Projekte an. */
+export function clearThumbCache() {
+    for (const pending of thumbCache.values()) {
+        Promise.resolve(pending).then(url => { if (url) URL.revokeObjectURL(url); });
+    }
+    thumbCache.clear();
+}
+
+// Der Observer lädt ein Seitenbild erst, wenn sein Eintrag wirklich sichtbar
+// wird — natives loading="lazy" ist grosszügiger darin, was "nahe am Viewport"
+// heisst, und das Seitenrender ist ein grosser Download.
 let thumbObserver = null;
 
 function getThumbObserver() {
@@ -41,7 +93,11 @@ function getThumbObserver() {
         for (const e of entries) {
             if (!e.isIntersecting) continue;
             const img = e.target;
-            if (img.dataset.src) { img.src = img.dataset.src; delete img.dataset.src; }
+            const src = img.dataset.src;
+            if (src) {
+                delete img.dataset.src;
+                getThumbUrl(src).then(url => { if (url) img.src = url; });
+            }
             obs.unobserve(img);
         }
     }, { root, rootMargin: '100px 0px' });
@@ -145,6 +201,7 @@ export function startNewProject() {
 function resetUploadModal() {
     currentSessionId   = null;
     currentFileName    = '';
+    clearThumbCache();
 
     if (dropZone)       dropZone.style.display   = 'block';
     if (fileInfo)       fileInfo.style.display    = 'none';
@@ -433,6 +490,9 @@ export function initSidebarFromProject(projectName) {
   // the loaded project would run against the old project's server session
   currentSessionId  = null;
   currentFileName   = projectName;
+  // Vorschaubilder des vorher geöffneten Projekts freigeben (ein Projekt kann
+  // direkt aus der Projektübersicht heraus gewechselt werden, ohne Reset)
+  clearThumbCache();
 
   showFileInfo(projectName);
   buildPageList();
