@@ -4,7 +4,7 @@
 
 import { setCurrentLabels, getAllLabels } from './labels.js';
 import { initSidebarFromProject, getUploadedBaseName, setProjectName, startNewProject } from './upload-modal.js';
-import { saveProjectAsZip, buildProjectZipBlob, loadProjectFromZip } from './project-zip.js';
+import { saveProjectAsZip, buildProjectZipBlob, buildProjectManifest, loadProjectFromZip } from './project-zip.js';
 import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-client.js';
 import { getCsrfToken } from './pdf-handler.js';
 
@@ -757,20 +757,45 @@ async function openCloudProject(p) {
   }
 }
 
+/**
+ * Online speichern per Delta: Der Server hält die Bytes des Projekts bereits,
+ * also gehen nur die JSON-Einträge plus die ihm unbekannten Binär-Einträge hoch
+ * (typisch ~100 KB statt des kompletten ZIPs — bei der Demo-Datei 0.8 % davon).
+ * Umsortieren/Löschen/Duplizieren ändern nur Namen und Reihenfolge, nicht die
+ * Bytes, und kosten deshalb keinen Upload.
+ */
 async function saveToCloud(projectName) {
   const status = showStatus('Projekt wird online gespeichert…');
   try {
-    const blob = await buildProjectZipBlob(collectZipParams(projectName));
-    const fd = new FormData();
-    fd.append('project_zip', new File([blob], 'project.planli', { type: 'application/zip' }));
-    // Name immer mitsenden: beim Überschreiben aktualisiert der Server den
-    // Cloud-Namen mit — Editor-Umbenennungen erscheinen so auch im Dashboard.
-    fd.append('name', projectName);
-    if (currentCloudProjectId) fd.append('project_id', currentCloudProjectId);
-    const res = await fetch('/cloud/projects/save', {
-      method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Speichern fehlgeschlagen');
+    const { manifest, blobs } = await buildProjectManifest(collectZipParams(projectName));
+
+    // Phase 1: Was fehlt dem Server? Nur beim Überschreiben sinnvoll — ein neues
+    // Projekt kennt er noch gar nicht. Scheitert die Abfrage, laden wir alles
+    // hoch und landen beim bisherigen Verhalten.
+    let missing = [...blobs.keys()];
+    if (currentCloudProjectId) {
+      try {
+        const res = await fetch('/cloud/projects/save/prepare', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+          body:    JSON.stringify({ project_id: currentCloudProjectId, hashes: missing }),
+        });
+        if (res.ok) missing = (await res.json()).missing;
+      } catch (e) {
+        console.warn('Delta-Abgleich fehlgeschlagen, lade alles hoch:', e);
+      }
+    }
+
+    let data = await commitCloudSave(projectName, manifest, blobs, missing);
+    // Der Server ist die Instanz, die entscheidet, was ihm fehlt: Meldet er
+    // beim Commit noch Einträge nach (Datei zwischenzeitlich weg, Race mit
+    // einem zweiten Tab), liefern wir genau die nach.
+    if (data.missing?.length) {
+      data = await commitCloudSave(projectName, manifest, blobs, data.missing);
+    }
+    if (data.error) throw new Error(data.error);
+    if (!data.id) throw new Error('Speichern unvollständig – bitte erneut versuchen.');
+
     currentCloudProjectId = data.id;
     window.planliMarkProjectSaved?.();
     updateStatus(status, 'Online gespeichert ✓', 'success');
@@ -779,4 +804,31 @@ async function saveToCloud(projectName) {
     console.error('Cloud save error:', err);
     updateStatus(status, `Fehler: ${err.message}`, 'error');
   }
+}
+
+async function commitCloudSave(projectName, manifest, blobs, missing) {
+  const fd = new FormData();
+  // Als Datei-Part, nicht als Formularfeld: Django deckelt Formulardaten auf
+  // DATA_UPLOAD_MAX_MEMORY_SIZE (2.6 MB), und canvas_data.json steckt inline im
+  // Manifest — ein Projekt mit einigen tausend Annotationen würde sonst beim
+  // Speichern mit einem undurchsichtigen Fehler abbrechen. Datei-Uploads zählen
+  // nicht gegen dieses Limit.
+  fd.append('manifest', new Blob([JSON.stringify(manifest)], { type: 'application/json' }),
+            'manifest.json');
+  // Name immer mitsenden: beim Überschreiben aktualisiert der Server den
+  // Cloud-Namen mit — Editor-Umbenennungen erscheinen so auch im Dashboard.
+  fd.append('name', projectName);
+  if (currentCloudProjectId) fd.append('project_id', currentCloudProjectId);
+  for (const hash of missing) {
+    const blob = blobs.get(hash);
+    if (blob) fd.append(`blob_${hash}`, blob, hash);
+  }
+
+  const res  = await fetch('/cloud/projects/save', {
+    method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
+  const data = await res.json().catch(() => ({}));
+  // 409 = "mir fehlen noch Einträge" und ist kein Fehler, sondern die
+  // Aufforderung zum zweiten Anlauf.
+  if (!res.ok && res.status !== 409) throw new Error(data.error || 'Speichern fehlgeschlagen');
+  return data;
 }

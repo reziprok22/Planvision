@@ -169,6 +169,13 @@ DEFAULT_MAX_PROJECTS = 50
 CLOUD_PROJECTS_DIR = BASE_DIR / 'cloud_projects'
 # Stiller technischer Deckel pro Projekt (Ausreisser-Schutz, kein beworbenes Limit)
 MAX_PROJECT_MB = 200
+# Grösste hochladbare PDF. EINE Quelle für Server-Prüfung und Browser-Vorabcheck
+# (via window.PLANLI_MAX_UPLOAD_MB in app.html) — vorher standen hier 40 MB und
+# im Frontend 100, was Dateien dazwischen erst nach dem vollen Upload abwies.
+# Bewusst 10 MB unter nginx' client_max_body_size (100M): Der Multipart-Overhead
+# kommt zur Dateigrösse dazu, und liegt nginx gleichauf, kappt es die Verbindung
+# mit einer HTML-413, bevor Django eine verständliche Meldung schicken kann.
+MAX_UPLOAD_MB = 90
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/app/'

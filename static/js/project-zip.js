@@ -21,6 +21,13 @@
 import JSZip from 'jszip';
 import { sanitizeFileBase } from './pdf-handler.js';
 
+// PDFs und JPEGs sind bereits komprimiert — sie nochmal zu deflaten kostet nur
+// Zeit (gemessen: 5.0 s statt 0.3 s bei 100 MB) und spart null Byte. Nur die
+// JSON-Einträge gehen durch DEFLATE (Voreinstellung in generateAsync).
+// Nebeneffekt fürs Delta-Speichern: unkomprimierte Einträge kann der Server
+// beim Zusammenbauen roh durchreichen, statt sie neu zu packen.
+const STORE = { compression: 'STORE' };
+
 // ── Format versioning ─────────────────────────────────────────────────────────
 // Increment CURRENT_VERSION whenever the ZIP schema changes, and add a
 // migration step in migrateCanvasData() below.
@@ -104,43 +111,98 @@ function migrateCanvasData(canvasData, fromVersion) {
  * @param {Object}   p.sourcePdfBlobs   – { <sourcePdfIndex>: Blob } — every uploaded/appended PDF (optional)
  * @param {Function} p.onProgress       – optional (percent: number) => void
  */
-export async function buildProjectZipBlob({ projectName, canvasData, labels, settings, pageImageUrls, sourcePdfBlobs, onProgress }) {
+export async function buildProjectZipBlob(params) {
+  const { onProgress } = params;
   const zip = new JSZip();
 
-  zip.file('metadata.json', JSON.stringify({
-    project_name:   projectName,
-    page_count:     pageImageUrls.length,
-    saved_at:       new Date().toISOString(),
-    format_version: CURRENT_VERSION,
-  }, null, 2));
-
-  zip.file('canvas_data.json', JSON.stringify(canvasData, null, 2));
-  zip.file('labels.json',      JSON.stringify(labels,     null, 2));
-  zip.file('settings.json',    JSON.stringify(settings,   null, 2));
-
-  // Include every source PDF so the server session can be re-established on
-  // load and the PDF export can copy vector pages from each of them.
-  const sourcesFolder = zip.folder('sources');
-  for (const [sourcePdfIndex, blob] of Object.entries(sourcePdfBlobs || {})) {
-    if (blob) sourcesFolder.file(`${sourcePdfIndex}.pdf`, blob);
+  for (const [name, text] of Object.entries(buildJsonEntries(params))) {
+    zip.file(name, text);
   }
-
-  const pagesFolder = zip.folder('pages');
-  for (let i = 0; i < pageImageUrls.length; i++) {
-    if (onProgress) onProgress(Math.round((i / pageImageUrls.length) * 75));
-    try {
-      const res  = await fetch(pageImageUrls[i]);
-      const blob = await res.blob();
-      pagesFolder.file(`page_${i + 1}.jpg`, blob);
-    } catch (e) {
-      console.warn(`ZIP: could not fetch page ${i + 1}:`, e);
-    }
+  for (const { name, blob } of await collectBinaryEntries(params)) {
+    zip.file(name, blob, STORE);
   }
 
   return zip.generateAsync(
     { type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } },
     ({ percent }) => { if (onProgress) onProgress(75 + Math.round(percent * 0.25)); }
   );
+}
+
+/**
+ * Die vier JSON-Einträge des Projekts als fertige Strings. Eigene Funktion,
+ * damit Datei-Download und Delta-Speichern garantiert dasselbe schreiben.
+ */
+function buildJsonEntries({ projectName, canvasData, labels, settings, pageImageUrls }) {
+  return {
+    'metadata.json': JSON.stringify({
+      project_name:   projectName,
+      page_count:     pageImageUrls.length,
+      saved_at:       new Date().toISOString(),
+      format_version: CURRENT_VERSION,
+    }, null, 2),
+    'canvas_data.json': JSON.stringify(canvasData, null, 2),
+    'labels.json':      JSON.stringify(labels,     null, 2),
+    'settings.json':    JSON.stringify(settings,   null, 2),
+  };
+}
+
+/**
+ * Die Binär-Einträge in ZIP-Reihenfolge: erst die Quell-PDFs (nötig, damit die
+ * Server-Session neu aufgebaut werden kann und der PDF-Export Vektorseiten
+ * kopieren kann), dann die Seitenbilder in Anzeigereihenfolge.
+ */
+async function collectBinaryEntries({ pageImageUrls, sourcePdfBlobs, onProgress }) {
+  const entries = [];
+
+  for (const [sourcePdfIndex, blob] of Object.entries(sourcePdfBlobs || {})) {
+    if (blob) entries.push({ name: `sources/${sourcePdfIndex}.pdf`, blob });
+  }
+
+  for (let i = 0; i < pageImageUrls.length; i++) {
+    if (onProgress) onProgress(Math.round((i / pageImageUrls.length) * 75));
+    try {
+      const res  = await fetch(pageImageUrls[i]);
+      entries.push({ name: `pages/page_${i + 1}.jpg`, blob: await res.blob() });
+    } catch (e) {
+      console.warn(`ZIP: could not fetch page ${i + 1}:`, e);
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Beschreibt das Projekt für das Delta-Speichern in der Online-Ablage, ohne es
+ * zu packen: die JSON-Einträge inline (~100 KB) und für jeden Binär-Eintrag nur
+ * dessen SHA-256. Der Server hält die Bytes bereits aus früheren Speichervorgängen
+ * und braucht nur die Hashes, die er noch nicht kennt.
+ *
+ * Bewusst inhaltsadressiert statt namensbasiert: `pages/page_N.jpg` ist
+ * positionsbenannt, deshalb verschieben Umsortieren/Löschen/Duplizieren zwar
+ * die Namen, nicht aber die Bytes — über den Hash bleiben sie erkennbar und
+ * müssen nicht erneut hochgeladen werden.
+ *
+ * @returns {{manifest: Object, blobs: Map<string, Blob>}}
+ */
+export async function buildProjectManifest(params) {
+  const entries = [];
+  const blobs   = new Map();
+
+  for (const { name, blob } of await collectBinaryEntries(params)) {
+    const hash = await sha256Hex(blob);
+    entries.push({ name, sha256: hash, size: blob.size });
+    if (!blobs.has(hash)) blobs.set(hash, blob);
+  }
+
+  return {
+    manifest: { json: buildJsonEntries(params), entries },
+    blobs,
+  };
+}
+
+async function sha256Hex(blob) {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**

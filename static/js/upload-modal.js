@@ -178,6 +178,11 @@ export function setProjectName(name) {
 
 // ── Internal helpers ──────────────────────────────────────────────────
 
+// Limit kommt aus settings.MAX_UPLOAD_MB (app.html -> window.PLANLI_MAX_UPLOAD_MB),
+// damit Browser-Vorabcheck und Server-Prüfung nicht auseinanderlaufen koennen.
+function maxUploadMb()    { return window.PLANLI_MAX_UPLOAD_MB || 100; }
+function maxUploadBytes() { return maxUploadMb() * 1024 * 1024; }
+
 /**
  * Main entry point after a file is selected.
  */
@@ -187,8 +192,8 @@ async function handleFile(file) {
         alert('Nur PDF-Dateien sind erlaubt.');
         return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-        alert('Die Datei ist zu gross (max. 100 MB).');
+    if (file.size > maxUploadBytes()) {
+        alert(`Die Datei ist zu gross (max. ${maxUploadMb()} MB).`);
         return;
     }
 
@@ -250,8 +255,8 @@ async function handleAppendFile(file) {
         alert('Nur PDF-Dateien sind erlaubt.');
         return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-        alert('Die Datei ist zu gross (max. 100 MB).');
+    if (file.size > maxUploadBytes()) {
+        alert(`Die Datei ist zu gross (max. ${maxUploadMb()} MB).`);
         return;
     }
 

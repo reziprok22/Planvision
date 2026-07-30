@@ -1,7 +1,12 @@
+import hashlib
+import json
+import shutil
 import tempfile
+import zipfile
 from datetime import timedelta
 from io import StringIO
 from pathlib import Path
+from unittest import mock
 
 from django.conf import settings
 from django.contrib.auth.models import User
@@ -11,8 +16,11 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from PIL import Image
+
 from accounts.models import subscription_for
 from .models import FeedbackResponse, StoredProject
+from .views import _check_page_sizes, _convert_pdf_to_images, PdfTooLargeError
 
 CLOUD_TMP = Path(tempfile.mkdtemp(prefix='planli_cloud_test_'))
 
@@ -146,7 +154,11 @@ class FeedbackTests(TestCase):
         self.client.login(username='test@example.ch', password='pw')
 
     def _submit(self, **overrides):
-        data = {'positive': 'KI-Erkennung', 'improve': 'Zoom', 'missing': 'DXF-Export', **overrides}
+        # `role` ist seit der Rollen-Abfrage Pflicht und wird vom Modal
+        # mitgeschickt (project.js) — der Helper muss dasselbe senden wie das
+        # Frontend, sonst testet er nur noch die Rollen-Validierung.
+        data = {'role': 'architekt', 'positive': 'KI-Erkennung',
+                'improve': 'Zoom', 'missing': 'DXF-Export', **overrides}
         return self.client.post(reverse('submit_feedback'), data)
 
     def test_requires_login(self):
@@ -157,6 +169,27 @@ class FeedbackTests(TestCase):
         response = self._submit(missing='')
         self.assertEqual(response.status_code, 400)
         self.assertEqual(FeedbackResponse.objects.count(), 0)
+
+    def test_role_required(self):
+        for role in ('', 'kein-gueltiger-wert'):
+            with self.subTest(role=role):
+                response = self._submit(role=role)
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('Rolle', response.json()['error'])
+        self.assertEqual(FeedbackResponse.objects.count(), 0)
+
+    def test_sonstiges_needs_free_text(self):
+        response = self._submit(role='sonstiges')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(FeedbackResponse.objects.count(), 0)
+
+        response = self._submit(role='sonstiges', role_other='Bauphysik')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(FeedbackResponse.objects.get().role_other, 'Bauphysik')
+
+    def test_role_other_ignored_for_normal_roles(self):
+        self._submit(role='architekt', role_other='wird verworfen')
+        self.assertEqual(FeedbackResponse.objects.get().role_other, '')
 
     def test_first_feedback_extends_trial(self):
         response = self._submit()
@@ -248,3 +281,272 @@ class ResetTrialsCommandTests(TestCase):
         call_command('reset_trials', '--dry-run', stdout=StringIO())
 
         self.assertEqual(subscription_for(u).trial_ends, before)
+
+
+def _pdf(page_widths_pt, height_pt=800):
+    """Minimale mehrseitige PDF ohne Fremdbibliothek. Unterschiedliche
+    Seitenbreiten machen die Render-Reihenfolge am Ergebnis überprüfbar."""
+    objs, out = [], bytearray(b'%PDF-1.4\n')
+
+    def add(body):
+        objs.append(len(out))
+        out.extend(f'{len(objs)} 0 obj\n'.encode() + body + b'\nendobj\n')
+
+    kids = ' '.join(f'{3 + i * 2} 0 R' for i in range(len(page_widths_pt)))
+    add(b'<< /Type /Catalog /Pages 2 0 R >>')
+    add(f'<< /Type /Pages /Count {len(page_widths_pt)} /Kids [{kids}] >>'.encode())
+    for w in page_widths_pt:
+        stream = f'1 w 10 10 m {w - 10} {height_pt - 10} l S'.encode()
+        add(f'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {w} {height_pt}] '
+            f'/Contents {len(objs) + 2} 0 R >>'.encode())
+        add(f'<< /Length {len(stream)} >>\nstream\n'.encode() + stream + b'\nendstream')
+
+    xref = len(out)
+    out.extend(f'xref\n0 {len(objs) + 1}\n0000000000 65535 f \n'.encode())
+    for off in objs:
+        out.extend(f'{off:010d} 00000 n \n'.encode())
+    out.extend(f'trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\n'
+               f'startxref\n{xref}\n%%EOF\n'.encode())
+    return SimpleUploadedFile('plan.pdf', bytes(out), content_type='application/pdf')
+
+
+class PdfRenderTests(TestCase):
+    """Der Render-Pfad lief früher über convert_from_path() ohne output_folder:
+    poppler schob die rohen Bitmaps ALLER Seiten durch stdout in den RAM, was
+    auf dem 4-GB-Server reproduzierbar den OOM-Killer auslöste. Jetzt schreibt
+    pdftoppm direkt auf die Platte — der Peak hängt an einer Seite, nicht an
+    der Seitenzahl."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='planli_render_test_'))
+        patcher = mock.patch('core.views.PROJECTS_DIR', self.tmp)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+
+    def test_pages_keep_pdf_order(self):
+        # Ab 10 Seiten wechselt poppler die Nullauffüllung (page-01 -> page-001);
+        # die Sortierung darf davon nicht kippen.
+        widths = [200 + i * 40 for i in range(12)]
+        info = _convert_pdf_to_images(_pdf(widths))
+
+        self.assertEqual(info['page_count'], 12)
+        rendered = [Image.open(p).size[0] for p in info['local_image_paths']]
+        expected = [round(w / 72 * settings.PDF_DPI) for w in widths]
+        for got, want in zip(rendered, expected):
+            self.assertAlmostEqual(got, want, delta=1)
+
+    def test_append_keeps_sources_apart(self):
+        info = _convert_pdf_to_images(_pdf([300, 400]))
+        session = info['session_id']
+        _convert_pdf_to_images(_pdf([500]), project_id=session, source_index=2)
+
+        names = sorted(p.name for p in (self.tmp / session / 'uploads').iterdir())
+        self.assertEqual([n for n in names if n.startswith('page_1_')],
+                         ['page_1_1.jpg', 'page_1_2.jpg'])
+        self.assertEqual([n for n in names if n.startswith('page_2_')], ['page_2_1.jpg'])
+        # Das Render-Temp-Verzeichnis darf nichts zurücklassen
+        self.assertEqual([n for n in names if n.startswith('render_')], [])
+
+    def test_oversized_page_is_rejected_before_rendering(self):
+        with self.assertRaises(PdfTooLargeError):
+            _check_page_sizes([(210, 297), (2000, 2000)])
+
+    def test_a0_still_allowed(self):
+        _check_page_sizes([(841, 1189)])  # darf nicht werfen
+
+    def test_upload_endpoint_answers_oversized_page_in_plain_german(self):
+        # Ohne eigenen except-Zweig liefe das in die generische 500
+        # "Error converting PDF: ..." — im Frontend als kryptischer Abbruch.
+        User.objects.create_user(username='u@example.ch', email='u@example.ch', password='pw')
+        self.client.login(username='u@example.ch', password='pw')
+
+        huge = 2000 / 25.4 * 72  # 2000 mm Kantenlänge in pt
+        response = self.client.post(reverse('upload'), {'file': _pdf([huge], huge)})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('zu gross', response.json()['error'])
+
+
+@override_settings(CLOUD_PROJECTS_DIR=CLOUD_TMP)
+class CloudDeltaSaveTests(TestCase):
+    """Delta-Speichern: Der Client schickt ein Manifest mit Inhalts-Hashes; nur
+    was der Server noch nicht hat, geht über die Leitung. Inhaltsadressiert,
+    weil `pages/page_N.jpg` positionsbenannt ist — Umsortieren, Löschen und
+    Duplizieren ändern die Namen, nicht die Bytes."""
+
+    JSON_ENTRIES = {
+        'metadata.json':    '{"format_version": 3}',
+        'canvas_data.json': '{"pages": {}}',
+        'labels.json':      '[]',
+        'settings.json':    '{}',
+    }
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='delta@example.ch', email='delta@example.ch', password='pw')
+        self.client.login(username='delta@example.ch', password='pw')
+        self.pdf = b'%PDF-1.4 fake original' + b'x' * 5000
+        self.jpgs = [b'\xff\xd8jpeg-seite-%d' % i + b'y' * 500 for i in range(3)]
+
+    # ── Hilfen ───────────────────────────────────────────────────────────────
+    @staticmethod
+    def _sha(data):
+        return hashlib.sha256(data).hexdigest()
+
+    def _entry(self, name, data):
+        return {'name': name, 'sha256': self._sha(data), 'size': len(data)}
+
+    def _manifest(self, entries, json_entries=None):
+        return json.dumps({'json': json_entries or self.JSON_ENTRIES, 'entries': entries})
+
+    def _commit(self, entries, blobs=(), json_entries=None, **extra):
+        data = {'manifest': self._manifest(entries, json_entries), 'name': 'Delta-Projekt', **extra}
+        for blob in blobs:
+            data[f'blob_{self._sha(blob)}'] = SimpleUploadedFile(self._sha(blob), blob)
+        return self.client.post(reverse('cloud_save'), data)
+
+    def _full_save(self):
+        """Erstes Speichern: PDF + drei Seiten gehen komplett hoch."""
+        entries = [self._entry('sources/1.pdf', self.pdf)] + [
+            self._entry(f'pages/page_{i + 1}.jpg', j) for i, j in enumerate(self.jpgs)]
+        response = self._commit(entries, blobs=[self.pdf, *self.jpgs])
+        self.assertEqual(response.status_code, 200)
+        return response.json()['id'], entries
+
+    def _stored(self, project_id):
+        return zipfile.ZipFile(CLOUD_TMP / f'{project_id}.planli')
+
+    # ── Tests ────────────────────────────────────────────────────────────────
+    def test_first_save_stores_everything(self):
+        project_id, _ = self._full_save()
+        with self._stored(project_id) as z:
+            self.assertEqual(z.read('sources/1.pdf'), self.pdf)
+            self.assertEqual(z.read('pages/page_1.jpg'), self.jpgs[0])
+            self.assertEqual(json.loads(z.read('metadata.json'))['format_version'], 3)
+
+    def test_prepare_reports_only_unknown_hashes(self):
+        project_id, entries = self._full_save()
+        neu = b'\xff\xd8ganz neue seite'
+        response = self.client.post(
+            reverse('cloud_save_prepare'),
+            json.dumps({'project_id': project_id,
+                        'hashes': [e['sha256'] for e in entries] + [self._sha(neu)]}),
+            content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['missing'], [self._sha(neu)])
+
+    def test_reorder_delete_duplicate_need_no_upload(self):
+        """Der Kern: Seiten umsortieren, eine löschen, eine duplizieren —
+        alles ohne ein einziges hochgeladenes Byte."""
+        project_id, _ = self._full_save()
+        entries = [
+            self._entry('sources/1.pdf', self.pdf),
+            self._entry('pages/page_1.jpg', self.jpgs[2]),   # war Seite 3
+            self._entry('pages/page_2.jpg', self.jpgs[0]),   # war Seite 1
+            self._entry('pages/page_3.jpg', self.jpgs[0]),   # dupliziert
+        ]                                                    # jpgs[1] gelöscht
+        response = self._commit(entries, blobs=[], project_id=project_id,
+                                json_entries={**self.JSON_ENTRIES, 'labels.json': '["Fenster"]'})
+
+        self.assertEqual(response.status_code, 200)
+        with self._stored(project_id) as z:
+            self.assertEqual(z.read('sources/1.pdf'), self.pdf)
+            self.assertEqual(z.read('pages/page_1.jpg'), self.jpgs[2])
+            self.assertEqual(z.read('pages/page_2.jpg'), self.jpgs[0])
+            self.assertEqual(z.read('pages/page_3.jpg'), self.jpgs[0])
+            self.assertEqual(z.read('labels.json').decode(), '["Fenster"]')
+            self.assertNotIn('pages/page_4.jpg', z.namelist())
+
+    def test_appending_uploads_only_the_new_page(self):
+        project_id, entries = self._full_save()
+        neu = b'\xff\xd8angehaengte seite'
+        entries = entries + [self._entry('pages/page_4.jpg', neu)]
+        response = self._commit(entries, blobs=[neu], project_id=project_id)
+        self.assertEqual(response.status_code, 200)
+        with self._stored(project_id) as z:
+            self.assertEqual(z.read('pages/page_4.jpg'), neu)
+            self.assertEqual(z.read('sources/1.pdf'), self.pdf)
+
+    def test_commit_demands_missing_blobs_with_409(self):
+        """Der Commit verlässt sich nicht auf die prepare-Antwort, sondern
+        prüft selbst — sonst würde ein Race die Datei unvollständig machen."""
+        entries = [self._entry('sources/1.pdf', self.pdf),
+                   self._entry('pages/page_1.jpg', self.jpgs[0])]
+        response = self._commit(entries, blobs=[self.pdf])   # Seite fehlt
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['missing'], [self._sha(self.jpgs[0])])
+        self.assertEqual(StoredProject.objects.count(), 0)
+
+    def test_lost_stored_file_falls_back_to_full_upload(self):
+        """Fehlt die gespeicherte Datei, meldet der Server alles als fehlend —
+        der Client lädt dann alles hoch, wie vor dem Delta-Speichern."""
+        project_id, entries = self._full_save()
+        (CLOUD_TMP / f'{project_id}.planli').unlink()
+
+        prepare = self.client.post(
+            reverse('cloud_save_prepare'),
+            json.dumps({'project_id': project_id, 'hashes': [e['sha256'] for e in entries]}),
+            content_type='application/json')
+        self.assertEqual(sorted(prepare.json()['missing']),
+                         sorted(e['sha256'] for e in entries))
+
+        self.assertEqual(self._commit(entries, blobs=[], project_id=project_id).status_code, 409)
+        response = self._commit(entries, blobs=[self.pdf, *self.jpgs], project_id=project_id)
+        self.assertEqual(response.status_code, 200)
+        with self._stored(project_id) as z:
+            self.assertEqual(z.read('sources/1.pdf'), self.pdf)
+
+    def test_rejects_foreign_entry_names(self):
+        entries = [{'name': '../../etc/passwd', 'sha256': self._sha(self.pdf), 'size': len(self.pdf)}]
+        response = self._commit(entries, blobs=[self.pdf])
+        self.assertEqual(response.status_code, 400)
+
+    def test_rejects_blob_that_does_not_match_its_hash(self):
+        entries = [self._entry('sources/1.pdf', self.pdf)]
+        manipuliert = b'%PDF-1.4 etwas ganz anderes'
+        data = {'manifest': self._manifest(entries), 'name': 'X',
+                f'blob_{self._sha(self.pdf)}': SimpleUploadedFile('x', manipuliert)}
+        response = self.client.post(reverse('cloud_save'), data)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(StoredProject.objects.count(), 0)
+
+    def test_size_cap_counts_manifest_entries(self):
+        entries = [self._entry('sources/1.pdf', self.pdf)]
+        with override_settings(MAX_PROJECT_MB=0):
+            self.assertEqual(self._commit(entries, blobs=[self.pdf]).status_code, 413)
+
+    @override_settings(BETA_PRICING=False)
+    def test_read_only_blocks_delta_save(self):
+        sub = subscription_for(self.user)
+        sub.trial_ends = timezone.now() - timedelta(days=1)
+        sub.save()
+        entries = [self._entry('sources/1.pdf', self.pdf)]
+        self.assertEqual(self._commit(entries, blobs=[self.pdf]).status_code, 403)
+
+    def test_large_manifest_survives_django_form_limit(self):
+        """canvas_data.json steckt inline im Manifest. Als Formularfeld würde
+        Django ab DATA_UPLOAD_MAX_MEMORY_SIZE (2.6 MB) abbrechen — deshalb geht
+        es als Datei-Part hoch, wie es der Browser auch tut."""
+        gross = {**self.JSON_ENTRIES, 'canvas_data.json': json.dumps({'x': 'a' * 4_000_000})}
+        entries = [self._entry('sources/1.pdf', self.pdf)]
+        data = {
+            'manifest': SimpleUploadedFile(
+                'manifest.json', self._manifest(entries, gross).encode(), 'application/json'),
+            'name': 'Grosses Projekt',
+            f'blob_{self._sha(self.pdf)}': SimpleUploadedFile('x', self.pdf),
+        }
+        response = self.client.post(reverse('cloud_save'), data)
+        self.assertEqual(response.status_code, 200)
+        with self._stored(response.json()['id']) as z:
+            self.assertEqual(len(json.loads(z.read('canvas_data.json'))['x']), 4_000_000)
+
+    def test_prepare_requires_own_project(self):
+        project_id, _ = self._full_save()
+        User.objects.create_user(username='fremd@example.ch', password='pw')
+        self.client.login(username='fremd@example.ch', password='pw')
+        response = self.client.post(
+            reverse('cloud_save_prepare'),
+            json.dumps({'project_id': project_id, 'hashes': []}),
+            content_type='application/json')
+        self.assertEqual(response.status_code, 404)

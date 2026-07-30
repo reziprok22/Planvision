@@ -50,30 +50,21 @@ def load_model():
     global model, device
     # Überprüfen, ob das Modell bereits geladen wurde
     if model is None:
-        print("Loading model for the first time...")
-        
         # GPU-First Strategie: Nutze GPU falls verfügbar, sonst CPU
         if torch.cuda.is_available():
             device = torch.device('cuda')
-            gpu_name = torch.cuda.get_device_name(0)
-            gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
-            print(f"🚀 GPU-Beschleunigung aktiviert: {gpu_name} ({gpu_memory:.1f}GB VRAM)")
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             device = torch.device('mps')
-            print("🍎 Apple Silicon MPS-Beschleunigung aktiviert")
         else:
             device = torch.device('cpu')
-            print("⚠️ Keine GPU verfügbar - nutze CPU (langsamer)")
-        
+
         model = get_model()
-        
+
         if os.path.exists(MODEL_PATH):
             # Lade Model-Gewichte auf das gewählte Device
-            print(f"Loading model weights on {device}...")
             model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
             model.to(device)
             model.eval()
-            print(f"✅ Model successfully loaded on {device}")
         else:
             raise FileNotFoundError(f"Model file '{MODEL_PATH}' not found")
     return model

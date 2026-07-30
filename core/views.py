@@ -1,9 +1,13 @@
 import os
+import re
 import uuid
-import gc
 import time
 import json
+import shutil
+import hashlib
 import logging
+import tempfile
+import zipfile
 
 from datetime import timedelta
 from collections import defaultdict
@@ -87,6 +91,8 @@ def app(request):
         'cloud_enabled': request.user.is_authenticated,
         # Demo ohne Login: Logo verlinkt zurück auf die Landingpage
         'is_demo': is_demo,
+        # Eine Quelle für Server-Prüfung und Browser-Vorabcheck (siehe settings)
+        'max_upload_mb': settings.MAX_UPLOAD_MB,
         # Feedback-Dankeschön: Banner nur, solange der User es noch nicht
         # eingelöst hat (erste Feedback-Antwort verlängert die Testphase).
         'feedback_reward': (request.user.is_authenticated and
@@ -207,6 +213,29 @@ def serve_project_file(request, project_id, filename):
     return response
 
 
+class PdfTooLargeError(Exception):
+    """Einzelne Seite zu gross zum Rendern — wird als 400 mit Klartext ausgeliefert."""
+
+
+# Peak-RAM beim Rendern ist EINE Seite (poppler hält ein Bitmap), nicht die
+# Summe — deshalb ein Deckel pro Seite statt aufs Dokument. 80 MP entspricht
+# gut der doppelten A0-Fläche bei 150 DPI (A0 = 34.9 MP) und belegt in poppler
+# ~240 MB RGB.
+MAX_PAGE_MEGAPIXELS = 80
+
+
+def _check_page_sizes(page_sizes):
+    """Verhindert, dass eine einzelne Riesenseite den Worker per OOM killt."""
+    for i, (width_mm, height_mm) in enumerate(page_sizes):
+        megapixels = (width_mm / 25.4 * PDF_DPI) * (height_mm / 25.4 * PDF_DPI) / 1_000_000
+        if megapixels > MAX_PAGE_MEGAPIXELS:
+            raise PdfTooLargeError(
+                f'Seite {i+1} ist zu gross zum Verarbeiten '
+                f'({round(width_mm)}×{round(height_mm)} mm). '
+                f'Maximal etwa die doppelte A0-Fläche.'
+            )
+
+
 def _convert_pdf_to_images(pdf_file, project_id=None, source_index=1):
     """Render a PDF into projects/<uuid>/uploads/.
 
@@ -231,25 +260,34 @@ def _convert_pdf_to_images(pdf_file, project_id=None, source_index=1):
         media_box = page.mediabox
         page_sizes.append((float(media_box.width) * 0.352778, float(media_box.height) * 0.352778))
 
-    images = None
+    _check_page_sizes(page_sizes)
+
     image_paths = []
     local_image_paths = []
 
-    try:
-        images = convert_from_path(str(pdf_path), dpi=PDF_DPI)
-        page_count = len(images)
-        for i, image in enumerate(images):
+    # Direkt auf die Platte rendern: mit output_folder+paths_only schreibt
+    # pdftoppm jede Seite selbst als JPEG und gibt sie sofort wieder frei.
+    # Ohne output_folder schickt poppler die ROHEN Bitmaps ALLER Seiten über
+    # stdout, die pdf2image komplett im RAM puffert und dann zusätzlich zu
+    # PIL-Bildern parst — das hat den 4-GB-Server beim Upload grösserer Pläne
+    # per OOM-Killer zerlegt (~2.9 GB in einem Worker). Jetzt bleibt der Peak
+    # bei einer Seite, unabhängig von der Seitenzahl.
+    with tempfile.TemporaryDirectory(dir=str(output_dir), prefix='render_') as tmp_dir:
+        rendered = convert_from_path(
+            str(pdf_path),
+            dpi=PDF_DPI,
+            fmt='jpeg',
+            jpegopt={'quality': JPEG_QUALITY, 'optimize': True},
+            output_folder=tmp_dir,
+            paths_only=True,
+        )
+        page_count = len(rendered)
+        for i, tmp_page in enumerate(rendered):
             image_path = output_dir / f"page_{source_index}_{i+1}.jpg"
-            image.save(str(image_path), "JPEG", quality=JPEG_QUALITY, optimize=True)
+            # Gleiches Dateisystem (tmp_dir liegt in output_dir) => reines rename
+            shutil.move(tmp_page, str(image_path))
             local_image_paths.append(str(image_path))
             image_paths.append(f"/project_files/{project_id}/uploads/page_{source_index}_{i+1}.jpg")
-        del images
-        gc.collect()
-    except Exception as e:
-        if images:
-            del images
-        gc.collect()
-        raise e
 
     return {
         "session_id": project_id,
@@ -261,7 +299,7 @@ def _convert_pdf_to_images(pdf_file, project_id=None, source_index=1):
     }
 
 
-MAX_UPLOAD_SIZE = 40 * 1024 * 1024  # 40 MB
+MAX_UPLOAD_SIZE = settings.MAX_UPLOAD_MB * 1024 * 1024
 
 
 def _validate_pdf_upload(request):
@@ -274,7 +312,8 @@ def _validate_pdf_upload(request):
     if not file.name.lower().endswith('.pdf'):
         return None, JsonResponse({'error': 'Nur PDF-Dateien sind erlaubt.'}, status=400)
     if file.size > MAX_UPLOAD_SIZE:
-        return None, JsonResponse({'error': 'Datei zu gross. Maximum: 40 MB.'}, status=400)
+        return None, JsonResponse(
+            {'error': f'Datei zu gross. Maximum: {settings.MAX_UPLOAD_MB} MB.'}, status=400)
     if file.read(4) != b'%PDF':
         return None, JsonResponse({'error': 'Ungültige PDF-Datei.'}, status=400)
     file.seek(0)
@@ -307,6 +346,8 @@ def upload_file(request):
                 'page_sizes': pdf_info["page_sizes"],
                 'filename': file.name,
             })
+        except PdfTooLargeError as e:
+            return JsonResponse({'error': str(e)}, status=400)
         except Exception as e:
             logger.exception("PDF processing error")
             return JsonResponse({'error': f'Error converting PDF: {str(e)}'}, status=500)
@@ -352,6 +393,8 @@ def upload_append(request):
                 'all_pages': pdf_info["image_paths"],
                 'page_sizes': pdf_info["page_sizes"],
             })
+        except PdfTooLargeError as e:
+            return JsonResponse({'error': str(e)}, status=400)
         except Exception as e:
             logger.exception("PDF processing error (append)")
             return JsonResponse({'error': f'Error converting PDF: {str(e)}'}, status=500)
@@ -668,9 +711,154 @@ def cloud_list(request):
     })
 
 
+# ── Delta-Speichern ──────────────────────────────────────────────────────────
+# Der Client schickt beim Überschreiben nicht mehr das ganze ZIP, sondern ein
+# Manifest: die JSON-Einträge inline plus SHA-256 je Binär-Eintrag. Der Server
+# übernimmt alles, was er schon hat, und fordert nur Unbekanntes an. Bei der
+# Demo-Datei sind 99.2 % der Bytes (PDF + Seiten-JPEGs) bei jedem Speichern
+# identisch — die gehen jetzt nicht mehr über die Leitung.
+
+CLOUD_JSON_ENTRIES = ('metadata.json', 'canvas_data.json', 'labels.json', 'settings.json')
+# Nur die Namen, die das Format kennt — verhindert, dass ein Client beliebige
+# Pfade in die gespeicherte Datei schreibt.
+CLOUD_ENTRY_NAME = re.compile(r'^(?:pages/page_\d{1,5}\.jpg|sources/\d{1,4}\.pdf)$')
+SHA256_HEX = re.compile(r'^[0-9a-f]{64}$')
+CHUNK = 1024 * 1024
+
+
+def _stored_hash_index(path):
+    """{sha256: Eintragsname} der gespeicherten .planli.
+
+    Inhaltsadressiert statt namensbasiert: `pages/page_N.jpg` ist
+    positionsbenannt, deshalb ändern Umsortieren/Löschen/Duplizieren zwar die
+    Namen, nicht aber die Bytes. Über den Hash erkennt der Server sie wieder
+    und der Client muss nichts davon erneut hochladen.
+    """
+    index = {}
+    if not path.exists():
+        return index
+    try:
+        with zipfile.ZipFile(path) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                digest = hashlib.sha256()
+                with zf.open(info) as fh:
+                    for chunk in iter(lambda: fh.read(CHUNK), b''):
+                        digest.update(chunk)
+                index.setdefault(digest.hexdigest(), info.filename)
+    except (zipfile.BadZipFile, OSError):
+        # Datei fehlt oder ist beschädigt: Delta-Basis verwerfen. Der Client
+        # bekommt dann alle Hashes als "fehlend" gemeldet und lädt alles hoch —
+        # also exakt das Verhalten von vor dem Delta-Speichern.
+        logger.warning("Cloud-Projekt %s nicht lesbar, Delta-Basis verworfen", path.name)
+        return {}
+    return index
+
+
+def _write_zip_entry(zf, name, chunks):
+    """Einen Eintrag streamend schreiben (unkomprimiert) und dabei hashen."""
+    info = zipfile.ZipInfo(name, date_time=time.localtime()[:6])
+    info.compress_type = zipfile.ZIP_STORED
+    digest = hashlib.sha256()
+    with zf.open(info, 'w') as dst:
+        for chunk in chunks:
+            digest.update(chunk)
+            dst.write(chunk)
+    return digest.hexdigest()
+
+
+def _assemble_cloud_zip(dest, json_entries, entries, uploaded, stored_index):
+    """Neue .planli aus hochgeladenen und bereits gespeicherten Einträgen bauen.
+
+    Schreibt in eine temporäre Datei und ersetzt `dest` erst am Schluss atomar.
+    Die bereits vorhandenen Einträge werden dabei aus `dest` selbst gelesen —
+    das geht, weil bis zum abschliessenden os.replace() nur die temporäre Datei
+    beschrieben wird. Ein Abbruch mittendrin lässt das gespeicherte Projekt
+    also unangetastet.
+    """
+    tmp = dest.with_name(dest.name + '.tmp')
+    try:
+        with zipfile.ZipFile(tmp, 'w') as out:
+            for name in CLOUD_JSON_ENTRIES:
+                out.writestr(name, json_entries[name], zipfile.ZIP_DEFLATED)
+
+            src = zipfile.ZipFile(dest) if stored_index else None
+            try:
+                for entry in entries:
+                    upload = uploaded.get(entry['sha256'])
+                    if upload is not None:
+                        # chunks() spult selbst zurück — derselbe Blob kann
+                        # mehrfach vorkommen (duplizierte Seite).
+                        actual = _write_zip_entry(out, entry['name'], upload.chunks())
+                        if actual != entry['sha256']:
+                            raise ValueError(f"Prüfsumme von {entry['name']} stimmt nicht")
+                    else:
+                        with src.open(stored_index[entry['sha256']]) as fh:
+                            _write_zip_entry(out, entry['name'],
+                                             iter(lambda: fh.read(CHUNK), b''))
+            finally:
+                if src is not None:
+                    src.close()
+        os.replace(tmp, dest)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _parse_manifest(raw):
+    """Manifest prüfen. Gibt (json_entries, entries, bytes) oder wirft ValueError."""
+    try:
+        manifest = json.loads(raw)
+        json_entries = manifest['json']
+        entries = manifest['entries']
+    except (ValueError, TypeError, KeyError, UnicodeDecodeError):
+        raise ValueError('Ungültiges Manifest')
+
+    if not isinstance(json_entries, dict) or set(json_entries) != set(CLOUD_JSON_ENTRIES):
+        raise ValueError('Ungültiges Manifest')
+    if not isinstance(entries, list):
+        raise ValueError('Ungültiges Manifest')
+
+    total = sum(len(text.encode()) for text in json_entries.values())
+    for entry in entries:
+        if (not isinstance(entry, dict)
+                or not CLOUD_ENTRY_NAME.match(str(entry.get('name', '')))
+                or not SHA256_HEX.match(str(entry.get('sha256', '')))
+                or not isinstance(entry.get('size'), int) or entry['size'] < 0):
+            raise ValueError('Ungültiger Eintrag im Manifest')
+        total += entry['size']
+    return json_entries, entries, total
+
+
+@require_POST
+def cloud_save_prepare(request):
+    """Meldet, welche der angefragten Inhalts-Hashes der Server noch nicht hat.
+    Reine Optimierung: Der Commit prüft unabhängig davon nochmal selbst."""
+    denied = _cloud_denied(request)
+    if denied:
+        return denied
+    try:
+        payload = json.loads(request.body or b'{}')
+    except ValueError:
+        return JsonResponse({'error': 'Ungültige Anfrage'}, status=400)
+
+    project = _get_stored_project(request, payload.get('project_id'))
+    if project is None:
+        return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+
+    hashes = [h for h in payload.get('hashes') or [] if isinstance(h, str) and SHA256_HEX.match(h)]
+    known = _stored_hash_index(project.file_path)
+    return JsonResponse({'missing': [h for h in hashes if h not in known]})
+
+
 @require_POST
 def cloud_save(request):
-    """Projekt-ZIP speichern: mit project_id überschreiben, sonst neu anlegen.
+    """Projekt speichern: mit project_id überschreiben, sonst neu anlegen.
+
+    Zwei Wege: `manifest` (Delta, siehe oben) oder `project_zip` (komplettes
+    ZIP). Der ZIP-Weg bleibt bestehen, damit Browser mit noch gecachtem altem
+    JS-Bundle nach einem Deploy weiter speichern können.
     Gates: Read-Only (abgelaufen), Projektlimit (nur beim Anlegen), Grössen-Deckel."""
     denied = _cloud_denied(request)
     if denied:
@@ -679,10 +867,24 @@ def cloud_save(request):
         return JsonResponse({'error': 'Deine Testphase bzw. Lizenz ist abgelaufen, '
                              'Online-Speichern ist nur mit aktiver Lizenz möglich.'}, status=403)
 
+    # Das Manifest kommt als Datei-Part (canvas_data.json steckt inline drin und
+    # sprengt bei grossen Projekten Djangos Formulardaten-Deckel); als Feld
+    # akzeptieren wir es weiterhin, damit Tests und einfache Clients es einfach haben.
+    manifest_file = request.FILES.get('manifest')
+    manifest_raw = manifest_file.read() if manifest_file else request.POST.get('manifest')
     upload = request.FILES.get('project_zip')
-    if not upload:
+    if not manifest_raw and not upload:
         return JsonResponse({'error': 'Keine Projektdatei erhalten'}, status=400)
-    if upload.size > settings.MAX_PROJECT_MB * 1024 * 1024:
+
+    if manifest_raw:
+        try:
+            json_entries, entries, total_bytes = _parse_manifest(manifest_raw)
+        except ValueError as e:
+            return JsonResponse({'error': str(e)}, status=400)
+    else:
+        total_bytes = upload.size
+
+    if total_bytes > settings.MAX_PROJECT_MB * 1024 * 1024:
         return JsonResponse({'error': f'Projekt zu gross (max. {settings.MAX_PROJECT_MB} MB). '
                              'Tipp: sehr grosse Original-PDFs vor dem Hochladen verkleinern.'}, status=413)
 
@@ -704,10 +906,31 @@ def cloud_save(request):
         project = StoredProject(user=request.user, name=name or 'Unbenanntes Projekt')
 
     settings.CLOUD_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
-    with open(project.file_path, 'wb') as f:
-        for chunk in upload.chunks():
-            f.write(chunk)
-    project.size_bytes = upload.size
+
+    if manifest_raw:
+        uploaded = {field[len('blob_'):]: f for field, f in request.FILES.items()
+                    if field.startswith('blob_') and SHA256_HEX.match(field[len('blob_'):])}
+        stored_index = _stored_hash_index(project.file_path)
+        # Der Commit entscheidet unabhängig von der prepare-Antwort, was fehlt:
+        # so bleibt er auch bei einem Race (zweiter Tab) oder verschwundener
+        # Datei korrekt und fordert das Fehlende einfach nach.
+        missing = [e['sha256'] for e in entries
+                   if e['sha256'] not in uploaded and e['sha256'] not in stored_index]
+        if missing:
+            return JsonResponse({'missing': sorted(set(missing))}, status=409)
+        try:
+            _assemble_cloud_zip(project.file_path, json_entries, entries,
+                                uploaded, stored_index)
+        except (ValueError, KeyError, zipfile.BadZipFile) as e:
+            logger.warning("Delta-Speichern fehlgeschlagen: %s", e)
+            return JsonResponse({'error': 'Projekt konnte nicht zusammengesetzt werden. '
+                                 'Bitte nochmal speichern.'}, status=400)
+    else:
+        with open(project.file_path, 'wb') as f:
+            for chunk in upload.chunks():
+                f.write(chunk)
+
+    project.size_bytes = project.file_path.stat().st_size
     project.save()
     return JsonResponse({'id': str(project.id), 'name': project.name})
 
