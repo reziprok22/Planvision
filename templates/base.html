@@ -189,12 +189,19 @@
         }
 
         /* ── PAGE CONTENT ── */
+        /* Wrapper um den Seiteninhalt (Kind von body, Geschwister von nav und
+           footer). Er muss den freien Platz füllen, sonst rutscht der Footer
+           bei kurzen Seiten nach oben und darunter bleibt ein leerer Streifen:
+           das `flex: 1 0 auto` von .page wirkt nicht, weil .page seit der
+           App-Shell in diesem div steckt und damit kein Flex-Kind von body
+           mehr ist. */
+        .body-main { flex: 1 0 auto; }
+
         .page {
             flex: 1 0 auto;
             width: 100%;
-            max-width: 820px;
+            max-width: 1020px;
             margin: 0 auto;
-            padding: 72px 48px 96px;
         }
 
         .page-header { margin-bottom: 2.5rem; }
@@ -243,7 +250,20 @@
             display: flex;
             align-items: flex-start;
             gap: 28px;
+            /* Gesamtbreite der App-Seiten (Sidebar + Inhalt) — hier drehen,
+               wenn die Konto-Karten breiter oder schmaler werden sollen.
+               Davon gehen 2×48px Padding, 218px Sidebar und 28px Gap ab. */
             max-width: 1120px;
+            /* width:100% ist PFLICHT, damit max-width überhaupt etwas bewirken
+               KANN: Dieses div ist ein Flex-Item von body (column). Flex-Items
+               werden normalerweise auf die volle Breite gestreckt — die
+               Streckung entfällt aber laut Spec, sobald das Item auf der
+               Querachse auto-Margins hat (hier margin: 0 auto). Ohne width
+               fällt die Box dann auf shrink-to-fit zurück: nur so breit, wie
+               ihr Inhalt verlangt, unabhängig von Fenster UND max-width.
+               Dieselbe Kombination steht seit jeher in .page — deshalb hatte
+               die dort nie ein Problem. */
+            width: 100%;
             margin: 0 auto;
             padding: 48px 48px 96px;
         }
@@ -452,7 +472,7 @@
 {% endblock %}
 
 {% block body %}
-<div{% if app_shell %} class="app-shell-layout"{% endif %}>
+<div class="body-main{% if app_shell %} app-shell-layout{% endif %}">
     {% if app_shell %}{% include "_app_sidebar.html" with active=active_nav %}{% endif %}
     <main class="page{% if app_shell %} app-shell-main{% endif %}">
         <div class="page-header">
