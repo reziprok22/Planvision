@@ -368,6 +368,9 @@
             max-width: 960px;
         }
 
+        /* Einzelne Karte: sonst würde sie über die vollen 960px gezogen */
+        .pricing-grid-single { max-width: 400px; }
+
         .plan-card {
             background: var(--white);
             border: 1px solid var(--slate-100);
@@ -429,10 +432,32 @@
             display: inline-block;
         }
 
+        /* Durchgestrichener Listenpreis bei laufender Preisaktion
+           (GLOBAL_DISCOUNT_PERCENT) */
+        .plan-price-was {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--slate-400);
+            text-decoration: line-through;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+
         .plan-period {
             font-size: 0.82rem;
             color: var(--slate-400);
             margin-bottom: 24px;
+        }
+
+        /* Begründung der Preisaktion. Das negative margin-top zieht die Zeile
+           an die Periode heran (deren 24px Abstand gilt für den Fall OHNE
+           Aktion) und wird unten wieder aufgebaut. */
+        .plan-discount {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: var(--primary);
+            margin: -18px 0 24px;
         }
 
         .plan-divider {
@@ -669,7 +694,9 @@
                 "description": "Ausmass-Software für Bauplan-PDFs: Flächen und Längen direkt im Browser messen, Fenster per KI erkennen, Ergebnis als PDF exportieren.",
                 "offers": {
                     "@type": "Offer",
-                    {% if beta_pricing %}"price": "0",{% else %}"price": "240",{% endif %}
+                    {% comment %}Während der Beta zahlt niemand etwas — hier steht, was heute gilt,
+                       nicht der künftige Listenpreis aus der Preiskarte.{% endcomment %}
+                    {% if beta_pricing %}"price": "0",{% else %}"price": "{{ license_price_now }}",{% endif %}
                     "priceCurrency": "CHF"
                 }
             },
@@ -738,7 +765,7 @@
                         "acceptedAnswer": {
                             "@type": "Answer",
                             {% if beta_pricing %}
-                            "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar."
+                            "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar. Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr."
                             {% else %}
                             "text": "Ja. Nach der Registrierung steht dir eine 30-tägige kostenlose Testphase zur Verfügung."
                             {% endif %}
@@ -928,66 +955,50 @@
 </section>
 
 
-<!-- ── PRICING ── -->
+<!-- ── PRICING ──
+     Die Preiskarte ist auch während der Beta sichtbar (beta_pricing) — die
+     künftigen Kosten sollen früh bekannt sein. Nur der Hinweis darüber und der
+     JSON-LD-Preis unterscheiden sich. Der Betrag kommt aus LICENSE_PRICE_CHF
+     (Context-Processor `pricing`), nie hartcodiert. -->
 <section class="pricing" id="pricing">
     <div class="section-label">Preismodell</div>
+    <h2 class="section-title">Ein Preis, voller Funktionsumfang</h2>
+    <p class="section-sub">Keine Abstufungen, keine Zusatzmodule: Eine Jahreslizenz pro Nutzer, alle Funktionen inklusive.</p>
+
     {% if beta_pricing %}
-    <h2 class="section-title">Aktuell kostenlos</h2>
-    <p class="section-sub">Planli befindet sich in der Beta-Phase.</p>
-
     <div class="beta-notice">
-        <strong>Während der Beta-Phase ist die Nutzung nach kostenloser Registrierung komplett kostenlos.</strong>
-        Jetzt loslegen.
+        <strong>Während der Beta-Phase ist Planli nach der Registrierung komplett kostenlos. </strong>
+        Der unten stehende Preis dient nur zur Information und gilt erst nach dem Ende der Beta-Phase. Wir informieren dich rechtzeitig vorher. Da keine Kreditkarte angegeben werden muss, wird auch nichts automatisch abgebucht.
     </div>
-    {% else %}
-    <h2 class="section-title">Kaufe Planli</h2>
-    <p class="section-sub">Ein Tool, voller Funktionsumfang. Je grösser das Team, desto günstiger pro Nutzer.</p>
+    {% endif %}
 
-    <div class="pricing-grid">
+    <div class="pricing-grid pricing-grid-single">
 
         <div class="plan-card popular">
-            <div class="popular-badge">Empfohlen</div>
-            <div class="plan-name">Einzel</div>
-            <div class="plan-price"><sup>CHF</sup>240</div>
-            <div class="plan-period">pro Nutzer / Jahr</div>
+            {% if global_discount %}<div class="popular-badge">&minus;{{ global_discount.percent }}&nbsp;%</div>{% endif %}
+            <div class="plan-name">Jahreslizenz</div>
+            <div class="plan-price">
+                {% if global_discount %}<span class="plan-price-was">CHF {{ license_price_chf }}</span>{% endif %}
+                <sup>CHF</sup>{{ license_price_now }}
+            </div>
+            <div class="plan-period">pro Nutzer / Jahr{% if beta_pricing %}, nach der Beta-Phase{% endif %}</div>
+            {% if global_discount %}
+            <p class="plan-discount">
+                {{ global_discount.reason }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}
+            </p>
+            {% endif %}
             <hr class="plan-divider">
             <ul class="plan-features">
-                <li>30 Tage kostenlos testen</li>
-                <li>Unbegrenzte Projekte &amp; Seiten</li>
-                <li>Alle Zeichenwerkzeuge</li>
+                <li>{% if beta_pricing %}Während der Beta kostenlos{% else %}30 Tage kostenlos testen{% endif %}</li>
+                <li>Alle Zeichenwerkzeuge, Massstab pro Seite</li>
                 <li>KI-Objekterkennung</li>
-                <li>PDF-Export &amp; annotierter Plan</li>
+                <li>PDF-Export: annotierter Plan &amp; Bericht</li>
+                <li>Online-Ablage für deine Projekte</li>
             </ul>
             <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-primary" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Einzel')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>
         </div>
 
-        <div class="plan-card">
-            <div class="plan-name">Team</div>
-            <div class="plan-price"><sup>CHF</sup>210</div>
-            <div class="plan-period">pro Nutzer / Jahr, ab 5 Nutzern</div>
-            <hr class="plan-divider">
-            <ul class="plan-features">
-                <li>Alle Funktionen aus Einzel</li>
-                <li>Organisations-Konto mit Sitzplatzverwaltung</li>
-            </ul>
-            <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Team')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>
-        </div>
-
-        <div class="plan-card">
-            <div class="plan-name">Grosses Team</div>
-            <div class="plan-price"><sup>CHF</sup>180</div>
-            <div class="plan-period">pro Nutzer / Jahr, ab 10 Nutzern</div>
-            <hr class="plan-divider">
-            <ul class="plan-features">
-                <li>Alle Funktionen aus Einzel</li>
-                <li>Organisations-Konto mit Sitzplatzverwaltung</li>
-            </ul>
-            <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-outline" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Grosses Team')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>
-            <p class="plan-note">Mehr als 20 Nutzer? <a href="mailto:info@planli.net?subject=Planli%20Team-Angebot">Individuelles Angebot anfragen</a></p>
-        </div>
-
     </div>
-    {% endif %}
 </section>
 
 
@@ -1051,6 +1062,8 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
                 <p class="faq-answer">
                     {% if beta_pricing %}
                     Ja. Während der aktuellen Beta-Phase ist Planli nach einer kostenlosen Registrierung mit E-Mail-Adresse und Passwort komplett kostenlos nutzbar.
+                    <br><br>
+                    Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr{% if global_discount %} ({{ global_discount.reason }}, statt CHF {{ license_price_chf }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}){% endif %}. Wir informieren dich rechtzeitig, bevor sich daran etwas ändert &ndash; es wird nichts automatisch abgebucht.
                     {% else %}
                     Ja. Nach der Registrierung mit einer E-Mail-Adresse und einem Passwort steht dir eine 30-tägige kostenlose Testphase zur Verfügung.
                     {% endif %}

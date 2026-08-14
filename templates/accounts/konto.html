@@ -2,9 +2,11 @@
 
 {% block title %}Konto | Planli{% endblock %}
 
+
 {% block extra_head %}
     <style>
         .konto-card {
+            max-width: 1600px;
             background: var(--white);
             border: 1px solid var(--slate-100);
             border-radius: 12px;
@@ -62,6 +64,30 @@
 
         .price-line sup { font-size: 0.85rem; font-weight: 700; color: var(--slate-400); margin-right: 2px; }
         .price-line .period { font-size: 0.85rem; font-weight: 500; color: var(--slate-400); }
+        /* Durchgestrichener Basispreis, wenn für dieses Konto ein Rabatt hinterlegt ist */
+        .price-line .price-was {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--slate-400);
+            text-decoration: line-through;
+            margin-right: 8px;
+        }
+
+        .discount-note {
+            font-size: 0.9rem;
+            color: #15803D;
+            font-weight: 600;
+            margin-top: -0.4rem;
+        }
+
+        /* Zusatzangabe unter dem Wert einer Konto-Zeile (Rabatt, Preisgarantie) */
+        .row-note {
+            display: block;
+            font-weight: 400;
+            font-size: 0.82rem;
+            color: var(--slate-400);
+            margin-top: 2px;
+        }
 
         .konto-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 1.2rem; }
         .logout-form { display: inline; }
@@ -109,7 +135,7 @@
                     {% if sub.is_paid %}
                         <span class="status-badge status-paid">{{ sub.status_label }}</span>
                     {% elif beta_pricing %}
-                        <span class="status-badge status-beta">Beta-Phase, kostenlos &amp; unbeschränkt</span>
+                        <span class="status-badge status-beta">kostenlose Beta-Phase</span>
                     {% elif sub.in_trial %}
                         <span class="status-badge status-trial">{{ sub.status_label }}</span>
                     {% else %}
@@ -129,12 +155,22 @@
             </div>
             {% if sub.is_paid %}
             <div class="konto-row">
-                <dt>Bezahlt bis</dt>
+                <dt>Gültig bis</dt>
                 <dd>{{ sub.paid_until|date:"d.m.Y" }}</dd>
+            </div>
+            {% comment %}Bewusst drei kurze Zeilen statt eines Schachtelsatzes: Preis,
+               Rabatt und Zahlungsmodus sind drei verschiedene Aussagen.{% endcomment %}
+            <div class="konto-row">
+                <dt>Jahrespreis</dt>
+                <dd>CHF {{ sub.price_chf }}
+                    {% if sub.discount_label %}<span class="row-note">{{ sub.discount_label }}</span>{% endif %}
+                    {# Basispreis, nicht Endpreis: ein befristeter Aktionsrabatt darf hier nicht als dauerhaft erscheinen #}
+                    {% if sub.has_price_guarantee %}<span class="row-note">Basispreis CHF {{ sub.list_price }} bleibt bestehen, auch wenn der Listenpreis steigt</span>{% endif %}
+                </dd>
             </div>
             <div class="konto-row">
                 <dt>Verlängerung</dt>
-                <dd>Rechnung folgt rechtzeitig per E-Mail, keine automatische Abbuchung</dd>
+                <dd>Rechnung folgt rechtzeitig per E-Mail</dd>
             </div>
             {% endif %}
         </dl>
@@ -148,8 +184,18 @@
             Während der Beta-Phase ist Planli für alle registrierten Nutzer:innen komplett kostenlos. Eine Lizenz brauchst du erst nach Ende der Beta-Phase;
             wir informieren dich rechtzeitig, sobald sich das ändert.
         </p>
+        {# Preis trotzdem zeigen: Was nach der Beta kostet, soll früh bekannt sein — inklusive eines für dieses Konto hinterlegten Rabatts. #}
+        <p class="price-line" style="margin-top:1.1rem;">
+            {% if sub.discount_active %}<span class="price-was">CHF {{ sub.list_price }}</span>{% endif %}
+            <sup>CHF</sup>{{ sub.price_chf }} <span class="period">pro Nutzer / Jahr, nach der Beta-Phase</span>
+        </p>
+        {% if sub.discount_label %}<p class="discount-note">Rabatt: {{ sub.discount_label }}</p>{% endif %}
         {% else %}
-        <p class="price-line"><sup>CHF</sup>{{ price_chf }} <span class="period">pro Nutzer / Jahr</span></p>
+        <p class="price-line">
+            {% if sub.discount_active %}<span class="price-was">CHF {{ sub.list_price }}</span>{% endif %}
+            <sup>CHF</sup>{{ sub.price_chf }} <span class="period">pro Nutzer / Jahr</span>
+        </p>
+        {% if sub.discount_label %}<p class="discount-note">Rabatt: {{ sub.discount_label }}</p>{% endif %}
         {% if sub.in_trial %}
         <p>Nach der Testphase kannst du deine Projekte weiterhin öffnen, ansehen und als PDF exportieren,
            Messen, Bearbeiten und die KI-Analyse brauchen eine Lizenz.</p>

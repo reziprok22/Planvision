@@ -63,7 +63,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.analytics',
                 'core.context_processors.beta_mode',
-                'core.context_processors.beta_pricing',
+                'core.context_processors.pricing',
             ],
         },
     },
@@ -150,13 +150,29 @@ BETA_MODE = os.environ.get('BETA_MODE', 'False') == 'True'
 # zeigen statt Preis/"Rechnung anfordern" den Beta-Hinweis ("kostenlos &
 # unbeschränkt"). So bleibt die Nutzung während der Beta-Phase komplett
 # kostenlos, obwohl (ab BETA_MODE=False) ein Login nötig ist.
-BETA_PRICING = os.environ.get('BETA_PRICING', 'True') == 'True'
+BETA_PRICING = os.environ.get('BETA_PRICING', 'False') == 'True'
 
 # Kostenlose Testphase ab Registrierung; danach Read-Only bis zur Zahlung
 # (accounts.models.Subscription) — sofern BETA_PRICING nicht aktiv ist.
 # Preis wie auf der Landingpage.
 TRIAL_DAYS = 30
-LICENSE_PRICE_CHF = 240
+# Listenpreis pro Nutzer und Jahr — EINE Quelle für Landingpage (Preiskarte +
+# JSON-LD), Konto-Seite und Rechnungstexte; ins Template kommt er über den
+# `pricing`-Context-Processor. Pro Konto überschreibbar (Preisgarantie) und
+# rabattierbar via Subscription.list_price_chf / .discount_percent — dort steht
+# auch, warum der Rabatt prozentual ist.
+LICENSE_PRICE_CHF = 100
+# Globale Preisaktion für ALLE (0 = aus). Die Landingpage-Karte zeigt dann den
+# Listenpreis durchgestrichen, darunter den Aktionspreis und die Begründung;
+# Konto-Seite und Rechnungspreis ziehen mit. Ein persönlicher Rabatt
+# (Subscription.discount_percent) stapelt sich NICHT dazu — es gilt der höhere
+# der beiden (accounts/pricing.py). GLOBAL_DISCOUNT_UNTIL ist optional
+# ('YYYY-MM-DD'); ab dem Folgetag greift die Aktion nicht mehr, leer =
+# unbefristet. Bewusst wie LICENSE_PRICE_CHF direkt hier statt per Env: so
+# steht der laufende Preis im git und nicht in der systemd-Unit.
+GLOBAL_DISCOUNT_PERCENT = 20
+GLOBAL_DISCOUNT_REASON = 'Einführungsrabatt'
+GLOBAL_DISCOUNT_UNTIL = '2026-12-31'
 # Feedback-Dankeschön (Akquise-Phase): Wer die drei Feedback-Fragen in der App
 # beantwortet, bekommt einmalig eine auf 6 Monate verlängerte Testphase
 # (trial_ends = jetzt + FEEDBACK_REWARD_DAYS, siehe core.views.submit_feedback).

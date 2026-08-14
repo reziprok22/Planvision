@@ -147,6 +147,54 @@ class LandingCtaTests(TestCase):
         self.assertNotContains(response, reverse('register'))
 
 
+@override_settings(GLOBAL_DISCOUNT_PERCENT=0)
+class LandingPricingTests(TestCase):
+    """Die Preiskarte ist auch während der Beta sichtbar (die Kosten danach
+    sollen früh bekannt sein); nur Hinweistext und JSON-LD-Preis unterscheiden
+    sich. Der Betrag kommt aus LICENSE_PRICE_CHF, nicht aus dem Template."""
+
+    @override_settings(BETA_PRICING=True, LICENSE_PRICE_CHF=240)
+    def test_price_card_visible_during_beta(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, '<sup>CHF</sup>240')
+        self.assertContains(response, 'nach der Beta-Phase')
+        # JSON-LD zeigt, was heute gilt: niemand zahlt etwas
+        self.assertContains(response, '"price": "0"')
+
+    @override_settings(BETA_PRICING=False, LICENSE_PRICE_CHF=240)
+    def test_price_card_outside_beta(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, '<sup>CHF</sup>240')
+        self.assertContains(response, '"price": "240"')
+        self.assertNotContains(response, 'Während der Beta-Phase ist Planli')
+
+    @override_settings(BETA_PRICING=True, LICENSE_PRICE_CHF=299)
+    def test_price_follows_settings(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, '<sup>CHF</sup>299')
+        self.assertNotContains(response, '<sup>CHF</sup>240')
+
+    @override_settings(BETA_PRICING=False, LICENSE_PRICE_CHF=200,
+                       GLOBAL_DISCOUNT_PERCENT=20,
+                       GLOBAL_DISCOUNT_REASON='Einführungsrabatt',
+                       GLOBAL_DISCOUNT_UNTIL='2099-12-31')
+    def test_campaign_shows_struck_price_and_reason(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, 'plan-price-was">CHF 200')  # durchgestrichen
+        self.assertContains(response, '<sup>CHF</sup>160')
+        self.assertContains(response, 'Einführungsrabatt')
+        self.assertContains(response, 'gültig bis 31.12.2099')
+        self.assertContains(response, '&minus;20&nbsp;%')  # Badge
+        self.assertContains(response, '"price": "160"')  # JSON-LD = was man zahlt
+
+    @override_settings(GLOBAL_DISCOUNT_PERCENT=0, LICENSE_PRICE_CHF=200)
+    def test_no_campaign_no_struck_price(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, '<sup>CHF</sup>200')
+        # nur die CSS-Regel darf vorkommen, nicht das Markup
+        self.assertNotContains(response, 'plan-price-was">')
+
+
 class FeedbackTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
