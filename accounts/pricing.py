@@ -71,6 +71,18 @@ def list_price():
     return settings.LICENSE_PRICE_CHF
 
 
+def vat_note():
+    """'inkl. 8.1 % MWST' bzw. 'zzgl. …' — leer, wenn kein MWST-Ausweis
+    konfiguriert ist. Steht auf der Preiskarte, der Konto-Seite und im
+    Rechnungsformular, damit überall dieselbe Aussage steht."""
+    rate = settings.INVOICE_VAT_RATE
+    if not rate:
+        return ''
+    if settings.LICENSE_PRICE_INCLUDES_VAT:
+        return f'inkl. {rate} % MWST'
+    return f'zzgl. {rate} % MWST'
+
+
 def apply_discount(price, percent):
     """Rabattierter Preis, kaufmännisch auf ganze Franken gerundet
     (round() würde bei .5 zur geraden Zahl runden, also 122.5 → 122)."""

@@ -1,0 +1,23 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+<p>Rabatt für <strong>{{ subscriptions|length }}</strong> Konto/Konten setzen:</p>
+<ul>
+    {% for sub in subscriptions %}
+    <li>{{ sub.user.username }} — Basispreis CHF {{ sub.list_price }}, aktuell CHF {{ sub.price_chf }}</li>
+    {% endfor %}
+</ul>
+
+<form method="post">
+    {% csrf_token %}
+    {% for pk in selected %}
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ pk }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="set_discount">
+    {{ form.as_p }}
+    <p>
+        <input type="submit" name="apply" value="Rabatt setzen" class="default">
+        <a href="../" class="button cancel-link">Abbrechen</a>
+    </p>
+</form>
+{% endblock %}

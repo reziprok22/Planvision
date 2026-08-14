@@ -173,6 +173,31 @@ LICENSE_PRICE_CHF = 100
 GLOBAL_DISCOUNT_PERCENT = 20
 GLOBAL_DISCOUNT_REASON = 'Einführungsrabatt'
 GLOBAL_DISCOUNT_UNTIL = '2026-12-31'
+
+# ── Rechnungsstellung (QR-Rechnung) ──────────────────────────────────────
+# TODO vor dem ersten Versand ausfüllen: IBAN, Adresse und UID sind
+# Platzhalter. Ohne echte IBAN erzeugt der Zahlteil einen unbezahlbaren
+# QR-Code — accounts/invoices.py verweigert den Versand mit Platzhalter-IBAN.
+INVOICE_CREDITOR = {
+    'name': 'Bauphysik Lengg',
+    'street': 'Rathausgasse 8',
+    'pcode': '5000',
+    'city': 'Aarau',
+    'country': 'CH',
+}
+INVOICE_IBAN = 'CH17 0839 0038 8046 1000 1'     # normale IBAN (keine QR-IBAN)
+INVOICE_VAT_UID = 'CHE-436.392.751 MWST'        # erscheint im Rechnungskopf
+INVOICE_VAT_RATE = '8.1'                        # Prozent, '' = kein MWST-Ausweis
+# Ist LICENSE_PRICE_CHF brutto (inkl. MWST) oder netto? Brutto, weil die
+# Landingpage den Betrag ohne "zzgl. MWST" zeigt — beim Umstellen auf False
+# schreibt die Preiskarte automatisch "zzgl. MWST" dazu.
+LICENSE_PRICE_INCLUDES_VAT = True
+INVOICE_DUE_DAYS = 30
+# Kopie jeder versendeten Rechnung an dich (leer = aus)
+INVOICE_BCC = 'info@planli.net'
+# Abgelegte Rechnungs-PDFs. Aufbewahrungspflicht 10 Jahre (OR 958f) —
+# weder vom Cleanup noch von der Kontolöschung angefasst.
+INVOICES_DIR = BASE_DIR / 'invoices'
 # Feedback-Dankeschön (Akquise-Phase): Wer die drei Feedback-Fragen in der App
 # beantwortet, bekommt einmalig eine auf 6 Monate verlängerte Testphase
 # (trial_ends = jetzt + FEEDBACK_REWARD_DAYS, siehe core.views.submit_feedback).

@@ -1,0 +1,26 @@
+{% extends "accounts/auth_base.html" %}
+
+{% block title %}Offene Rechnung | Planli{% endblock %}
+
+{% block card %}
+    <h1>Rechnung bereits ausgestellt</h1>
+    <p class="subtitle">Für dein Konto ist eine Rechnung offen.</p>
+
+    <p style="font-size:0.9rem; color:var(--slate-800);">
+        <strong>Rechnung {{ invoice.number }}</strong> über CHF {{ invoice.total_chf|floatformat:"2u" }},
+        ausgestellt am {{ invoice.issued_on|date:"d.m.Y" }}, zahlbar bis
+        {{ invoice.due_on|date:"d.m.Y" }}.
+    </p>
+    <p style="font-size:0.82rem; color:var(--slate-400); margin-bottom:1.4rem;">
+        Solange sie offen ist, stellen wir keine zweite aus. Du hast sie per E-Mail
+        erhalten und kannst sie hier nochmals herunterladen. Stimmt etwas nicht,
+        schreib uns kurz an
+        <a href="mailto:info@planli.net?subject=Rechnung%20{{ invoice.number }}">info@planli.net</a>.
+    </p>
+
+    <a class="btn btn-primary" href="{% url 'rechnung_pdf' invoice.number %}">Rechnung herunterladen</a>
+
+    <div class="link-row">
+        <a href="{% url 'konto' %}">Zurück zum Konto</a>
+    </div>
+{% endblock %}

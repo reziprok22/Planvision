@@ -6,7 +6,8 @@ from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.shortcuts import render
 from django.utils import timezone
 
-from .models import DISCOUNT_SCOPES, Subscription
+from .invoices import activate_licence
+from .models import DISCOUNT_SCOPES, Invoice, Subscription, subscription_for
 
 
 class SetDiscountForm(forms.Form):
@@ -118,3 +119,94 @@ class SubscriptionAdmin(admin.ModelAdmin):
             'selected': queryset.values_list('pk', flat=True),
             'opts': self.model._meta,
         })
+
+
+@admin.register(Invoice)
+class InvoiceAdmin(admin.ModelAdmin):
+    """Rechnungen sind Buchhaltungsbelege: alle Felder read-only, geändert wird
+    nur der Status über die Actions. Löschen ist deaktiviert (Aufbewahrungs-
+    pflicht 10 Jahre, OR 958f) — falsch ausgestellt heisst stornieren."""
+
+    list_display = ('number', 'issued_on', 'billing_display', 'total_chf',
+                    'status', 'due_on', 'overdue', 'paid_at')
+    list_filter = ('status', 'issued_on')
+    search_fields = ('number', 'billing_name', 'billing_company', 'billing_email',
+                     'user__username')
+    date_hierarchy = 'issued_on'
+    actions = ('mark_paid', 'cancel_invoices')
+
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False  # Rechnungen entstehen nur über den Self-Service
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.display(description='Kunde')
+    def billing_display(self, obj):
+        return obj.billing_company or obj.billing_name
+
+    @admin.display(description='Überfällig', boolean=True)
+    def overdue(self, obj):
+        """Offen und Frist abgelaufen. Wichtiger als früher: freigeschaltet
+        wird schon beim Ausstellen, offene Rechnungen laufen also mit."""
+        return obj.is_open and obj.due_on < timezone.localdate()
+
+    @admin.action(description='Als bezahlt markieren (Zahlungseingang)')
+    def mark_paid(self, request, queryset):
+        """Nur noch Bestätigung: Freigeschaltet wurde die Lizenz bereits beim
+        Ausstellen (`activate_licence`). Die Absicherung unten greift für
+        Rechnungen aus der Zeit davor und für von Hand zurückgesetzte Konten —
+        sie verlängert nie über die Rechnungslaufzeit hinaus, doppeltes
+        Anklicken kann also keine zwei Jahre gutschreiben."""
+        done = skipped = repaired = 0
+        for invoice in queryset:
+            if invoice.status != Invoice.STATUS_OPEN:
+                skipped += 1
+                continue
+            invoice.status = Invoice.STATUS_PAID
+            invoice.paid_at = timezone.now()
+            invoice.save(update_fields=['status', 'paid_at'])
+            if invoice.user_id:
+                sub = subscription_for(invoice.user)
+                if sub.paid_until is None or sub.paid_until < invoice.period_end:
+                    activate_licence(sub, invoice)
+                    repaired += 1
+            done += 1
+        msg = f'{done} Rechnung(en) als bezahlt verbucht.'
+        if repaired:
+            msg += f' {repaired}× Lizenz nachgetragen.'
+        if skipped:
+            msg += f' {skipped} übersprungen (nicht offen).'
+        self.message_user(request, msg)
+
+    @admin.action(description='Stornieren (nimmt die Freischaltung zurück)')
+    def cancel_invoices(self, request, queryset):
+        """Gegenstück zum Ausstellen: Wer nicht zahlt, verliert die Lizenz
+        wieder. Zurückgesetzt wird nur, wenn `paid_until` noch genau auf dieser
+        Rechnung steht — hat eine spätere Rechnung schon weiter verlängert,
+        bleibt die neuere Laufzeit stehen. Ein verbrauchter Einmal-Rabatt bleibt
+        eingelöst; bei Bedarf im Subscription-Admin per "Rabatt setzen" neu
+        vergeben."""
+        cancelled = revoked = 0
+        for invoice in queryset.filter(status=Invoice.STATUS_OPEN):
+            invoice.status = Invoice.STATUS_CANCELLED
+            invoice.save(update_fields=['status'])
+            cancelled += 1
+            if invoice.user_id:
+                sub = subscription_for(invoice.user)
+                if sub.paid_until == invoice.period_end:
+                    # Zurück auf den Stand davor: an eine frühere Lizenz
+                    # angeschlossen (period_start liegt in der Zukunft) heisst
+                    # dorthin zurück, sonst gab es vorher gar keine Lizenz.
+                    sub.paid_until = (invoice.period_start
+                                      if invoice.period_start > invoice.issued_on
+                                      else None)
+                    sub.save(update_fields=['paid_until'])
+                    revoked += 1
+        msg = f'{cancelled} Rechnung(en) storniert.'
+        if revoked:
+            msg += f' {revoked}× Freischaltung zurückgenommen.'
+        self.message_user(request, msg)

@@ -2,6 +2,8 @@ from django import forms
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
 
+from .models import Subscription
+
 
 class EmailUserCreationForm(UserCreationForm):
     """Registrierung nur mit E-Mail + Passwort.
@@ -59,3 +61,31 @@ class EmailAuthenticationForm(AuthenticationForm):
                 'Bestätigungslink, den wir dir per E-Mail geschickt haben.',
                 code='inactive',
             )
+
+
+class BillingAddressForm(forms.ModelForm):
+    """Rechnungsadresse. Gespeichert wird sie auf der Subscription (nur zur
+    Vorbefüllung); verbindlich ist die Kopie auf der Rechnung selbst."""
+
+    class Meta:
+        model = Subscription
+        fields = ('billing_company', 'billing_name', 'billing_street',
+                  'billing_zip', 'billing_city', 'billing_country')
+        labels = {
+            'billing_company': 'Firma (optional)',
+            'billing_name': 'Name',
+            'billing_street': 'Strasse und Nr.',
+            'billing_zip': 'PLZ',
+            'billing_city': 'Ort',
+            'billing_country': 'Land',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name in ('billing_name', 'billing_street', 'billing_zip', 'billing_city'):
+            self.fields[name].required = True
+        self.fields['billing_country'].help_text = 'Ländercode, z.B. CH'
+
+    def address_snapshot(self):
+        """Die Adressfelder als Dict für Invoice.objects.create()."""
+        return {name: self.cleaned_data[name] for name in self.Meta.fields}

@@ -1,0 +1,21 @@
+Guten Tag
+
+Vielen Dank für dein Vertrauen in Planli. Im Anhang findest du die Rechnung
+{{ invoice.number }} über CHF {{ invoice.total_chf|floatformat:"2u" }} für deine Jahreslizenz
+(Laufzeit {{ invoice.period_start|date:"d.m.Y" }} bis {{ invoice.period_end|date:"d.m.Y" }}).
+
+Zahlbar bis {{ invoice.due_on|date:"d.m.Y" }} mit dem QR-Zahlteil auf der
+Rechnung. Bitte gib die Rechnungsnummer {{ invoice.number }} als Mitteilung an,
+damit wir die Zahlung zuordnen können.
+
+Dein Konto ist bereits freigeschaltet: Du kannst Planli ab sofort für die
+gesamte Laufzeit uneingeschränkt nutzen, du musst nicht auf die Verbuchung
+der Zahlung warten.
+
+Die Rechnung findest du jederzeit auch in deinem Konto:
+https://planli.net/accounts/konto/
+
+Bei Fragen schreibe bitte an info@planli.net
+
+Freundliche Grüsse
+Planli

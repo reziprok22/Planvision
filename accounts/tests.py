@@ -1,4 +1,7 @@
+import tempfile
 from datetime import timedelta
+from decimal import Decimal
+from pathlib import Path
 from unittest.mock import patch
 
 from django.conf import settings
@@ -9,8 +12,9 @@ from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .admin import SubscriptionAdmin
-from .models import (DISCOUNT_LIFETIME, DISCOUNT_ONCE, Subscription,
+from .admin import InvoiceAdmin, SubscriptionAdmin
+from .invoices import split_amounts
+from .models import (DISCOUNT_LIFETIME, DISCOUNT_ONCE, Invoice, Subscription,
                      subscription_for)
 from .pricing import global_discount, public_price
 
@@ -556,3 +560,283 @@ class MaxProjectsTests(TestCase):
         self.client.login(username='test@example.ch', password='sicher-genug-42')
         response = self.client.get(reverse('konto'))
         self.assertContains(response, 'bis zu 50 Projekte')
+
+
+INVOICE_TMP = Path(tempfile.mkdtemp(prefix='planli_invoices_test_'))
+ADDRESS = {
+    'billing_company': 'Muster AG',
+    'billing_name': 'Anna Muster',
+    'billing_street': 'Bahnhofstrasse 2',
+    'billing_zip': '3000',
+    'billing_city': 'Bern',
+    'billing_country': 'CH',
+}
+
+
+def _mark_paid(queryset):
+    """Admin-Action "Als bezahlt markieren" ausführen."""
+    with patch.object(InvoiceAdmin, 'message_user'):
+        InvoiceAdmin(Invoice, admin_site).mark_paid(RequestFactory().post('/vitruv/'), queryset)
+
+
+def _cancel(queryset):
+    with patch.object(InvoiceAdmin, 'message_user'):
+        InvoiceAdmin(Invoice, admin_site).cancel_invoices(
+            RequestFactory().post('/vitruv/'), queryset)
+
+
+@override_settings(BETA_PRICING=False, LICENSE_PRICE_CHF=200, GLOBAL_DISCOUNT_PERCENT=0,
+                   INVOICES_DIR=INVOICE_TMP, INVOICE_IBAN='CH5800791123000889012',
+                   INVOICE_VAT_RATE='8.1', LICENSE_PRICE_INCLUDES_VAT=True,
+                   INVOICE_BCC='buchhaltung@planli.net')
+class InvoiceTests(TestCase):
+    def setUp(self):
+        self.user = _make_user()
+        self.sub = subscription_for(self.user)
+        self.client.login(username='test@example.ch', password='sicher-genug-42')
+
+    def _request(self, **overrides):
+        return self.client.post(reverse('rechnung_anfordern'), {**ADDRESS, **overrides})
+
+    # ── Beträge ────────────────────────────────────────────────────────────
+    def test_gross_price_split_keeps_total_exact(self):
+        """Bei Brutto-Preisen muss das Total exakt der angezeigte Preis sein,
+        sonst weicht die Rechnung von der Konto-Seite ab."""
+        net, vat, total = split_amounts(200)
+        self.assertEqual(total, Decimal('200.00'))
+        self.assertEqual(net + vat, total)
+        self.assertEqual(net, Decimal('185.01'))
+
+    @override_settings(LICENSE_PRICE_INCLUDES_VAT=False)
+    def test_net_price_adds_vat_on_top(self):
+        net, vat, total = split_amounts(200)
+        self.assertEqual((net, vat, total),
+                         (Decimal('200.00'), Decimal('16.20'), Decimal('216.20')))
+
+    @override_settings(INVOICE_VAT_RATE='')
+    def test_without_vat_registration(self):
+        net, vat, total = split_amounts(200)
+        self.assertEqual((net, vat, total), (Decimal('200.00'), Decimal('0.00'), Decimal('200.00')))
+
+    # ── Erstellen ──────────────────────────────────────────────────────────
+    def test_request_creates_invoice_pdf_and_mail(self):
+        response = self._request()
+        invoice = Invoice.objects.get()
+        self.assertRedirects(response, f"{reverse('konto')}?rechnung={invoice.number}")
+        self.assertEqual(invoice.number, f'{timezone.localdate().year}-0001')
+        self.assertEqual(invoice.total_chf, Decimal('200.00'))
+        self.assertEqual(invoice.billing_name, 'Anna Muster')
+        self.assertTrue(invoice.pdf_path.exists())
+        self.assertEqual(invoice.pdf_path.read_bytes()[:4], b'%PDF')
+
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, ['test@example.ch'])
+        self.assertEqual(sent.bcc, ['buchhaltung@planli.net'])
+        self.assertIn(invoice.number, sent.subject)
+        self.assertEqual(sent.attachments[0][0], f'{invoice.number}.pdf')
+
+    def test_address_is_remembered_for_next_time(self):
+        self._request()
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.billing_city, 'Bern')
+        # Erst mit bezahlter Rechnung gibt es wieder das Formular statt des
+        # "bereits ausgestellt"-Hinweises
+        Invoice.objects.update(status=Invoice.STATUS_PAID)
+        response = self.client.get(reverse('rechnung_anfordern'))
+        self.assertContains(response, 'Bahnhofstrasse 2')
+
+    def test_incomplete_address_is_rejected(self):
+        response = self._request(billing_street='')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_only_one_open_invoice(self):
+        self._request()
+        response = self._request()
+        self.assertEqual(Invoice.objects.count(), 1)
+        self.assertContains(response, 'Rechnung bereits ausgestellt')
+
+    def test_numbers_are_sequential(self):
+        self._request()
+        Invoice.objects.update(status=Invoice.STATUS_PAID)
+        self._request()
+        year = timezone.localdate().year
+        self.assertEqual(sorted(Invoice.objects.values_list('number', flat=True)),
+                         [f'{year}-0001', f'{year}-0002'])
+
+    def test_amounts_are_frozen_against_later_price_changes(self):
+        self._request()
+        invoice = Invoice.objects.get()
+        with override_settings(LICENSE_PRICE_CHF=500):
+            invoice.refresh_from_db()
+            self.assertEqual(invoice.total_chf, Decimal('200.00'))
+
+    def test_discount_is_recorded_on_the_invoice(self):
+        self.sub.discount_percent = 50
+        self.sub.discount_scope = DISCOUNT_LIFETIME
+        self.sub.discount_reason = 'Beta-Tester'
+        self.sub.save()
+        self._request()
+        invoice = Invoice.objects.get()
+        self.assertEqual(invoice.total_chf, Decimal('100.00'))
+        self.assertEqual(invoice.list_price_chf, 200)
+        self.assertIn('Beta-Tester', invoice.discount_note)
+
+    def test_period_follows_a_running_licence(self):
+        self.sub.paid_until = timezone.localdate() + timedelta(days=100)
+        self.sub.save()
+        self._request()
+        invoice = Invoice.objects.get()
+        self.assertEqual(invoice.period_start, self.sub.paid_until)
+
+    def test_expired_user_can_still_order(self):
+        """Read-Only darf den Kauf nicht blockieren — das ist der Normalfall."""
+        _expire(self.user)
+        self._request()
+        self.assertEqual(Invoice.objects.count(), 1)
+
+    @override_settings(INVOICE_IBAN='CH0000000000000000000')
+    def test_placeholder_iban_blocks_issuing(self):
+        response = self._request()
+        self.assertEqual(Invoice.objects.count(), 0)
+        self.assertContains(response, 'gerade nicht verfügbar')
+
+    @override_settings(BETA_PRICING=True)
+    def test_no_invoices_during_beta(self):
+        response = self._request()
+        self.assertRedirects(response, reverse('konto'))
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    # ── Zugriff ────────────────────────────────────────────────────────────
+    def test_pdf_download_only_for_owner(self):
+        self._request()
+        number = Invoice.objects.get().number
+        self.assertEqual(self.client.get(reverse('rechnung_pdf', args=[number])).status_code, 200)
+        _make_user('fremd@example.ch')
+        self.client.login(username='fremd@example.ch', password='sicher-genug-42')
+        self.assertEqual(self.client.get(reverse('rechnung_pdf', args=[number])).status_code, 404)
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(reverse('rechnung_anfordern'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response['Location'])
+
+    def test_konto_lists_invoices(self):
+        self._request()
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, Invoice.objects.get().number)
+
+    def test_konto_hides_invoice_section_when_empty(self):
+        """Ohne Rechnungen keine Karte — bewusst so, hält die Seite übersichtlich."""
+        response = self.client.get(reverse('konto'))
+        # auf das Markup prüfen, nicht auf den Klassennamen: der steht auch
+        # im <style>-Block der Seite
+        self.assertNotContains(response, '<table class="invoice-table">')
+        self.assertNotContains(response, '<h2>Rechnungen</h2>')
+
+
+    # ── Aufbewahrung ───────────────────────────────────────────────────────
+    def test_invoice_survives_account_deletion(self):
+        """Aufbewahrungspflicht (OR 958f): der Beleg bleibt, der Kontobezug geht."""
+        self._request()
+        self.client.post(reverse('konto_loeschen'), {'password': 'sicher-genug-42'})
+        self.assertEqual(User.objects.count(), 0)
+        invoice = Invoice.objects.get()
+        self.assertIsNone(invoice.user_id)
+        self.assertEqual(invoice.billing_name, 'Anna Muster')
+        self.assertTrue(invoice.pdf_path.exists())
+
+    # ── Sofortige Freischaltung ────────────────────────────────────────────
+    def test_issuing_activates_licence_immediately(self):
+        """Freigeschaltet wird beim Ausstellen, nicht erst bei Zahlungseingang."""
+        _expire(self.user)
+        self._request()
+        invoice = Invoice.objects.get()
+        self.sub.refresh_from_db()
+        self.assertTrue(self.sub.is_paid)
+        self.assertEqual(self.sub.paid_until, invoice.period_end)
+        self.assertEqual(invoice.status, Invoice.STATUS_OPEN)  # noch unbezahlt
+        # Was an der Lizenzvergabe hängt, passiert hier mit
+        self.assertEqual(self.sub.list_price_chf, 200)
+
+    def test_once_discount_is_consumed_at_issuing(self):
+        self.sub.discount_percent = 50
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.sub.save()
+        self._request()
+        self.sub.refresh_from_db()
+        self.assertEqual(Invoice.objects.get().total_chf, Decimal('100.00'))
+        self.assertIsNotNone(self.sub.discount_used_at)
+        self.assertFalse(self.sub.discount_active)
+
+    def test_marking_paid_only_confirms(self):
+        self._request()
+        invoice = Invoice.objects.get()
+        before = self.sub.__class__.objects.get(pk=self.sub.pk).paid_until
+        _mark_paid(Invoice.objects.all())
+        invoice.refresh_from_db()
+        self.sub.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.STATUS_PAID)
+        self.assertIsNotNone(invoice.paid_at)
+        # Laufzeit unverändert — kein zweites Jahr obendrauf
+        self.assertEqual(self.sub.paid_until, before)
+
+    def test_marking_paid_twice_does_not_extend(self):
+        self._request()
+        for _ in range(2):
+            _mark_paid(Invoice.objects.all())
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.paid_until, Invoice.objects.get().period_end)
+
+    def test_marking_paid_repairs_a_missing_licence(self):
+        """Absicherung für Rechnungen aus der Zeit vor der Sofort-Freischaltung
+        (oder von Hand zurückgesetzte Konten)."""
+        self._request()
+        self.sub.refresh_from_db()
+        self.sub.paid_until = None
+        self.sub.save()
+        _mark_paid(Invoice.objects.all())
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.paid_until, Invoice.objects.get().period_end)
+
+    def test_cancelling_revokes_the_licence(self):
+        _expire(self.user)  # ohne laufende Testphase, sonst greift die weiter
+        self._request()
+        invoice = Invoice.objects.get()
+        _cancel(Invoice.objects.all())
+        invoice.refresh_from_db()
+        self.sub.refresh_from_db()
+        self.assertEqual(invoice.status, Invoice.STATUS_CANCELLED)
+        # Vorher gab es keine Lizenz → zurück auf gar keine
+        self.assertIsNone(self.sub.paid_until)
+        self.assertFalse(self.sub.is_active)
+
+    def test_cancelling_falls_back_to_the_previous_licence(self):
+        self.sub.paid_until = timezone.localdate() + timedelta(days=100)
+        self.sub.save()
+        self._request()
+        invoice = Invoice.objects.get()
+        _cancel(Invoice.objects.all())
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.paid_until, invoice.period_start)
+        self.assertTrue(self.sub.is_paid)
+
+    def test_cancelling_keeps_a_newer_licence_period(self):
+        """Storno einer alten Rechnung darf eine inzwischen neuere Laufzeit
+        nicht zurückdrehen."""
+        self._request()
+        alt = Invoice.objects.get()
+        self.sub.refresh_from_db()
+        self.sub.paid_until = alt.period_end + timedelta(days=365)
+        self.sub.save()
+        _cancel(Invoice.objects.filter(pk=alt.pk))
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.paid_until, alt.period_end + timedelta(days=365))
+
+    def test_cancelled_invoice_allows_a_new_one(self):
+        self._request()
+        _cancel(Invoice.objects.all())
+        self._request()
+        self.assertEqual(Invoice.objects.count(), 2)

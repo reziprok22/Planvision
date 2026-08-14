@@ -89,6 +89,44 @@
             margin-top: 2px;
         }
 
+        /* Feste Spaltenanteile (table-layout: fixed), damit sich die Zeile über
+           die ganze Kartenbreite verteilt statt links zu kleben. Hier drehen,
+           wenn die Aufteilung anders sein soll — die vier Werte ergeben 100 %. */
+        .invoice-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            table-layout: fixed;
+        }
+
+        .invoice-table td { padding: 0.6rem 0; border-bottom: 1px solid var(--slate-50); }
+        .invoice-table tr:last-child td { border-bottom: none; }
+        .invoice-table td + td { padding-left: 20px; }   /* Mindestabstand */
+        .invoice-table td:nth-child(1) { width: 25%; }   /* Nummer */
+        .invoice-table td:nth-child(2) { width: 25%; }   /* Datum */
+        /* Rechtsbündig, damit die Beträge mehrerer Zeilen untereinander stehen */
+        .invoice-table td.amount { width: 22%; text-align: right; font-weight: 600; }
+        /* Status ganz rechts (Rest = 28 %), aber nicht bis an die Kartenkante:
+           der Badge hat white-space: nowrap und würde sonst am Rand kleben. */
+        .invoice-table td:last-child {
+            text-align: right;
+            white-space: nowrap;
+            padding-right: 20px;
+        }
+        .invoice-new td { background: #F0FDF4; }
+
+        .invoice-sent {
+            font-size: 0.85rem;
+            color: #15803D;
+            font-weight: 600;
+            margin-top: 1rem;
+        }
+
+        @media (max-width: 560px) {
+            /* Datum weg, sonst quetscht die Tabelle Betrag und Status */
+            .invoice-table td:nth-child(2) { display: none; }
+        }
+
         .konto-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 1.2rem; }
         .logout-form { display: inline; }
 
@@ -203,13 +241,39 @@
         <p>Deine Testphase ist abgelaufen. Du kannst deine Projekte weiterhin öffnen, ansehen und als PDF
            exportieren, für Messen, Bearbeiten und die KI-Analyse brauchst du eine Lizenz.</p>
         {% endif %}
-        <p>Die Zahlung läuft unkompliziert per Rechnung: kurze E-Mail an uns, du erhältst eine
-           QR-Rechnung, und nach Zahlungseingang wird dein Konto für ein Jahr freigeschaltet.</p>
+        <p>Die Zahlung läuft per Rechnung: Du erhältst sie sofort als PDF mit QR-Zahlteil
+           per E-Mail &ndash; dein Konto ist ab diesem Moment für ein Jahr freigeschaltet,
+           du musst nicht auf die Verbuchung der Zahlung warten.</p>
         <div class="konto-actions">
-            <a class="btn btn-primary"
-               href="mailto:info@planli.net?subject=Planli%20Jahreslizenz&body=Guten%20Tag%0A%0AIch%20m%C3%B6chte%20eine%20Planli-Jahreslizenz%20f%C3%BCr%20das%20Konto%20{{ user.email|urlencode }}%20bestellen.%0A%0ARechnungsadresse%3A%0A">
-               Rechnung anfordern</a>
+            <a class="btn btn-primary" href="{% url 'rechnung_anfordern' %}">Rechnung anfordern</a>
         </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {# Ohne Rechnungen keine Karte — hält die Konto-Seite übersichtlich #}
+    {% if invoices %}
+    <div class="konto-card">
+        <h2>Rechnungen</h2>
+        <table class="invoice-table">
+            <tbody>
+            {% for inv in invoices %}
+            <tr{% if inv.number == neue_rechnung %} class="invoice-new"{% endif %}>
+                <td><a href="{% url 'rechnung_pdf' inv.number %}">{{ inv.number }}</a></td>
+                <td>{{ inv.issued_on|date:"d.m.Y" }}</td>
+                <td class="amount">CHF {{ inv.total_chf|floatformat:"2u" }}</td>
+                <td>
+                    {% if inv.status == 'paid' %}<span class="status-badge status-paid">Bezahlt</span>
+                    {% elif inv.status == 'cancelled' %}<span class="status-badge status-expired">Storniert</span>
+                    {% else %}<span class="status-badge status-trial">bezahlen bis {{ inv.due_on|date:"d.m.Y" }}</span>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% if neue_rechnung %}
+        <p class="invoice-sent">Rechnung {{ neue_rechnung }} wurde erstellt und an
+           {{ user.email|default:user.username }} geschickt.</p>
         {% endif %}
     </div>
     {% endif %}

@@ -12,6 +12,8 @@ urlpatterns = [
     path('register/', views.register, name='register'),
     path('konto/', views.konto, name='konto'),
     path('konto/loeschen/', views.konto_loeschen, name='konto_loeschen'),
+    path('konto/rechnung/', views.rechnung_anfordern, name='rechnung_anfordern'),
+    path('konto/rechnung/<str:number>.pdf', views.rechnung_pdf, name='rechnung_pdf'),
 
     # E-Mail-Verifikation nach der Registrierung
     path('verify-email/sent/', views.verify_email_sent, name='verify_email_sent'),

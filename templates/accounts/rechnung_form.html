@@ -1,0 +1,78 @@
+{% extends "accounts/auth_base.html" %}
+
+{% block title %}Rechnung anfordern | Planli{% endblock %}
+
+{% block extra_head %}
+    {{ block.super }}
+    <style>
+        .invoice-summary {
+            background: var(--slate-50);
+            border: 1px solid var(--slate-100);
+            border-radius: 8px;
+            padding: 0.9rem 1.1rem;
+            font-size: 0.9rem;
+            margin-bottom: 1.4rem;
+        }
+
+        .invoice-summary .total {
+            font-size: 1.3rem;
+            font-weight: 900;
+            color: var(--slate-900);
+        }
+
+        .invoice-summary .muted { color: var(--slate-400); font-size: 0.82rem; }
+
+        /* Zwei schmale Felder nebeneinander: PLZ / Ort */
+        .field-row { display: flex; gap: 12px; }
+        .field-row > div:first-child { flex: 0 0 32%; }
+        .field-row > div:last-child { flex: 1; }
+        .field-help { font-size: 0.78rem; color: var(--slate-400); margin: -0.6rem 0 0.9rem; }
+        .field-error { font-size: 0.82rem; color: #B91C1C; margin: -0.6rem 0 0.9rem; }
+    </style>
+{% endblock %}
+
+{% block card_class %} auth-card-wide{% endblock %}
+
+{% block card %}
+    <h1>Rechnung anfordern</h1>
+    <p class="subtitle">Du erhältst sie sofort per E-Mail und dein Konto ist ab sofort freigeschaltet.</p>
+
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+
+    <div class="invoice-summary">
+        <div class="total">CHF {{ sub.price_chf }}</div>
+        <div>Planli Jahreslizenz, 1 Nutzer{% if sub.discount_label %}<br>{{ sub.discount_label }}{% endif %}</div>
+        <div class="muted">
+            {% if sub.vat_note %}{{ sub.vat_note }} &middot; {% endif %}Zahlbar innert 30 Tagen.
+            Dein Konto wird sofort für ein Jahr freigeschaltet.
+        </div>
+    </div>
+
+    <form method="post" novalidate>
+        {% csrf_token %}
+        {% for field in form %}
+            {% if field.name == 'billing_zip' %}
+            <div class="field-row">
+                <div>
+                    {{ form.billing_zip.label_tag }}{{ form.billing_zip }}
+                    {% for e in form.billing_zip.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+                </div>
+                <div>
+                    {{ form.billing_city.label_tag }}{{ form.billing_city }}
+                    {% for e in form.billing_city.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+                </div>
+            </div>
+            {% elif field.name == 'billing_city' %}{# oben schon gerendert #}
+            {% else %}
+                {{ field.label_tag }}{{ field }}
+                {% if field.help_text %}<p class="field-help">{{ field.help_text }}</p>{% endif %}
+                {% for e in field.errors %}<p class="field-error">{{ e }}</p>{% endfor %}
+            {% endif %}
+        {% endfor %}
+        <button type="submit" class="btn btn-primary">Rechnung erstellen und zusenden</button>
+    </form>
+
+    <div class="link-row">
+        <a href="{% url 'konto' %}">Abbrechen</a>
+    </div>
+{% endblock %}

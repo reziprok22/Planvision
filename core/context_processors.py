@@ -1,6 +1,6 @@
 from django.conf import settings
 
-from accounts.pricing import public_price
+from accounts.pricing import public_price, vat_note
 
 
 def analytics(request):
@@ -30,4 +30,7 @@ def pricing(request):
         'license_price_chf': base,
         'license_price_now': now,
         'global_discount': discount,
+        # 'inkl./zzgl. MWST' — muss auf der Preiskarte stehen, sonst wäre der
+        # Betrag je nach LICENSE_PRICE_INCLUDES_VAT irreführend.
+        'price_vat_note': vat_note(),
     }

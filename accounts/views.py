@@ -6,14 +6,17 @@ from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
-from django.shortcuts import render, redirect
+from django.http import FileResponse
+from django.shortcuts import get_object_or_404, render, redirect
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
-from .forms import EmailUserCreationForm
-from .models import subscription_for
+from .forms import BillingAddressForm, EmailUserCreationForm
+from .invoices import InvoiceConfigError, create_invoice, send_invoice, store_pdf
+from .models import Invoice, subscription_for
 from .tokens import email_verification_token
 
 logger = logging.getLogger(__name__)
@@ -86,10 +89,69 @@ def verify_email(request, uidb64, token):
 
 
 @login_required
+def rechnung_anfordern(request):
+    """Self-Service: Adresse bestätigen → Rechnung erzeugen, ablegen, mailen.
+
+    Bewusst **ohne** Read-Only-Sperre: wer bezahlen will, muss das auch nach
+    Ablauf der Testphase können — das ist ja der Normalfall."""
+    sub = subscription_for(request.user)
+    if settings.BETA_PRICING:
+        # In der Beta zahlt niemand etwas; die Konto-Seite zeigt den Button
+        # gar nicht erst an.
+        return redirect('konto')
+
+    # Höchstens eine offene Rechnung — sonst erzeugt hektisches Klicken
+    # mehrere Rechnungsnummern für dieselbe Lizenz.
+    offen = request.user.invoices.filter(status=Invoice.STATUS_OPEN).first()
+    if offen:
+        return render(request, 'accounts/rechnung_offen.html', {'invoice': offen})
+
+    form = BillingAddressForm(request.POST or None, instance=sub)
+    error = None
+    if request.method == 'POST' and form.is_valid():
+        form.save()  # Adresse für das nächste Mal merken
+        try:
+            invoice = create_invoice(request.user, sub, form.address_snapshot())
+            store_pdf(invoice)
+        except InvoiceConfigError:
+            logger.exception('Rechnung nicht erstellt: Zahlungsdaten unvollständig')
+            error = ('Die Rechnungsstellung ist gerade nicht verfügbar. Wir haben '
+                     'eine Meldung erhalten und kümmern uns darum.')
+        else:
+            try:
+                send_invoice(invoice)
+            except Exception:
+                # Rechnung existiert und ist auf der Konto-Seite abrufbar —
+                # eine gescheiterte Mail darf sie nicht wertlos machen.
+                logger.exception('Rechnungs-Mail fehlgeschlagen (%s)', invoice.number)
+            return redirect(f"{reverse('konto')}?rechnung={invoice.number}")
+
+    return render(request, 'accounts/rechnung_form.html', {
+        'form': form, 'sub': sub, 'error': error,
+    })
+
+
+@login_required
+def rechnung_pdf(request, number):
+    """Rechnungs-PDF herunterladen (nur die eigenen)."""
+    invoice = get_object_or_404(Invoice, number=number, user=request.user)
+    if not invoice.pdf_path.exists():
+        store_pdf(invoice)
+    return FileResponse(invoice.pdf_path.open('rb'), content_type='application/pdf',
+                        filename=f'Planli-Rechnung-{invoice.number}.pdf')
+
+
+@login_required
 def konto(request):
     return render(request, 'accounts/konto.html', {
+        # Preise kommen aus der Subscription (sub.list_price / sub.price_chf /
+        # sub.discount_label), nicht aus den Settings — nur so zeigen Konto-Seite
+        # und Rechnung denselben Betrag, wenn für dieses Konto ein Basispreis
+        # oder ein Rabatt hinterlegt ist.
         'sub': subscription_for(request.user),
-        'price_chf': settings.LICENSE_PRICE_CHF,
+        'invoices': request.user.invoices.all(),
+        # Nach dem Erstellen: Nummer aus der Redirect-URL für die Erfolgsmeldung
+        'neue_rechnung': request.GET.get('rechnung', ''),
         # App-Shell-Chrome (base.html): linke Spalte statt Marketing-Nav —
         # siehe templates/_app_sidebar.html.
         'app_shell': True,
@@ -101,6 +163,11 @@ def _delete_user_files(user):
     """Alle Dateien des Users auf der Platte entfernen. Die DB-Zeilen räumt
     danach `user.delete()` per CASCADE ab (BugReport/AnalysisEvent bleiben
     via SET_NULL anonymisiert für die Statistik erhalten).
+
+    Rechnungen (Invoice + PDF unter INVOICES_DIR) bleiben ebenfalls: sie
+    unterliegen der 10-jährigen Aufbewahrungspflicht (OR 958f). Der User-FK
+    ist SET_NULL, die Rechnung trägt ihre Adresse als eigene Kopie — der
+    Beleg bleibt vollständig, die Verknüpfung zum Konto fällt weg.
 
     Trainingsdaten (training_data_opt-in/) bleiben bewusst erhalten: laut
     Datenschutzerklärung sind freigegebene Exporte bereits anonymisiert und

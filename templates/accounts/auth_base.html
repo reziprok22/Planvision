@@ -20,8 +20,13 @@
             box-shadow: 0 16px 40px rgba(15, 23, 42, 0.07);
             padding: 2.5rem;
             width: 100%;
+            /* Schmal ist Absicht: Login/Registrierung sind kurze Formulare,
+               eine breite Karte lässt sie verloren wirken. Seiten mit mehr
+               Feldern setzen stattdessen .auth-card-wide (Block card_class). */
             max-width: 420px;
         }
+
+        .auth-card.auth-card-wide { max-width: 1020px; }
 
         .auth-card h1 {
             font-size: 1.6rem;
@@ -146,7 +151,7 @@
 
 {% block body %}
 <main class="auth-wrap">
-    <div class="auth-card">
+    <div class="auth-card{% block card_class %}{% endblock %}">
         {% block card %}{% endblock %}
     </div>
 </main>
