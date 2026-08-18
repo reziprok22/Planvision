@@ -162,6 +162,16 @@ TRIAL_DAYS = 30
 # rabattierbar via Subscription.list_price_chf / .discount_percent — dort steht
 # auch, warum der Rabatt prozentual ist.
 LICENSE_PRICE_CHF = 100
+# Preiskommunikation nach aussen: die Preis-Karte auf der Landingpage samt
+# Preis-Erwähnungen in FAQ und JSON-LD sowie der künftige Preis auf der
+# Konto-Seite während der Beta. Die Preissektion selbst ("Preismodell" mit der
+# Beta-kostenlos-Info) und der "Preise"-Nav-Link bleiben immer sichtbar.
+# False = Beträge ausgeblendet, solange das Pricing noch nicht entschieden/
+# kommuniziert werden soll. Bewusst NICHT betroffen: die
+# Jahrespreis-Zeile zahlender Kunden (deren Vertragspreis) und der Verkaufs-
+# Modus nach der Beta (BETA_PRICING=False zeigt den Preis neben "Rechnung
+# anfordern" immer — dann muss SHOW_PRICING ohnehin wieder True sein).
+SHOW_PRICING = False
 # Globale Preisaktion für ALLE (0 = aus). Die Landingpage-Karte zeigt dann den
 # Listenpreis durchgestrichen, darunter den Aktionspreis und die Begründung;
 # Konto-Seite und Rechnungspreis ziehen mit. Ein persönlicher Rabatt
@@ -195,6 +205,9 @@ LICENSE_PRICE_INCLUDES_VAT = True
 INVOICE_DUE_DAYS = 30
 # Kopie jeder versendeten Rechnung an dich (leer = aus)
 INVOICE_BCC = 'info@planli.net'
+# Stichtage (Tage vor Lizenzablauf) für die Erinnerungs-Mails des täglichen
+# renewal_reminders-Crons — siehe accounts/management/commands/
+RENEWAL_REMINDER_DAYS = (30, 7)
 # Abgelegte Rechnungs-PDFs. Aufbewahrungspflicht 10 Jahre (OR 958f) —
 # weder vom Cleanup noch von der Kontolöschung angefasst.
 INVOICES_DIR = BASE_DIR / 'invoices'

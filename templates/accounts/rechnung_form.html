@@ -43,7 +43,7 @@
         <div class="total">CHF {{ sub.price_chf }}</div>
         <div>Planli Jahreslizenz, 1 Nutzer{% if sub.discount_label %}<br>{{ sub.discount_label }}{% endif %}</div>
         <div class="muted">
-            {% if sub.vat_note %}{{ sub.vat_note }} &middot; {% endif %}Zahlbar innert 30 Tagen.
+            {% if sub.vat_note %}{{ sub.vat_note }} &middot; {% endif %}Zahlbar innert {{ due_days }} Tagen.
             Dein Konto wird sofort für ein Jahr freigeschaltet.
         </div>
     </div>
@@ -71,6 +71,15 @@
         {% endfor %}
         <button type="submit" class="btn btn-primary">Rechnung erstellen und zusenden</button>
     </form>
+    <script>
+        // Doppelklick-Schutz: ein zweiter Submit würde serverseitig zwar
+        // abgefangen (OpenInvoiceError), soll aber gar nicht erst rausgehen.
+        document.querySelector('form').addEventListener('submit', function () {
+            var btn = this.querySelector('button[type=submit]');
+            btn.disabled = true;
+            btn.textContent = 'Rechnung wird erstellt …';
+        });
+    </script>
 
     <div class="link-row">
         <a href="{% url 'konto' %}">Abbrechen</a>

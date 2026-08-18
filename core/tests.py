@@ -147,11 +147,38 @@ class LandingCtaTests(TestCase):
         self.assertNotContains(response, reverse('register'))
 
 
-@override_settings(GLOBAL_DISCOUNT_PERCENT=0)
+# SHOW_PRICING=True gepinnt: diese Tests prüfen die Preisdarstellung selbst —
+# der Kommunikations-Schalter (Default aktuell False) ist ein eigener Test unten.
+@override_settings(GLOBAL_DISCOUNT_PERCENT=0, SHOW_PRICING=True)
 class LandingPricingTests(TestCase):
     """Die Preiskarte ist auch während der Beta sichtbar (die Kosten danach
     sollen früh bekannt sein); nur Hinweistext und JSON-LD-Preis unterscheiden
     sich. Der Betrag kommt aus LICENSE_PRICE_CHF, nicht aus dem Template."""
+
+    @override_settings(SHOW_PRICING=False, BETA_PRICING=True, LICENSE_PRICE_CHF=240)
+    def test_show_pricing_off_shows_free_beta_section_without_prices(self):
+        """SHOW_PRICING=False: die Preissektion zeigt die schlichte
+        "Aktuell kostenlos"-Version — keine Preis-Karte, kein Betrag in FAQ
+        oder JSON-LD, nirgends auf der Landingpage steht ein Preis."""
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, 'id="pricing"')
+        self.assertContains(response, 'Aktuell kostenlos')
+        self.assertContains(response, 'Jetzt loslegen')
+        self.assertNotContains(response, 'Ein Preis, voller Funktionsumfang')
+        # Aufs Markup prüfen, nicht auf den Klassennamen: der steht auch im
+        # <style>-Block der Seite
+        self.assertNotContains(response, '<div class="plan-card')  # Karte weg
+        self.assertNotContains(response, '<sup>CHF</sup>')
+        self.assertNotContains(response, '"price"')
+        self.assertNotContains(response, 'CHF 240')
+        self.assertNotContains(response, 'unten stehende Preis')
+        # Die FAQ bleibt, nur ohne Betrag
+        self.assertContains(response, 'kostenlose Testphase')
+        # Ohne offers-Block muss das JSON-LD gültig bleiben (das Komma nach
+        # description hängt im Template am if — hier bricht es zuerst)
+        html = response.content.decode()
+        start = html.index('<script type="application/ld+json">') + len('<script type="application/ld+json">')
+        json.loads(html[start:html.index('</script>', start)])
 
     @override_settings(BETA_PRICING=True, LICENSE_PRICE_CHF=240)
     def test_price_card_visible_during_beta(self):

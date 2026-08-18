@@ -6,6 +6,7 @@ from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.core.mail import EmailMultiAlternatives
+from django.db import transaction
 from django.http import FileResponse
 from django.shortcuts import get_object_or_404, render, redirect
 from django.template.loader import render_to_string
@@ -15,7 +16,8 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from .forms import BillingAddressForm, EmailUserCreationForm
-from .invoices import InvoiceConfigError, create_invoice, send_invoice, store_pdf
+from .invoices import (InvoiceConfigError, OpenInvoiceError, create_invoice,
+                       send_invoice, store_pdf)
 from .models import Invoice, subscription_for
 from .tokens import email_verification_token
 
@@ -111,12 +113,33 @@ def rechnung_anfordern(request):
     if request.method == 'POST' and form.is_valid():
         form.save()  # Adresse für das nächste Mal merken
         try:
-            invoice = create_invoice(request.user, sub, form.address_snapshot())
-            store_pdf(invoice)
+            # Eine Transaktion um Anlegen UND PDF: schlägt das Rendern fehl,
+            # rollt alles zurück (Freischaltung, Rabatt-Verbrauch, Nummer) —
+            # sonst bliebe eine Rechnung übrig, deren PDF-Download für immer
+            # mit demselben Fehler stirbt.
+            with transaction.atomic():
+                invoice = create_invoice(request.user, sub, form.address_snapshot())
+                store_pdf(invoice)
         except InvoiceConfigError:
             logger.exception('Rechnung nicht erstellt: Zahlungsdaten unvollständig')
             error = ('Die Rechnungsstellung ist gerade nicht verfügbar. Wir haben '
                      'eine Meldung erhalten und kümmern uns darum.')
+        except OpenInvoiceError:
+            # Doppelklick/zweiter Tab: der Check oben lief noch ohne die
+            # Rechnung des parallelen Requests — jetzt existiert sie.
+            offen = request.user.invoices.filter(status=Invoice.STATUS_OPEN).first()
+            return render(request, 'accounts/rechnung_offen.html', {'invoice': offen})
+        except Exception:
+            # Unerwarteter Fehler (z.B. beim PDF-Rendern): dank Rollback ist
+            # keine Rechnung entstanden — dem Kunden eine verständliche
+            # Meldung zeigen statt einer 500er-Seite.
+            logger.exception('Rechnung nicht erstellt: Fehler beim Erzeugen')
+            # activate_licence() hat `sub` im Speicher schon mutiert — nach dem
+            # Rollback den DB-Stand zurückholen, sonst zeigt das Formular
+            # falsche Preis-/Rabattwerte.
+            sub.refresh_from_db()
+            error = ('Die Rechnung konnte nicht erstellt werden. Wir haben eine '
+                     'Meldung erhalten und kümmern uns darum.')
         else:
             try:
                 send_invoice(invoice)
@@ -128,6 +151,7 @@ def rechnung_anfordern(request):
 
     return render(request, 'accounts/rechnung_form.html', {
         'form': form, 'sub': sub, 'error': error,
+        'due_days': settings.INVOICE_DUE_DAYS,
     })
 
 

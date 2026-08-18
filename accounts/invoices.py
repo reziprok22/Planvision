@@ -22,6 +22,7 @@ from PyPDF2 import PdfReader, PdfWriter
 from qrbill import QRBill
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
+from reportlab.lib.utils import simpleSplit
 from reportlab.pdfgen import canvas
 
 from .models import Invoice
@@ -30,11 +31,21 @@ from .models import Invoice
 # QR-Code unbezahlbar — lieber hart abbrechen als eine tote Rechnung versenden.
 PLACEHOLDER_IBAN = 'CH0000000000000000000'
 
-LICENSE_TERM_DAYS = 365
+def one_year_later(day):
+    """Lizenzlaufzeit = ein Kalenderjahr, nicht 365 Tage: über ein Schaltjahr
+    verlöre der Kunde sonst einen Tag. 29.2. landet auf dem 28.2."""
+    try:
+        return day.replace(year=day.year + 1)
+    except ValueError:
+        return day.replace(year=day.year + 1, day=28)
 
 
 class InvoiceConfigError(RuntimeError):
     """Zahlungsdaten in den Settings fehlen oder sind noch Platzhalter."""
+
+
+class OpenInvoiceError(RuntimeError):
+    """Für dieses Konto ist bereits eine Rechnung offen."""
 
 
 def _q(value):
@@ -72,8 +83,11 @@ def next_number(today=None):
     serialisieren statt dieselbe Nummer zu ziehen."""
     today = today or timezone.localdate()
     prefix = f'{today.year}-'
-    last = Invoice.objects.filter(number__startswith=prefix).order_by('-number').first()
-    seq = int(last.number.split('-')[1]) + 1 if last else 1
+    # Numerisch statt als String maximieren: '9999' > '10000' in der
+    # String-Sortierung — ab 10'000 Rechnungen/Jahr zöge order_by('-number')
+    # sonst eine schon vergebene Nummer.
+    numbers = Invoice.objects.filter(number__startswith=prefix).values_list('number', flat=True)
+    seq = max((int(n.split('-')[1]) for n in numbers), default=0) + 1
     return f'{prefix}{seq:04d}'
 
 
@@ -116,9 +130,22 @@ def create_invoice(user, sub, address):
     eingefroren; spätere Preis- oder Rabattänderungen berühren die Rechnung
     nicht mehr."""
     check_config()
+    # Höchstens eine offene Rechnung pro Konto — hier drin statt nur im View,
+    # weil die Transaktion (IMMEDIATE) gleichzeitige Anfragen serialisiert:
+    # ein Doppelklick auf "Rechnung erstellen" passiert den View-Check zweimal,
+    # aber nur der erste kommt hier durch.
+    if user.invoices.filter(status=Invoice.STATUS_OPEN).exists():
+        raise OpenInvoiceError(f'Offene Rechnung für {user.username} existiert bereits.')
     today = timezone.localdate()
-    # Anschluss an eine laufende Lizenz, sonst ab heute
-    start = sub.paid_until if (sub.paid_until and sub.paid_until > today) else today
+    # Anschluss an eine laufende Lizenz ODER die restliche Testphase, sonst ab
+    # heute. Trial-Resttage anzurechnen ist fair (wer früh kauft, verliert
+    # nichts) — das gilt auch für per Feedback-Dankeschön verlängerte Trials.
+    anchors = [today]
+    if sub.paid_until:
+        anchors.append(sub.paid_until)
+    if sub.trial_ends:
+        anchors.append(timezone.localtime(sub.trial_ends).date())
+    start = max(anchors)
     net, vat, total = split_amounts(sub.price_chf)
     invoice = Invoice.objects.create(
         user=user,
@@ -127,11 +154,17 @@ def create_invoice(user, sub, address):
         due_on=today + timedelta(days=settings.INVOICE_DUE_DAYS),
         net_chf=net, vat_rate=vat_rate(), vat_chf=vat, total_chf=total,
         period_start=start,
-        period_end=start + timedelta(days=LICENSE_TERM_DAYS),
+        period_end=one_year_later(start),
         list_price_chf=sub.list_price,
         discount_percent=sub.effective_discount.percent,
-        discount_note=sub.discount_label,
+        # invoice_label statt label: ohne "gültig bis"-/Laufzeit-Zusätze,
+        # die auf einem eingefrorenen Beleg widersinnig wären
+        discount_note=sub.effective_discount.invoice_label,
         billing_email=user.email or user.username,
+        # Zahlungsempfänger einfrieren (siehe Modell-Kommentar)
+        creditor_iban=(settings.INVOICE_IBAN or '').replace(' ', ''),
+        creditor=dict(settings.INVOICE_CREDITOR),
+        creditor_vat_uid=settings.INVOICE_VAT_UID or '',
         **address,
     )
     activate_licence(sub, invoice)
@@ -139,18 +172,35 @@ def create_invoice(user, sub, address):
 
 
 # ── PDF ──────────────────────────────────────────────────────────────────
-def _iban_display():
-    """IBAN in Vierergruppen, wie auf dem Zahlteil."""
-    iban = settings.INVOICE_IBAN.replace(' ', '')
-    return ' '.join(iban[i:i + 4] for i in range(0, len(iban), 4))
+# Die Empfänger-Daten kommen aus den eingefrorenen Invoice-Feldern, nicht aus
+# den Settings: eine Regeneration (Datei verloren) muss denselben Beleg
+# ergeben wie der Erstversand — auch nach einem Bankwechsel. Fallback auf die
+# Settings nur für Rechnungen aus der Zeit vor den creditor_*-Feldern.
+def _frozen_iban(invoice):
+    return invoice.creditor_iban or (settings.INVOICE_IBAN or '').replace(' ', '')
 
+
+def _frozen_creditor(invoice):
+    return invoice.creditor or dict(settings.INVOICE_CREDITOR)
+
+
+def _frozen_vat_uid(invoice):
+    # creditor_iban als Marker für "hat eingefrorene Daten": eine leere UID
+    # auf einer neuen Rechnung heisst "keine UID", nicht "Settings fragen".
+    return invoice.creditor_vat_uid if invoice.creditor_iban else settings.INVOICE_VAT_UID
+
+
+def _iban_display(invoice):
+    """IBAN in Vierergruppen, wie auf dem Zahlteil."""
+    iban = _frozen_iban(invoice)
+    return ' '.join(iban[i:i + 4] for i in range(0, len(iban), 4))
 
 
 def _qr_page(invoice):
     """A4-Seite mit dem Zahlteil in den unteren 105 mm."""
     bill = QRBill(
-        account=settings.INVOICE_IBAN.replace(' ', ''),
-        creditor=dict(settings.INVOICE_CREDITOR),
+        account=_frozen_iban(invoice),
+        creditor=_frozen_creditor(invoice),
         debtor={
             'name': invoice.billing_company or invoice.billing_name,
             'street': invoice.billing_street,
@@ -176,7 +226,7 @@ def _text_page(invoice):
     buf = io.BytesIO()
     pdf = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
-    creditor = settings.INVOICE_CREDITOR
+    creditor = _frozen_creditor(invoice)
 
     def line(x_mm, y_mm, text, font='Helvetica', size=9.5):
         pdf.setFont(font, size)
@@ -186,16 +236,27 @@ def _text_page(invoice):
         pdf.setFont(font, size)
         pdf.drawRightString(x_mm * mm, height - y_mm * mm, text)
 
+    def wrap(x_mm, y_mm, text, max_w_mm, font='Helvetica', size=9.5):
+        """Wie line(), aber mit Zeilenumbruch bei max_w_mm — Adresszeilen
+        dürfen laut QR-Norm 70 Zeichen lang sein und liefen sonst über den
+        rechten Rand hinaus. Gibt die nächste freie y-Position zurück."""
+        pdf.setFont(font, size)
+        for chunk in simpleSplit(text, font, size, max_w_mm * mm):
+            pdf.drawString(x_mm * mm, height - y_mm * mm, chunk)
+            y_mm += 5
+        return y_mm
+
     # Absender
     line(20, 22, creditor['name'], 'Helvetica-Bold', 14)
     line(20, 28, creditor['street'])
     line(20, 33, f"{creditor['pcode']} {creditor['city']}")
-    if settings.INVOICE_VAT_UID:
-        line(20, 38, settings.INVOICE_VAT_UID)
+    if _frozen_vat_uid(invoice):
+        line(20, 38, _frozen_vat_uid(invoice))
 
-    # Empfänger
-    for i, text in enumerate(invoice.address_lines):
-        line(120, 50 + i * 5, text)
+    # Empfänger (120–190 mm; lange Zeilen umbrechen)
+    y_addr = 50
+    for text in invoice.address_lines:
+        y_addr = wrap(120, y_addr, text, max_w_mm=70)
 
     # Kopf
     line(20, 80, f'Rechnung {invoice.number}', 'Helvetica-Bold', 13)
@@ -215,8 +276,9 @@ def _text_page(invoice):
          'Helvetica', 8.5)
     if invoice.discount_percent:
         y += 5
-        line(20, y, f'inkl. {invoice.discount_note} (Basispreis CHF {invoice.list_price_chf})',
-             'Helvetica', 8.5)
+        # Rabatt-Grund ist Freitext und kann lang sein — ebenfalls umbrechen
+        y = wrap(20, y, f'inkl. {invoice.discount_note} (Basispreis CHF {invoice.list_price_chf})',
+                 max_w_mm=150, font='Helvetica', size=8.5) - 5
 
     y += 8
     pdf.line(20 * mm, height - (y - 4) * mm, 190 * mm, height - (y - 4) * mm)
@@ -238,7 +300,7 @@ def _text_page(invoice):
     line(20, y, 'Das Konto ist für die oben genannte Laufzeit bereits freigeschaltet.',
          'Helvetica', 8.5)
     y += 5
-    line(20, y, f'Konto: {_iban_display()}', 'Helvetica', 8.5)
+    line(20, y, f'Konto: {_iban_display(invoice)}', 'Helvetica', 8.5)
 
     pdf.showPage()
     pdf.save()

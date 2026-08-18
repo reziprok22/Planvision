@@ -1,3 +1,4 @@
+import io
 import tempfile
 from datetime import timedelta
 from decimal import Decimal
@@ -8,12 +9,13 @@ from django.conf import settings
 from django.contrib.admin.sites import site as admin_site
 from django.contrib.auth.models import User
 from django.core import mail
+from django.core.management import call_command
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .admin import InvoiceAdmin, SubscriptionAdmin
-from .invoices import split_amounts
+from .admin import InvoiceAdmin
+from .invoices import OpenInvoiceError, create_invoice, split_amounts, store_pdf
 from .models import (DISCOUNT_LIFETIME, DISCOUNT_ONCE, Invoice, Subscription,
                      subscription_for)
 from .pricing import global_discount, public_price
@@ -220,12 +222,18 @@ def _expire(user):
 
 
 def _extend(subs):
-    """Admin-Action "Um 1 Jahr verlängern" ausführen (= Zahlung verbuchen).
-    Die übergebenen Objekte sind danach veraltet — refresh_from_db()."""
-    request = RequestFactory().post('/vitruv/')
-    queryset = Subscription.objects.filter(pk__in=[s.pk for s in subs])
-    with patch.object(SubscriptionAdmin, 'message_user'):
-        SubscriptionAdmin(Subscription, admin_site).extend_one_year(request, queryset)
+    """Ein Jahr Lizenz verbuchen — über den echten (und einzigen) Weg:
+    Rechnung ausstellen (schaltet frei, fixiert Preis, verbraucht Einmal-
+    Rabatt), danach als bezahlt ablegen, damit die nächste Verlängerung nicht
+    am "eine offene Rechnung"-Guard scheitert. Die frühere Subscription-
+    Admin-Action "Um 1 Jahr verlängern" wurde entfernt (hätte zusätzlich zur
+    Sofort-Freischaltung ein zweites Jahr gutgeschrieben). Die übergebenen
+    Objekte sind danach veraltet — refresh_from_db()."""
+    for stale in subs:
+        sub = Subscription.objects.get(pk=stale.pk)
+        create_invoice(sub.user, sub, dict(ADDRESS))
+        Invoice.objects.filter(user=sub.user, status=Invoice.STATUS_OPEN).update(
+            status=Invoice.STATUS_PAID)
 
 
 class SubscriptionTests(TestCase):
@@ -320,18 +328,32 @@ class KontoAndReadOnlyTests(TestCase):
         self.assertContains(response, 'window.PLANLI_READ_ONLY = false')
         self.assertNotContains(response, 'read-only-banner')
 
-    @override_settings(BETA_PRICING=True, GLOBAL_DISCOUNT_PERCENT=0)
+    @override_settings(BETA_PRICING=True, GLOBAL_DISCOUNT_PERCENT=0, SHOW_PRICING=True)
     def test_konto_shows_beta_note_and_future_price(self):
         """Während der Beta ist der Zugriff unbeschränkt (_read_only() greift
         nie), ein Rechnungs-CTA wäre also irreführend — der künftige Preis wird
-        aber gezeigt, damit die Kosten nach der Beta bekannt sind."""
+        (bei SHOW_PRICING) gezeigt, damit die Kosten nach der Beta bekannt sind."""
         response = self.client.get(reverse('konto'))
         self.assertContains(response, 'Während der Beta-Phase ist Planli')
         self.assertNotContains(response, 'Rechnung anfordern')
         self.assertContains(response, f'<sup>CHF</sup>{settings.LICENSE_PRICE_CHF}')
         self.assertContains(response, 'nach der Beta-Phase')
 
-    @override_settings(BETA_PRICING=True, LICENSE_PRICE_CHF=240, GLOBAL_DISCOUNT_PERCENT=0)
+    @override_settings(BETA_PRICING=True, GLOBAL_DISCOUNT_PERCENT=0, SHOW_PRICING=False)
+    def test_konto_hides_future_price_without_show_pricing(self):
+        """SHOW_PRICING=False: die Konto-Seite nennt Beta-Nutzern keinen
+        künftigen Preis — die Karte heisst "Aktuell kostenlos" (Formulierung
+        wie die Landingpage-Preissektion). Der Vertragspreis zahlender Kunden
+        (Jahrespreis-Zeile) ist davon bewusst ausgenommen."""
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, 'Aktuell kostenlos')
+        self.assertContains(response, 'befindet sich in der Beta-Phase')
+        self.assertNotContains(response, 'Jahreslizenz')
+        self.assertNotContains(response, '<sup>CHF</sup>')
+        self.assertNotContains(response, 'nach der Beta-Phase')
+
+    @override_settings(BETA_PRICING=True, LICENSE_PRICE_CHF=240,
+                       GLOBAL_DISCOUNT_PERCENT=0, SHOW_PRICING=True)
     def test_konto_shows_personal_discount(self):
         sub = subscription_for(self.user)
         sub.discount_percent = 50
@@ -362,7 +384,10 @@ class KontoAndReadOnlyTests(TestCase):
 
 # GLOBAL_DISCOUNT_PERCENT=0 fixiert: diese Tests prüfen den persönlichen
 # Rabatt, eine laufende Preisaktion in den Settings darf sie nicht kippen.
-@override_settings(LICENSE_PRICE_CHF=240, GLOBAL_DISCOUNT_PERCENT=0)
+# INVOICE_IBAN gepinnt, weil _extend() über create_invoice() läuft — die
+# Tests dürfen nicht davon abhängen, ob in den Settings eine echte IBAN steht.
+@override_settings(LICENSE_PRICE_CHF=240, GLOBAL_DISCOUNT_PERCENT=0,
+                   INVOICE_IBAN='CH5800791123000889012')
 class PriceAndDiscountTests(TestCase):
     """Basispreis pro Konto (leer = Listenpreis) und prozentualer Rabatt mit
     Laufzeit einmalig/dauerhaft."""
@@ -410,7 +435,7 @@ class PriceAndDiscountTests(TestCase):
         self.assertFalse(self.sub.discount_active)
         self.assertEqual(self.sub.discount_label, '')
 
-    def test_admin_extend_pins_price_so_increases_hit_only_new_users(self):
+    def test_renewal_pins_price_so_increases_hit_only_new_users(self):
         """Preisgarantie: mit der Rechnung wird der Preis festgeschrieben, eine
         spätere Erhöhung gilt nur für Konten, die noch nie bezahlt haben."""
         old_customer = self.sub
@@ -451,7 +476,7 @@ class PriceAndDiscountTests(TestCase):
         with override_settings(LICENSE_PRICE_CHF=300):
             self.assertEqual(self.sub.price_chf, 120)  # 50 % von 240, nicht von 300
 
-    def test_admin_extend_consumes_once_discount_only(self):
+    def test_renewal_consumes_once_discount_only(self):
         """Die Verlängerung ist der Moment, in dem ein einmaliger Rabatt
         verbraucht ist — sonst gälte er auch im Folgejahr."""
         once = self.sub
@@ -471,7 +496,9 @@ class PriceAndDiscountTests(TestCase):
         self.assertFalse(once.discount_active)
         self.assertIsNone(lifetime.discount_used_at)
         self.assertTrue(lifetime.discount_active)
-        self.assertEqual(once.paid_until, timezone.localdate() + timedelta(days=365))
+        # Laufzeit = Kalenderjahr ab Anker (Trial-Resttage werden angerechnet)
+        self.assertEqual(once.paid_until,
+                         Invoice.objects.get(user=once.user).period_end)
 
 
 @override_settings(LICENSE_PRICE_CHF=200, GLOBAL_DISCOUNT_PERCENT=20,
@@ -583,6 +610,12 @@ def _cancel(queryset):
     with patch.object(InvoiceAdmin, 'message_user'):
         InvoiceAdmin(Invoice, admin_site).cancel_invoices(
             RequestFactory().post('/vitruv/'), queryset)
+
+
+def _reopen(queryset):
+    """Admin-Action "Zurück auf offen" ausführen."""
+    with patch.object(InvoiceAdmin, 'message_user'):
+        InvoiceAdmin(Invoice, admin_site).reopen(RequestFactory().post('/vitruv/'), queryset)
 
 
 @override_settings(BETA_PRICING=False, LICENSE_PRICE_CHF=200, GLOBAL_DISCOUNT_PERCENT=0,
@@ -840,3 +873,222 @@ class InvoiceTests(TestCase):
         _cancel(Invoice.objects.all())
         self._request()
         self.assertEqual(Invoice.objects.count(), 2)
+
+    # ── Adress-Grenzen (QR-Norm) ───────────────────────────────────────────
+    def test_overlong_name_is_rejected_by_form(self):
+        """Die QR-Norm erlaubt 70 Zeichen pro Adresszeile — längere Namen
+        müssen am Formular scheitern, nicht erst als ValueError in qrbill
+        (der hinterliesse eine Rechnung ohne erzeugbares PDF)."""
+        response = self._request(billing_name='N' * 71)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Invoice.objects.count(), 0)
+        response = self._request(billing_company='F' * 71)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_invalid_country_is_rejected(self):
+        response = self._request(billing_country='XX')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_lowercase_country_is_normalised(self):
+        self._request(billing_country='ch')
+        self.assertEqual(Invoice.objects.get().billing_country, 'CH')
+
+    def test_swiss_zip_must_be_four_digits(self):
+        for bad in ('300', '30000', '30a0', 'ABCD'):
+            response = self._request(billing_zip=bad)
+            self.assertContains(response, 'vierstellige PLZ')
+        self.assertEqual(Invoice.objects.count(), 0)
+
+    def test_foreign_zip_may_be_long_or_alphanumeric(self):
+        """NL '1234 AB', UK 'SW1A 1AA' & Co. sind gültig — die 4-Ziffern-Regel
+        gilt nur für CH/LI."""
+        self._request(billing_country='NL', billing_zip='1234 AB')
+        self.assertEqual(Invoice.objects.get().billing_zip, '1234 AB')
+
+    def test_pdf_renders_with_maximum_length_address(self):
+        """70-Zeichen-Zeilen (das Maximum der QR-Norm) müssen im PDF umbrechen
+        statt zu crashen oder über den Rand zu laufen."""
+        self._request(billing_company='F' * 70, billing_name='N' * 70,
+                      billing_street='S' * 70)
+        invoice = Invoice.objects.get()
+        self.assertEqual(invoice.pdf_path.read_bytes()[:4], b'%PDF')
+
+    def test_foreign_address_carries_country_prefix(self):
+        """Auslandsadresse: Ländercode vor der PLZ (wie auf dem QR-Zahlteil);
+        bei CH bleibt er postüblich weg."""
+        self._request(billing_country='DE', billing_zip='10115', billing_city='Berlin')
+        self.assertIn('DE-10115 Berlin', Invoice.objects.get().address_lines)
+        Invoice.objects.update(status=Invoice.STATUS_PAID)
+        self._request()  # Standard-Adresse (CH)
+        ch_invoice = Invoice.objects.get(status=Invoice.STATUS_OPEN)
+        self.assertIn('3000 Bern', ch_invoice.address_lines)
+
+    # ── Laufzeit ───────────────────────────────────────────────────────────
+    def test_trial_remainder_is_not_lost(self):
+        """Wer während der Testphase kauft, verliert die Resttage nicht: die
+        Lizenz schliesst ans Trial-Ende an und dauert ein Kalenderjahr."""
+        self._request()
+        invoice = Invoice.objects.get()
+        trial_end = timezone.localtime(self.sub.trial_ends).date()
+        self.assertEqual(invoice.period_start, trial_end)
+        self.assertEqual(invoice.period_end, trial_end.replace(year=trial_end.year + 1))
+
+    # ── Eingefrorener Zahlungsempfänger ────────────────────────────────────
+    def test_creditor_is_frozen_on_the_invoice(self):
+        """Regeneriertes PDF = derselbe Beleg, auch nach Bankwechsel: die
+        Zahlungsdaten kommen von der Rechnung, nicht aus den Settings. Mit der
+        Platzhalter-IBAN in den Settings würde qrbill crashen — dass das
+        Rendern klappt, beweist, dass die eingefrorene IBAN benutzt wird."""
+        self._request()
+        invoice = Invoice.objects.get()
+        self.assertEqual(invoice.creditor_iban, 'CH5800791123000889012')
+        self.assertEqual(invoice.creditor['name'], settings.INVOICE_CREDITOR['name'])
+        invoice.pdf_path.unlink()
+        with override_settings(INVOICE_IBAN='CH0000000000000000000'):
+            store_pdf(invoice)
+        self.assertEqual(invoice.pdf_path.read_bytes()[:4], b'%PDF')
+
+    # ── Nummernkreis ───────────────────────────────────────────────────────
+    def test_next_number_is_compared_numerically(self):
+        """String-Sortierung fände '9999' > '10000' — ab der fünfstelligen
+        Rechnung zöge das eine schon vergebene Nummer."""
+        self._request()
+        year = timezone.localdate().year
+        Invoice.objects.update(number=f'{year}-9999', status=Invoice.STATUS_PAID)
+        self._request()
+        self.assertTrue(Invoice.objects.filter(number=f'{year}-10000').exists())
+
+    # ── Rabatt-Text auf dem Beleg ──────────────────────────────────────────
+    @override_settings(GLOBAL_DISCOUNT_PERCENT=25, GLOBAL_DISCOUNT_REASON='Aktion',
+                       GLOBAL_DISCOUNT_UNTIL='2099-12-31')
+    def test_invoice_discount_note_has_no_expiry_clause(self):
+        """'gültig bis' gehört zur Aktion, nicht auf den eingefrorenen Beleg."""
+        self._request()
+        self.assertEqual(Invoice.objects.get().discount_note, '25 % Rabatt (Aktion)')
+
+    # ── Fehlklick-Korrektur ────────────────────────────────────────────────
+    def test_reopen_reverts_a_wrong_mark_paid(self):
+        self._request()
+        _mark_paid(Invoice.objects.all())
+        _reopen(Invoice.objects.all())
+        invoice = Invoice.objects.get()
+        self.assertEqual(invoice.status, Invoice.STATUS_OPEN)
+        self.assertIsNone(invoice.paid_at)
+
+    def test_reopen_skips_cancelled_invoices(self):
+        self._request()
+        _cancel(Invoice.objects.all())
+        _reopen(Invoice.objects.all())
+        self.assertEqual(Invoice.objects.get().status, Invoice.STATUS_CANCELLED)
+
+    # ── Storno-Hinweis auf verbrauchten Rabatt ─────────────────────────────
+    def test_cancel_message_warns_about_consumed_once_discount(self):
+        self.sub.discount_percent = 50
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.sub.save()
+        self._request()  # löst den Einmal-Rabatt ein
+        with patch.object(InvoiceAdmin, 'message_user') as message:
+            InvoiceAdmin(Invoice, admin_site).cancel_invoices(
+                RequestFactory().post('/vitruv/'), Invoice.objects.all())
+        self.assertIn('Einmal-Rabatt', message.call_args.args[1])
+
+    # ── Kunden-Sicht ───────────────────────────────────────────────────────
+    def test_konto_marks_overdue_invoices(self):
+        self._request()
+        Invoice.objects.update(due_on=timezone.localdate() - timedelta(days=3))
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, 'überfällig seit')
+
+    # ── Fehler beim Erzeugen ───────────────────────────────────────────────
+    def test_pdf_failure_rolls_back_the_invoice(self):
+        """Schlägt das PDF-Rendern fehl, darf keine Zombie-Rechnung bleiben:
+        keine Freischaltung, kein verbrauchter Rabatt, Nummer wieder frei."""
+        self.sub.discount_percent = 50
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.sub.save()
+        with patch('accounts.views.store_pdf', side_effect=ValueError('kaputt')):
+            response = self._request()
+        self.assertContains(response, 'konnte nicht erstellt werden')
+        self.assertEqual(Invoice.objects.count(), 0)
+        self.sub.refresh_from_db()
+        self.assertIsNone(self.sub.paid_until)
+        self.assertIsNone(self.sub.discount_used_at)
+        # Rollback komplett: der nächste Versuch bekommt wieder die erste Nummer
+        self._request()
+        self.assertEqual(Invoice.objects.get().number,
+                         f'{timezone.localdate().year}-0001')
+
+    # ── Doppel-Submit ──────────────────────────────────────────────────────
+    def test_second_open_invoice_is_blocked_at_creation(self):
+        """Der View-Check läuft ausserhalb der Transaktion — bei einem
+        Doppelklick passieren ihn beide Requests. Der Guard in create_invoice
+        selbst muss den zweiten stoppen."""
+        create_invoice(self.user, self.sub, dict(ADDRESS))
+        with self.assertRaises(OpenInvoiceError):
+            create_invoice(self.user, self.sub, dict(ADDRESS))
+        self.assertEqual(Invoice.objects.count(), 1)
+
+
+@override_settings(BETA_PRICING=False, INVOICE_BCC='buchhaltung@planli.net',
+                   INVOICE_IBAN='CH5800791123000889012', RENEWAL_REMINDER_DAYS=(30, 7))
+class RenewalReminderTests(TestCase):
+    """Täglicher renewal_reminders-Cron: Kunden-Erinnerung vor Lizenzablauf,
+    Betreiber-Meldung bei neu überfälligen Rechnungen."""
+
+    def setUp(self):
+        self.user = _make_user()
+        self.sub = subscription_for(self.user)
+
+    def _run(self):
+        call_command('renewal_reminders', stdout=io.StringIO())
+
+    def _expiring_in(self, days):
+        self.sub.paid_until = timezone.localdate() + timedelta(days=days)
+        self.sub.save()
+
+    def test_reminder_at_threshold(self):
+        self._expiring_in(30)
+        self._run()
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, ['test@example.ch'])
+        self.assertEqual(sent.bcc, ['buchhaltung@planli.net'])
+        self.assertIn('/accounts/konto/', sent.body)
+
+    def test_no_reminder_between_thresholds(self):
+        """Deterministische Stichtage: der tägliche Cron trifft jede Lizenz
+        pro Stichtag genau einmal — dazwischen ist Ruhe."""
+        self._expiring_in(15)
+        self._run()
+        self.assertEqual(mail.outbox, [])
+
+    def test_no_reminder_when_an_invoice_is_already_open(self):
+        create_invoice(self.user, self.sub, dict(ADDRESS))
+        self._expiring_in(30)
+        self._run()
+        self.assertEqual(mail.outbox, [])
+
+    def test_operator_note_for_newly_overdue_invoice(self):
+        invoice = create_invoice(self.user, self.sub, dict(ADDRESS))
+        Invoice.objects.update(due_on=timezone.localdate() - timedelta(days=1))
+        self._run()
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, ['buchhaltung@planli.net'])
+        self.assertIn('überfällig', sent.subject)
+        self.assertIn(invoice.number, sent.body)
+
+    def test_operator_note_only_on_the_day_after_due(self):
+        """Nur am Tag nach Fristablauf — sonst käme die Meldung täglich."""
+        create_invoice(self.user, self.sub, dict(ADDRESS))
+        Invoice.objects.update(due_on=timezone.localdate() - timedelta(days=5))
+        self._run()
+        self.assertEqual(mail.outbox, [])
+
+    @override_settings(BETA_PRICING=True)
+    def test_silent_during_beta(self):
+        self._expiring_in(30)
+        self._run()
+        self.assertEqual(mail.outbox, [])

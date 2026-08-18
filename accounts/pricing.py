@@ -62,6 +62,19 @@ class Discount:
             text += f', gültig bis {self.until.strftime("%d.%m.%Y")}'
         return text
 
+    @property
+    def invoice_label(self):
+        """Kurzform für die eingefrorene Rechnung: nur Prozent + Grund.
+        Laufzeit-Zusätze ('gültig bis', 'einmalig für die nächste …') beziehen
+        sich auf künftige Käufe — auf einem Beleg, der genau diesen Kauf
+        dokumentiert, wären sie widersinnig."""
+        if not self:
+            return ''
+        text = f'{self.percent} % Rabatt'
+        if self.reason:
+            text += f' ({self.reason})'
+        return text
+
 
 NO_DISCOUNT = Discount(0)
 

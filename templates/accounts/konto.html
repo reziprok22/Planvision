@@ -208,7 +208,8 @@
             </div>
             <div class="konto-row">
                 <dt>Verlängerung</dt>
-                <dd>Rechnung folgt rechtzeitig per E-Mail</dd>
+                {# Eingelöst vom täglichen renewal_reminders-Cron (Stichtage RENEWAL_REMINDER_DAYS) #}
+                <dd>Wir erinnern dich rechtzeitig per E-Mail</dd>
             </div>
             {% endif %}
         </dl>
@@ -216,18 +217,31 @@
 
     {% if not sub.is_paid %}
     <div class="konto-card">
-        <h2>Jahreslizenz</h2>
+        {% comment %}Ohne Preiskommunikation (SHOW_PRICING=False) heisst die
+           Karte wie auf der Landingpage "Aktuell kostenlos" statt
+           "Jahreslizenz" — es gibt ja (noch) nichts zu lizenzieren.{% endcomment %}
+        <h2>{% if beta_pricing and not show_pricing %}Aktuell kostenlos{% else %}Jahreslizenz{% endif %}</h2>
         {% if beta_pricing %}
+        {% if show_pricing %}
         <p class="beta-note">
             Während der Beta-Phase ist Planli für alle registrierten Nutzer:innen komplett kostenlos. Eine Lizenz brauchst du erst nach Ende der Beta-Phase;
             wir informieren dich rechtzeitig, sobald sich das ändert.
         </p>
-        {# Preis trotzdem zeigen: Was nach der Beta kostet, soll früh bekannt sein — inklusive eines für dieses Konto hinterlegten Rabatts. #}
+        {% comment %}Mit Schalter an den künftigen Preis zeigen: Was nach der
+           Beta kostet, soll früh bekannt sein — inklusive eines für dieses
+           Konto hinterlegten Rabatts.{% endcomment %}
         <p class="price-line" style="margin-top:1.1rem;">
             {% if sub.discount_active %}<span class="price-was">CHF {{ sub.list_price }}</span>{% endif %}
             <sup>CHF</sup>{{ sub.price_chf }} <span class="period">pro Nutzer / Jahr, nach der Beta-Phase</span>
         </p>
         {% if sub.discount_label %}<p class="discount-note">Rabatt: {{ sub.discount_label }}</p>{% endif %}
+        {% else %}
+        {# Formulierung analog zur Landingpage-Preissektion (SHOW_PRICING=False) #}
+        <p class="beta-note">
+            Planli befindet sich in der Beta-Phase. Während der Beta-Phase ist die Nutzung für alle registrierten Nutzer:innen komplett kostenlos;
+            wir informieren dich rechtzeitig, bevor sich das ändert.
+        </p>
+        {% endif %}
         {% else %}
         <p class="price-line">
             {% if sub.discount_active %}<span class="price-was">CHF {{ sub.list_price }}</span>{% endif %}
@@ -265,6 +279,7 @@
                 <td>
                     {% if inv.status == 'paid' %}<span class="status-badge status-paid">Bezahlt</span>
                     {% elif inv.status == 'cancelled' %}<span class="status-badge status-expired">Storniert</span>
+                    {% elif inv.is_overdue %}<span class="status-badge status-expired">überfällig seit {{ inv.due_on|date:"d.m.Y" }}</span>
                     {% else %}<span class="status-badge status-trial">bezahlen bis {{ inv.due_on|date:"d.m.Y" }}</span>{% endif %}
                 </td>
             </tr>

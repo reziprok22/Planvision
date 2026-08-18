@@ -1,3 +1,6 @@
+import re
+
+import iso3166
 from django import forms
 from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
 from django.contrib.auth.models import User
@@ -65,15 +68,24 @@ class EmailAuthenticationForm(AuthenticationForm):
 
 class BillingAddressForm(forms.ModelForm):
     """Rechnungsadresse. Gespeichert wird sie auf der Subscription (nur zur
-    Vorbefüllung); verbindlich ist die Kopie auf der Rechnung selbst."""
+    Vorbefüllung); verbindlich ist die Kopie auf der Rechnung selbst.
+
+    Name und Firma sind enger begrenzt als ihre Model-Felder (100): die
+    QR-Rechnungsnorm erlaubt maximal 70 Zeichen pro Adresszeile, und qrbill
+    bricht bei längeren mit ValueError ab — dann gäbe es eine Rechnung, deren
+    PDF sich nie erzeugen lässt. Aus demselben Grund wird der Ländercode gegen
+    ISO 3166 geprüft, statt jedes Zweizeichen-Kürzel durchzulassen."""
+
+    billing_company = forms.CharField(max_length=70, required=False, label='Firma (optional)')
+    billing_name = forms.CharField(max_length=70, label='Name')
 
     class Meta:
         model = Subscription
         fields = ('billing_company', 'billing_name', 'billing_street',
                   'billing_zip', 'billing_city', 'billing_country')
         labels = {
-            'billing_company': 'Firma (optional)',
-            'billing_name': 'Name',
+            # billing_company/billing_name stehen oben als explizite Felder —
+            # deren Labels würden hier ignoriert.
             'billing_street': 'Strasse und Nr.',
             'billing_zip': 'PLZ',
             'billing_city': 'Ort',
@@ -85,6 +97,24 @@ class BillingAddressForm(forms.ModelForm):
         for name in ('billing_name', 'billing_street', 'billing_zip', 'billing_city'):
             self.fields[name].required = True
         self.fields['billing_country'].help_text = 'Ländercode, z.B. CH'
+
+    def clean_billing_country(self):
+        code = self.cleaned_data['billing_country'].strip().upper()
+        if code not in iso3166.countries_by_alpha2:
+            raise forms.ValidationError('Bitte einen gültigen Ländercode angeben, z.B. CH.')
+        return code
+
+    def clean(self):
+        """PLZ nur für CH/LI streng prüfen (genau 4 Ziffern). Ausländische
+        Postleitzahlen sind länger und oft alphanumerisch (NL '1234 AB',
+        UK 'SW1A 1AA') — dort begrenzt nur das QR-Norm-Limit von 16 Zeichen
+        (max_length des Model-Felds)."""
+        cleaned = super().clean()
+        if (cleaned.get('billing_country') in ('CH', 'LI')
+                and cleaned.get('billing_zip')
+                and not re.fullmatch(r'\d{4}', cleaned['billing_zip'])):
+            self.add_error('billing_zip', 'Bitte eine vierstellige PLZ angeben.')
+        return cleaned
 
     def address_snapshot(self):
         """Die Adressfelder als Dict für Invoice.objects.create()."""

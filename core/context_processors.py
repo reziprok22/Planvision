@@ -27,6 +27,9 @@ def pricing(request):
     base, now, discount = public_price()
     return {
         'beta_pricing': settings.BETA_PRICING,
+        # Schalter für die Preiskommunikation auf der Landingpage (Karte,
+        # Nav-Link, FAQ-/JSON-LD-Preise) — siehe SHOW_PRICING in den Settings.
+        'show_pricing': settings.SHOW_PRICING,
         'license_price_chf': base,
         'license_price_now': now,
         'global_discount': discount,

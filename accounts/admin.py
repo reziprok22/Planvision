@@ -1,5 +1,3 @@
-from datetime import timedelta
-
 from django import forms
 from django.contrib import admin
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
@@ -7,7 +5,8 @@ from django.shortcuts import render
 from django.utils import timezone
 
 from .invoices import activate_licence
-from .models import DISCOUNT_SCOPES, Invoice, Subscription, subscription_for
+from .models import (DISCOUNT_ONCE, DISCOUNT_SCOPES, Invoice, Subscription,
+                     subscription_for)
 
 
 class SetDiscountForm(forms.Form):
@@ -47,7 +46,12 @@ class SubscriptionAdmin(admin.ModelAdmin):
     list_editable = ('max_projects', 'discount_percent', 'discount_scope')
     list_filter = (EmailVerifiedFilter, 'discount_scope')
     search_fields = ('user__username',)
-    actions = ('extend_one_year', 'set_discount')
+    # Bewusst keine "Verlängern"-Action mehr: Lizenzvergabe läuft ausschliesslich
+    # über Rechnungen (Ausstellen schaltet frei, Invoice-Action "Als bezahlt
+    # markieren" bestätigt). Eine zweite Verlängerung hier würde ein Jahr
+    # doppelt gutschreiben und den Storno-Anker (paid_until == period_end)
+    # zerstören.
+    actions = ('set_discount',)
 
     @admin.display(description='Status')
     def status_label(self, obj):
@@ -68,32 +72,6 @@ class SubscriptionAdmin(admin.ModelAdmin):
         """Basispreis festgeschrieben — eine Erhöhung von LICENSE_PRICE_CHF
         geht an diesem Konto vorbei."""
         return obj.price_is_pinned
-
-    @admin.action(description='Um 1 Jahr verlängern (Zahlung eingegangen)')
-    def extend_one_year(self, request, queryset):
-        today = timezone.localdate()
-        consumed = 0
-        pinned = 0
-        for sub in queryset:
-            base = sub.paid_until if (sub.paid_until and sub.paid_until > today) else today
-            sub.paid_until = base + timedelta(days=365)
-            fields = ['paid_until']
-            # Einmalige Rabatte gelten genau für diese eine Jahreslizenz.
-            if sub.consume_discount():
-                fields.append('discount_used_at')
-                consumed += 1
-            # Preisgarantie: mit der ersten Rechnung wird der dann gültige
-            # Listenpreis festgeschrieben.
-            if sub.pin_list_price():
-                fields.append('list_price_chf')
-                pinned += 1
-            sub.save(update_fields=fields)
-        msg = f'{queryset.count()} Abo(s) um 1 Jahr verlängert.'
-        if pinned:
-            msg += f' {pinned}× Preis festgeschrieben.'
-        if consumed:
-            msg += f' {consumed} einmalige(r) Rabatt(e) als eingelöst markiert.'
-        self.message_user(request, msg)
 
     @admin.action(description='Rabatt setzen')
     def set_discount(self, request, queryset):
@@ -133,7 +111,7 @@ class InvoiceAdmin(admin.ModelAdmin):
     search_fields = ('number', 'billing_name', 'billing_company', 'billing_email',
                      'user__username')
     date_hierarchy = 'issued_on'
-    actions = ('mark_paid', 'cancel_invoices')
+    actions = ('mark_paid', 'reopen', 'cancel_invoices')
 
     def get_readonly_fields(self, request, obj=None):
         return [f.name for f in self.model._meta.fields]
@@ -152,7 +130,7 @@ class InvoiceAdmin(admin.ModelAdmin):
     def overdue(self, obj):
         """Offen und Frist abgelaufen. Wichtiger als früher: freigeschaltet
         wird schon beim Ausstellen, offene Rechnungen laufen also mit."""
-        return obj.is_open and obj.due_on < timezone.localdate()
+        return obj.is_overdue
 
     @admin.action(description='Als bezahlt markieren (Zahlungseingang)')
     def mark_paid(self, request, queryset):
@@ -182,6 +160,20 @@ class InvoiceAdmin(admin.ModelAdmin):
             msg += f' {skipped} übersprungen (nicht offen).'
         self.message_user(request, msg)
 
+    @admin.action(description='Zurück auf offen (irrtümlich als bezahlt markiert)')
+    def reopen(self, request, queryset):
+        """Notausgang für den Fehlklick auf "Als bezahlt markieren": setzt nur
+        `status`/`paid_at` zurück. Die Lizenz bleibt unberührt — das Bezahlt-
+        Markieren hat sie höchstens nachgetragen, nie verlängert; danach steht
+        die Rechnung wieder als offen (ggf. überfällig) in der Liste."""
+        count = queryset.filter(status=Invoice.STATUS_PAID).update(
+            status=Invoice.STATUS_OPEN, paid_at=None)
+        skipped = queryset.count() - count
+        msg = f'{count} Rechnung(en) wieder als offen markiert.'
+        if skipped:
+            msg += f' {skipped} übersprungen (nicht bezahlt).'
+        self.message_user(request, msg)
+
     @admin.action(description='Stornieren (nimmt die Freischaltung zurück)')
     def cancel_invoices(self, request, queryset):
         """Gegenstück zum Ausstellen: Wer nicht zahlt, verliert die Lizenz
@@ -191,6 +183,7 @@ class InvoiceAdmin(admin.ModelAdmin):
         eingelöst; bei Bedarf im Subscription-Admin per "Rabatt setzen" neu
         vergeben."""
         cancelled = revoked = 0
+        discount_hints = []
         for invoice in queryset.filter(status=Invoice.STATUS_OPEN):
             invoice.status = Invoice.STATUS_CANCELLED
             invoice.save(update_fields=['status'])
@@ -198,15 +191,29 @@ class InvoiceAdmin(admin.ModelAdmin):
             if invoice.user_id:
                 sub = subscription_for(invoice.user)
                 if sub.paid_until == invoice.period_end:
-                    # Zurück auf den Stand davor: an eine frühere Lizenz
-                    # angeschlossen (period_start liegt in der Zukunft) heisst
-                    # dorthin zurück, sonst gab es vorher gar keine Lizenz.
+                    # Zurück auf den Stand davor: an eine frühere Lizenz oder
+                    # Trial-Restlaufzeit angeschlossen (period_start liegt in
+                    # der Zukunft) heisst dorthin zurück, sonst gab es vorher
+                    # gar keine Lizenz.
                     sub.paid_until = (invoice.period_start
                                       if invoice.period_start > invoice.issued_on
                                       else None)
                     sub.save(update_fields=['paid_until'])
                     revoked += 1
+                # Storno + Neuausstellung ist der offizielle Korrekturweg
+                # (z.B. falsche Adresse) — dabei bliebe ein mit dieser
+                # Rechnung eingelöster Einmal-Rabatt verbraucht und die neue
+                # Rechnung würde teurer. Daran erinnern statt es dem
+                # Gedächtnis zu überlassen.
+                if (invoice.discount_percent and sub.discount_percent
+                        and sub.discount_scope == DISCOUNT_ONCE
+                        and sub.discount_used_at is not None):
+                    discount_hints.append(sub.user.username)
         msg = f'{cancelled} Rechnung(en) storniert.'
         if revoked:
             msg += f' {revoked}× Freischaltung zurückgenommen.'
+        if discount_hints:
+            msg += (' Achtung, eingelöster Einmal-Rabatt bei: '
+                    f'{", ".join(discount_hints)} — für eine Ersatzrechnung im '
+                    'Subscription-Admin per "Rabatt setzen" neu vergeben.')
         self.message_user(request, msg)

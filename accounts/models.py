@@ -21,9 +21,10 @@ def default_max_projects():
 class Subscription(models.Model):
     """Trial-/Abo-Status eines Users.
 
-    Zahlung läuft (vorerst) manuell: Rechnung per E-Mail, nach Zahlungseingang
-    verlängert der Admin `paid_until` um ein Jahr (Admin-Action). Ein späterer
-    Stripe-Webhook würde nur dasselbe Feld setzen."""
+    Zahlung läuft über QR-Rechnungen: `paid_until` setzt activate_licence()
+    beim Ausstellen der Rechnung, der Zahlungseingang wird im Invoice-Admin
+    nur noch bestätigt ("Als bezahlt markieren"). Ein späterer Stripe-Webhook
+    würde nur dasselbe Feld setzen."""
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='subscription')
     trial_ends = models.DateTimeField()
@@ -59,7 +60,7 @@ class Subscription(models.Model):
     # Konto-Seite, Rechnungs-Mail und Admin denselben Betrag zeigen.
     # list_price_chf ist nullable: leer heisst "aktueller Listenpreis" und gilt
     # für alle, die noch nie bezahlt haben. Mit der ersten Rechnung schreibt
-    # `pin_list_price()` (Admin-Action "Um 1 Jahr verlängern") den dann
+    # `pin_list_price()` (via activate_licence() beim Ausstellen) den dann
     # gültigen Preis fest — eine spätere Erhöhung trifft dadurch nur noch neue
     # Kunden, Bestandskunden behalten ihren Preis.
     list_price_chf = models.PositiveIntegerField(
@@ -79,8 +80,9 @@ class Subscription(models.Model):
     discount_reason = models.CharField(
         max_length=100, blank=True, verbose_name='Rabatt-Grund',
         help_text='Interne Notiz, z.B. "Beta-Tester" oder "Mengenrabatt 8 Lizenzen".')
-    # Wird von der Admin-Action "Um 1 Jahr verlängern" gesetzt: ein einmaliger
-    # Rabatt gilt danach nicht mehr, ein dauerhafter ignoriert das Feld.
+    # Wird von `consume_discount()` (via activate_licence() beim Ausstellen der
+    # Rechnung) gesetzt: ein einmaliger Rabatt gilt danach nicht mehr, ein
+    # dauerhafter ignoriert das Feld.
     discount_used_at = models.DateTimeField(
         null=True, blank=True, verbose_name='Rabatt eingelöst am')
 
@@ -237,6 +239,14 @@ class Invoice(models.Model):
     discount_percent = models.PositiveSmallIntegerField(default=0)
     discount_note = models.CharField(max_length=200, blank=True)
 
+    # Zahlungsempfänger eingefroren — wie die Beträge: Wird das PDF Jahre
+    # später regeneriert (Datei verloren), darf nicht die dann aktuelle
+    # IBAN/Adresse aus den Settings auf den Beleg geraten. Leer nur bei
+    # Rechnungen aus der Zeit vor diesen Feldern (Fallback auf Settings).
+    creditor_iban = models.CharField(max_length=34, blank=True, default='')
+    creditor = models.JSONField(default=dict, blank=True)
+    creditor_vat_uid = models.CharField(max_length=32, blank=True, default='')
+
     # Adresskopie (überlebt die Kontolöschung)
     billing_company = models.CharField(max_length=100, blank=True)
     billing_name = models.CharField(max_length=100)
@@ -259,14 +269,25 @@ class Invoice(models.Model):
         return self.status == self.STATUS_OPEN
 
     @property
+    def is_overdue(self):
+        """Offen und Zahlungsfrist abgelaufen — genutzt im Admin und auf der
+        Konto-Seite (der Kunde soll das auch sehen, nicht nur wir)."""
+        return self.is_open and self.due_on < timezone.localdate()
+
+    @property
     def pdf_path(self):
         return settings.INVOICES_DIR / f'{self.number}.pdf'
 
     @property
     def address_lines(self):
-        """Empfängeradresse als Zeilen — für PDF und Konto-Seite."""
-        lines = [self.billing_company, self.billing_name, self.billing_street,
-                 f'{self.billing_zip} {self.billing_city}'.strip()]
+        """Empfängeradresse als Zeilen — für PDF und Konto-Seite.
+
+        Auslandsadressen tragen den Ländercode vor der PLZ ('DE-10115 Berlin'),
+        wie es auch der QR-Zahlteil tut; bei CH bleibt er postüblich weg."""
+        place = f'{self.billing_zip} {self.billing_city}'.strip()
+        if place and self.billing_country and self.billing_country != 'CH':
+            place = f'{self.billing_country}-{place}'
+        lines = [self.billing_company, self.billing_name, self.billing_street, place]
         return [line for line in lines if line]
 
 

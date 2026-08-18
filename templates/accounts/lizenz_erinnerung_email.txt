@@ -1,0 +1,18 @@
+Guten Tag
+
+Deine Planli-Jahreslizenz läuft in {{ days }} Tagen ab, am {{ sub.paid_until|date:"d.m.Y" }}.
+
+Damit du ohne Unterbruch weiterarbeiten kannst, fordere die Rechnung für die
+Verlängerung einfach in deinem Konto an — die neue Laufzeit schliesst nahtlos
+an die bestehende an, du verlierst also keinen Tag:
+
+https://planli.net/accounts/konto/
+
+Nach dem Ablauf kannst du deine Projekte weiterhin öffnen, ansehen und als
+PDF exportieren; für Messen, Bearbeiten und die KI-Analyse brauchst du eine
+aktive Lizenz.
+
+Bei Fragen schreibe bitte an info@planli.net
+
+Freundliche Grüsse
+Planli

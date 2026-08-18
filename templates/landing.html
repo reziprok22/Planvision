@@ -691,14 +691,16 @@
                 "url": "https://planli.net/",
                 "applicationCategory": "BusinessApplication",
                 "operatingSystem": "Web",
-                "description": "Ausmass-Software für Bauplan-PDFs: Flächen und Längen direkt im Browser messen, Fenster per KI erkennen, Ergebnis als PDF exportieren.",
+                {% comment %}offers nur bei SHOW_PRICING — das Komma hängt am description-Ende
+                   innerhalb des ifs, sonst bliebe ohne offers ein ungültiges trailing comma.
+                   Während der Beta zahlt niemand etwas — hier steht, was heute gilt,
+                   nicht der künftige Listenpreis aus der Preiskarte.{% endcomment %}
+                "description": "Ausmass-Software für Bauplan-PDFs: Flächen und Längen direkt im Browser messen, Fenster per KI erkennen, Ergebnis als PDF exportieren."{% if show_pricing %},
                 "offers": {
                     "@type": "Offer",
-                    {% comment %}Während der Beta zahlt niemand etwas — hier steht, was heute gilt,
-                       nicht der künftige Listenpreis aus der Preiskarte.{% endcomment %}
                     {% if beta_pricing %}"price": "0",{% else %}"price": "{{ license_price_now }}",{% endif %}
                     "priceCurrency": "CHF"
-                }
+                }{% endif %}
             },
             {
                 "@type": "FAQPage",
@@ -764,8 +766,10 @@
                         "name": "Gibt es eine kostenlose Testphase?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            {% if beta_pricing %}
+                            {% if beta_pricing and show_pricing %}
                             "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar. Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr."
+                            {% elif beta_pricing %}
+                            "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar."
                             {% else %}
                             "text": "Ja. Nach der Registrierung steht dir eine 30-tägige kostenlose Testphase zur Verfügung."
                             {% endif %}
@@ -956,12 +960,25 @@
 
 
 <!-- ── PRICING ──
-     Die Preiskarte ist auch während der Beta sichtbar (beta_pricing) — die
-     künftigen Kosten sollen früh bekannt sein. Nur der Hinweis darüber und der
-     JSON-LD-Preis unterscheiden sich. Der Betrag kommt aus LICENSE_PRICE_CHF
-     (Context-Processor `pricing`), nie hartcodiert. -->
+     Die Sektion (und der "Preise"-Nav-Link) ist immer sichtbar, hat aber zwei
+     Gesichter (SHOW_PRICING, Settings):
+     - False (solange das Pricing nicht kommuniziert wird): schlichte
+       "Aktuell kostenlos"-Version ohne Betrag; auch FAQ + JSON-LD nennen
+       dann keinen Preis.
+     - True: Preiskarte mit Betrag — auch während der Beta (beta_pricing),
+       die künftigen Kosten sollen früh bekannt sein; nur Hinweistext und
+       JSON-LD-Preis unterscheiden sich. Der Betrag kommt aus
+       LICENSE_PRICE_CHF (Context-Processor `pricing`), nie hartcodiert. -->
 <section class="pricing" id="pricing">
     <div class="section-label">Preismodell</div>
+    {% if not show_pricing %}
+    <h2 class="section-title">Aktuell kostenlos</h2>
+    <p class="section-sub">Planli befindet sich in der Beta-Phase.</p>
+    <div class="beta-notice">
+        <strong>Während der Beta-Phase ist die Nutzung nach kostenloser Registrierung komplett kostenlos. </strong>
+        <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" onclick="window.plausible && window.plausible('CTA: Einzel')">Jetzt loslegen</a>.
+    </div>
+    {% else %}
     <h2 class="section-title">Ein Preis, voller Funktionsumfang</h2>
     <p class="section-sub">Keine Abstufungen, keine Zusatzmodule: Eine Jahreslizenz pro Nutzer, alle Funktionen inklusive.</p>
 
@@ -999,6 +1016,7 @@
         </div>
 
     </div>
+    {% endif %}
 </section>
 
 
@@ -1063,7 +1081,11 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
                     {% if beta_pricing %}
                     Ja. Während der aktuellen Beta-Phase ist Planli nach einer kostenlosen Registrierung mit E-Mail-Adresse und Passwort komplett kostenlos nutzbar.
                     <br><br>
+                    {% if show_pricing %}
                     Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr{% if global_discount %} ({{ global_discount.reason }}, statt CHF {{ license_price_chf }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}){% endif %}. Wir informieren dich rechtzeitig, bevor sich daran etwas ändert &ndash; es wird nichts automatisch abgebucht.
+                    {% else %}
+                    Über die Preise nach der Beta-Phase informieren wir dich rechtzeitig &ndash; es wird nichts automatisch abgebucht.
+                    {% endif %}
                     {% else %}
                     Ja. Nach der Registrierung mit einer E-Mail-Adresse und einem Passwort steht dir eine 30-tägige kostenlose Testphase zur Verfügung.
                     {% endif %}
