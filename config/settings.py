@@ -150,7 +150,12 @@ BETA_MODE = os.environ.get('BETA_MODE', 'False') == 'True'
 # zeigen statt Preis/"Rechnung anfordern" den Beta-Hinweis ("kostenlos &
 # unbeschränkt"). So bleibt die Nutzung während der Beta-Phase komplett
 # kostenlos, obwohl (ab BETA_MODE=False) ein Login nötig ist.
-BETA_PRICING = os.environ.get('BETA_PRICING', 'False') == 'True'
+# Default True = Beta läuft. Zusammen mit SHOW_PRICING=False (siehe unten) ist
+# das der konsistente Beta-Zustand: keine Bezahlpflicht, keine Beträge nach
+# aussen. Beim Beenden der Beta BEIDE Schalter zusammen drehen — BETA_PRICING
+# =False bei SHOW_PRICING=False hiesse, dass Kunden zahlen müssen, während die
+# Landingpage weiter "Aktuell kostenlos" verspricht.
+BETA_PRICING = os.environ.get('BETA_PRICING', 'True') == 'True'
 
 # Kostenlose Testphase ab Registrierung; danach Read-Only bis zur Zahlung
 # (accounts.models.Subscription) — sofern BETA_PRICING nicht aktiv ist.
@@ -161,7 +166,7 @@ TRIAL_DAYS = 30
 # `pricing`-Context-Processor. Pro Konto überschreibbar (Preisgarantie) und
 # rabattierbar via Subscription.list_price_chf / .discount_percent — dort steht
 # auch, warum der Rabatt prozentual ist.
-LICENSE_PRICE_CHF = 100
+LICENSE_PRICE_CHF = 240
 # Preiskommunikation nach aussen: die Preis-Karte auf der Landingpage samt
 # Preis-Erwähnungen in FAQ und JSON-LD sowie der künftige Preis auf der
 # Konto-Seite während der Beta. Die Preissektion selbst ("Preismodell" mit der
@@ -185,9 +190,6 @@ GLOBAL_DISCOUNT_REASON = 'Einführungsrabatt'
 GLOBAL_DISCOUNT_UNTIL = '2026-12-31'
 
 # ── Rechnungsstellung (QR-Rechnung) ──────────────────────────────────────
-# TODO vor dem ersten Versand ausfüllen: IBAN, Adresse und UID sind
-# Platzhalter. Ohne echte IBAN erzeugt der Zahlteil einen unbezahlbaren
-# QR-Code — accounts/invoices.py verweigert den Versand mit Platzhalter-IBAN.
 INVOICE_CREDITOR = {
     'name': 'Bauphysik Lengg',
     'street': 'Rathausgasse 8',

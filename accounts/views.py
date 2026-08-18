@@ -95,7 +95,11 @@ def rechnung_anfordern(request):
     """Self-Service: Adresse bestätigen → Rechnung erzeugen, ablegen, mailen.
 
     Bewusst **ohne** Read-Only-Sperre: wer bezahlen will, muss das auch nach
-    Ablauf der Testphase können — das ist ja der Normalfall."""
+    Ablauf der Testphase können — das ist ja der Normalfall. Aus demselben
+    Grund gibt es hier auch keinen Gate auf `sub.can_request_invoice`: die
+    Konto-Seite graut den Knopf vor dem Verlängerungsfenster nur aus, wer die
+    URL direkt aufruft, will bewusst früher zahlen (die Laufzeit schliesst dann
+    an `paid_until` an, geht also nicht verloren)."""
     sub = subscription_for(request.user)
     if settings.BETA_PRICING:
         # In der Beta zahlt niemand etwas; die Konto-Seite zeigt den Button
@@ -174,6 +178,10 @@ def konto(request):
         # oder ein Rabatt hinterlegt ist.
         'sub': subscription_for(request.user),
         'invoices': request.user.invoices.all(),
+        # Offene Rechnung: die Verlängerungs-Karte zeigt dann deren Status
+        # statt eines CTAs, der ohnehin nur auf "bereits ausgestellt" liefe.
+        'open_invoice': request.user.invoices.filter(
+            status=Invoice.STATUS_OPEN).first(),
         # Nach dem Erstellen: Nummer aus der Redirect-URL für die Erfolgsmeldung
         'neue_rechnung': request.GET.get('rechnung', ''),
         # App-Shell-Chrome (base.html): linke Spalte statt Marketing-Nav —

@@ -106,6 +106,32 @@ class Subscription(models.Model):
     def trial_days_left(self):
         return max(0, (self.trial_ends - timezone.now()).days)
 
+    # ── Verlängerung ───────────────────────────────────────────────────────
+    # Verlängert wird nicht das ganze Jahr über, sondern ab dem Stichtag, an
+    # dem auch der renewal_reminders-Cron die erste Erinnerung verschickt: die
+    # Mail schickt den Kunden auf die Konto-Seite, dort muss der Knopf dann
+    # gehen. Vorher zeigt die Konto-Seite ihn ausgegraut — sichtbar, damit
+    # niemand die Funktion in der App sucht, aber nicht klickbar.
+    @property
+    def renewal_opens_on(self):
+        """Erster Tag, an dem die Verlängerung angeboten wird. None ohne
+        laufende Lizenz (dann ist es keine Verlängerung, sondern ein Kauf)."""
+        if not self.paid_until:
+            return None
+        return self.paid_until - timedelta(
+            days=max(settings.RENEWAL_REMINDER_DAYS, default=0))
+
+    @property
+    def can_request_invoice(self):
+        """Darf jetzt eine Rechnung angefordert werden?
+
+        Ohne laufende Lizenz (Trial oder abgelaufen) immer — wer kaufen will,
+        soll das jederzeit können. Mit laufender Lizenz erst im
+        Verlängerungsfenster, sonst stapelten sich Jahre unbemerkt."""
+        if not self.is_paid:
+            return True
+        return timezone.localdate() >= self.renewal_opens_on
+
     # ── Preis ──────────────────────────────────────────────────────────────
     @property
     def list_price(self):
@@ -175,11 +201,19 @@ class Subscription(models.Model):
         return False
 
     def consume_discount(self):
-        """Einmaligen Rabatt als eingelöst markieren (nach Zahlungseingang).
+        """Einmaligen Rabatt als eingelöst markieren (bei der Lizenzvergabe).
+
+        Verbraucht wird nur, was auch wirklich gerechnet wurde: Gewinnt eine
+        höhere globale Aktion, steht der persönliche Rabatt gar nicht auf der
+        Rechnung — dann bliebe er sonst ungenutzt liegen und wäre nach dem Ende
+        der Aktion verfallen (10 % persönlich gegen 20 % Aktion). `personal`
+        trägt `scope` nur, wenn ein unverbrauchter Rabatt hinterlegt ist, und
+        `effective_discount` gibt bei Gleichstand den persönlichen zurück.
+
         Dauerhafte Rabatte bleiben unberührt. Speichert nicht selbst; gibt
         zurück, ob sich etwas geändert hat."""
-        if (self.discount_percent and self.discount_scope == DISCOUNT_ONCE
-                and self.discount_used_at is None):
+        personal = self.personal_discount
+        if personal.scope == DISCOUNT_ONCE and self.effective_discount == personal:
             self.discount_used_at = timezone.now()
             return True
         return False

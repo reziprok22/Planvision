@@ -315,7 +315,39 @@ class KontoAndReadOnlyTests(TestCase):
         sub.save()
         response = self.client.get(reverse('konto'))
         self.assertContains(response, 'Lizenz aktiv bis')
-        self.assertNotContains(response, 'Rechnung anfordern')
+        # Kaufen kann er nicht nochmal — die Verlängerung liegt noch weit weg
+        self.assertNotContains(response, 'btn-primary" href="/accounts/konto/rechnung/')
+
+    def _set_paid_until(self, days):
+        sub = subscription_for(self.user)
+        sub.paid_until = timezone.localdate() + timedelta(days=days)
+        sub.save()
+        return sub
+
+    def test_renewal_button_is_greyed_out_before_the_window(self):
+        """Der Knopf ist schon da, aber nicht klickbar: sichtbar, damit niemand
+        die Verlängerung in der App sucht (siehe .btn-disabled in konto.html)."""
+        sub = self._set_paid_until(200)
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, 'btn btn-disabled')
+        self.assertNotContains(response, "href=\"/accounts/konto/rechnung/\"")
+        self.assertContains(response, sub.renewal_opens_on.strftime('%d.%m.%Y'))
+
+    def test_renewal_button_is_active_inside_the_window(self):
+        """Ab dem Stichtag, an dem auch die Erinnerungs-Mail rausgeht (die auf
+        genau diese Seite verlinkt), muss der Knopf gehen."""
+        self._set_paid_until(max(settings.RENEWAL_REMINDER_DAYS))
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, "href=\"/accounts/konto/rechnung/\"")
+        self.assertNotContains(response, 'btn btn-disabled')
+
+    @override_settings(BETA_PRICING=True)
+    def test_no_renewal_card_during_beta(self):
+        """In der Beta läuft weder der Reminder-Cron noch die Bezahlpflicht —
+        ein Verlängerungs-Hinweis wäre ein Versprechen ohne Deckung."""
+        self._set_paid_until(10)
+        response = self.client.get(reverse('konto'))
+        self.assertNotContains(response, '<h2>Verlängerung</h2>')
 
     def test_app_read_only_flag_and_banner(self):
         _expire(self.user)
@@ -542,6 +574,33 @@ class GlobalDiscountTests(TestCase):
         self.sub.discount_scope = DISCOUNT_ONCE
         self.sub.consume_discount()
         self.assertEqual(self.sub.price_chf, 160)
+
+    def test_once_discount_is_not_consumed_when_the_campaign_wins(self):
+        """10 % persönlich gegen 20 % Aktion: gerechnet wird die Aktion, der
+        persönliche Rabatt darf dabei nicht verfallen — sonst hätte der Kunde
+        ihn nach Aktionsende verloren, ohne ihn je bekommen zu haben."""
+        self.sub.discount_percent = 10
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.assertEqual(self.sub.price_chf, 160)  # Aktion, nicht 180
+        self.assertFalse(self.sub.consume_discount())
+        self.assertIsNone(self.sub.discount_used_at)
+        with override_settings(GLOBAL_DISCOUNT_PERCENT=0):
+            self.assertTrue(self.sub.discount_active)
+            self.assertEqual(self.sub.price_chf, 180)
+
+    def test_once_discount_is_consumed_when_it_beats_the_campaign(self):
+        self.sub.discount_percent = 50
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.assertEqual(self.sub.price_chf, 100)
+        self.assertTrue(self.sub.consume_discount())
+        self.assertEqual(self.sub.price_chf, 160)  # danach greift die Aktion
+
+    def test_equal_percentages_consume_the_personal_discount(self):
+        """Gleichstand geht an den persönlichen Rabatt (effective_discount) —
+        dann muss er auch als eingelöst gelten, sonst gälte er ewig."""
+        self.sub.discount_percent = 20
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.assertTrue(self.sub.consume_discount())
 
     @override_settings(GLOBAL_DISCOUNT_UNTIL='2020-01-01')
     def test_expired_campaign_is_ignored(self):
@@ -803,6 +862,36 @@ class InvoiceTests(TestCase):
         self.assertEqual(Invoice.objects.get().total_chf, Decimal('100.00'))
         self.assertIsNotNone(self.sub.discount_used_at)
         self.assertFalse(self.sub.discount_active)
+
+    @override_settings(GLOBAL_DISCOUNT_PERCENT=20, GLOBAL_DISCOUNT_REASON='Aktion')
+    def test_once_discount_survives_an_invoice_that_used_the_campaign(self):
+        """Auf der Rechnung steht die stärkere Aktion — der schwächere
+        persönliche Einmal-Rabatt bleibt für den nächsten Kauf erhalten."""
+        self.sub.discount_percent = 10
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.sub.save()
+        self._request()
+        invoice = Invoice.objects.get()
+        self.sub.refresh_from_db()
+        self.assertEqual(invoice.discount_percent, 20)
+        self.assertEqual(invoice.total_chf, Decimal('160.00'))
+        self.assertIsNone(self.sub.discount_used_at)
+
+    # ── Verlängerung ───────────────────────────────────────────────────────
+    def test_renewal_card_shows_the_open_invoice(self):
+        """Wer die Rechnung angefordert hat und später nochmal aufs Konto
+        schaut, sieht dort ihren Stand — statt eines CTAs, der nur auf
+        "bereits ausgestellt" liefe."""
+        self.sub.paid_until = timezone.localdate() + timedelta(days=10)
+        self.sub.save()
+        self._request()
+        invoice = Invoice.objects.get()
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, '<h2>Verlängerung</h2>')
+        self.assertContains(response, f'Rechnung {invoice.number}')
+        self.assertContains(response, 'du musst nichts weiter tun')
+        # Kein zweiter Anlauf, solange sie offen ist
+        self.assertNotContains(response, "href=\"/accounts/konto/rechnung/\"")
 
     def test_marking_paid_only_confirms(self):
         self._request()

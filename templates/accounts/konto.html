@@ -130,6 +130,17 @@
         .konto-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 1.2rem; }
         .logout-form { display: inline; }
 
+        /* Verlängern geht erst ab dem Erinnerungs-Stichtag (sub.renewal_opens_on).
+           Der Knopf steht trotzdem schon da — ausgegraut und als <span> ohne
+           href: die Funktion soll auffindbar sein, damit sie niemand in der App
+           sucht. */
+        .btn-disabled {
+            background: var(--slate-50);
+            color: var(--slate-400);
+            border-color: var(--slate-100);
+            cursor: not-allowed;
+        }
+
         .konto-delete-link {
             margin-top: 2rem;
             font-size: 0.82rem;
@@ -206,14 +217,44 @@
                     {% if sub.has_price_guarantee %}<span class="row-note">Basispreis CHF {{ sub.list_price }} bleibt bestehen, auch wenn der Listenpreis steigt</span>{% endif %}
                 </dd>
             </div>
-            <div class="konto-row">
-                <dt>Verlängerung</dt>
-                {# Eingelöst vom täglichen renewal_reminders-Cron (Stichtage RENEWAL_REMINDER_DAYS) #}
-                <dd>Wir erinnern dich rechtzeitig per E-Mail</dd>
-            </div>
             {% endif %}
         </dl>
     </div>
+
+    {% comment %}Verlängerung: eigene Karte statt einer dl-Zeile, weil hier der
+       CTA sitzt. Nur ausserhalb der Beta — dort läuft weder der
+       renewal_reminders-Cron noch die Bezahlpflicht, ein Verlängerungs-Hinweis
+       wäre also ein Versprechen, das niemand einlöst.{% endcomment %}
+    {% if sub.is_paid and not beta_pricing %}
+    <div class="konto-card">
+        <h2>Verlängerung</h2>
+        {% if open_invoice %}
+        <p>Die Rechnung für die Verlängerung ist ausgestellt:
+           <strong>Rechnung {{ open_invoice.number }}</strong> über
+           CHF {{ open_invoice.total_chf|floatformat:"2u" }}, zahlbar bis
+           {{ open_invoice.due_on|date:"d.m.Y" }}. Deine Lizenz läuft damit bis
+           {{ open_invoice.period_end|date:"d.m.Y" }}, du musst nichts weiter tun.</p>
+        <div class="konto-actions">
+            <a class="btn btn-outline-dark" href="{% url 'rechnung_pdf' open_invoice.number %}">Rechnung herunterladen</a>
+        </div>
+        {% elif sub.can_request_invoice %}
+        <p>Deine Lizenz läuft am {{ sub.paid_until|date:"d.m.Y" }} ab. Die neue Laufzeit
+           schliesst nahtlos an die bestehende an, du verlierst keinen Tag.</p>
+        <div class="konto-actions">
+            <a class="btn btn-primary" href="{% url 'rechnung_anfordern' %}">Rechnung anfordern</a>
+        </div>
+        {% else %}
+        {# Ausgegraut statt versteckt: siehe .btn-disabled oben #}
+        <p>Deine Lizenz läuft am {{ sub.paid_until|date:"d.m.Y" }} ab. Verlängern kannst du
+           ab {{ sub.renewal_opens_on|date:"d.m.Y" }}, wir erinnern dich rechtzeitig
+           per E-Mail.</p>
+        <div class="konto-actions">
+            <span class="btn btn-disabled" aria-disabled="true"
+                  title="Möglich ab {{ sub.renewal_opens_on|date:'d.m.Y' }}">Rechnung anfordern</span>
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
 
     {% if not sub.is_paid %}
     <div class="konto-card">
@@ -256,7 +297,7 @@
            exportieren, für Messen, Bearbeiten und die KI-Analyse brauchst du eine Lizenz.</p>
         {% endif %}
         <p>Die Zahlung läuft per Rechnung: Du erhältst sie sofort als PDF mit QR-Zahlteil
-           per E-Mail &ndash; dein Konto ist ab diesem Moment für ein Jahr freigeschaltet,
+           per E-Mail und dein Konto ist ab diesem Moment für ein Jahr freigeschaltet,
            du musst nicht auf die Verbuchung der Zahlung warten.</p>
         <div class="konto-actions">
             <a class="btn btn-primary" href="{% url 'rechnung_anfordern' %}">Rechnung anfordern</a>
