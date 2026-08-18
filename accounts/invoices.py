@@ -121,6 +121,25 @@ def activate_licence(sub, invoice):
     sub.save(update_fields=fields)
 
 
+def backfill_licence(sub, invoice):
+    """Laufzeit einer Rechnung nachtragen — ohne die Nebenwirkungen von
+    `activate_licence()`.
+
+    Gedacht für den Reparaturpfad im Admin ("Als bezahlt markieren" bei einer
+    Altrechnung oder einem von Hand geleerten `paid_until`). Dort darf **nur**
+    `paid_until` gesetzt werden: Rabatt-Verbrauch und Preisfixierung gehören
+    zur Ausstellung dieser Rechnung und sind damals passiert (oder eben nicht).
+    Sonst frisst das nachträgliche Verbuchen einer alten Rechnung einen
+    inzwischen neu vergebenen Einmal-Rabatt und schreibt den heutigen
+    Listenpreis fest. Speichert selbst; gibt zurück, ob sich etwas geändert
+    hat."""
+    if sub.paid_until is not None and sub.paid_until >= invoice.period_end:
+        return False
+    sub.paid_until = invoice.period_end
+    sub.save(update_fields=['paid_until'])
+    return True
+
+
 @transaction.atomic
 def create_invoice(user, sub, address):
     """Rechnung für die nächste Jahreslizenz anlegen und die Lizenz sofort
@@ -220,6 +239,21 @@ def _qr_page(invoice):
     return cairosvg.svg2pdf(bytestring=buf.getvalue().encode('utf-8'))
 
 
+def _cancelled_stamp(pdf, width, height):
+    """Diagonaler "STORNIERT"-Stempel über die ganze Seite.
+
+    Halbtransparent, damit der Rechnungstext darunter lesbar bleibt — der
+    Beleg soll entwertet, nicht unleserlich sein."""
+    pdf.saveState()
+    pdf.translate(width / 2, height / 2)
+    pdf.rotate(35)
+    pdf.setFont('Helvetica-Bold', 72)
+    pdf.setFillColorRGB(0.8, 0.1, 0.1)
+    pdf.setFillAlpha(0.28)
+    pdf.drawCentredString(0, 0, 'STORNIERT')
+    pdf.restoreState()
+
+
 def _text_page(invoice):
     """A4-Seite mit dem Rechnungstext (obere zwei Drittel — unten liegt der
     Zahlteil)."""
@@ -294,13 +328,27 @@ def _text_page(invoice):
 
     # Hinweise
     y += 14
-    line(20, y, 'Zahlbar mit dem QR-Zahlteil unten. Bitte die Rechnungsnummer '
-                'als Mitteilung angeben.', 'Helvetica', 8.5)
-    y += 5
-    line(20, y, 'Das Konto ist für die oben genannte Laufzeit bereits freigeschaltet.',
-         'Helvetica', 8.5)
-    y += 5
-    line(20, y, f'Konto: {_iban_display(invoice)}', 'Helvetica', 8.5)
+    if invoice.status == Invoice.STATUS_CANCELLED:
+        # Eine stornierte Rechnung darf nicht mehr zum Zahlen auffordern: der
+        # QR-Zahlteil bleibt zwar auf der Seite (er kommt aus der unteren
+        # Ebene), Text und Stempel müssen ihn aber entwerten — sonst zahlt
+        # jemand eine gegenstandslose Rechnung ein.
+        line(20, y, 'Diese Rechnung wurde storniert. Bitte nicht bezahlen, der '
+                    'Zahlteil unten ist ungültig.', 'Helvetica-Bold', 8.5)
+        y += 5
+        line(20, y, 'Die damit ausgestellte Freischaltung wurde zurückgenommen.',
+             'Helvetica', 8.5)
+    else:
+        line(20, y, 'Zahlbar mit dem QR-Zahlteil unten. Bitte die Rechnungsnummer '
+                    'als Mitteilung angeben.', 'Helvetica', 8.5)
+        y += 5
+        line(20, y, 'Das Konto ist für die oben genannte Laufzeit bereits freigeschaltet.',
+             'Helvetica', 8.5)
+        y += 5
+        line(20, y, f'Konto: {_iban_display(invoice)}', 'Helvetica', 8.5)
+
+    if invoice.status == Invoice.STATUS_CANCELLED:
+        _cancelled_stamp(pdf, width, height)
 
     pdf.showPage()
     pdf.save()

@@ -1,12 +1,16 @@
+import logging
+
 from django import forms
 from django.contrib import admin
 from django.contrib.admin.helpers import ACTION_CHECKBOX_NAME
 from django.shortcuts import render
 from django.utils import timezone
 
-from .invoices import activate_licence
+from .invoices import backfill_licence, store_pdf
 from .models import (DISCOUNT_ONCE, DISCOUNT_SCOPES, Invoice, Subscription,
                      subscription_for)
+
+logger = logging.getLogger(__name__)
 
 
 class SetDiscountForm(forms.Form):
@@ -41,9 +45,13 @@ class SubscriptionAdmin(admin.ModelAdmin):
     list_display = ('user', 'status_label', 'email_verified', 'email_verified_at',
                     'trial_ends', 'paid_until', 'price_display', 'price_pinned',
                     'max_projects', 'discount_percent', 'discount_scope', 'created_at')
-    # Rabatt und Projektlimit direkt in der Liste anpassbar (Basispreis und
-    # Grund über das Formular, damit die Liste schmal bleibt)
-    list_editable = ('max_projects', 'discount_percent', 'discount_scope')
+    # Nur das Projektlimit ist in der Liste editierbar. Der Rabatt steht hier
+    # zwar (Übersicht), wird aber bewusst über die Action "Rabatt setzen"
+    # vergeben: `discount_reason` passt nicht in die Liste, landet über
+    # `Discount.invoice_label` aber eingefroren auf dem Rechnungs-PDF — inline
+    # entstünde "50 % Rabatt" ohne Begründung auf dem Beleg. Die Action fragt
+    # Prozent, Laufzeit und Grund zusammen ab.
+    list_editable = ('max_projects',)
     list_filter = (EmailVerifiedFilter, 'discount_scope')
     search_fields = ('user__username',)
     # Bewusst keine "Verlängern"-Action mehr: Lizenzvergabe läuft ausschliesslich
@@ -52,6 +60,19 @@ class SubscriptionAdmin(admin.ModelAdmin):
     # doppelt gutschreiben und den Storno-Anker (paid_until == period_end)
     # zerstören.
     actions = ('set_discount',)
+
+    def save_model(self, request, obj, form, change):
+        """Ein im Änderungsformular neu gesetzter Rabatt gilt wieder als offen.
+
+        Ohne das bewirkte ein neuer Prozentwert bei einem Konto mit bereits
+        eingelöstem Einmal-Rabatt schlicht nichts: `personal_discount` bleibt
+        wegen `discount_used_at` leer. Nur die Action "Rabatt setzen" hat das
+        früher zurückgesetzt. Wer `discount_used_at` im selben Schritt selbst
+        anfasst, behält die Kontrolle."""
+        if (change and 'discount_used_at' not in form.changed_data
+                and {'discount_percent', 'discount_scope'} & set(form.changed_data)):
+            obj.discount_used_at = None
+        super().save_model(request, obj, form, change)
 
     @admin.display(description='Status')
     def status_label(self, obj):
@@ -138,7 +159,14 @@ class InvoiceAdmin(admin.ModelAdmin):
         Ausstellen (`activate_licence`). Die Absicherung unten greift für
         Rechnungen aus der Zeit davor und für von Hand zurückgesetzte Konten —
         sie verlängert nie über die Rechnungslaufzeit hinaus, doppeltes
-        Anklicken kann also keine zwei Jahre gutschreiben."""
+        Anklicken kann also keine zwei Jahre gutschreiben.
+
+        Bewusst `backfill_licence()` statt `activate_licence()`: Letzteres
+        verbraucht auch den aktuellen Einmal-Rabatt und schreibt den heutigen
+        Listenpreis fest. Beides gehört zur Ausstellung dieser Rechnung und
+        hätte hier Nebenwirkungen — z.B. wäre nach "storniert, Rabatt für die
+        Ersatzrechnung neu vergeben, alte Rechnung versehentlich als bezahlt
+        markiert" der neue Rabatt verbraucht."""
         done = skipped = repaired = 0
         for invoice in queryset:
             if invoice.status != Invoice.STATUS_OPEN:
@@ -147,11 +175,8 @@ class InvoiceAdmin(admin.ModelAdmin):
             invoice.status = Invoice.STATUS_PAID
             invoice.paid_at = timezone.now()
             invoice.save(update_fields=['status', 'paid_at'])
-            if invoice.user_id:
-                sub = subscription_for(invoice.user)
-                if sub.paid_until is None or sub.paid_until < invoice.period_end:
-                    activate_licence(sub, invoice)
-                    repaired += 1
+            if invoice.user_id and backfill_licence(subscription_for(invoice.user), invoice):
+                repaired += 1
             done += 1
         msg = f'{done} Rechnung(en) als bezahlt verbucht.'
         if repaired:
@@ -184,10 +209,20 @@ class InvoiceAdmin(admin.ModelAdmin):
         vergeben."""
         cancelled = revoked = 0
         discount_hints = []
+        pdf_failed = []
         for invoice in queryset.filter(status=Invoice.STATUS_OPEN):
             invoice.status = Invoice.STATUS_CANCELLED
             invoice.save(update_fields=['status'])
             cancelled += 1
+            # PDF neu erzeugen: das abgelegte trägt noch den Zahlungsaufruf und
+            # "Konto ist bereits freigeschaltet" — der Kunde kann es weiterhin
+            # von der Konto-Seite laden und würde sonst eine gegenstandslose
+            # Rechnung einzahlen. Das neue trägt den STORNIERT-Stempel.
+            try:
+                store_pdf(invoice)
+            except Exception:
+                logger.exception('Storno-PDF nicht erzeugt (%s)', invoice.number)
+                pdf_failed.append(invoice.number)
             if invoice.user_id:
                 sub = subscription_for(invoice.user)
                 if sub.paid_until == invoice.period_end:
@@ -212,6 +247,10 @@ class InvoiceAdmin(admin.ModelAdmin):
         msg = f'{cancelled} Rechnung(en) storniert.'
         if revoked:
             msg += f' {revoked}× Freischaltung zurückgenommen.'
+        if pdf_failed:
+            msg += (' Achtung, PDF konnte nicht neu erzeugt werden bei: '
+                    f'{", ".join(pdf_failed)} — das abgelegte PDF zeigt dort noch '
+                    'keinen Storno-Vermerk.')
         if discount_hints:
             msg += (' Achtung, eingelöster Einmal-Rabatt bei: '
                     f'{", ".join(discount_hints)} — für eine Ersatzrechnung im '

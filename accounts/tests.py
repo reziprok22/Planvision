@@ -10,11 +10,13 @@ from django.contrib.admin.sites import site as admin_site
 from django.contrib.auth.models import User
 from django.core import mail
 from django.core.management import call_command
+from django.forms.models import modelform_factory
 from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from PyPDF2 import PdfReader
 
-from .admin import InvoiceAdmin
+from .admin import InvoiceAdmin, SubscriptionAdmin
 from .invoices import OpenInvoiceError, create_invoice, split_amounts, store_pdf
 from .models import (DISCOUNT_LIFETIME, DISCOUNT_ONCE, Invoice, Subscription,
                      subscription_for)
@@ -626,6 +628,59 @@ class GlobalDiscountTests(TestCase):
         self.assertEqual(self.sub.price_chf, 0)
 
 
+@override_settings(LICENSE_PRICE_CHF=200, GLOBAL_DISCOUNT_PERCENT=0)
+class SubscriptionAdminTests(TestCase):
+    """Rabatt von Hand im Änderungsformular ändern."""
+
+    def setUp(self):
+        self.sub = subscription_for(_make_user())
+        self.sub.discount_percent = 20
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.sub.discount_used_at = timezone.now()  # bereits eingelöst
+        self.sub.save()
+
+    def _edit(self, **changes):
+        """Wie das Änderungsformular: ModelForm auf den Rabattfeldern, dann
+        save_model()."""
+        fields = ('max_projects', 'discount_percent', 'discount_scope',
+                  'discount_reason')
+        Form = modelform_factory(Subscription, fields=fields)
+        data = {'max_projects': self.sub.max_projects,
+                'discount_percent': self.sub.discount_percent,
+                'discount_scope': self.sub.discount_scope,
+                'discount_reason': self.sub.discount_reason, **changes}
+        form = Form(data, instance=self.sub)
+        self.assertTrue(form.is_valid(), form.errors)
+        obj = form.save(commit=False)
+        SubscriptionAdmin(Subscription, admin_site).save_model(
+            RequestFactory().post('/vitruv/'), obj, form, change=True)
+        self.sub.refresh_from_db()
+
+    def test_the_discount_is_not_editable_in_the_changelist(self):
+        """Vergeben wird der Rabatt über die Action "Rabatt setzen" — nur die
+        fragt auch den Grund ab, der eingefroren auf dem Rechnungs-PDF landet."""
+        editable = SubscriptionAdmin(Subscription, admin_site).list_editable
+        self.assertNotIn('discount_percent', editable)
+        self.assertNotIn('discount_scope', editable)
+
+    def test_new_percent_reopens_a_consumed_discount(self):
+        """Sonst bewirkt der neu eingetragene Prozentwert schlicht nichts:
+        `personal_discount` bliebe wegen `discount_used_at` leer."""
+        self._edit(discount_percent=30, discount_reason='Ersatzrechnung')
+        self.assertIsNone(self.sub.discount_used_at)
+        self.assertEqual(self.sub.price_chf, 140)
+
+    def test_new_scope_reopens_a_consumed_discount(self):
+        self._edit(discount_scope=DISCOUNT_LIFETIME)
+        self.assertIsNone(self.sub.discount_used_at)
+
+    def test_editing_something_else_leaves_the_discount_consumed(self):
+        self._edit(max_projects=100)
+        self.assertIsNotNone(self.sub.discount_used_at)
+        self.assertEqual(self.sub.max_projects, 100)
+        self.assertEqual(self.sub.price_chf, 200)
+
+
 class MaxProjectsTests(TestCase):
     def test_default_limit_from_settings(self):
         sub = subscription_for(_make_user())
@@ -923,6 +978,28 @@ class InvoiceTests(TestCase):
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.paid_until, Invoice.objects.get().period_end)
 
+    def test_marking_paid_repair_has_no_side_effects(self):
+        """Der Reparaturpfad setzt **nur** `paid_until`. Sonst frisst das
+        nachträgliche Verbuchen einer alten Rechnung einen inzwischen für die
+        Ersatzrechnung neu vergebenen Einmal-Rabatt und schreibt nebenbei den
+        heutigen Listenpreis fest."""
+        self._request()
+        self.sub.refresh_from_db()
+        self.sub.paid_until = None       # Konto von Hand zurückgesetzt
+        self.sub.list_price_chf = None   # Preisbindung bewusst gelöst
+        self.sub.discount_percent = 30   # Rabatt für die Ersatzrechnung
+        self.sub.discount_scope = DISCOUNT_ONCE
+        self.sub.discount_used_at = None
+        self.sub.save()
+
+        _mark_paid(Invoice.objects.all())
+
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.paid_until, Invoice.objects.get().period_end)
+        self.assertIsNone(self.sub.discount_used_at)
+        self.assertIsNone(self.sub.list_price_chf)
+        self.assertEqual(self.sub.price_chf, 140)
+
     def test_cancelling_revokes_the_licence(self):
         _expire(self.user)  # ohne laufende Testphase, sonst greift die weiter
         self._request()
@@ -956,6 +1033,33 @@ class InvoiceTests(TestCase):
         _cancel(Invoice.objects.filter(pk=alt.pk))
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.paid_until, alt.period_end + timedelta(days=365))
+
+    def test_cancelling_stamps_the_stored_pdf(self):
+        """Das abgelegte PDF bleibt von der Konto-Seite abrufbar — es darf nach
+        dem Storno nicht mehr zum Zahlen auffordern."""
+        self._request()
+        invoice = Invoice.objects.get()
+        before = PdfReader(io.BytesIO(invoice.pdf_path.read_bytes())).pages[0].extract_text()
+        self.assertIn('bereits freigeschaltet', before)
+
+        _cancel(Invoice.objects.all())
+
+        after = PdfReader(io.BytesIO(invoice.pdf_path.read_bytes())).pages[0].extract_text()
+        self.assertIn('STORNIERT', after)
+        self.assertIn('nicht bezahlen', after)
+        self.assertNotIn('bereits freigeschaltet', after)
+
+    def test_regenerated_pdf_of_a_cancelled_invoice_is_stamped(self):
+        """Auch ein später neu erzeugtes PDF (Datei verloren) trägt den Stempel
+        — die Kennzeichnung hängt am Status, nicht am Zeitpunkt."""
+        self._request()
+        invoice = Invoice.objects.get()
+        _cancel(Invoice.objects.all())
+        invoice.pdf_path.unlink()
+        response = self.client.get(reverse('rechnung_pdf', args=[invoice.number]))
+        self.assertEqual(response.status_code, 200)
+        text = PdfReader(io.BytesIO(invoice.pdf_path.read_bytes())).pages[0].extract_text()
+        self.assertIn('STORNIERT', text)
 
     def test_cancelled_invoice_allows_a_new_one(self):
         self._request()
