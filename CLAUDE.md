@@ -259,7 +259,7 @@ After every `git pull` on the server:
 One-time setup for the invoicing feature (seit 14.8.2026):
 ```
 sudo apt install libcairo2          # cairosvg rendert damit den QR-Zahlteil
-env/bin/pip install -r requirements.txt   # qrbill, cairosvg, reportlab
+env/bin/pip install -r requirements-server.txt   # qrbill, cairosvg, reportlab
 ```
 Dazu vor der ersten echten Rechnung in `config/settings.py` die `INVOICE_*`-Platzhalter durch echte Werte ersetzen (IBAN, Adresse, UID) — mit der Platzhalter-IBAN verweigert der Server das Ausstellen. `invoices/` ins Backup aufnehmen (Aufbewahrungspflicht).
 
