@@ -1034,6 +1034,53 @@ class InvoiceTests(TestCase):
         self.sub.refresh_from_db()
         self.assertEqual(self.sub.paid_until, alt.period_end + timedelta(days=365))
 
+    def test_cancelling_during_the_trial_leaves_no_licence(self):
+        """Storno nach einem Kauf während der Testphase darf keine Lizenz
+        hinterlassen.
+
+        Der Anker der Laufzeit ist dann das Trial-Ende (Resttage gehen nicht
+        verloren). Solange der Storno den Vorzustand aus `period_start` erriet,
+        blieb genau dieses Datum als `paid_until` stehen: der Kunde galt als
+        zahlend, bekam später eine Verlängerungs-Erinnerung — und weil
+        `can_request_invoice` bei laufender Lizenz erst im Verlängerungsfenster
+        öffnet, war ihm der Kaufweg monatelang zu."""
+        self.sub.trial_ends = timezone.now() + timedelta(days=180)  # Feedback-Dankeschön
+        self.sub.save()
+        self._request()
+
+        _cancel(Invoice.objects.all())
+
+        self.sub.refresh_from_db()
+        self.assertIsNone(self.sub.paid_until)
+        self.assertFalse(self.sub.is_paid)
+        self.assertTrue(self.sub.in_trial)          # Testphase läuft weiter
+        self.assertTrue(self.sub.can_request_invoice)
+        # …und der Knopf dafür ist auch wirklich da (nicht die ausgegraute
+        # Verlängerungs-Variante, die nur bei laufender Lizenz erscheint)
+        response = self.client.get(reverse('konto'))
+        self.assertContains(response, reverse('rechnung_anfordern'))
+        self.assertNotContains(response, 'Verlängern kannst du')
+
+    def test_previous_licence_is_frozen_on_the_invoice(self):
+        """Der Vorzustand wird beim Ausstellen mitgeschrieben, nicht beim
+        Storno rekonstruiert."""
+        self.assertIsNone(subscription_for(self.user).paid_until)
+        self._request()
+        self.assertIsNone(Invoice.objects.get().previous_paid_until)
+
+        _cancel(Invoice.objects.all())
+        bis = timezone.localdate() + timedelta(days=100)
+        self.sub.refresh_from_db()
+        self.sub.paid_until = bis
+        self.sub.save()
+        self._request()
+
+        zweite = Invoice.objects.exclude(status=Invoice.STATUS_CANCELLED).get()
+        self.assertEqual(zweite.previous_paid_until, bis)
+        _cancel(Invoice.objects.filter(pk=zweite.pk))
+        self.sub.refresh_from_db()
+        self.assertEqual(self.sub.paid_until, bis)
+
     def test_cancelling_stamps_the_stored_pdf(self):
         """Das abgelegte PDF bleibt von der Konto-Seite abrufbar — es darf nach
         dem Storno nicht mehr zum Zahlen auffordern."""

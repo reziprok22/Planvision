@@ -174,6 +174,9 @@ def create_invoice(user, sub, address):
         net_chf=net, vat_rate=vat_rate(), vat_chf=vat, total_chf=total,
         period_start=start,
         period_end=one_year_later(start),
+        # Vorzustand einfrieren, damit der Storno ihn zurückschreiben kann,
+        # statt ihn aus period_start zu erraten (siehe Modell-Kommentar).
+        previous_paid_until=sub.paid_until,
         list_price_chf=sub.list_price,
         discount_percent=sub.effective_discount.percent,
         # invoice_label statt label: ohne "gültig bis"-/Laufzeit-Zusätze,

@@ -204,9 +204,10 @@ class InvoiceAdmin(admin.ModelAdmin):
         """Gegenstück zum Ausstellen: Wer nicht zahlt, verliert die Lizenz
         wieder. Zurückgesetzt wird nur, wenn `paid_until` noch genau auf dieser
         Rechnung steht — hat eine spätere Rechnung schon weiter verlängert,
-        bleibt die neuere Laufzeit stehen. Ein verbrauchter Einmal-Rabatt bleibt
-        eingelöst; bei Bedarf im Subscription-Admin per "Rabatt setzen" neu
-        vergeben."""
+        bleibt die neuere Laufzeit stehen. Zurückgeschrieben wird der beim
+        Ausstellen eingefrorene `previous_paid_until`. Ein verbrauchter
+        Einmal-Rabatt bleibt eingelöst; bei Bedarf im Subscription-Admin per
+        "Rabatt setzen" neu vergeben."""
         cancelled = revoked = 0
         discount_hints = []
         pdf_failed = []
@@ -226,13 +227,10 @@ class InvoiceAdmin(admin.ModelAdmin):
             if invoice.user_id:
                 sub = subscription_for(invoice.user)
                 if sub.paid_until == invoice.period_end:
-                    # Zurück auf den Stand davor: an eine frühere Lizenz oder
-                    # Trial-Restlaufzeit angeschlossen (period_start liegt in
-                    # der Zukunft) heisst dorthin zurück, sonst gab es vorher
-                    # gar keine Lizenz.
-                    sub.paid_until = (invoice.period_start
-                                      if invoice.period_start > invoice.issued_on
-                                      else None)
+                    # Zurück auf den Stand davor — nicht aus `period_start`
+                    # erraten: der Anker kann auch das Trial-Ende sein, und
+                    # dann bliebe eine Lizenz stehen, die es nie gab.
+                    sub.paid_until = invoice.previous_paid_until
                     sub.save(update_fields=['paid_until'])
                     revoked += 1
                 # Storno + Neuausstellung ist der offizielle Korrekturweg

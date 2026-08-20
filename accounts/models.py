@@ -281,6 +281,19 @@ class Invoice(models.Model):
     creditor = models.JSONField(default=dict, blank=True)
     creditor_vat_uid = models.CharField(max_length=32, blank=True, default='')
 
+    # Stand von `Subscription.paid_until` unmittelbar VOR dieser Rechnung.
+    # Der Storno schreibt genau das zurück, statt den Vorzustand aus
+    # `period_start` zu erraten: `period_start` kann auch am Trial-Ende hängen
+    # (wer während der Testphase kauft, verliert die Resttage nicht), und dann
+    # hinterliess die Rekonstruktion eine Lizenz bis zum Trial-Ende, die es nie
+    # gab — mit grünem "Lizenz aktiv"-Badge, Verlängerungs-Erinnerung und
+    # ausgegrautem "Rechnung anfordern": ausgerechnet dem Kunden, der wieder
+    # zahlen soll, war der Kaufweg zu.
+    # None heisst "vorher gab es keine Lizenz"; Altrechnungen hat die
+    # Migration mit der früheren Heuristik befüllt.
+    previous_paid_until = models.DateField(
+        null=True, blank=True, verbose_name='Lizenz vor dieser Rechnung')
+
     # Adresskopie (überlebt die Kontolöschung)
     billing_company = models.CharField(max_length=100, blank=True)
     billing_name = models.CharField(max_length=100)
