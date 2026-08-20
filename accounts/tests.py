@@ -180,6 +180,56 @@ class LoginTests(TestCase):
         response = self.client.post(reverse('logout'))
         self.assertRedirects(response, '/accounts/login/', fetch_redirect_response=False)
 
+    def test_empty_login_shows_an_error(self):
+        """Leeres Formular erzeugt nur FELD-Fehler (keine non_field_errors).
+        Das Template rendert die inzwischen mit — vorher lud die Seite
+        kommentarlos neu und der Nutzer sah gar keinen Hinweis."""
+        response = self.client.post(reverse('login'), {'username': '', 'password': ''})
+        self.assertEqual(response.status_code, 200)
+        # auf das Markup prüfen, nicht auf den Klassennamen: der steht auch
+        # im <style>-Block von auth_base.html
+        self.assertContains(response, '<ul class="error-list">')
+        self.assertContains(response, 'Feld ist zwingend erforderlich')
+
+    def test_login_keeps_the_entered_email_after_a_wrong_password(self):
+        response = self.client.post(reverse('login'), {
+            'username': 'test@example.ch', 'password': 'falsch'})
+        self.assertContains(response, 'value="test@example.ch"')
+
+    def test_deactivating_an_account_ends_its_running_session(self):
+        """`is_active=False` ist der einzige Sperrhebel im Admin und muss
+        sofort greifen. Mit AllowAllUsersModelBackend hob die aufgehobene
+        is_active-Prüfung auch fuer get_user() ab — die laufende Session
+        behielt vollen Zugriff bis zum Cookie-Ablauf."""
+        self.client.login(username='test@example.ch', password='sicher-genug-42')
+        self.assertEqual(self.client.get(reverse('konto')).status_code, 200)
+
+        User.objects.filter(username='test@example.ch').update(is_active=False)
+
+        response = self.client.get(reverse('konto'))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn('/accounts/login/', response['Location'])
+        # Auch die API-Endpoints, nicht nur die HTML-Seiten
+        self.assertEqual(self.client.get('/cloud/projects').status_code, 401)
+
+    def test_unconfirmed_account_is_told_to_confirm(self):
+        User.objects.filter(username='test@example.ch').update(is_active=False)
+        response = self.client.post(reverse('login'), {
+            'username': 'test@example.ch', 'password': 'sicher-genug-42'})
+        self.assertContains(response, 'noch nicht bestätigt')
+
+    def test_deactivated_account_is_not_told_to_click_a_link(self):
+        """Ein im Admin gesperrtes Konto bekam dieselbe "klicke auf den
+        Bestätigungslink"-Meldung und wartete auf eine Mail, die nie kommt."""
+        user = User.objects.get(username='test@example.ch')
+        subscription_for(user)  # legt sie an, falls noch nicht vorhanden
+        Subscription.objects.filter(user=user).update(email_verified_at=timezone.now())
+        User.objects.filter(pk=user.pk).update(is_active=False)
+        response = self.client.post(reverse('login'), {
+            'username': 'test@example.ch', 'password': 'sicher-genug-42'})
+        self.assertContains(response, 'deaktiviert')
+        self.assertNotContains(response, 'Bestätigungslink')
+
 
 class PasswordResetTests(TestCase):
     def setUp(self):
@@ -210,6 +260,31 @@ class PasswordResetTests(TestCase):
         self.assertRedirects(response, reverse('password_reset_complete'))
         self.assertTrue(self.client.login(
             username='test@example.ch', password='noch-sicherer-43'))
+
+    def test_unconfirmed_account_gets_a_fresh_verification_link(self):
+        """Djangos Reset überspringt inaktive Konten — wer nie bestätigt hat,
+        bekam gar nichts, obwohl die Seite "Link ist unterwegs" sagt. Jetzt
+        geht stattdessen ein neuer Bestätigungslink raus."""
+        User.objects.filter(username='test@example.ch').update(is_active=False)
+        response = self.client.post(reverse('password_reset'), {'email': 'test@example.ch'})
+        self.assertRedirects(response, reverse('password_reset_done'))
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('/accounts/verify-email/', mail.outbox[0].body)
+        self.assertNotIn('/accounts/reset/', mail.outbox[0].body)
+
+    def test_deactivated_account_gets_no_mail_at_all(self):
+        """Gesperrt ist nicht unbestätigt: ein im Admin deaktiviertes Konto
+        darf sich nicht per Passwort-Reset einen Aktivierungslink holen."""
+        user = User.objects.get(username='test@example.ch')
+        subscription_for(user)
+        Subscription.objects.filter(user=user).update(email_verified_at=timezone.now())
+        User.objects.filter(pk=user.pk).update(is_active=False)
+        self.client.post(reverse('password_reset'), {'email': 'test@example.ch'})
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_reset_for_unknown_address_stays_silent(self):
+        self.client.post(reverse('password_reset'), {'email': 'niemand@example.ch'})
+        self.assertEqual(len(mail.outbox), 0)
 
 
 def _make_user(email='test@example.ch', password='sicher-genug-42'):

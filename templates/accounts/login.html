@@ -10,12 +10,28 @@
         <div class="error">{{ error }}</div>
     {% endfor %}
 
+    {% comment %}Die Felder stehen bewusst von Hand da (Layout), deshalb müssen
+       auch `required`, der eingegebene Wert und die FELD-Fehler von Hand mit:
+       Ein leeres Formular erzeugt nur Feld-Fehler, keine non_field_errors —
+       ohne das hier lud die Seite kommentarlos neu. Und ohne `value` musste
+       man die Adresse nach jedem Tippfehler im Passwort neu eingeben.{% endcomment %}
     <form method="post">
         {% csrf_token %}
         <label for="id_username">E-Mail</label>
-        <input type="email" name="username" id="id_username" autocomplete="email" autofocus>
+        <input type="email" name="username" id="id_username" autocomplete="email"
+               value="{{ form.username.value|default:'' }}" required autofocus>
+        {% if form.username.errors %}
+            <ul class="error-list">
+                {% for error in form.username.errors %}<li>{{ error }}</li>{% endfor %}
+            </ul>
+        {% endif %}
         <label for="id_password">Passwort</label>
-        <input type="password" name="password" id="id_password" autocomplete="current-password">
+        <input type="password" name="password" id="id_password" autocomplete="current-password" required>
+        {% if form.password.errors %}
+            <ul class="error-list">
+                {% for error in form.password.errors %}<li>{{ error }}</li>{% endfor %}
+            </ul>
+        {% endif %}
         <button type="submit" class="btn">Anmelden</button>
     </form>
 

@@ -19,7 +19,7 @@ from django.utils import timezone
 from PIL import Image
 
 from accounts.models import subscription_for
-from .models import FeedbackResponse, StoredProject
+from .models import FeedbackResponse, Project, StoredProject
 from .views import _check_page_sizes, _convert_pdf_to_images, PdfTooLargeError
 
 CLOUD_TMP = Path(tempfile.mkdtemp(prefix='planli_cloud_test_'))
@@ -625,3 +625,64 @@ class CloudDeltaSaveTests(TestCase):
             json.dumps({'project_id': project_id, 'hashes': []}),
             content_type='application/json')
         self.assertEqual(response.status_code, 404)
+
+
+PROJECTS_TMP = Path(tempfile.mkdtemp(prefix='planli_projects_test_'))
+
+
+@override_settings(CLOUD_PROJECTS_DIR=CLOUD_TMP, PROJECTS_DIR=PROJECTS_TMP)
+class ProjectFileCleanupTests(TestCase):
+    """Die Dateien einer gelöschten Zeile müssen mit verschwinden — egal auf
+    welchem Weg gelöscht wurde. Vorher räumte nur die Selbstlöschung des
+    Kontos auf: eine Löschung im /vitruv/-Admin liess `cloud_projects/*.planli`
+    und `projects/<uuid>/` für immer liegen (der cleanup_projects-Cron fasst
+    `cloud_projects/` nie an)."""
+
+    def setUp(self):
+        CLOUD_TMP.mkdir(parents=True, exist_ok=True)
+        PROJECTS_TMP.mkdir(parents=True, exist_ok=True)
+        self.user = User.objects.create_user(
+            username='test@example.ch', email='test@example.ch', password='sicher-genug-42')
+
+    def _stored(self):
+        stored = StoredProject.objects.create(user=self.user, name='EFH', size_bytes=3)
+        stored.file_path.write_bytes(b'zip')
+        return stored
+
+    def _project(self):
+        project = Project.objects.create(user=self.user, original_filename='plan.pdf')
+        (PROJECTS_TMP / str(project.id) / 'uploads').mkdir(parents=True, exist_ok=True)
+        (PROJECTS_TMP / str(project.id) / 'uploads' / 'page_1.jpg').write_bytes(b'jpg')
+        return project
+
+    def test_cloud_delete_endpoint_removes_the_file(self):
+        stored = self._stored()
+        self.client.login(username='test@example.ch', password='sicher-genug-42')
+        response = self.client.post(reverse('cloud_delete', args=[stored.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(stored.file_path.exists())
+
+    def test_self_service_account_deletion_removes_all_files(self):
+        stored, project = self._stored(), self._project()
+        self.client.login(username='test@example.ch', password='sicher-genug-42')
+        self.client.post(reverse('konto_loeschen'), {'password': 'sicher-genug-42'})
+        self.assertEqual(User.objects.count(), 0)
+        self.assertFalse(stored.file_path.exists())
+        self.assertFalse((PROJECTS_TMP / str(project.id)).exists())
+
+    def test_deleting_a_user_in_the_admin_removes_all_files(self):
+        """Der Weg, der bis 20.8.2026 nichts aufräumte."""
+        stored, project = self._stored(), self._project()
+        self.user.delete()
+        self.assertFalse(stored.file_path.exists())
+        self.assertFalse((PROJECTS_TMP / str(project.id)).exists())
+
+    def test_a_missing_file_is_not_an_error(self):
+        """Der Cleanup-Cron löscht `projects/<uuid>/` schon nach 14 Tagen, die
+        Zeile bleibt stehen — deren spätere Löschung darf nicht scheitern."""
+        stored = self._stored()
+        stored.file_path.unlink()
+        project = Project.objects.create(user=self.user, original_filename='weg.pdf')
+        self.user.delete()  # darf nicht werfen
+        self.assertEqual(Project.objects.filter(pk=project.pk).count(), 0)
+

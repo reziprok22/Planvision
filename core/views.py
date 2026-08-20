@@ -973,6 +973,7 @@ def cloud_delete(request, project_id):
     project = _get_stored_project(request, project_id)
     if project is None:
         return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
-    project.file_path.unlink(missing_ok=True)
+    # Die .planli-Datei räumt das post_delete-Signal in core/models.py ab —
+    # ein Weg für alle Löschpfade (hier, Kontoloeschung, Admin).
     project.delete()
     return JsonResponse({'status': 'ok'})

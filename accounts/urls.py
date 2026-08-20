@@ -1,7 +1,7 @@
 from django.urls import path
 from django.contrib.auth import views as auth_views
 from . import views
-from .forms import EmailAuthenticationForm
+from .forms import EmailAuthenticationForm, EmailPasswordResetForm
 
 urlpatterns = [
     path('login/', auth_views.LoginView.as_view(
@@ -22,6 +22,9 @@ urlpatterns = [
     # Passwort-Reset (E-Mail-Versand gemäss EMAIL_*-Settings)
     path('password-reset/', auth_views.PasswordResetView.as_view(
         template_name='accounts/password_reset.html',
+        # Schickt unbestätigten Konten einen neuen Bestätigungslink statt
+        # gar nichts — siehe EmailPasswordResetForm.
+        form_class=EmailPasswordResetForm,
         email_template_name='accounts/password_reset_email.txt',
         html_email_template_name='accounts/password_reset_email.html',
         subject_template_name='accounts/password_reset_subject.txt',

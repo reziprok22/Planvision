@@ -1,5 +1,4 @@
 import logging
-import shutil
 
 from django.conf import settings
 from django.contrib.auth import logout
@@ -12,9 +11,10 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode
 
+from .emails import send_verification_email
 from .forms import BillingAddressForm, EmailUserCreationForm
 from .invoices import (InvoiceConfigError, OpenInvoiceError, create_invoice,
                        send_invoice, store_pdf)
@@ -22,21 +22,6 @@ from .models import Invoice, subscription_for
 from .tokens import email_verification_token
 
 logger = logging.getLogger(__name__)
-
-
-def _send_verification_email(request, user):
-    context = {
-        'domain': request.get_host(),
-        'protocol': 'https' if request.is_secure() else 'http',
-        'uid': urlsafe_base64_encode(force_bytes(user.pk)),
-        'token': email_verification_token.make_token(user),
-    }
-    subject = render_to_string('accounts/verify_email_subject.txt', context).strip()
-    text_body = render_to_string('accounts/verify_email_email.txt', context)
-    html_body = render_to_string('accounts/verify_email_email.html', context)
-    message = EmailMultiAlternatives(subject, text_body, to=[user.email])
-    message.attach_alternative(html_body, 'text/html')
-    message.send()
 
 
 def register(request):
@@ -49,7 +34,7 @@ def register(request):
             user.is_active = False  # erst nach Klick auf den Bestätigungslink
             user.save()
             subscription_for(user)  # Trial startet mit der Registrierung
-            _send_verification_email(request, user)
+            send_verification_email(request, user)
             return redirect('verify_email_sent')
     else:
         form = EmailUserCreationForm()
@@ -191,26 +176,6 @@ def konto(request):
     })
 
 
-def _delete_user_files(user):
-    """Alle Dateien des Users auf der Platte entfernen. Die DB-Zeilen räumt
-    danach `user.delete()` per CASCADE ab (BugReport/AnalysisEvent bleiben
-    via SET_NULL anonymisiert für die Statistik erhalten).
-
-    Rechnungen (Invoice + PDF unter INVOICES_DIR) bleiben ebenfalls: sie
-    unterliegen der 10-jährigen Aufbewahrungspflicht (OR 958f). Der User-FK
-    ist SET_NULL, die Rechnung trägt ihre Adresse als eigene Kopie — der
-    Beleg bleibt vollständig, die Verknüpfung zum Konto fällt weg.
-
-    Trainingsdaten (training_data_opt-in/) bleiben bewusst erhalten: laut
-    Datenschutzerklärung sind freigegebene Exporte bereits anonymisiert und
-    nicht mit dem Konto verknüpft gespeichert; der CASCADE-Delete der
-    Project-Zeile kappt die letzte Verknüpfung zum User."""
-    for stored in user.stored_projects.all():
-        stored.file_path.unlink(missing_ok=True)
-    for project in user.projects.all():
-        shutil.rmtree(settings.PROJECTS_DIR / str(project.id), ignore_errors=True)
-
-
 def _send_deletion_email(email):
     subject = render_to_string('accounts/konto_geloescht_subject.txt').strip()
     text_body = render_to_string('accounts/konto_geloescht_email.txt')
@@ -235,7 +200,20 @@ def konto_loeschen(request):
     elif request.method == 'POST':
         if user.check_password(request.POST.get('password', '')):
             email = user.email
-            _delete_user_files(user)
+            # Ein einziger Aufruf räumt alles ab: die DB-Zeilen per CASCADE,
+            # die Dateien (cloud_projects/, projects/<uuid>/) über die
+            # post_delete-Signale in core/models.py. Die liegen dort statt
+            # hier, damit auch eine Löschung im /vitruv/-Admin aufräumt.
+            #
+            # Bewusst NICHT mitgelöscht: Rechnungen (Invoice + PDF unter
+            # INVOICES_DIR) wegen der 10-jährigen Aufbewahrungspflicht
+            # (OR 958f) — der User-FK ist SET_NULL, die Adresskopie steckt auf
+            # der Rechnung selbst, der Beleg bleibt also vollständig und
+            # verliert nur die Verknüpfung zum Konto. Ebenso bleiben
+            # Trainingsdaten (training_data_opt-in/): laut
+            # Datenschutzerklärung sind freigegebene Exporte bereits
+            # anonymisiert und nicht ans Konto gekoppelt gespeichert, der
+            # CASCADE-Delete der Project-Zeile kappt die letzte Verknüpfung.
             user.delete()
             logout(request)
             try:

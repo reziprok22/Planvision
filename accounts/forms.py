@@ -2,9 +2,11 @@ import re
 
 import iso3166
 from django import forms
-from django.contrib.auth.forms import UserCreationForm, AuthenticationForm
+from django.contrib.auth.forms import (AuthenticationForm, PasswordResetForm,
+                                       UserCreationForm)
 from django.contrib.auth.models import User
 
+from .emails import send_verification_email
 from .models import Subscription
 
 
@@ -50,6 +52,19 @@ class EmailUserCreationForm(UserCreationForm):
         return user
 
 
+def _never_confirmed(user):
+    """`is_active=False` heisst zweierlei: nie bestätigt ODER im Admin
+    gesperrt. Unterschieden wird über `Subscription.email_verified_at` — das
+    Feld existiert genau dafür, weil `is_active` auch von Hand gesetzt wird.
+    `last_login` als zweites Signal deckt Konten ab, die es schon vor diesem
+    Feld gab oder die ein Admin angelegt hat (dieselbe Prüfung wie in
+    `EmailUserCreationForm.clean_email`)."""
+    if user.last_login is not None:
+        return False
+    return not Subscription.objects.filter(
+        user=user, email_verified_at__isnull=False).exists()
+
+
 class EmailAuthenticationForm(AuthenticationForm):
     """Login per E-Mail: normalisiert die Eingabe auf Kleinschreibung,
     da Usernames (= E-Mails) kleingeschrieben gespeichert werden."""
@@ -58,12 +73,54 @@ class EmailAuthenticationForm(AuthenticationForm):
         return self.cleaned_data['username'].lower()
 
     def confirm_login_allowed(self, user):
-        if not user.is_active:
+        """Die beiden Gründe für `is_active=False` brauchen verschiedene
+        Auswege: beim unbestätigten Konto hilft ein neuer Link, beim gesperrten
+        nur eine Rückmeldung von uns. Vorher bekamen beide die
+        "Bestätigungslink"-Meldung — wer im Admin gesperrt wurde, wartete damit
+        auf eine Mail, die nie kommt."""
+        if user.is_active:
+            return
+        if _never_confirmed(user):
             raise forms.ValidationError(
                 'Dieses Konto ist noch nicht bestätigt. Bitte klicke auf den '
-                'Bestätigungslink, den wir dir per E-Mail geschickt haben.',
+                'Bestätigungslink, den wir dir per E-Mail geschickt haben. '
+                'Keine Mail erhalten? Registriere dich einfach erneut mit '
+                'derselben Adresse, dann schicken wir einen neuen Link.',
                 code='inactive',
             )
+        raise forms.ValidationError(
+            'Dieses Konto ist deaktiviert. Bitte melde dich bei '
+            'info@planli.net, wenn das ein Irrtum ist.',
+            code='inactive',
+        )
+
+
+class EmailPasswordResetForm(PasswordResetForm):
+    """Passwort-Reset, der unbestätigte Konten nicht ins Leere laufen lässt.
+
+    Djangos `get_users()` filtert auf `is_active=True`. Wer sich registriert
+    und den Bestätigungslink nie angeklickt hat, bekam hier also gar nichts —
+    bei einer Seite, die "Link ist unterwegs" sagt, eine stille Sackgasse:
+    einloggen ging nicht, Passwort zurücksetzen ging nicht, und dass eine
+    erneute Registrierung der Ausweg ist, stand nur auf Seiten, auf denen
+    dieser Nutzer längst nicht mehr landet.
+
+    Deshalb hier: Für ein nachweislich nie bestätigtes Konto geht stattdessen
+    ein frischer Bestätigungslink raus. Nach aussen bleibt alles gleich (immer
+    dieselbe "Falls ein Konto existiert"-Seite), es gibt also weiterhin keine
+    Auskunft darüber, ob eine Adresse registriert ist."""
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        request = kwargs.get('request')
+        if request is None:  # nur der PasswordResetView-Pfad reicht sie mit
+            return
+        email = self.cleaned_data['email']
+        # `email__iexact` wie Djangos get_users(): ohne hinterlegte Adresse
+        # könnten wir ohnehin nichts verschicken.
+        for user in User.objects.filter(email__iexact=email, is_active=False):
+            if _never_confirmed(user):
+                send_verification_email(request, user)
 
 
 class BillingAddressForm(forms.ModelForm):

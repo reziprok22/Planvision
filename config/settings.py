@@ -106,11 +106,14 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Neue Konten sind bis zur E-Mail-Verifikation is_active=False. Das Standard-
 # ModelBackend würde solche User beim Login-Versuch schon vor der
-# Passwortprüfung stillschweigend verwerfen (generische Fehlermeldung) —
-# AllowAllUsersModelBackend lässt sie bis zu confirm_login_allowed()
-# (EmailAuthenticationForm) durch, wo die Meldung "Konto noch nicht
-# bestätigt" ausgegeben wird.
-AUTHENTICATION_BACKENDS = ['django.contrib.auth.backends.AllowAllUsersModelBackend']
+# Passwortprüfung stillschweigend verwerfen (generische Fehlermeldung) — das
+# eigene Backend lässt sie bis zu confirm_login_allowed()
+# (EmailAuthenticationForm) durch, wo die Meldung "Konto noch nicht bestätigt"
+# ausgegeben wird. Hier stand dafür bis 20.8.2026 Djangos
+# AllowAllUsersModelBackend; das hob die is_active-Prüfung aber auch für
+# get_user() auf, sodass ein im Admin deaktiviertes Konto seine laufende
+# Session behielt. Siehe accounts/backends.py.
+AUTHENTICATION_BACKENDS = ['accounts.backends.InactiveAwareModelBackend']
 
 LANGUAGE_CODE = 'de-ch'
 TIME_ZONE = 'Europe/Zurich'

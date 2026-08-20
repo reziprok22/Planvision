@@ -1,6 +1,9 @@
+import shutil
 import uuid
 from django.conf import settings as django_settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from django.contrib.auth.models import User
 
 
@@ -130,3 +133,28 @@ class AnalysisEvent(models.Model):
 
     def __str__(self):
         return f"Analyse {self.created_at:%Y-%m-%d %H:%M} (Seite {self.page_number})"
+
+
+# ── Dateien folgen der DB-Zeile ────────────────────────────────────────────
+# Bewusst als post_delete-Signal und nicht im jeweiligen View: Zeilen
+# verschwinden auf mehreren Wegen — der Cloud-Endpoint, `user.delete()` per
+# CASCADE aus der Selbstlöschung UND das Löschen eines Users im
+# /vitruv/-Admin. Vorher räumte nur die Selbstlöschung auf; eine
+# Admin-Löschung liess `cloud_projects/<uuid>.planli` und `projects/<uuid>/`
+# für immer auf der Platte liegen (der cleanup_projects-Cron fasst
+# `cloud_projects/` nie an).
+#
+# Nebeneffekt, auf den hier Verlass sein muss: Django nimmt seinen
+# Fast-Delete-Pfad (Bulk-DELETE ohne Signale) nur, solange für das Modell kein
+# post_delete-Empfänger registriert ist — mit diesen Receivern werden die
+# Objekte auch beim CASCADE einzeln eingesammelt und die Signale ausgelöst.
+
+
+@receiver(post_delete, sender=StoredProject)
+def _delete_stored_project_file(sender, instance, **kwargs):
+    instance.file_path.unlink(missing_ok=True)
+
+
+@receiver(post_delete, sender=Project)
+def _delete_project_dir(sender, instance, **kwargs):
+    shutil.rmtree(django_settings.PROJECTS_DIR / str(instance.id), ignore_errors=True)
