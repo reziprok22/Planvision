@@ -840,8 +840,8 @@
     <div class="features-layout">
         <div class="features-content">
             <div class="section-label">Warum Planli</div>
-            <h2 class="section-title">BIM ist die Zukunft. Planli ist für all jene, die das Ausmass schon heute benötigen.</h2>
-            <p class="section-sub">Ideal für die frühen Projektphasen, bevor überhaupt ein CAD-Modell existiert. Mit Planli misst du direkt im Browser, ohne Installation, intuitiv, und fehlerfrei. Du, dein Plan und ein schnelles Ergebnis in wenigen Sekunden.</p>
+            <h2 class="section-title">Schneller als PDF-Editoren. Einfacher als CAD.</h2>
+            <p class="section-sub">CAD-Software ist hervorragend, für ein schnelles Ausmass jedoch zu komplex, während klassische PDF-Editoren nur wenig Automatisierung bieten. Planli schliesst diese Lücke: Ohne Einarbeitungszeit erstellst du in Rekordzeit Ausmasse in hoher Qualität.</p>
         </div>
         <div class="features-image" id="featuresCarousel">
             <div class="features-slide is-active">
@@ -985,7 +985,7 @@
     {% if beta_pricing %}
     <div class="beta-notice">
         <strong>Während der Beta-Phase ist Planli nach der Registrierung komplett kostenlos. </strong>
-        Der unten stehende Preis dient nur zur Information und gilt erst nach dem Ende der Beta-Phase. Wir informieren dich rechtzeitig vorher. Da keine Kreditkarte angegeben werden muss, wird auch nichts automatisch abgebucht.
+        Der unten stehende Preis dient nur zur Information und gilt erst nach dem Ende der Beta-Phase. Wir informieren dich rechtzeitig vorher.
     </div>
     {% endif %}
 
@@ -1007,9 +1007,9 @@
             <hr class="plan-divider">
             <ul class="plan-features">
                 <li>{% if beta_pricing %}Während der Beta kostenlos{% else %}30 Tage kostenlos testen{% endif %}</li>
-                <li>Alle Zeichenwerkzeuge, Massstab pro Seite</li>
+                <li>Alle Zeichenwerkzeuge</li>
                 <li>KI-Objekterkennung</li>
-                <li>PDF-Export: annotierter Plan &amp; Bericht</li>
+                <li>PDF-Export: annotierter Originalplan</li>
                 <li>Online-Ablage für deine Projekte</li>
             </ul>
             <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-primary" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Einzel')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>

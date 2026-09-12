@@ -169,7 +169,7 @@ TRIAL_DAYS = 30
 # `pricing`-Context-Processor. Pro Konto überschreibbar (Preisgarantie) und
 # rabattierbar via Subscription.list_price_chf / .discount_percent — dort steht
 # auch, warum der Rabatt prozentual ist.
-LICENSE_PRICE_CHF = 240
+LICENSE_PRICE_CHF = 280
 # Preiskommunikation nach aussen: die Preis-Karte auf der Landingpage samt
 # Preis-Erwähnungen in FAQ und JSON-LD sowie der künftige Preis auf der
 # Konto-Seite während der Beta. Die Preissektion selbst ("Preismodell" mit der
@@ -179,7 +179,7 @@ LICENSE_PRICE_CHF = 240
 # Jahrespreis-Zeile zahlender Kunden (deren Vertragspreis) und der Verkaufs-
 # Modus nach der Beta (BETA_PRICING=False zeigt den Preis neben "Rechnung
 # anfordern" immer — dann muss SHOW_PRICING ohnehin wieder True sein).
-SHOW_PRICING = False
+SHOW_PRICING = True
 # Globale Preisaktion für ALLE (0 = aus). Die Landingpage-Karte zeigt dann den
 # Listenpreis durchgestrichen, darunter den Aktionspreis und die Begründung;
 # Konto-Seite und Rechnungspreis ziehen mit. Ein persönlicher Rabatt
@@ -188,9 +188,25 @@ SHOW_PRICING = False
 # ('YYYY-MM-DD'); ab dem Folgetag greift die Aktion nicht mehr, leer =
 # unbefristet. Bewusst wie LICENSE_PRICE_CHF direkt hier statt per Env: so
 # steht der laufende Preis im git und nicht in der systemd-Unit.
-GLOBAL_DISCOUNT_PERCENT = 20
-GLOBAL_DISCOUNT_REASON = 'Einführungsrabatt'
-GLOBAL_DISCOUNT_UNTIL = '2026-12-31'
+# Aktuelle Kampagne ist mengen- statt zeitbasiert ("die ersten 50 Lizenzen"):
+# UNTIL bleibt deshalb leer (unbefristet) — es gibt keinen automatischen
+# Cutover, die Anzahl bezahlter Lizenzen wird von Hand mitgezählt und der
+# Rabatt bei Erreichen manuell auf 0 gesetzt.
+# WICHTIG — das allein macht den Rabatt NICHT lifetime: effective_discount
+# fragt diesen Schalter bei JEDER Rechnung live ab, auch bei Verlängerungen
+# (accounts/models.py). Wird er nach der 50. Lizenz ausgeschaltet, zahlen
+# auch die ersten 50 ab ihrer nächsten Verlängerung wieder den vollen Preis
+# — das globale Flag merkt sich niemanden. Das Versprechen "dauerhaft für
+# dich reserviert" gilt daher nur, wenn zusätzlich JEDE der ersten 50
+# Rechnungen sofort bei Ausstellung/Bezahlt-Markieren einen PERSÖNLICHEN
+# Rabatt auf der jeweiligen Subscription bekommt (Admin-Action "Rabatt
+# setzen", 35 %, scope=lifetime) — der bleibt unabhängig von diesem Schalter
+# bestehen. Nicht erst rückwirkend beim Erreichen von 50 nachtragen, sonst
+# ist unklar, wer schon vor der Umstellung bezahlt hat. Details: CLAUDE.md
+# unter "Trial & Lizenz (Subscription)".
+GLOBAL_DISCOUNT_PERCENT = 35
+GLOBAL_DISCOUNT_REASON = 'Einführungsrabatt für die ersten 50 Lizenzen. Dieser gilt dauerhaft und erlischt nicht nach einem Jahr.'
+GLOBAL_DISCOUNT_UNTIL = ''
 
 # ── Rechnungsstellung (QR-Rechnung) ──────────────────────────────────────
 INVOICE_CREDITOR = {
