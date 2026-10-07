@@ -527,7 +527,7 @@ function updateCanvasLayerOrder() {
 
 /**
  * Sort canvas objects by label order.
- * Layer groups (back→front): backgrounds → annotations → textLabels.
+ * Layer groups (back→front): backgrounds → annotations → dimensions/textNotes → textLabels → legend.
  * Within annotations: higher currentLabels index = more behind; lower index = more in front.
  * Operates directly on canvas._objects to avoid firing object:removed/added events.
  */
@@ -535,6 +535,7 @@ function sortCanvasObjectsByLabelOrder(canvas) {
   if (!canvas) return;
 
   const layerRank = obj => {
+    if (obj.objectType === 'legend')    return 4;   // on-plan legend above everything
     if (obj.objectType === 'textLabel') return 3;   // always front
     if (obj.objectType === 'dimension') return 2;   // helper lines above annotations
     if (obj.objectType === 'textNote')  return 2;   // text notes above annotations too

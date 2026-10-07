@@ -227,6 +227,19 @@ let projectDirty = false;
 let isProcessingClick = false;
 let isPageSwitching = false; // Prevent canvas events during page switches
 
+// Zeigt der Canvas den Stand von pageCanvasData[currentPageId]? Zwischen einem
+// Seitenwechsel/Projekt-Load und dem Ende des (asynchronen) Bild- und Objekt-
+// Ladens ist er leer oder zeigt noch die alte Seite. Ein Speichern in diesem
+// Fenster würde diesen Zustand über die korrekten Seitendaten schreiben — so
+// leerte das Auto-Speichern nach einem .planli-Import Seite 1. Solange nicht
+// bereit, überspringt saveCurrentPageCanvasData() das Einsammeln; die Daten in
+// pageCanvasData sind dann ohnehin die richtigen. Die Sequenznummer verhindert,
+// dass ein überholter Ladevorgang die Sperre für einen neueren aufhebt.
+let canvasReady = true;
+let canvasLoadSeq = 0;
+function markCanvasLoading() { canvasReady = false; return ++canvasLoadSeq; }
+function markCanvasLoaded(seq) { if (seq === canvasLoadSeq) canvasReady = true; }
+
 // Debounced table update
 let updateTableTimeout = null;
 
@@ -842,6 +855,8 @@ function loadCanvasData(canvasData) {
     return;
   }
   
+  const loadSeq = markCanvasLoading();
+
   // Clear existing canvas content
   canvas.clear();
 
@@ -855,8 +870,9 @@ function loadCanvasData(canvasData) {
   console.log(`Loading ${canvasData.canvas_annotations.length} annotations from canvas data`);
 
   // Load all annotations in one batch instead of N individual promises.
-  util.enlivenObjects(canvasData.canvas_annotations).then(objects => {
+  const annotationsLoaded = util.enlivenObjects(canvasData.canvas_annotations).then(objects => {
     canvas.renderOnAddRemove = false;
+    let labelsLoaded = null;
     objects.forEach(annotation => {
       if (!annotation) return;
       annotation.set({ objectType: 'annotation', selectable: true, evented: true });
@@ -878,7 +894,7 @@ function loadCanvasData(canvasData) {
       // Font size is NOT taken from the save but re-derived from the page size,
       // so saves from before the auto font scale render consistently.
       const labelK = getAutoFontScale();
-      util.enlivenObjects(savedLabels).then(textLabels => {
+      labelsLoaded = util.enlivenObjects(savedLabels).then(textLabels => {
         const linkedIds = new Set();
         textLabels.filter(Boolean).forEach(tl => {
           tl.set({
@@ -906,6 +922,7 @@ function loadCanvasData(canvasData) {
 
     canvas.renderOnAddRemove = true;
     canvas.requestRenderAll();
+    return labelsLoaded;
   });
 
   // Rebuild dimension helpers (own objectType, not annotations). Synchronous —
@@ -915,7 +932,22 @@ function loadCanvasData(canvasData) {
   });
 
   // Rebuild text notes (async enliven); z-order fixed by the delayed applyLayerOrdering.
-  rebuildTextNotes(canvasData.canvas_text_notes).then(() => canvas.requestRenderAll());
+  const notesLoaded = rebuildTextNotes(canvasData.canvas_text_notes).then(() => canvas.requestRenderAll());
+
+  // Erst wenn alle async Teile auf dem Canvas sind, darf wieder eingesammelt werden
+  // (finally: auch ein Fehler beim Enliven darf das Speichern nicht dauerhaft sperren).
+  Promise.all([annotationsLoaded, notesLoaded]).finally(() => markCanvasLoaded(loadSeq));
+
+  // On-plan legend SOFORT wiederherstellen, nicht erst im verzögerten Block unten:
+  // Ihre Position ist der einzige Zustand, den sie hat, und der lebt nur auf dem
+  // Canvas. Stand das im setTimeout, sammelte jedes Speichern innerhalb der 100 ms
+  // (Seitenwechsel per schnellem Klick, Ctrl+S direkt nach dem Öffnen) eine Seite
+  // ohne Legende ein → legend_position: null, Legende endgültig weg. Der Inhalt
+  // (noch ohne die async geladenen Annotationen) zieht über updateSummary() →
+  // refreshCanvasLegend() automatisch nach.
+  if (canvasData.legend_position) {
+    buildCanvasLegend(canvasData.legend_position);
+  }
 
   // Ganze Seite einpassen (statt gespeicherten Zoom wiederherzustellen) – so sieht
   // man bei jedem Seitenwechsel/Öffnen die komplette Seite. Siehe fitToViewport.
@@ -928,12 +960,7 @@ function loadCanvasData(canvasData) {
   setTimeout(() => {
     applyLayerOrdering(); // enforce label z-order after all async enlivenObjects settle
     updateResultsTable();
-    updateSummary();
-    // Restore on-plan legend at its saved position (after annotations are live,
-    // so the rebuilt content reflects the loaded page)
-    if (canvasData.legend_position) {
-      buildCanvasLegend(canvasData.legend_position);
-    }
+    updateSummary(); // aktualisiert auch den Inhalt der Legende
     saveHistorySnapshot(true); // Seed: programmatisches Laden, kein Nutzereingriff
   }, 100);
 }
@@ -4125,6 +4152,10 @@ function collectCurrentCanvasData(pageId = currentPageId) {
  * @param {string} pageId - Page id to save to
  */
 function saveCurrentPageCanvasData(pageId = currentPageId) {
+  if (!canvasReady) {
+    console.log(`Canvas for page ${pageId} still loading — keeping stored data`);
+    return;
+  }
   if (canvas && pageId != null) {
     const canvasData = collectCurrentCanvasData(pageId);
     pageCanvasData[pageId] = canvasData;
@@ -4179,6 +4210,7 @@ function initializePageCanvasData(projectCanvasData) {
   // Clear the previous project's canvas immediately (mirrors onUploadReady):
   // its annotations must never linger visibly or be collected into the new data.
   if (canvas) canvas.clear();
+  markCanvasLoading(); // leerer Canvas ≠ Seite 1 — bis navigateToPage… sie geladen hat
   console.log(`Initialized ${Object.keys(pageCanvasData).length} pages of canvas data`);
 }
 
@@ -4433,6 +4465,8 @@ async function initApp() {
 
     pageCanvasData  = {};
     currentPageId   = null;
+    canvasReady     = true;
+    canvasLoadSeq++;
     selectedObjects = [];
     projectDirty    = false;
     initHistory();
@@ -4502,6 +4536,8 @@ async function initApp() {
 
     // Update page state (saves the outgoing page's canvas data, sets currentPageId)
     setCurrentPage(pageId);
+    // Ab hier zeigt der Canvas noch die alte Seite, gehört aber schon zu pageId
+    const loadSeq = markCanvasLoading();
 
     // Sync sidebar highlight
     setActivePageInList(pageId);
@@ -4548,6 +4584,9 @@ async function initApp() {
           canvas_available: true
         };
       }
+      // No-op, wenn loadCanvasData eine eigene Sequenz gestartet hat — dann gibt
+      // die die Sperre frei, sobald die Objekte wirklich auf dem Canvas sind.
+      markCanvasLoaded(loadSeq);
       updateResultsTable();
       updateSummary();
       // Reset undo/redo history for each new page
