@@ -413,6 +413,24 @@
             padding: 8px 10px 4px;
             border-bottom: none;
         }
+        .shortcuts-modal-content {
+            max-width: 940px;
+            margin-top: 4vh;
+            max-height: 92vh;
+        }
+        .shortcuts-columns {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0 28px;
+            align-items: start;
+        }
+        .shortcuts-columns .shortcuts-table td:first-child {
+            white-space: nowrap;
+            width: 1%;
+        }
+        @media (max-width: 760px) {
+            .shortcuts-columns { grid-template-columns: 1fr; }
+        }
         kbd {
             display: inline-block;
             padding: 1px 6px;
@@ -1158,50 +1176,54 @@
     </div>
 
     <div id="shortcutsModal" class="modal">
-        <div class="modal-content" style="max-width:480px;">
+        <div class="modal-content shortcuts-modal-content">
             <span class="close" id="shortcutsModalClose">&times;</span>
             <h3>Tastaturkürzel</h3>
-            <table class="shortcuts-table">
-                <thead><tr><th>Taste</th><th>Aktion</th></tr></thead>
-                <tbody>
-                    <tr><td colspan="2" class="shortcuts-section">Werkzeuge</td></tr>
-                    <tr><td><kbd>S</kbd></td><td>Auswählen</td></tr>
-                    <tr><td><kbd>Q</kbd></td><td>Rechteck zeichnen</td></tr>
-                    <tr><td><kbd>W</kbd></td><td>Polygon zeichnen</td></tr>
-                    <tr><td><kbd>E</kbd></td><td>Linie zeichnen</td></tr>
-                    <tr><td><kbd>D</kbd></td><td>Bemassung</td></tr>
-                    <tr><td><kbd>F</kbd></td><td>Textfeld</td></tr>
-                    <tr><td><kbd>T</kbd> / <kbd>Del</kbd></td><td>Ausgewähltes Objekt löschen</td></tr>
-                    <tr><td><kbd>Esc</kbd></td><td>Zeichnen abbrechen / Auswahl aufheben</td></tr>
-                    <tr><td colspan="2" class="shortcuts-section">Labels</td></tr>
-                    <tr><td><kbd>1</kbd> – <kbd>9</kbd></td><td>Label des aktiven Werkzeugs wählen</td></tr>
-                    <tr><td><kbd>Q/W/E</kbd> halten + <kbd>Mausrad</kbd></td><td>Label durchblättern</td></tr>
-                    <tr><td><kbd>L</kbd></td><td>Label-Manager öffnen / schliessen</td></tr>
-                    <tr><td colspan="2" class="shortcuts-section">Vertex bearbeiten (Polygon &amp; Linie)</td></tr>
-                    <tr><td>Doppelklick</td><td>Vertex-Editiermodus ein/aus</td></tr>
-                    <tr><td>Ziehen</td><td>Einzelnen Vertex verschieben</td></tr>
-                    <tr><td>Klick auf Kante</td><td>Neuen Vertex einfügen</td></tr>
-                    <tr><td>Vertex anklicken + <kbd>Del</kbd></td><td>Vertex löschen</td></tr>
-                    <tr><td><kbd>Esc</kbd></td><td>Vertex-Editiermodus beenden</td></tr>
-                    <tr><td colspan="2" class="shortcuts-section">Bearbeiten</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Objekt kopieren</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Objekt ausschneiden</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Objekt einfügen</td></tr>
-                    <tr><td><kbd>Ctrl</kbd> / <kbd>Alt</kbd> + Ziehen</td><td>Auswahl duplizieren</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Rückgängig (beim Zeichnen: letzter Punkt, im Eckpunkt-Modus: letzter Schritt)</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Wiederholen</td></tr>
-                    <tr><td><kbd>↑ ↓ ← →</kbd></td><td>Objekt 1px verschieben</td></tr>
-                    <tr><td><kbd>Shift</kbd>+<kbd>↑ ↓ ← →</kbd></td><td>Objekt 10px verschieben</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Projekt speichern</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Projekt öffnen</td></tr>
-                    <tr><td colspan="2" class="shortcuts-section">Navigation</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>Mausrad</kbd></td><td>Zoom</td></tr>
-                    <tr><td><kbd>Mausrad</kbd></td><td>Vertikal scrollen</td></tr>
-                    <tr><td><kbd>Shift</kbd>+<kbd>Mausrad</kbd></td><td>Horizontal scrollen</td></tr>
-                    <tr><td colspan="2" class="shortcuts-section">Sonstiges</td></tr>
-                    <tr><td><kbd>?</kbd></td><td>Diese Übersicht öffnen / schliessen</td></tr>
-                </tbody>
-            </table>
+            <div class="shortcuts-columns">
+                <table class="shortcuts-table">
+                    <tbody>
+                        <tr><td colspan="2" class="shortcuts-section">Werkzeuge</td></tr>
+                        <tr><td><kbd>S</kbd></td><td>Auswählen</td></tr>
+                        <tr><td><kbd>Q</kbd></td><td>Rechteck zeichnen</td></tr>
+                        <tr><td><kbd>W</kbd></td><td>Polygon zeichnen</td></tr>
+                        <tr><td><kbd>E</kbd></td><td>Linie zeichnen</td></tr>
+                        <tr><td><kbd>D</kbd></td><td>Bemassung</td></tr>
+                        <tr><td><kbd>F</kbd></td><td>Textfeld</td></tr>
+                        <tr><td><kbd>T</kbd> / <kbd>Del</kbd></td><td>Ausgewähltes Objekt löschen</td></tr>
+                        <tr><td><kbd>Esc</kbd></td><td>Zeichnen abbrechen / Auswahl aufheben</td></tr>
+                        <tr><td colspan="2" class="shortcuts-section">Labels</td></tr>
+                        <tr><td><kbd>Q/W/E</kbd> halten + <kbd>Mausrad</kbd></td><td>Label durchblättern</td></tr>
+                        <tr><td><kbd>L</kbd></td><td>Label-Manager öffnen / schliessen</td></tr>
+                        <tr><td colspan="2" class="shortcuts-section">Vertex bearbeiten (Polygon &amp; Linie)</td></tr>
+                        <tr><td>Doppelklick</td><td>Vertex-Editiermodus ein/aus</td></tr>
+                        <tr><td>Ziehen</td><td>Einzelnen Vertex verschieben</td></tr>
+                        <tr><td>Klick auf Kante</td><td>Neuen Vertex einfügen</td></tr>
+                        <tr><td>Vertex anklicken + <kbd>Del</kbd></td><td>Vertex löschen</td></tr>
+                        <tr><td><kbd>Esc</kbd></td><td>Vertex-Editiermodus beenden</td></tr>
+                    </tbody>
+                </table>
+                <table class="shortcuts-table">
+                    <tbody>
+                        <tr><td colspan="2" class="shortcuts-section">Bearbeiten</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd></td><td>Objekt kopieren</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Objekt ausschneiden</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Objekt einfügen</td></tr>
+                        <tr><td><kbd>Ctrl</kbd> / <kbd>Alt</kbd> + Ziehen</td><td>Auswahl duplizieren</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Rückgängig (beim Zeichnen: letzter Punkt, im Eckpunkt-Modus: letzter Schritt)</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Wiederholen</td></tr>
+                        <tr><td><kbd>↑ ↓ ← →</kbd></td><td>Objekt 1px verschieben</td></tr>
+                        <tr><td><kbd>Shift</kbd>+<kbd>↑ ↓ ← →</kbd></td><td>Objekt 10px verschieben</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Projekt speichern</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>O</kbd></td><td>Projekt öffnen</td></tr>
+                        <tr><td colspan="2" class="shortcuts-section">Navigation</td></tr>
+                        <tr><td><kbd>Ctrl</kbd>+<kbd>Mausrad</kbd></td><td>Zoom</td></tr>
+                        <tr><td><kbd>Mausrad</kbd></td><td>Vertikal scrollen</td></tr>
+                        <tr><td><kbd>Shift</kbd>+<kbd>Mausrad</kbd></td><td>Horizontal scrollen</td></tr>
+                        <tr><td colspan="2" class="shortcuts-section">Sonstiges</td></tr>
+                        <tr><td><kbd>?</kbd></td><td>Diese Übersicht öffnen / schliessen</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
     </div>
 

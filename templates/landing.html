@@ -335,6 +335,38 @@
             line-height: 1.6;
         }
 
+        .feature-keys {
+            list-style: none;
+            margin-top: 16px;
+            display: grid;
+            gap: 8px;
+            font-size: 0.82rem;
+            color: var(--slate-600);
+        }
+        .feature-keys li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .feature-keys span {
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+            min-width: 104px;
+            color: var(--slate-400);
+        }
+        .feature-keys kbd {
+            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: 0.78rem;
+            line-height: 1;
+            padding: 4px 6px;
+            color: var(--slate-900);
+            background: var(--slate-50);
+            border: 1px solid var(--slate-100);
+            border-bottom-width: 2px;
+            border-radius: 4px;
+        }
+
         /* ── PRICING ── */
         .pricing { background: var(--slate-50); }
 
@@ -898,6 +930,11 @@
             </div>
             <h3>Fokus &amp; Geschwindigkeit</h3>
             <p>Auf das Wesentliche reduziert, extrem intuitiv und dank cleverer Tastaturkürzel noch schneller bedienbar.</p>
+            <ul class="feature-keys">
+                <li><span><kbd>Q</kbd><kbd>W</kbd><kbd>E</kbd></span>Rechteck, Polygon, Linie</li>
+                <li><span><kbd>Q</kbd>+<kbd>Mausrad</kbd></span>Label wechseln</li>
+                <li><span><kbd>L</kbd></span>Label-Manager öffnen</li>
+            </ul>
         </div>
 
         <div class="feature-card">
