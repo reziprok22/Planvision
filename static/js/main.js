@@ -39,6 +39,7 @@ import {
   duplicatePageInManifest,
   deletePageFromManifest,
   movePageInManifest,
+  renamePageInManifest,
 } from './pdf-handler.js';
 import { setupProject, maybeLoadDemoProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
@@ -4505,7 +4506,7 @@ function collectAllPagesCanvasData() {
     format: 'multi_page_canvas_v2',
     total_pages: manifest.length,
     pages: { ...pageCanvasData }, // Include all pages with data
-    page_manifest: manifest.map(({ id, sourcePdfIndex, sourcePageIndex, width_mm, height_mm }) => ({ id, sourcePdfIndex, sourcePageIndex, width_mm, height_mm })),
+    page_manifest: manifest.map(({ id, sourcePdfIndex, sourcePageIndex, width_mm, height_mm, name }) => ({ id, sourcePdfIndex, sourcePageIndex, width_mm, height_mm, name })),
     current_page_id: currentPageId,
     saved_at: new Date().toISOString()
   };
@@ -4910,7 +4911,14 @@ async function initApp() {
    * Always flushes the live canvas + UI settings into storage first, so an
    * operation on the currently active page picks up its latest state.
    */
-  function handlePageAction(action, pageId) {
+  function handlePageAction(action, pageId, value) {
+    // Umbenennen ändert nur das Manifest — kein Canvas-Flush, kein Seitenwechsel
+    if (action === 'rename') {
+      if (renamePageInManifest(pageId, value)) setProjectDirty(true);
+      rebuildSidebarPageList();
+      return;
+    }
+
     saveCurrentPageCanvasData(currentPageId);
     saveCurrentPageSettings(currentPageId);
 
@@ -4935,7 +4943,9 @@ async function initApp() {
 
     if (action === 'delete') {
       const position = getPageIndexById(pageId);
-      if (!confirm(`Seite ${position} wirklich löschen?`)) return;
+      const name = getPageEntry(pageId)?.name;
+      const title = name ? `Seite ${position} („${name}“)` : `Seite ${position}`;
+      if (!confirm(`${title} wirklich löschen?`)) return;
 
       const wasCurrent = pageId === currentPageId;
       let fallbackId = null;

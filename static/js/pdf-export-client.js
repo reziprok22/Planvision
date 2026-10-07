@@ -717,7 +717,8 @@ export async function exportReportPdfClient({ pageImageUrls, pageManifest, pageC
         page.drawText(projectName || 'Planli', {
             x: MARGIN, y: curY, size: 14, font: fontB, color: rgb(0, 0, 0)
         });
-        page.drawText(`Seite ${pageNum}  |  ${dateStr}`, {
+        const pageName = pageManifest[i]?.name;
+        page.drawText(`Seite ${pageNum}${pageName ? ` · ${pageName}` : ''}  |  ${dateStr}`, {
             x: MARGIN, y: curY - 18, size: 9, font, color: rgb(0.4, 0.4, 0.4)
         });
         curY -= 36;

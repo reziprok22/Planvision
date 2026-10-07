@@ -173,7 +173,30 @@
             background: #eee;
             margin-top: 2px;
         }
-        .page-list-item .page-label { flex: 1; }
+        .page-list-item .page-label { flex: 1; min-width: 0; }
+        /* Seitentitel: eigener Name (Doppelklick) oder "Seite N"; lange Namen gekürzt */
+        .page-title {
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .page-title .page-name:hover { text-decoration: underline; }
+        body.read-only .page-title .page-name:hover { text-decoration: none; }
+        .page-title .page-pos {
+            color: #999;
+            font-weight: normal;
+            margin-right: 5px;
+        }
+        .page-name-input {
+            width: 100%;
+            box-sizing: border-box;
+            font: inherit;
+            font-weight: normal;
+            padding: 1px 4px;
+            border: 1px solid #aaa;
+            border-radius: 3px;
+        }
         .page-list-item .page-size-hint {
             font-size: 0.75em;
             color: #aaa;

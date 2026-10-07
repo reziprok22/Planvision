@@ -53,7 +53,8 @@ let pageIdSeq = 0;
 // when the entry is duplicated, deleted, or reordered, so AI analysis and PDF
 // export always fetch the right source page. `id` is the stable identity used
 // everywhere else (pageCanvasData, pageSettings) — see CLAUDE.md "Seiten-Management".
-let pageManifest = []; // [{ id, imageUrl, sourcePdfIndex, sourcePageIndex, width_mm, height_mm }]
+// `name` is optional: a user-given page title ("Grundriss EG"); absent = "Seite N".
+let pageManifest = []; // [{ id, imageUrl, sourcePdfIndex, sourcePageIndex, width_mm, height_mm, name? }]
 
 export function resetPdfState() {
   pdfSessionId = null;
@@ -212,8 +213,45 @@ export function duplicatePageInManifest(id) {
   const idx = pageManifest.findIndex(e => e.id === id);
   if (idx === -1) return null;
   const newEntry = { ...pageManifest[idx], id: nextPageId() };
+  if (newEntry.name) newEntry.name = nextCopyName(newEntry.name);
   pageManifest.splice(idx + 1, 0, newEntry);
   return newEntry;
+}
+
+/**
+ * Name for a duplicated page: "Grundriss" → "Grundriss (1)", next copy
+ * "Grundriss (2)" … — counted over the whole manifest, so copying the original
+ * or any of its copies always yields the next free number.
+ */
+function nextCopyName(name) {
+  const base = name.replace(/ \(\d+\)$/, '');
+  let max = 0;
+  for (const e of pageManifest) {
+    if (!e.name) continue;
+    if (e.name.startsWith(`${base} (`) && /^ \((\d+)\)$/.test(e.name.slice(base.length))) {
+      max = Math.max(max, parseInt(e.name.slice(base.length + 2), 10));
+    }
+  }
+  return `${base} (${max + 1})`;
+}
+
+/** Set or clear (empty string) the user-given name of a page. Returns true if it changed. */
+export function renamePageInManifest(id, name) {
+  const entry = pageManifest.find(e => e.id === id);
+  if (!entry) return false;
+  const clean = (name || '').trim();
+  if ((entry.name || '') === clean) return false;
+  if (clean) entry.name = clean;
+  else delete entry.name;
+  return true;
+}
+
+/**
+ * Display title of a page: its user-given name, else "Seite <position>".
+ * Position is 1-based display order.
+ */
+export function getPageTitle(entry, position) {
+  return entry?.name || `Seite ${position}`;
 }
 
 /** Delete the entry with the given id. Refuses to delete the last remaining page. */

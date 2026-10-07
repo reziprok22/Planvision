@@ -15,6 +15,8 @@ import {
   ensureServerSession,
   getSourcePdfBlob,
   nextSourcePdfIndex,
+  getPageSettings,
+  getPageTitle,
 } from './pdf-handler.js';
 
 // ── Internal state ──────────────────────────────────────────────────
@@ -109,7 +111,7 @@ function getThumbObserver() {
 // ── Callbacks wired by main.js ────────────────────────────────────────
 let onPageClickCallback   = null;
 let onScaleChangeCallback = null;
-let onPageActionCallback  = null; // (action, pageId) => void — duplicate/delete/move
+let onPageActionCallback  = null; // (action, pageId, value?) => void — duplicate/delete/move/rename
 
 export function setOnPageClick(fn)   { onPageClickCallback = fn; }
 export function setOnScaleChange(fn) { onScaleChangeCallback = fn; }
@@ -503,12 +505,15 @@ export function buildPageList() {
         li.className = 'page-list-item';
         li.dataset.pageId = entry.id;
 
+        const title = getPageTitle(entry, position);
         li.innerHTML = `
             <img class="page-thumb"
                  data-src="${entry.imageUrl || ''}"
                  alt="Seite ${position}">
             <span class="page-label">
-                Seite ${position}
+                <span class="page-title" title="Doppelklick zum Umbenennen">${entry.name
+                    ? `<span class="page-pos">${position}</span><span class="page-name"></span>`
+                    : `<span class="page-name">${title}</span>`}</span>
                 ${sizeText ? `<span class="page-size-hint">${sizeText}</span>` : ''}
                 <span class="page-scale-control">
                     <span class="scale-prefix">1:</span>
@@ -527,6 +532,13 @@ export function buildPageList() {
                 <button class="page-action-btn" data-action="delete" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Seite löschen' : 'Die letzte Seite kann nicht gelöscht werden'}">✕</button>
             </span>
         `;
+
+        // Eigener Name als textContent, nie per innerHTML (Nutzereingabe)
+        if (entry.name) li.querySelector('.page-name').textContent = entry.name;
+        li.querySelector('.page-title').addEventListener('dblclick', e => {
+            e.stopPropagation();
+            startPageRename(li, entry, position);
+        });
 
         // Scale dropdown logic (stop propagation so page click isn't triggered)
         const scaleControl = li.querySelector('.page-scale-control');
@@ -567,10 +579,54 @@ export function buildPageList() {
         getThumbObserver().observe(li.querySelector('.page-thumb'));
     });
 
+    // Der Neuaufbau erzeugt alle Dropdowns mit 1:100 — gespeicherten Massstab
+    // wieder eintragen, sonst zeigen nach Umsortieren/Umbenennen alle anderen
+    // Seiten einen falschen Wert an
+    for (const [pageId, s] of Object.entries(getPageSettings())) {
+        if (s && s.plan_scale != null) setPageScaleInSidebar(pageId, s.plan_scale);
+    }
+
     // Restore highlight (rebuilds tear down and recreate all <li> nodes)
     if (activeId) setActivePageInList(activeId);
 
     pageListSection.style.display = 'block';
+}
+
+/**
+ * Inline-Umbenennen einer Seite: ersetzt den Titel durch ein Eingabefeld.
+ * Enter/Verlassen übernimmt, Escape bricht ab, leer = zurück auf "Seite N".
+ */
+function startPageRename(li, entry, position) {
+    if (window.PLANLI_READ_ONLY) return;
+    const titleEl = li.querySelector('.page-title');
+    if (!titleEl || titleEl.querySelector('input')) return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'page-name-input';
+    input.maxLength = 80;
+    input.value = entry.name || '';
+    input.placeholder = `Seite ${position}`;
+    titleEl.replaceChildren(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = (commit) => {
+        if (done) return;
+        done = true;
+        // Callback baut die Liste neu auf (auch beim Abbrechen: alter Titel zurück)
+        if (onPageActionCallback) onPageActionCallback('rename', entry.id, commit ? input.value : (entry.name || ''));
+    };
+    input.addEventListener('keydown', e => {
+        e.stopPropagation(); // Editor-Hotkeys (Werkzeuge, Entf …) nicht auslösen
+        if (e.key === 'Enter')  { e.preventDefault(); finish(true); }
+        if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('blur', () => finish(true));
+    // Klicks ins Feld sollen nicht die Seite wechseln
+    input.addEventListener('click', e => e.stopPropagation());
+    input.addEventListener('dblclick', e => e.stopPropagation());
 }
 
 /**
