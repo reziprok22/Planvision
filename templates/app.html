@@ -794,6 +794,18 @@
                         </button>
                         <!-- Ende der Hilfstools -->
                         <div class="toolbar-separator"></div>
+                        <button class="tool-button" data-tool="undo" title="Rückgängig [Ctrl+Z]">
+                            <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M4.5 2.5 L2 5 L4.5 7.5"/>
+                                <path d="M2 5 H8.5 a3.25 3.25 0 0 1 0 6.5 H5"/>
+                            </svg>
+                        </button>
+                        <button class="tool-button" data-tool="redo" title="Wiederholen [Ctrl+Shift+Z]">
+                            <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M9.5 2.5 L12 5 L9.5 7.5"/>
+                                <path d="M12 5 H5.5 a3.25 3.25 0 0 0 0 6.5 H9"/>
+                            </svg>
+                        </button>
                         <button class="tool-button" data-tool="delete" title="Löschen [T, Del]">
                             <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
                                 <line x1="1.5" y1="4" x2="12.5" y2="4" stroke-width="1.5"/>
@@ -1135,7 +1147,7 @@
                     <tr><td><kbd>Ctrl</kbd>+<kbd>X</kbd></td><td>Objekt ausschneiden</td></tr>
                     <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd></td><td>Objekt einfügen</td></tr>
                     <tr><td><kbd>Ctrl</kbd> / <kbd>Alt</kbd> + Ziehen</td><td>Auswahl duplizieren</td></tr>
-                    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Rückgängig</td></tr>
+                    <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>Rückgängig (beim Zeichnen: letzter Punkt, im Eckpunkt-Modus: letzter Schritt)</td></tr>
                     <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Wiederholen</td></tr>
                     <tr><td><kbd>↑ ↓ ← →</kbd></td><td>Objekt 1px verschieben</td></tr>
                     <tr><td><kbd>Shift</kbd>+<kbd>↑ ↓ ← →</kbd></td><td>Objekt 10px verschieben</td></tr>

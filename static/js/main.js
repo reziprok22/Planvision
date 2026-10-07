@@ -158,6 +158,14 @@ let clipboard = { annotations: [], dimensions: [], textNotes: [] }; // see seria
 let clipboardSources = [];         // [{id, obj, left, top}] of originals at copy time
 let editingPolygon = null;         // polygon currently in vertex-edit mode
 let vertexHandles = [];            // Circle handles shown during vertex editing
+// Eigener Undo/Redo-Stapel für den Eckpunkt-Modus: die globale History bekommt erst
+// beim Verlassen einen Snapshot, Ctrl+Z wirkt dort deshalb Schritt für Schritt auf
+// die Geometrie des bearbeiteten Objekts ({points, left, top} je Eintrag).
+let vertexEditUndo = [];
+let vertexEditRedo = [];
+let pendingVertexSnapshot = null;  // Stand vor einem Griff-Drag, gepusht erst bei echter Bewegung
+let drawRedoPoints = [];           // per Ctrl+Z entfernte Punkte beim Polygon-/Linien-Zeichnen
+let lastDrawPointer = null;        // letzte Mausposition, für die Vorschau nach Ctrl+Z
 let editingDimension = null;       // dimension group currently in edit mode
 let dimHandles = [];               // Circle handles shown while editing a dimension
 let pasteOffset = 0;               // increases with each paste so copies don't stack
@@ -411,6 +419,8 @@ function setupToolButtons() {
       const tool = this.dataset.tool;
       if (tool === 'delete') {
         deleteSelectedObjects();
+      } else if (tool === 'undo' || tool === 'redo') {
+        undoRedo(tool === 'redo');
       } else {
         setTool(tool);
       }
@@ -419,6 +429,7 @@ function setupToolButtons() {
 
   // Trash startet ausgegraut – erst eine Auswahl aktiviert es (siehe updateDeleteButtonState)
   updateDeleteButtonState();
+  updateUndoRedoButtonState();
 }
 
 /**
@@ -1909,6 +1920,7 @@ function serializeAnnotations() {
 function initHistory() {
   undoStack = [];
   redoStack = [];
+  updateUndoRedoButtonState();
 }
 
 /**
@@ -1926,6 +1938,7 @@ function saveHistorySnapshot(seed = false) {
   undoStack.push(state);
   if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
   redoStack = [];
+  updateUndoRedoButtonState();
   if (!seed) setProjectDirty(true);
 }
 
@@ -1983,6 +1996,39 @@ async function redoHistory() {
   undoStack.push(state);
   await applyHistoryState(state);
   setProjectDirty(true);
+}
+
+function isDrawingPoints() {
+  return (currentTool === 'polygon' || currentTool === 'line') && drawingMode && currentPoints.length > 0;
+}
+
+/**
+ * Was Rückgängig/Wiederholen gerade bedeutet — eine Quelle für Hotkey, Buttons
+ * und Ausgrau-Zustand: Eckpunkt-Modus > laufendes Zeichnen > globale History.
+ */
+function undoRedoAvailability() {
+  if (editingPolygon) return { undo: vertexEditUndo.length > 0, redo: vertexEditRedo.length > 0 };
+  if (isDrawingPoints()) return { undo: true, redo: drawRedoPoints.length > 0 };
+  return { undo: undoStack.length >= 2, redo: redoStack.length > 0 };
+}
+
+async function undoRedo(redo) {
+  if (!undoRedoAvailability()[redo ? 'redo' : 'undo']) return;
+  flashToolButton(redo ? 'redo' : 'undo');
+  if (editingPolygon)         stepVertexEdit(redo);
+  else if (isDrawingPoints()) stepDrawPoint(redo);
+  else if (redo)              await redoHistory();
+  else                        await undoHistory();
+  updateUndoRedoButtonState();
+}
+
+/** Undo-/Redo-Buttons ausgrauen, wenn es nichts zurückzunehmen/wiederherzustellen gibt. */
+function updateUndoRedoButtonState() {
+  const { undo, redo } = undoRedoAvailability();
+  const u = document.querySelector('.tool-button[data-tool="undo"]');
+  const r = document.querySelector('.tool-button[data-tool="redo"]');
+  if (u) u.disabled = !undo;
+  if (r) r.disabled = !redo;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2218,6 +2264,7 @@ function setupCanvasEvents() {
         exitPolygonEditMode();
         return;
       }
+      pendingVertexSnapshot = snapshotEditGeometry();
     }
 
     // Dimension edit mode: a click anywhere but on a dimension handle exits it.
@@ -2279,6 +2326,7 @@ function setupCanvasEvents() {
   // Mouse move event - for drawing previews and crosshair
   canvas.on('mouse:move', function(options) {
     const pointer = canvas.getPointer(options.e);
+    lastDrawPointer = pointer;
 
     if (crosshairVisible) {
       drawCrosshair(pointer.x, pointer.y);
@@ -2326,6 +2374,7 @@ function setupCanvasEvents() {
   canvas.on('object:moving', function(e) {
     const obj = e.target;
     if (obj.objectType === 'vertexHandle' && editingPolygon) {
+      if (pendingVertexSnapshot) { pushVertexEdit(pendingVertexSnapshot); pendingVertexSnapshot = null; }
       updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
       updateAdjacentMidpoints(obj.pointIndex);
       showEditMeasure(editingPolygon, e.e);
@@ -2808,6 +2857,7 @@ function resetAllDrawingStates() {
   if (textPreviewRect) { canvas?.remove(textPreviewRect); textPreviewRect = null; }
   textStartPoint = null;
   hideDrawDistance();
+  updateUndoRedoButtonState();
 }
 
 /**
@@ -3115,6 +3165,7 @@ function addPolygonPoint(pointer, e) {
 
   // Add point to current polygon
   currentPoints.push(pt);
+  drawRedoPoints = [];
   
   if (currentPoints.length === 1) {
     // First point - start polygon
@@ -3124,6 +3175,7 @@ function addPolygonPoint(pointer, e) {
     updatePolygonFromPoints();
   }
   
+  updateUndoRedoButtonState();   // erst jetzt ist drawingMode gesetzt
   setTimeout(() => { isProcessingClick = false; }, 50);
 }
 
@@ -3297,6 +3349,9 @@ function updatePolygonVertex(polygon, pointIndex, canvasX, canvasY) {
 function enterPolygonEditMode(polygon) {
   if (editingPolygon) exitPolygonEditMode();
   editingPolygon = polygon;
+  vertexEditUndo = [];
+  vertexEditRedo = [];
+  pendingVertexSnapshot = null;
 
   polygon.lockMovementX = true;
   polygon.lockMovementY = true;
@@ -3312,6 +3367,7 @@ function enterPolygonEditMode(polygon) {
 
   refreshVertexHandles();
   canvas.discardActiveObject();
+  updateUndoRedoButtonState();
   setTextLabelsVisible(false);
   canvas.renderAll();
 }
@@ -3333,9 +3389,13 @@ function exitPolygonEditMode() {
   updateLinkedTextLabelPosition(editingPolygon);
 
   editingPolygon = null;
+  vertexEditUndo = [];
+  vertexEditRedo = [];
+  pendingVertexSnapshot = null;
   restoreTextLabelsAfterEdit();
 
   saveHistorySnapshot();
+  updateUndoRedoButtonState();
   canvas.renderAll();
 }
 
@@ -3424,8 +3484,60 @@ function _applyBoundingBoxShift(obj, oldMinX, oldMinY) {
   obj.setCoords();
 }
 
+function snapshotEditGeometry() {
+  const p = editingPolygon;
+  return { points: p.points.map(pt => ({ x: pt.x, y: pt.y })), left: p.left, top: p.top };
+}
+
+function pushVertexEdit(snapshot = snapshotEditGeometry()) {
+  vertexEditUndo.push(snapshot);
+  vertexEditRedo = [];
+  updateUndoRedoButtonState();
+}
+
+function restoreEditGeometry(snapshot) {
+  const p = editingPolygon;
+  p.points = snapshot.points.map(pt => ({ x: pt.x, y: pt.y }));
+  p.setBoundingBox(false);           // width/height/pathOffset aus den Punkten
+  p.set({ left: snapshot.left, top: snapshot.top });
+  p.dirty = true;
+  p.setCoords();
+  canvas.discardActiveObject();      // ein aktiver Griff würde sonst verwaist
+  refreshVertexHandles();
+}
+
+/** Ctrl+Z / Ctrl+Shift+Z im Eckpunkt-Modus. */
+function stepVertexEdit(redo) {
+  const from = redo ? vertexEditRedo : vertexEditUndo;
+  const to   = redo ? vertexEditUndo : vertexEditRedo;
+  if (!from.length) return;
+  to.push(snapshotEditGeometry());
+  restoreEditGeometry(from.pop());
+}
+
+/** Ctrl+Z / Ctrl+Shift+Z beim laufenden Polygon-/Linien-Zeichnen: letzten Punkt weg/zurück. */
+function stepDrawPoint(redo) {
+  const isPolygon = currentTool === 'polygon';
+  if (redo) {
+    if (!drawRedoPoints.length) return;
+    currentPoints.push(drawRedoPoints.pop());
+  } else {
+    if (currentPoints.length <= 1) {   // nur noch der Startpunkt → Zeichnen abbrechen
+      cleanupCurrentTool();
+      resetAllDrawingStates();
+      drawRedoPoints = [];
+      canvas.renderAll();
+      return;
+    }
+    drawRedoPoints.push(currentPoints.pop());
+  }
+  const pointer = lastDrawPointer || currentPoints[currentPoints.length - 1];
+  if (isPolygon) updatePolygonPreview(pointer); else updateLinePreview(pointer);
+}
+
 // Insert a new vertex at the midpoint handle position
 function insertVertexAtMidpoint(midHandle) {
+  pushVertexEdit();
   const insertIndex = midHandle.midIndex + 1;
   const oldMinX = editingPolygon.pathOffset.x - editingPolygon.width  / 2;
   const oldMinY = editingPolygon.pathOffset.y - editingPolygon.height / 2;
@@ -3446,6 +3558,7 @@ function insertVertexAtMidpoint(midHandle) {
 function deleteVertex(pointIndex) {
   const minPts = editingPolygon.annotationType === 'polygon' ? 3 : 2;
   if (editingPolygon.points.length <= minPts) return;
+  pushVertexEdit();
 
   const oldMinX = editingPolygon.pathOffset.x - editingPolygon.width  / 2;
   const oldMinY = editingPolygon.pathOffset.y - editingPolygon.height / 2;
@@ -3472,6 +3585,7 @@ function addLinePoint(pointer, e) {
 
   // Add point to current line sequence
   currentPoints.push(pt);
+  drawRedoPoints = [];
   
   if (currentPoints.length === 1) {
     // First point - start line sequence
@@ -3482,6 +3596,7 @@ function addLinePoint(pointer, e) {
     updateLineFromPoints();
   }
   
+  updateUndoRedoButtonState();   // erst jetzt ist drawingMode gesetzt
   setTimeout(() => { isProcessingClick = false; }, 50);
 }
 
@@ -4941,7 +5056,7 @@ async function initApp() {
     // Ctrl / Cmd shortcuts
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 'z' || e.key === 'Z') {
-        if (e.shiftKey) { redoHistory(); } else { undoHistory(); }
+        undoRedo(e.shiftKey);
         e.preventDefault(); return;
       }
       if (e.key === 'c' || e.key === 'C') { copySelectedObjects(); e.preventDefault(); return; }
