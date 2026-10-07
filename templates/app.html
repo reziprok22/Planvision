@@ -661,9 +661,9 @@
     {% endif %}
 
     <!-- Hidden file input for left column upload -->
-    <input type="file" id="leftFileInput" accept=".pdf">
+    <input type="file" id="leftFileInput" accept=".pdf" multiple>
     <!-- Hidden file input for appending an additional PDF to the current project -->
-    <input type="file" id="appendFileInput" accept=".pdf">
+    <input type="file" id="appendFileInput" accept=".pdf" multiple>
 
     <div class="main-container">
 
@@ -678,8 +678,8 @@
                         <polyline points="14 2 14 8 20 8"/>
                     </svg>
                 </span>
-                <span class="drop-title">PDF hier ablegen</span>
-                <span class="drop-hint">oder <span class="browse-link" id="leftBrowseLink">Datei auswählen</span></span>
+                <span class="drop-title">PDFs hier ablegen</span>
+                <span class="drop-hint">oder <span class="browse-link" id="leftBrowseLink">Dateien auswählen</span></span>
             </div>
 
             <!-- File info (shown after upload) -->
@@ -709,7 +709,7 @@
                 <ul class="page-list" id="pageList">
                     <!-- Populated dynamically -->
                 </ul>
-                <button type="button" class="append-page-btn" id="appendPageBtn" title="Weiteren Plan (PDF) an dieses Projekt anhängen">
+                <button type="button" class="append-page-btn" id="appendPageBtn" title="Weitere Pläne (PDF) an dieses Projekt anhängen">
                     + Seiten anhängen
                 </button>
             </div>
@@ -954,7 +954,7 @@
       "steps": [
         {
           "title": "Plan hochladen & Massstab setzen",
-          "body": "1. Zieh deine PDF links in die Ablagefläche oder klicke hinein, um sie auszuwählen. \n\n 2. Wähle danach pro Seite den Massstab (z. B. 1:100), damit Flächen und Längen korrekt berechnet werden.",
+          "body": "1. Zieh deine PDF links in die Ablagefläche oder klicke hinein, um sie auszuwählen. Mehrere PDFs auf einmal werden nach Dateinamen sortiert (z. B. \"01 UG\", \"02 EG\"), die Reihenfolge kannst du danach in der Seitenliste ändern. \n\n 2. Wähle danach pro Seite den Massstab (z. B. 1:100), damit Flächen und Längen korrekt berechnet werden.",
           "media": "{% static 'media/onboarding/01-upload.png' %}"
         },
         {

@@ -4459,8 +4459,10 @@ async function initApp() {
    * an additional PDF (Seiten-Management "Anhängen"). The new manifest
    * entries exist already — this only needs pageSettings for them (same
    * defaults as a fresh upload) and to jump to the first appended page.
+   * `navigate: false` (Mehrfach-Upload: die übrigen PDFs werden hinter der
+   * ersten angehängt) lässt die Ansicht auf Seite 1 stehen.
    */
-  window.onPagesAppended = function(newEntries) {
+  window.onPagesAppended = function(newEntries, { navigate = true } = {}) {
     if (!newEntries || !newEntries.length) return;
     const settings = getPageSettings();
     for (const entry of newEntries) {
@@ -4474,7 +4476,7 @@ async function initApp() {
     }
     setPageSettings(settings);
     projectDirty = true; // angehängte Seiten sind Teil des Projekts → speicherwürdig
-    navigateToPageNoAnalysis(newEntries[0].id);
+    if (navigate) navigateToPageNoAnalysis(newEntries[0].id);
   };
 
   /**

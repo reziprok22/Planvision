@@ -151,15 +151,17 @@ export function setupUploadModal() {
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
     dropZone.addEventListener('drop', e => {
         dropZone.classList.remove('drag-over');
-        const file = e.dataTransfer.files[0];
-        if (file) handleFile(file);
+        if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
     });
 
     // ── Click on zone or browse link ──
     dropZone.addEventListener('click', () => fileInput.click());
     if (browseLink) browseLink.addEventListener('click', e => { e.stopPropagation(); fileInput.click(); });
     fileInput.addEventListener('change', () => {
-        if (fileInput.files[0]) handleFile(fileInput.files[0]);
+        // Kopie vor dem Leeren: FileList ist live an das Input gebunden
+        const files = [...fileInput.files];
+        fileInput.value = ''; // dieselbe Auswahl darf nochmals "change" auslösen
+        if (files.length) handleFiles(files);
     });
 
     // ── "Change file" button ──
@@ -178,8 +180,9 @@ export function setupUploadModal() {
     // ── "Seiten anhängen" (append an additional PDF to the current project) ──
     if (appendPageBtn) appendPageBtn.addEventListener('click', () => appendFileInput?.click());
     if (appendFileInput) appendFileInput.addEventListener('change', () => {
-        if (appendFileInput.files[0]) handleAppendFile(appendFileInput.files[0]);
+        const files = [...appendFileInput.files];
         appendFileInput.value = '';
+        if (files.length) handleAppendFiles(files);
     });
 
 }
@@ -201,6 +204,7 @@ export function startNewProject() {
 
 /** Reset all state and UI to initial "waiting for file" */
 function resetUploadModal() {
+    projectGeneration++;
     currentSessionId   = null;
     currentFileName    = '';
     clearThumbCache();
@@ -242,23 +246,69 @@ export function setProjectName(name) {
 function maxUploadMb()    { return window.PLANLI_MAX_UPLOAD_MB || 100; }
 function maxUploadBytes() { return maxUploadMb() * 1024 * 1024; }
 
+// Mehrere PDFs auf einmal (Drop oder Mehrfachauswahl): Die Reihenfolge, die
+// der Browser liefert, ist je nach OS/Dateimanager mal Auswahl-, mal Namens-
+// oder Ansichtsreihenfolge — darauf ist kein Verlass. Deshalb fest nach
+// Dateinamen, "natürlich" (Plan 2 vor Plan 10): wer nummeriert ("01 UG",
+// "02 EG"), bekommt genau seine Reihenfolge, alles andere lässt sich danach
+// in der Seitenliste umsortieren.
+const fileNameCollator = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
+
+/** Split a FileList into uploadable PDFs (sorted by name) and rejection messages. */
+function prepareFiles(fileList) {
+    const accepted = [], failed = [];
+    for (const file of fileList) {
+        // Manche Dateimanager liefern beim Drop keinen MIME-Typ — dann zählt
+        // die Endung; der Server prüft ohnehin die PDF-Signatur.
+        if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
+            failed.push(`${file.name}: keine PDF-Datei`);
+        } else if (file.size > maxUploadBytes()) {
+            failed.push(`${file.name}: zu gross (max. ${maxUploadMb()} MB)`);
+        } else {
+            accepted.push(file);
+        }
+    }
+    accepted.sort((a, b) => fileNameCollator.compare(a.name, b.name));
+    return { accepted, failed };
+}
+
+function reportFailures(title, failed) {
+    if (failed.length) alert(`${title}\n\n${failed.join('\n')}`);
+}
+
+// Zählt jeden Projektwechsel (Upload, Reset, Öffnen). Ein laufender
+// Mehrfach-Upload hängt nur an, solange er noch zum selben Projekt gehört —
+// sonst landeten seine restlichen PDFs im inzwischen geöffneten Projekt.
+let projectGeneration = 0;
+
 /**
- * Main entry point after a file is selected.
+ * Main entry point after one or more files were dropped/selected: the first
+ * PDF (by name) starts the project, the rest are appended one after another —
+ * strictly sequential, so the server renders only one PDF at a time.
  */
-async function handleFile(file) {
-    // Validate — der Server akzeptiert ausschliesslich PDFs (core/views.py)
-    if (file.type !== 'application/pdf') {
-        alert('Nur PDF-Dateien sind erlaubt.');
-        return;
+async function handleFiles(fileList) {
+    const { accepted, failed } = prepareFiles(fileList);
+    let rest = accepted;
+    let started = false;
+    // Scheitert die erste Datei, eröffnet die nächste das Projekt
+    while (!started && rest.length) {
+        const [file, ...others] = rest;
+        rest = others;
+        try {
+            await uploadNewProject(file);
+            started = true;
+        } catch (err) {
+            console.error('Upload error:', err);
+            failed.push(`${file.name}: ${err.message}`);
+        }
     }
-    if (file.size > maxUploadBytes()) {
-        alert(`Die Datei ist zu gross (max. ${maxUploadMb()} MB).`);
-        return;
-    }
+    if (started && rest.length) await appendFiles(rest, failed, { navigate: false });
+    reportFailures(started ? 'Folgende Dateien wurden nicht übernommen:' : 'Fehler beim Hochladen:', failed);
+}
 
-    currentFileName = file.name;
+/** Upload a single PDF as a new project. Throws on failure. */
+async function uploadNewProject(file) {
     showLoading(true);
-
     try {
         const formData = new FormData();
         formData.append('file', file);
@@ -270,6 +320,8 @@ async function handleFile(file) {
         }
 
         const data = await response.json();
+        projectGeneration++;
+        currentFileName = file.name;
         currentSessionId = data.session_id;
         const allPages = data.all_pages || [];
         const pageSizes = (data.page_sizes || []).map(s => ({
@@ -295,72 +347,89 @@ async function handleFile(file) {
                 original_file: data.is_pdf ? file : null
             });
         }
-
-    } catch (err) {
-        alert('Fehler beim Hochladen: ' + err.message);
-        console.error('Upload error:', err);
     } finally {
         showLoading(false);
     }
 }
 
 /**
- * Append an additional PDF's pages to the current project (Seiten-Management
- * "Anhängen"). Re-establishes a server session first if the project has none
- * yet (e.g. a ZIP-loaded project that was never analyzed).
+ * "Seiten anhängen" with one or more PDFs: appended in name order, the view
+ * jumps to the first appended page.
  */
-async function handleAppendFile(file) {
-    if (file.type !== 'application/pdf') {
-        alert('Nur PDF-Dateien sind erlaubt.');
-        return;
-    }
-    if (file.size > maxUploadBytes()) {
-        alert(`Die Datei ist zu gross (max. ${maxUploadMb()} MB).`);
-        return;
-    }
+async function handleAppendFiles(fileList) {
+    const { accepted, failed } = prepareFiles(fileList);
+    if (accepted.length) await appendFiles(accepted, failed, { navigate: true });
+    reportFailures('Fehler beim Anhängen:', failed);
+}
 
-    setAppendButtonBusy(true);
+/**
+ * Append PDFs one after another to the current project. Failures are collected
+ * in `failed` (the others still go through); stops if the project is switched
+ * meanwhile. `navigate`: jump to the first appended page.
+ */
+async function appendFiles(files, failed, { navigate }) {
+    const generation = projectGeneration;
+    let jumped = !navigate;
     try {
-        const sessionId = await ensureServerSession();
-
-        // Die Nummer vergibt der Client (siehe nextSourcePdfIndex) — der
-        // Server übernimmt sie, statt selbst weiterzuzählen.
-        const sourceIndex = nextSourcePdfIndex();
-        const formData = new FormData();
-        formData.append('session_id', sessionId);
-        formData.append('source_index', sourceIndex);
-        formData.append('file', file);
-
-        const response = await fetch('/upload_append', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
-        if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.error || 'Anhängen fehlgeschlagen');
+        for (let i = 0; i < files.length; i++) {
+            if (projectGeneration !== generation) {
+                failed.push(...files.slice(i).map(f => `${f.name}: nicht angehängt, das Projekt wurde gewechselt`));
+                break;
+            }
+            setAppendButtonBusy(true, files.length > 1 ? `${i + 1}/${files.length}` : '');
+            try {
+                await appendFile(files[i], generation, !jumped);
+                jumped = true;
+            } catch (err) {
+                console.error('Append error:', err);
+                failed.push(`${files[i].name}: ${err.message}`);
+            }
         }
-
-        const data = await response.json();
-        const pageSizes = (data.page_sizes || []).map(s => ({
-            width_mm:  Math.round(s[0]),
-            height_mm: Math.round(s[1])
-        }));
-
-        // Nie eine vorhandene Quell-PDF überschreiben: deren Seiten zeigten
-        // sonst auf eine fremde PDF (Export-Absturz "reading 'node'").
-        if (data.source_index !== sourceIndex || getSourcePdfBlob(data.source_index)) {
-            throw new Error('Interner Fehler bei der Quell-Nummer – bitte Seite neu laden und nochmals anhängen.');
-        }
-        setSourcePdfBlob(data.source_index, file);
-        const newEntries = appendPagesToManifest(data.all_pages || [], pageSizes, data.source_index);
-
-        buildPageList();
-        // Let main.js initialise settings for the new pages and navigate there
-        if (typeof window.onPagesAppended === 'function') window.onPagesAppended(newEntries);
-
-    } catch (err) {
-        alert('Fehler beim Anhängen: ' + err.message);
-        console.error('Append error:', err);
     } finally {
         setAppendButtonBusy(false);
     }
+}
+
+/**
+ * Append one PDF's pages to the current project (Seiten-Management
+ * "Anhängen"). Re-establishes a server session first if the project has none
+ * yet (e.g. a ZIP-loaded project that was never analyzed). Throws on failure.
+ */
+async function appendFile(file, generation, navigate) {
+    const sessionId = await ensureServerSession();
+
+    // Die Nummer vergibt der Client (siehe nextSourcePdfIndex) — der
+    // Server übernimmt sie, statt selbst weiterzuzählen.
+    const sourceIndex = nextSourcePdfIndex();
+    const formData = new FormData();
+    formData.append('session_id', sessionId);
+    formData.append('source_index', sourceIndex);
+    formData.append('file', file);
+
+    const response = await fetch('/upload_append', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
+    if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || 'Anhängen fehlgeschlagen');
+    }
+
+    const data = await response.json();
+    if (projectGeneration !== generation) throw new Error('nicht angehängt, das Projekt wurde gewechselt');
+    const pageSizes = (data.page_sizes || []).map(s => ({
+        width_mm:  Math.round(s[0]),
+        height_mm: Math.round(s[1])
+    }));
+
+    // Nie eine vorhandene Quell-PDF überschreiben: deren Seiten zeigten
+    // sonst auf eine fremde PDF (Export-Absturz "reading 'node'").
+    if (data.source_index !== sourceIndex || getSourcePdfBlob(data.source_index)) {
+        throw new Error('Interner Fehler bei der Quell-Nummer – bitte Seite neu laden und nochmals anhängen.');
+    }
+    setSourcePdfBlob(data.source_index, file);
+    const newEntries = appendPagesToManifest(data.all_pages || [], pageSizes, data.source_index);
+
+    buildPageList();
+    // Let main.js initialise settings for the new pages (and navigate there)
+    if (typeof window.onPagesAppended === 'function') window.onPagesAppended(newEntries, { navigate });
 }
 
 // Same spinner treatment as the "Erkennen"-Button (analyze-page-btn.analyzing)
@@ -368,11 +437,11 @@ async function handleAppendFile(file) {
 const APPEND_BTN_IDLE = '+ Seiten anhängen';
 const APPEND_BTN_BUSY = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> Wird angehängt…';
 
-function setAppendButtonBusy(busy) {
+function setAppendButtonBusy(busy, progress = '') {
     if (!appendPageBtn) return;
     appendPageBtn.disabled = busy;
     appendPageBtn.classList.toggle('busy', busy);
-    appendPageBtn.innerHTML = busy ? APPEND_BTN_BUSY : APPEND_BTN_IDLE;
+    appendPageBtn.innerHTML = busy ? `${APPEND_BTN_BUSY}${progress ? ' ' + progress : ''}` : APPEND_BTN_IDLE;
 }
 
 function showLoading(active) {
@@ -493,12 +562,13 @@ export function buildPageList() {
 
 /**
  * Initialize the sidebar for a loaded project (no file upload flow).
- * Mirrors what handleFile() does after a successful upload. Assumes the page
+ * Mirrors what uploadNewProject() does after a successful upload. Assumes the page
  * manifest has already been restored via pdf-handler's setPageManifest().
  */
 export function initSidebarFromProject(projectName) {
   // Drop any session from a previously uploaded file — otherwise analyses of
   // the loaded project would run against the old project's server session
+  projectGeneration++;
   currentSessionId  = null;
   currentFileName   = projectName;
   // Vorschaubilder des vorher geöffneten Projekts freigeben (ein Projekt kann
