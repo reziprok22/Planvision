@@ -4280,7 +4280,8 @@ async function analyzeCurrentPage() {
   // UI: busy state FIRST – set the "Analysiert…" spinner immediately on click,
   // before any (possibly slow) work like re-uploading the PDF for project-loaded
   // plans, so the user gets instant feedback. The finally below restores the button.
-  if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.innerHTML = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> Analysiert…'; }
+  const idleHtml = btn?.innerHTML;
+  if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.innerHTML = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> <span class="btn-label">Analysiert…</span>'; }
   if (loader) loader.style.display = 'block';
   if (errorMessage) errorMessage.style.display = 'none';
 
@@ -4392,7 +4393,7 @@ async function analyzeCurrentPage() {
     if (btn) {
       btn.disabled = false;
       btn.classList.remove('analyzing');
-      btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="5.5" cy="5.5" r="3.5"/><line x1="8.5" y1="8.5" x2="11.5" y2="11.5"/></svg> Erkennen';
+      btn.innerHTML = idleHtml;
     }
     if (loader) loader.style.display = 'none';
   }

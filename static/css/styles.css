@@ -854,8 +854,13 @@ button:hover {
 /* Steuerelemente für Annotationen */
 .annotation-controls {
     display: flex;
-    flex-wrap: nowrap;
+    /* Umbrechen statt abschneiden: .middle-column hat overflow:hidden, bei
+       schmaler Mitte (ca. 900–1070px Fensterbreite, drei Spalten) wurde sonst
+       der Ergebnisse-Toggle ganz rechts weggeschnitten und die rechte Spalte
+       war nicht mehr bedienbar. */
+    flex-wrap: wrap;
     gap: 2px;
+    row-gap: 4px;
     align-items: center;
     padding: 5px 8px;
     border-bottom: 1px solid #e8e8e8;
@@ -945,6 +950,26 @@ button:hover {
 /* Right panel collapse */
 .toolbar-spacer {
     flex: 1;
+}
+
+/* Bleibt auch nach einem Umbruch rechtsbündig */
+#toggleRightPanel {
+    margin-left: auto;
+}
+
+/* Bei schmaler Mitte zuerst die Beschriftung des Erkennen-Buttons opfern
+   (Icon bleibt, Text steht im title) — erst danach bricht die Leiste um. */
+.middle-column {
+    container-type: inline-size;
+}
+
+@container (max-width: 560px) {
+    .analyze-page-btn .btn-label {
+        display: none;
+    }
+    .analyze-page-btn {
+        padding: 5px 8px;
+    }
 }
 
 .main-container.right-collapsed {
