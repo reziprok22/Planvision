@@ -13,6 +13,8 @@ import {
   getPageManifest,
   setSourcePdfBlob,
   ensureServerSession,
+  getSourcePdfBlob,
+  nextSourcePdfIndex,
 } from './pdf-handler.js';
 
 // ── Internal state ──────────────────────────────────────────────────
@@ -321,8 +323,12 @@ async function handleAppendFile(file) {
     try {
         const sessionId = await ensureServerSession();
 
+        // Die Nummer vergibt der Client (siehe nextSourcePdfIndex) — der
+        // Server übernimmt sie, statt selbst weiterzuzählen.
+        const sourceIndex = nextSourcePdfIndex();
         const formData = new FormData();
         formData.append('session_id', sessionId);
+        formData.append('source_index', sourceIndex);
         formData.append('file', file);
 
         const response = await fetch('/upload_append', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
@@ -337,6 +343,11 @@ async function handleAppendFile(file) {
             height_mm: Math.round(s[1])
         }));
 
+        // Nie eine vorhandene Quell-PDF überschreiben: deren Seiten zeigten
+        // sonst auf eine fremde PDF (Export-Absturz "reading 'node'").
+        if (data.source_index !== sourceIndex || getSourcePdfBlob(data.source_index)) {
+            throw new Error('Interner Fehler bei der Quell-Nummer – bitte Seite neu laden und nochmals anhängen.');
+        }
         setSourcePdfBlob(data.source_index, file);
         const newEntries = appendPagesToManifest(data.all_pages || [], pageSizes, data.source_index);
 

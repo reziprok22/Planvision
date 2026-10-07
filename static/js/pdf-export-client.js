@@ -557,6 +557,14 @@ function triggerDownload(bytes, filename) {
 
 const safeFileBase = (name) => sanitizeFileBase(name, 'Planli');
 
+// JPEG oder PNG am Inhalt erkennen, nicht an der URL: Projekte aus einer
+// .planli-Datei haben blob:-URLs ohne Endung — die Endungsprüfung schickte
+// deren JPEGs an embedPng, das scheiterte, und die Seite blieb leer.
+function embedImageBytes(pdfDoc, bytes) {
+    const b = new Uint8Array(bytes, 0, 2);
+    return b[0] === 0xFF && b[1] === 0xD8 ? pdfDoc.embedJpg(bytes) : pdfDoc.embedPng(bytes);
+}
+
 // ── Plan erstellen (annotated PDF) ────────────────────────────────────────────
 
 export async function exportAnnotatedPdfClient({ sourcePdfBlobs, pageImageUrls, pageManifest, pageCanvasData, labels, projectName }) {
@@ -581,7 +589,15 @@ export async function exportAnnotatedPdfClient({ sourcePdfBlobs, pageImageUrls, 
     // right, independent of any single source's own page order.
     for (let i = 0; i < pageManifest.length; i++) {
         const entry = pageManifest[i];
-        const srcDoc = srcDocs[entry.sourcePdfIndex];
+        let srcDoc = srcDocs[entry.sourcePdfIndex];
+        // Seite fehlt in der Quell-PDF (Projekte, deren Quell-Nummern beim
+        // Anhängen durcheinandergeraten sind): copyPages bräche sonst den ganzen
+        // Export mit "reading 'node'" ab — dann lieber das Seitenbild.
+        if (srcDoc && !(entry.sourcePageIndex >= 1 && entry.sourcePageIndex <= srcDoc.getPageCount())) {
+            console.warn('[PDF export] page missing in source PDF, falling back to image',
+                         entry.sourcePdfIndex, entry.sourcePageIndex);
+            srcDoc = null;
+        }
         if (srcDoc) {
             // Vector-quality copy straight from the source PDF
             const [copiedPage] = await pdfDoc.copyPages(srcDoc, [entry.sourcePageIndex - 1]);
@@ -593,8 +609,7 @@ export async function exportAnnotatedPdfClient({ sourcePdfBlobs, pageImageUrls, 
             const url = pageImageUrls[i];
             try {
                 const bytes = await fetch(url).then(r => r.arrayBuffer());
-                const isJpg = /\.(jpe?g)(\?.*)?$/i.test(url);
-                const img   = isJpg ? await pdfDoc.embedJpg(bytes) : await pdfDoc.embedPng(bytes);
+                const img   = await embedImageBytes(pdfDoc, bytes);
                 const p     = pdfDoc.addPage([img.width, img.height]);
                 p.drawImage(img, { x: 0, y: 0, width: img.width, height: img.height });
             } catch (e) {
@@ -685,10 +700,7 @@ export async function exportReportPdfClient({ pageImageUrls, pageManifest, pageC
         if (imgUrl) {
             try {
                 const imgBytes = await fetch(imgUrl).then(r => r.arrayBuffer());
-                const isJpg    = /\.(jpe?g)(\?.*)?$/i.test(imgUrl);
-                embImg = isJpg
-                    ? await pdfDoc.embedJpg(imgBytes)
-                    : await pdfDoc.embedPng(imgBytes);
+                embImg = await embedImageBytes(pdfDoc, imgBytes);
             } catch (e) {
                 console.warn('[Report export] image load failed:', imgUrl, e);
             }

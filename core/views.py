@@ -249,11 +249,28 @@ def _convert_pdf_to_images(pdf_file, project_id=None, source_index=1):
     output_dir = PROJECTS_DIR / project_id / 'uploads'
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Die PDF liegt bis zum erfolgreichen Rendern unter einem Namen, den
+    # upload_append nicht als belegte Quell-Nummer zählt (endet nicht auf .pdf).
+    # Früher stand document_<n>.pdf sofort da: scheiterte danach das Rendern
+    # (Seite zu gross, Render-Fehler), blieb die Nummer auf dem Server belegt,
+    # ohne dass der Client sie je erfuhr — eine Lücke in seiner Nummerierung,
+    # die beim nächsten Neuaufbau der Session zum Überschreiben einer fremden
+    # Quell-PDF führte (Seiten zeigten im Export auf die falsche PDF).
     pdf_path = output_dir / f"document_{source_index}.pdf"
-    with open(pdf_path, 'wb') as f:
+    part_path = output_dir / f"document_{source_index}.pdf.part"
+    with open(part_path, 'wb') as f:
         for chunk in pdf_file.chunks():
             f.write(chunk)
+    try:
+        info = _render_pdf(part_path, output_dir, project_id, source_index)
+    except BaseException:
+        part_path.unlink(missing_ok=True)
+        raise
+    os.replace(part_path, pdf_path)
+    return info
 
+
+def _render_pdf(pdf_path, output_dir, project_id, source_index):
     pdf_reader = PdfReader(str(pdf_path))
     page_sizes = []
     for page in pdf_reader.pages:
@@ -320,6 +337,28 @@ def _validate_pdf_upload(request):
     return file, None
 
 
+MAX_SOURCE_INDEX = 999
+
+
+def _requested_source_index(request):
+    """Vom Client gewünschte Quell-Nummer (optional). None = nicht angegeben.
+
+    Beim Neuaufbau einer Session nach dem Öffnen eines Projekts (ensureServerSession)
+    muss jede Quell-PDF unter IHRER Nummer landen: der Server zählte früher
+    lückenlos durch, die Seiten des Projekts verweisen aber auf die Nummern des
+    Clients — eine Lücke dort verschob alles Folgende."""
+    raw = request.POST.get('source_index')
+    if raw in (None, ''):
+        return None
+    try:
+        index = int(raw)
+    except ValueError:
+        raise ValueError('Ungültige Quell-Nummer.')
+    if not 1 <= index <= MAX_SOURCE_INDEX:
+        raise ValueError('Ungültige Quell-Nummer.')
+    return index
+
+
 @require_POST
 def upload_file(request):
     denied = _access_denied(request)
@@ -329,9 +368,13 @@ def upload_file(request):
         file, error = _validate_pdf_upload(request)
         if error:
             return error
+        try:
+            source_index = _requested_source_index(request) or 1
+        except ValueError as e:
+            return JsonResponse({'error': str(e)}, status=400)
 
         try:
-            pdf_info = _convert_pdf_to_images(file)
+            pdf_info = _convert_pdf_to_images(file, source_index=source_index)
             Project.objects.create(
                 id=pdf_info["session_id"],
                 user=request.user if request.user.is_authenticated else None,
@@ -375,15 +418,28 @@ def upload_append(request):
         if error:
             return error
 
-        session_dir = PROJECTS_DIR / session_id / 'uploads'
-        existing_indices = []
-        for name in os.listdir(session_dir):
-            if name.startswith('document_') and name.endswith('.pdf'):
-                try:
-                    existing_indices.append(int(name[len('document_'):-len('.pdf')]))
-                except ValueError:
-                    pass
-        next_index = max(existing_indices, default=0) + 1
+        try:
+            requested = _requested_source_index(request)
+        except ValueError as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+        if requested is not None:
+            # Der Client vergibt die Nummer selbst: nur er weiss, welche Quell-PDFs
+            # zum Projekt gehören. Eine Datei, die hier schon unter der Nummer liegt,
+            # ist eine Waise (Antwort eines früheren Anhängens ging verloren) — der
+            # Client kennt sie nicht, sie darf überschrieben werden.
+            next_index = requested
+        else:
+            # Altes JS-Bundle ohne source_index: nächste freie Nummer wie bisher
+            session_dir = PROJECTS_DIR / session_id / 'uploads'
+            existing_indices = []
+            for name in os.listdir(session_dir):
+                if name.startswith('document_') and name.endswith('.pdf'):
+                    try:
+                        existing_indices.append(int(name[len('document_'):-len('.pdf')]))
+                    except ValueError:
+                        pass
+            next_index = max(existing_indices, default=0) + 1
 
         try:
             pdf_info = _convert_pdf_to_images(file, project_id=session_id, source_index=next_index)

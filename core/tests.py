@@ -442,6 +442,53 @@ class PdfRenderTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('zu gross', response.json()['error'])
 
+    def test_failed_render_leaves_no_source_number_behind(self):
+        # Früher stand document_<n>.pdf schon vor dem Rendern da: ein
+        # gescheitertes Anhängen belegte die Nummer, das nächste bekam n+1 und
+        # im Client entstand eine Lücke — Ursache für Seiten, die im Export auf
+        # eine fremde Quell-PDF zeigten.
+        info = _convert_pdf_to_images(_pdf([300]))
+        session = info['session_id']
+        huge = 2000 / 25.4 * 72
+        with self.assertRaises(PdfTooLargeError):
+            _convert_pdf_to_images(_pdf([huge], huge), project_id=session, source_index=2)
+
+        names = sorted(p.name for p in (self.tmp / session / 'uploads').iterdir())
+        self.assertEqual([n for n in names if n.startswith('document_')], ['document_1.pdf'])
+
+    def test_session_rebuild_keeps_the_clients_source_numbers(self):
+        # Ein geöffnetes Projekt mit Lücke (Quellen 1, 2, 5) baut seine Session
+        # neu auf. Der Server zählte früher lückenlos (1, 2, 3) — das nächste
+        # Anhängen bekam dann eine Nummer, die der Client schon hatte, und
+        # überschrieb dort die Quell-PDF.
+        User.objects.create_user(username='u@example.ch', email='u@example.ch', password='pw')
+        self.client.login(username='u@example.ch', password='pw')
+
+        first = self.client.post(reverse('upload'), {'file': _pdf([300]), 'source_index': 1}).json()
+        session = first['session_id']
+        for idx in (2, 5):
+            data = self.client.post(reverse('upload_append'), {
+                'file': _pdf([400]), 'session_id': session, 'source_index': idx}).json()
+            self.assertEqual(data['source_index'], idx)
+            self.assertEqual(data['all_pages'],
+                             [f'/project_files/{session}/uploads/page_{idx}_1.jpg'])
+
+        names = {p.name for p in (self.tmp / session / 'uploads').iterdir()}
+        self.assertEqual({n for n in names if n.startswith('document_')},
+                         {'document_1.pdf', 'document_2.pdf', 'document_5.pdf'})
+
+        # Ohne source_index (altes JS-Bundle): nächste freie Nummer wie bisher
+        legacy = self.client.post(reverse('upload_append'), {
+            'file': _pdf([500]), 'session_id': session}).json()
+        self.assertEqual(legacy['source_index'], 6)
+
+    def test_invalid_source_index_is_rejected(self):
+        User.objects.create_user(username='u@example.ch', email='u@example.ch', password='pw')
+        self.client.login(username='u@example.ch', password='pw')
+        for bad in ('0', '-1', 'abc', '1000'):
+            response = self.client.post(reverse('upload'), {'file': _pdf([300]), 'source_index': bad})
+            self.assertEqual(response.status_code, 400, bad)
+
 
 @override_settings(CLOUD_PROJECTS_DIR=CLOUD_TMP)
 class CloudDeltaSaveTests(TestCase):

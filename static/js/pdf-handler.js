@@ -136,36 +136,73 @@ export function setPageManifest(entries) {
 }
 
 /**
+ * Next free source number for "Seiten anhängen". The client owns the
+ * numbering — the manifest entries point at these numbers, so the server
+ * must store each PDF under exactly the number the client gives it.
+ */
+export function nextSourcePdfIndex() {
+  const indices = Object.keys(sourcePdfBlobs).map(Number);
+  return indices.length ? Math.max(...indices) + 1 : 1;
+}
+
+/**
  * Make sure a server session exists, re-establishing one from the stored
  * source PDFs if needed (e.g. a project loaded from ZIP was never analyzed
- * yet, so it has no live session). Re-uploads every source PDF in order —
- * source 1 via /upload, the rest via /upload_append — so uploads/page_<n>_<i>.jpg
+ * yet, so it has no live session). Re-uploads every source PDF — the first
+ * via /upload, the rest via /upload_append — so uploads/page_<n>_<i>.jpg
  * exists again for every page in the manifest. Throws if nothing can be done.
+ *
+ * Each PDF is sent with its OWN number (source_index). The server used to
+ * number them gaplessly 1..n; a gap on the client (1, 2, 3, 5, 6) then shifted
+ * every later source down, and the next "Anhängen" received a number the
+ * client already had and overwrote that PDF — its pages pointed at a foreign
+ * PDF from then on (export crash "reading 'node'"). The session is only
+ * remembered once ALL sources are up: a half-built session used to stick and
+ * caused the same mismatch.
  */
-export async function ensureServerSession() {
-  if (pdfSessionId) return pdfSessionId;
+let sessionRebuild = null;
 
-  const indices = Object.keys(sourcePdfBlobs).map(Number).sort((a, b) => a - b);
+export function ensureServerSession() {
+  if (pdfSessionId) return Promise.resolve(pdfSessionId);
+  // Analyse und Anhängen können gleichzeitig anfragen — eine Session reicht
+  if (!sessionRebuild) {
+    sessionRebuild = rebuildServerSession().finally(() => { sessionRebuild = null; });
+  }
+  return sessionRebuild;
+}
+
+async function rebuildServerSession() {
+  const blobsAtStart = sourcePdfBlobs;
+  const indices = Object.keys(blobsAtStart).map(Number).sort((a, b) => a - b);
   if (!indices.length) {
     throw new Error('Dieses Projekt enthält kein Original-PDF. Bitte das PDF neu hochladen.');
   }
 
+  let sessionId = null;
   for (const idx of indices) {
-    const blob = sourcePdfBlobs[idx];
     const fd = new FormData();
-    fd.append('file', new File([blob], 'document.pdf', { type: 'application/pdf' }));
-    if (idx === indices[0]) {
+    fd.append('file', new File([blobsAtStart[idx]], 'document.pdf', { type: 'application/pdf' }));
+    fd.append('source_index', idx);
+    if (sessionId === null) {
       const res = await fetch('/upload', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
       if (!res.ok) throw new Error('Das Projekt-PDF konnte nicht erneut hochgeladen werden.');
       const data = await res.json();
-      pdfSessionId = data.session_id;
+      if (data.source_index !== idx) throw new Error('Server hat die Quell-Nummer nicht übernommen.');
+      sessionId = data.session_id;
     } else {
-      fd.append('session_id', pdfSessionId);
+      fd.append('session_id', sessionId);
       const res = await fetch('/upload_append', { method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
       if (!res.ok) throw new Error('Ein angehängtes PDF konnte nicht erneut hochgeladen werden.');
+      const data = await res.json();
+      if (data.source_index !== idx) throw new Error('Server hat die Quell-Nummer nicht übernommen.');
     }
   }
-  return pdfSessionId;
+
+  // Inzwischen ein anderes Projekt geladen/neu begonnen? Dann gehört diese
+  // Session nicht mehr zum Editor-Inhalt.
+  if (sourcePdfBlobs !== blobsAtStart) throw new Error('Das Projekt wurde inzwischen gewechselt.');
+  pdfSessionId = sessionId;
+  return sessionId;
 }
 
 // ── Page operations ───────────────────────────────────────────────────────────
