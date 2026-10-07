@@ -101,6 +101,42 @@ class CloudStorageTests(TestCase):
         self.assertEqual(StoredProject.objects.count(), 0)
         self.assertFalse((CLOUD_TMP / f'{project_id}.planli').exists())
 
+    def test_duplicate_copies_file_under_new_name(self):
+        project_id = self._save().json()['id']
+        response = self.client.post(f'/cloud/projects/{project_id}/duplicate')
+        self.assertEqual(response.status_code, 200)
+        copy_id = response.json()['id']
+        self.assertNotEqual(copy_id, project_id)
+        self.assertEqual(response.json()['name'], 'EFH Muster (Kopie)')
+        self.assertEqual((CLOUD_TMP / f'{copy_id}.planli').read_bytes(), b'PK\x03\x04 fake zip')
+        self.assertEqual(StoredProject.objects.get(id=copy_id).size_bytes, 13)
+
+        # Unabhängig: Löschen der Kopie lässt das Original stehen
+        self.client.post(f'/cloud/projects/{copy_id}/delete')
+        self.assertTrue((CLOUD_TMP / f'{project_id}.planli').exists())
+
+    def test_duplicate_respects_quota_and_ownership(self):
+        sub = subscription_for(self.user)
+        sub.max_projects = 1
+        sub.save()
+        project_id = self._save().json()['id']
+        response = self.client.post(f'/cloud/projects/{project_id}/duplicate')
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('Projektlimit erreicht', response.json()['error'])
+
+        User.objects.create_user(username='b@example.ch', password='pw')
+        self.client.login(username='b@example.ch', password='pw')
+        self.assertEqual(self.client.post(f'/cloud/projects/{project_id}/duplicate').status_code, 404)
+        self.assertEqual(StoredProject.objects.count(), 1)
+
+    @override_settings(BETA_PRICING=False)
+    def test_read_only_user_cannot_duplicate(self):
+        project_id = self._save().json()['id']
+        sub = subscription_for(self.user)
+        sub.trial_ends = timezone.now() - timedelta(days=1)
+        sub.save()
+        self.assertEqual(self.client.post(f'/cloud/projects/{project_id}/duplicate').status_code, 403)
+
     @override_settings(BETA_PRICING=False)
     def test_read_only_user_cannot_save_but_can_open_and_delete(self):
         project_id = self._save().json()['id']

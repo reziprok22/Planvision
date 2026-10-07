@@ -751,6 +751,23 @@ def _get_stored_project(request, project_id):
         return None
 
 
+def _cloud_read_only_denied(request):
+    if _read_only(request):
+        return JsonResponse({'error': 'Deine Testphase bzw. Lizenz ist abgelaufen, '
+                             'Online-Speichern ist nur mit aktiver Lizenz möglich.'}, status=403)
+    return None
+
+
+def _cloud_quota_denied(request):
+    """Projektlimit — gilt für alles, was ein neues Cloud-Projekt anlegt."""
+    limit = subscription_for(request.user).max_projects
+    if request.user.stored_projects.count() >= limit:
+        return JsonResponse({'error': f'Projektlimit erreicht ({limit} Projekte). '
+                             'Lösche nicht mehr benötigte Projekte (vorher ggf. herunterladen) '
+                             'oder kontaktiere uns für ein höheres Limit.'}, status=403)
+    return None
+
+
 def cloud_list(request):
     denied = _cloud_denied(request)
     if denied:
@@ -919,9 +936,9 @@ def cloud_save(request):
     denied = _cloud_denied(request)
     if denied:
         return denied
-    if _read_only(request):
-        return JsonResponse({'error': 'Deine Testphase bzw. Lizenz ist abgelaufen, '
-                             'Online-Speichern ist nur mit aktiver Lizenz möglich.'}, status=403)
+    denied = _cloud_read_only_denied(request)
+    if denied:
+        return denied
 
     # Das Manifest kommt als Datei-Part (canvas_data.json steckt inline drin und
     # sprengt bei grossen Projekten Djangos Formulardaten-Deckel); als Feld
@@ -954,11 +971,9 @@ def cloud_save(request):
         if name:
             project.name = name
     else:
-        limit = subscription_for(request.user).max_projects
-        if request.user.stored_projects.count() >= limit:
-            return JsonResponse({'error': f'Projektlimit erreicht ({limit} Projekte). '
-                                 'Lösche nicht mehr benötigte Projekte (vorher ggf. herunterladen) '
-                                 'oder kontaktiere uns für ein höheres Limit.'}, status=403)
+        quota = _cloud_quota_denied(request)
+        if quota:
+            return quota
         project = StoredProject(user=request.user, name=name or 'Unbenanntes Projekt')
 
     settings.CLOUD_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1018,6 +1033,38 @@ def cloud_rename(request, project_id):
     project.name = name
     project.save(update_fields=['name', 'updated_at'])
     return JsonResponse({'id': str(project.id), 'name': project.name})
+
+
+@require_POST
+def cloud_duplicate(request, project_id):
+    """Kopie eines Cloud-Projekts anlegen — rein serverseitig, ohne dass der
+    Client das ZIP herunter- und wieder hochladen muss. Der Projektname in der
+    metadata.json der Kopie bleibt der alte; das ist egal, weil beim Öffnen aus
+    der Cloud der StoredProject-Name gewinnt.
+    Gates wie beim Anlegen in cloud_save: Read-Only und Projektlimit."""
+    denied = _cloud_denied(request) or _cloud_read_only_denied(request)
+    if denied:
+        return denied
+    source = _get_stored_project(request, project_id)
+    if source is None or not source.file_path.exists():
+        return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+    quota = _cloud_quota_denied(request)
+    if quota:
+        return quota
+
+    suffix = ' (Kopie)'
+    copy = StoredProject(user=request.user,
+                         name=source.name[:200 - len(suffix)] + suffix)
+    # Erst die Datei, dann die Zeile: ein Fehler beim Kopieren hinterlässt so
+    # nie einen Listeneintrag ohne Datei.
+    try:
+        shutil.copyfile(source.file_path, copy.file_path)
+        copy.size_bytes = copy.file_path.stat().st_size
+        copy.save()
+    except Exception:
+        copy.file_path.unlink(missing_ok=True)
+        raise
+    return JsonResponse({'id': str(copy.id), 'name': copy.name})
 
 
 @require_POST

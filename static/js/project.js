@@ -672,7 +672,7 @@ function renderDashboard({ projects, limit }) {
     meta.className = 'cloud-project-meta';
     meta.textContent = `${p.updated_at} · ${formatBytes(p.size_bytes)}`;
 
-    // "⋯"-Menü pro Zeile: Umbenennen / .planli-Export / Löschen
+    // "⋯"-Menü pro Zeile: Umbenennen / Duplizieren / .planli-Export / Löschen
     const actions = document.createElement('div');
     actions.className = 'cloud-row-actions';
 
@@ -709,6 +709,18 @@ function renderDashboard({ projects, limit }) {
         openDashboard();
       } else {
         alert('Umbenennen fehlgeschlagen.');
+      }
+    });
+
+    // Kopie direkt auf dem Server — statt .planli exportieren + wieder importieren
+    addItem('Duplizieren', async () => {
+      const res = await fetch(`/cloud/projects/${p.id}/duplicate`, {
+        method: 'POST', headers: { 'X-CSRFToken': getCsrfToken() } });
+      if (res.ok) {
+        openDashboard();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Duplizieren fehlgeschlagen.');
       }
     });
 
