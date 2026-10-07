@@ -42,6 +42,7 @@ import {
 } from './pdf-handler.js';
 import { setupProject, maybeLoadDemoProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
+import { installSmartHitTesting } from './hit-testing.js';
 import {
   setupUploadModal,
   setOnPageClick,
@@ -82,6 +83,7 @@ Polyline.prototype._render = function (ctx) {
 
 // Global app state
 let canvas = null;
+let hitTesting = null;   // Annotationen per Geometrie treffen, Hover + Durchklicken (hit-testing.js)
 let imageContainer = null;
 let uploadedImage = null;
 
@@ -588,9 +590,14 @@ function initCanvas() {
     canvas.hoverCursor = 'default';
   }
   
-  // Improve selection tolerance for thin lines and complex shapes
-  canvas.targetFindTolerance = 10;      // 10px tolerance around objects
-  canvas.perPixelTargetFind = false;    // Bounding-box hit detection — perPixel scans every pixel of every object on each mousemove, kills perf with many annotations
+  // Annotationen werden per Geometrie getroffen (Polygon-Inneres, Abstand zur
+  // Linie) statt über ihr Bounding-Rechteck, mit Vorrang für das Spezifischere —
+  // siehe hit-testing.js. perPixelTargetFind bleibt aus: es rendert bei jedem
+  // mouse:move jedes Objekt auf einen Hilfs-Canvas, zu teuer bei vielen Annotationen.
+  canvas.perPixelTargetFind = false;
+  hitTesting = installSmartHitTesting(canvas, {
+    isActive: () => currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension,
+  });
   canvas.uniformScaling = false;        // free resize by default; Shift = proportional
   
   const naturalWidth  = uploadedImage.naturalWidth;
@@ -2368,6 +2375,9 @@ function setupCanvasEvents() {
         dupSerialized = null; // armed but no drag happened (plain Ctrl/Alt-click)
       }
     }
+
+    // Erneuter Klick an derselben Stelle → nächstes Objekt darunter auswählen
+    hitTesting?.handleClickCycle(options);
   });
   
   // Double-click event - polygon/line finishing + vertex edit mode
@@ -2503,11 +2513,17 @@ function setupCanvasEvents() {
   
   // Mouse hover events for annotation highlighting (matched by id, not position)
   canvas.on('mouse:over', function(e) {
-    if (e.target?.objectType === 'annotation') highlightTableRow(e.target);
+    if (e.target?.objectType === 'annotation') {
+      highlightTableRow(e.target);
+      hitTesting?.setHover(e.target);
+    }
   });
 
   canvas.on('mouse:out', function(e) {
-    if (e.target?.objectType === 'annotation') removeTableRowHighlight(e.target);
+    if (e.target?.objectType === 'annotation') {
+      removeTableRowHighlight(e.target);
+      hitTesting?.clearHover(e.target);
+    }
   });
 }
 
