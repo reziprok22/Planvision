@@ -4,7 +4,7 @@
  */
 
 // Import Fabric.js
-import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Textbox, Shadow, util, Circle, Group, Line, ActiveSelection } from 'fabric';
+import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Text, Textbox, Shadow, util, Circle, Group, Line, ActiveSelection, InteractiveFabricObject } from 'fabric';
 
 // Import modules
 import {
@@ -80,6 +80,22 @@ Polyline.prototype._render = function (ctx) {
   }
   ctx.restore();
 };
+
+// ── Auswahl-Griffe und -Rahmen ───────────────────────────────────────────────
+// Fabrics Standard (hohle, blass hellblaue Quadrate, 1px-Rahmen in derselben
+// Farbe) geht auf farbigen Plänen mit halbtransparenten Füllungen unter. Weiss
+// gefüllt mit App-Blau-Rand wie die Eckpunkt-/Bemassungs-Griffe — sichtbar auf
+// jedem Untergrund und jeder Labelfarbe. Gilt für alle auswählbaren Objekte
+// (Annotation, Bemassung, Textfeld, Legende); Werte in Bildschirm-px, zoomunabhängig.
+Object.assign(InteractiveFabricObject.ownDefaults, {
+  transparentCorners: false,
+  cornerColor: '#ffffff',
+  cornerStrokeColor: '#1976d2',
+  cornerSize: 11,
+  cornerStyle: 'rect',
+  borderColor: '#1976d2',
+  borderScaleFactor: 1.5,
+});
 
 // Global app state
 let canvas = null;
@@ -725,6 +741,7 @@ function initCanvas() {
       hideTextLabelsDuringZoom();
       canvas.setViewportTransform([newZoom, 0, 0, newZoom, OVERSCAN - sl, OVERSCAN - st]);
       updateBackgroundMip(newZoom);
+      rescaleEditHandles(newZoom);
 
       // Refresh bounding-box cache of the active drawing object so Fabric
       // doesn't skip it as "off-screen" after the viewport transform changes.
@@ -798,6 +815,7 @@ function fitToViewport() {
   canvas.setViewportTransform([zoom, 0, 0, zoom, OVERSCAN, OVERSCAN]);
   if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${-OVERSCAN}px, ${-OVERSCAN}px)`;
   updateBackgroundMip(zoom);
+  rescaleEditHandles(zoom);
   canvas.renderAll();
 }
 
@@ -3230,6 +3248,23 @@ function resetPolygonDrawing() {
  * Polygon Vertex Editing
  */
 
+// Bearbeitungs-Griffe (Eckpunkte, Mittelpunkte, Bemassung) sind Canvas-Objekte und
+// würden mit dem Zoom mitschrumpfen — bei grossen, rausgezoomten Plänen waren sie
+// kaum zu sehen. Radius/Strich deshalb in Bildschirm-px (screenRadius) und bei
+// jedem Zoom nachgeführt, wie Fabrics Auswahl-Griffe.
+const EDIT_HANDLE_STROKE_PX = 2;
+
+function editHandleSize(screenRadius, zoom = canvas?.getZoom() || 1) {
+  return { screenRadius, radius: screenRadius / zoom, strokeWidth: EDIT_HANDLE_STROKE_PX / zoom };
+}
+
+function rescaleEditHandles(zoom) {
+  for (const h of [...vertexHandles, ...dimHandles]) {
+    h.set(editHandleSize(h.screenRadius, zoom));
+    h.setCoords();
+  }
+}
+
 // Returns the absolute canvas position of vertex i of a polygon
 function getVertexAbsPosition(polygon, i) {
   const p = polygon.points[i];
@@ -3321,8 +3356,8 @@ function refreshVertexHandles() {
     const handle = new Circle({
       left: abs.x, top: abs.y,
       originX: 'center', originY: 'center',
-      radius: 6,
-      fill: '#1976d2', stroke: '#ffffff', strokeWidth: 2,
+      ...editHandleSize(6),
+      fill: '#1976d2', stroke: '#ffffff',
       objectType: 'vertexHandle', pointIndex: i,
       hasBorders: false, hasControls: false,
       hoverCursor: 'crosshair', moveCursor: 'crosshair',
@@ -3340,8 +3375,8 @@ function refreshVertexHandles() {
         left: (abs.x + nextAbs.x) / 2,
         top:  (abs.y + nextAbs.y) / 2,
         originX: 'center', originY: 'center',
-        radius: 5,
-        fill: '#ffffff', stroke: '#1976d2', strokeWidth: 2,
+        ...editHandleSize(5),
+        fill: '#ffffff', stroke: '#1976d2',
         opacity: 0.8,
         objectType: 'midpointHandle', midIndex: i,
         hasBorders: false, hasControls: false,
@@ -3827,10 +3862,9 @@ function makeDimHandle(pos, role) {
   const h = new Circle({
     left: pos.x, top: pos.y,
     originX: 'center', originY: 'center',
-    radius: isOffset ? 5 : 6,
+    ...editHandleSize(isOffset ? 5 : 6),
     fill:   isOffset ? '#ffffff' : '#1976d2',
     stroke: isOffset ? '#1976d2' : '#ffffff',
-    strokeWidth: 2,
     opacity: isOffset ? 0.85 : 0.55,   // slightly transparent so the line stays visible
     objectType: 'dimHandle', dimRole: role,
     hasBorders: false, hasControls: false,
