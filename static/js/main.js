@@ -51,6 +51,8 @@ import {
   setOnPageAction,
   setActivePageInList,
   setPageScaleInSidebar,
+  setPageCountProvider,
+  updatePageCountInList,
   getSessionId as getUploadSessionId,
   buildPageList as rebuildSidebarPageList
 } from './upload-modal.js';
@@ -316,7 +318,12 @@ let isPageSwitching = false; // Prevent canvas events during page switches
 let canvasReady = true;
 let canvasLoadSeq = 0;
 function markCanvasLoading() { canvasReady = false; return ++canvasLoadSeq; }
-function markCanvasLoaded(seq) { if (seq === canvasLoadSeq) canvasReady = true; }
+function markCanvasLoaded(seq) {
+  if (seq !== canvasLoadSeq) return;
+  canvasReady = true;
+  // Seitenlisten-Zähler: updateSummary() während des Ladens hat ihn übersprungen
+  if (currentPageId != null) updatePageCountInList(currentPageId, getPageAnnotationCount(currentPageId));
+}
 
 // Debounced table update
 let updateTableTimeout = null;
@@ -1502,9 +1509,25 @@ function collectSummaryData() {
 }
 
 /**
+ * Number of annotations on a page: live from the canvas for the open page
+ * (unless it is still loading), else from the stored page data.
+ */
+function getPageAnnotationCount(pageId) {
+  if (canvas && canvasReady && pageId === currentPageId) {
+    return canvas.getObjects().filter(obj => obj.objectType === 'annotation').length;
+  }
+  return pageCanvasData[pageId]?.canvas_annotations?.length ?? 0;
+}
+
+/**
  * Update summary - reads directly from canvas objects
  */
 function updateSummary() {
+  // Zähler in der Seitenliste: updateSummary läuft nach jeder Annotations-Änderung
+  if (canvas && canvasReady && currentPageId != null) {
+    updatePageCountInList(currentPageId, getPageAnnotationCount(currentPageId));
+  }
+
   const summary = document.getElementById('summary');
   if (!summary || !canvas) return;
 
@@ -5242,6 +5265,7 @@ async function initApp() {
 
   // Wire sidebar page actions: Duplizieren/Löschen/Reihenfolge
   setOnPageAction(handlePageAction);
+  setPageCountProvider(getPageAnnotationCount);
 
   // Wire "Fenster erkennen" button
 

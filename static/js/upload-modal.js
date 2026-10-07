@@ -117,6 +117,10 @@ export function setOnPageClick(fn)   { onPageClickCallback = fn; }
 export function setOnScaleChange(fn) { onScaleChangeCallback = fn; }
 export function setOnPageAction(fn)  { onPageActionCallback = fn; }
 
+// (pageId) => Anzahl Annotationen der Seite — main.js kennt Canvas und Seitendaten
+let pageCountProvider = null;
+export function setPageCountProvider(fn) { pageCountProvider = fn; }
+
 const COMMON_SCALES = [20, 50, 100, 200, 500, 1000];
 
 // ── Public API ────────────────────────────────────────────────────────
@@ -511,9 +515,12 @@ export function buildPageList() {
                  data-src="${entry.imageUrl || ''}"
                  alt="Seite ${position}">
             <span class="page-label">
-                <span class="page-title" title="Doppelklick zum Umbenennen">${entry.name
-                    ? `<span class="page-pos">${position}</span><span class="page-name"></span>`
-                    : `<span class="page-name">${title}</span>`}</span>
+                <span class="page-title-row">
+                    <span class="page-title" title="Doppelklick zum Umbenennen">${entry.name
+                        ? `<span class="page-pos">${position}</span><span class="page-name"></span>`
+                        : `<span class="page-name">${title}</span>`}</span>
+                    <span class="page-count-pill"></span>
+                </span>
                 ${sizeText ? `<span class="page-size-hint">${sizeText}</span>` : ''}
                 <span class="page-scale-control">
                     <span class="scale-prefix">1:</span>
@@ -532,6 +539,8 @@ export function buildPageList() {
                 <button class="page-action-btn" data-action="delete" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Seite löschen' : 'Die letzte Seite kann nicht gelöscht werden'}">✕</button>
             </span>
         `;
+
+        renderPageCount(li.querySelector('.page-count-pill'), pageCountProvider?.(entry.id) ?? 0);
 
         // Eigener Name als textContent, nie per innerHTML (Nutzereingabe)
         if (entry.name) li.querySelector('.page-name').textContent = entry.name;
@@ -590,6 +599,19 @@ export function buildPageList() {
     if (activeId) setActivePageInList(activeId);
 
     pageListSection.style.display = 'block';
+}
+
+function renderPageCount(pill, count) {
+    if (!pill) return;
+    // 0 bleibt leer: eine Null pro Seite wäre nur Rauschen
+    pill.textContent = count > 0 ? String(count) : '';
+    pill.title = count === 1 ? '1 Annotation' : `${count} Annotationen`;
+    pill.hidden = count === 0;
+}
+
+/** Live-Update des Zählers einer Seite (nach jeder Änderung auf dem Canvas). */
+export function updatePageCountInList(pageId, count) {
+    renderPageCount(pageList?.querySelector(`.page-list-item[data-page-id="${pageId}"] .page-count-pill`), count);
 }
 
 /**
