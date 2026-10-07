@@ -221,7 +221,30 @@ let isHistoryAction = false; // true while restoring a state (prevents recursive
 // Snapshots, Undo/Redo, Massstab, Seiten-Aktionen, Label-Manager), gelöscht
 // von project.js nach erfolgreichem Speichern (Cloud oder .planli-Datei) und
 // nach Projekt-Load. Reines Ansehen (z.B. Demo) warnt so nie.
+// Nie direkt zuweisen, immer über setProjectDirty() — der Speichern-Button zeigt
+// den Zustand an.
 let projectDirty = false;
+// Frisch hochgeladenes PDF: nichts geht verloren (keine beforeunload-Warnung),
+// gespeichert ist das Projekt aber noch nicht — der Speichern-Button soll das zeigen.
+let projectNeverSaved = false;
+
+function setProjectDirty(dirty) {
+  projectDirty = dirty;
+  updateSaveButtonState();
+}
+
+/**
+ * Speichern-Button ausgegraut (wie der Mülleimer ohne Auswahl), solange alles
+ * gespeichert ist; voll sichtbar bei ungespeicherten Änderungen. Bleibt bewusst
+ * klickbar — Speichern schadet nie, und Ctrl+S geht ohnehin immer.
+ */
+function updateSaveButtonState() {
+  const btn = document.getElementById('saveProjectBtn');
+  if (!btn) return;
+  const unsaved = projectDirty || projectNeverSaved;
+  btn.classList.toggle('is-saved', !unsaved);
+  btn.dataset.state = unsaved ? 'unsaved' : 'saved';
+}
 
 // Event timing control
 let isProcessingClick = false;
@@ -1845,7 +1868,7 @@ function saveHistorySnapshot(seed = false) {
   undoStack.push(state);
   if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
   redoStack = [];
-  if (!seed) projectDirty = true;
+  if (!seed) setProjectDirty(true);
 }
 
 async function applyHistoryState(stateJson) {
@@ -1893,7 +1916,7 @@ async function undoHistory() {
   await applyHistoryState(undoStack[undoStack.length - 1]);
   // Konservativ: könnte exakt den gespeicherten Stand wiederherstellen,
   // das wissen wir hier aber nicht — lieber einmal zu viel warnen.
-  projectDirty = true;
+  setProjectDirty(true);
 }
 
 async function redoHistory() {
@@ -1901,7 +1924,7 @@ async function redoHistory() {
   const state = redoStack.pop();
   undoStack.push(state);
   await applyHistoryState(state);
-  projectDirty = true;
+  setProjectDirty(true);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4403,7 +4426,9 @@ async function initApp() {
 
     // Full reset for new upload – clear all previous project state
     pageCanvasData   = {};
-    projectDirty     = false; // frischer Upload: noch nichts, das verloren gehen könnte
+    setProjectDirty(false); // frischer Upload: noch nichts, das verloren gehen könnte …
+    projectNeverSaved = true; // … aber auch noch nicht gespeichert
+    updateSaveButtonState();
     setAllSourcePdfBlobs({});
 
     // Pre-initialise a settings block for EVERY page from the detected PDF sizes,
@@ -4468,7 +4493,8 @@ async function initApp() {
     canvasReady     = true;
     canvasLoadSeq++;
     selectedObjects = [];
-    projectDirty    = false;
+    projectNeverSaved = false; // leerer Editor: nichts zu speichern
+    setProjectDirty(false);
     initHistory();
     resetPdfState();
 
@@ -4621,7 +4647,7 @@ async function initApp() {
       };
     }
     setPageSettings(settings);
-    projectDirty = true; // angehängte Seiten sind Teil des Projekts → speicherwürdig
+    setProjectDirty(true); // angehängte Seiten sind Teil des Projekts → speicherwürdig
     if (navigate) navigateToPageNoAnalysis(newEntries[0].id);
   };
 
@@ -4647,7 +4673,7 @@ async function initApp() {
         settings[newEntry.id] = structuredClone(settings[pageId]);
         setPageSettings(settings);
       }
-      projectDirty = true;
+      setProjectDirty(true);
       rebuildSidebarPageList();
       navigateToPageNoAnalysis(newEntry.id);
       return;
@@ -4669,7 +4695,7 @@ async function initApp() {
         return;
       }
       delete pageCanvasData[pageId];
-      projectDirty = true;
+      setProjectDirty(true);
       rebuildSidebarPageList();
       if (wasCurrent && fallbackId) {
         currentPageId = null; // force a real switch even though the id looks "new" to us
@@ -4680,7 +4706,7 @@ async function initApp() {
 
     if (action === 'up' || action === 'down') {
       movePageInManifest(pageId, action === 'up' ? -1 : 1);
-      projectDirty = true;
+      setProjectDirty(true);
       rebuildSidebarPageList();
     }
   }
@@ -4942,7 +4968,7 @@ async function initApp() {
     const existing = current[pageId] || {};
     current[pageId] = { ...existing, plan_scale: scale };
     setPageSettings(current);
-    projectDirty = true; // Massstab ändert berechnete Flächen/Längen → speicherwürdig
+    setProjectDirty(true); // Massstab ändert berechnete Flächen/Längen → speicherwürdig
     // Refresh canvas labels and results table with new scale
     refreshAllCanvasLabels();
     refreshAllDimensions();
@@ -5028,8 +5054,8 @@ async function initApp() {
   // Dirty-Tracking-Hooks für andere Module: project.js meldet erfolgreiches
   // Speichern/Laden (löscht die beforeunload-Warnung), labels.js meldet
   // Label-Änderungen (setzt sie).
-  window.planliMarkProjectSaved = () => { projectDirty = false; };
-  window.planliMarkProjectDirty = () => { projectDirty = true; };
+  window.planliMarkProjectSaved = () => { projectNeverSaved = false; setProjectDirty(false); };
+  window.planliMarkProjectDirty = () => setProjectDirty(true);
   window.planliProjectIsDirty   = () => projectDirty; // read-only: confirmDiscardChanges (upload-modal.js), Tests
 
   // Resize canvas when container size changes (e.g. right panel collapse/expand)
@@ -5067,6 +5093,7 @@ async function initApp() {
 
   // /app?demo=1 (Landingpage): fertig analysiertes Demo-Projekt laden.
   // Bewusst als letzter Schritt — braucht die window-Hooks von oben.
+  updateSaveButtonState(); // Startzustand: nichts geladen = nichts zu speichern
   maybeLoadDemoProject();
 
 }

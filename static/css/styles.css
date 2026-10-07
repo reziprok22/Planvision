@@ -50,6 +50,14 @@ header h1 {
     border-color: #aaa;
 }
 
+/* Speichern-Button: ausgegraut, solange alles gespeichert ist (wie der Mülleimer
+   ohne Auswahl, .tool-button:disabled); bei ungespeicherten Änderungen dunkel.
+   Bleibt klickbar, Hover zeigt ihn voll. Zustand: updateSaveButtonState() in main.js */
+#saveProjectBtn { transition: background 0.15s, border-color 0.15s, opacity 0.15s; }
+#saveProjectBtn.is-saved { opacity: 0.4; }
+#saveProjectBtn.is-saved:hover { opacity: 1; }
+#saveProjectBtn:not(.is-saved) { color: #444; border-color: #d0d0d0; }
+
 /* "Plan exportieren" hervorheben: warme Farben des BETA-Badges, aber gleiche
    eckige Form/Grösse wie die übrigen Header-Buttons (Speichern/Öffnen). */
 #exportAnnotatedPdfBtn {
