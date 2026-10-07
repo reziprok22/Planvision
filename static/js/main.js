@@ -136,9 +136,8 @@ let dimPreview = null;             // temp preview group while drawing
 // Own objectType 'textNote' (not an annotation): stays out of results/summary/labels.
 let textStartPoint = null;         // drag start while defining the box width
 let textPreviewRect = null;        // dashed preview rect during the drag
-let clipboard = [];                // serialised annotations ready to paste
-let clipboardSourceIds = [];       // canvas IDs of originals at copy time
-let clipboardSourcePositions = {}; // {id: {left, top}} of originals at copy time
+let clipboard = { annotations: [], dimensions: [], textNotes: [] }; // see serializeObjectsAbsolute
+let clipboardSources = [];         // [{id, obj, left, top}] of originals at copy time
 let editingPolygon = null;         // polygon currently in vertex-edit mode
 let vertexHandles = [];            // Circle handles shown during vertex editing
 let editingDimension = null;       // dimension group currently in edit mode
@@ -1545,29 +1544,49 @@ function syncLegendButton() {
 }
 
 // ── Copy / Paste ──────────────────────────────────────────────────────────────
+// Copy/paste, cut and the Ctrl/Alt duplicate-drag work on annotations AND the
+// two helper types (Bemassung, Textfeld). The clipboard keeps them apart:
+// { annotations: [...], dimensions: [dimData...], textNotes: [...] }, all in
+// absolute page coordinates.
 
-function copySelectedAnnotations() {
-  const annotations = selectedObjects.filter(o => o.objectType === 'annotation');
-  if (!annotations.length) return;
-  clipboardSourceIds = annotations.map(o => o.id).filter(Boolean);
-  clipboard = serializeAnnotationsAbsolute(annotations);
-  clipboardSourcePositions = {};
-  annotations.forEach((o, i) => {
-    if (o.id) clipboardSourcePositions[o.id] = { left: clipboard[i].left, top: clipboard[i].top };
-  });
+function isCopyableObject(o) {
+  return o?.objectType === 'annotation' || o?.objectType === 'dimension' || o?.objectType === 'textNote';
+}
+
+function clipboardIsEmpty(c) {
+  return !c.annotations.length && !c.dimensions.length && !c.textNotes.length;
+}
+
+/**
+ * Absolute left/top of an object. Inside an ActiveSelection Fabric stores
+ * left/top relative to the selection centre, so recover it from the transform.
+ */
+function absoluteLeftTop(o) {
+  if (!o.group) return { left: o.left, top: o.top };
+  const m = o.calcTransformMatrix();
+  return { left: m[4] - o.getScaledWidth() / 2, top: m[5] - o.getScaledHeight() / 2 };
+}
+
+function copySelectedObjects() {
+  const objs = selectedObjects.filter(isCopyableObject);
+  if (!objs.length) return;
+  clipboard = serializeObjectsAbsolute(objs);
+  // Remember where the originals were: annotations by id (survives undo, which
+  // recreates the objects), helpers by reference (they have no id).
+  clipboardSources = objs.map(o => ({ id: o.id, obj: o, ...absoluteLeftTop(o) }));
   pasteOffset = 0;
 }
 
-function cutSelectedAnnotations() {
-  if (!selectedObjects.filter(o => o.objectType === 'annotation').length) return;
-  copySelectedAnnotations();
+function cutSelectedObjects() {
+  if (!selectedObjects.some(isCopyableObject)) return;
+  copySelectedObjects();
   deleteSelectedObjects();
 }
 
 /**
  * Enliven serialized annotations and add them to the canvas as fresh copies:
  * new id/displayIndex (assigned by createSingleTextLabel), optional position
- * offset. Shared by paste and the Ctrl/Alt duplicate-drag.
+ * offset.
  */
 async function addClonedAnnotations(serialized, { offset = 0, interactive = true } = {}) {
   const objects = await util.enlivenObjects(JSON.parse(JSON.stringify(serialized)));
@@ -1591,20 +1610,50 @@ async function addClonedAnnotations(serialized, { offset = 0, interactive = true
   return objects;
 }
 
-async function pasteAnnotations() {
-  if (!clipboard.length) return;
+/**
+ * Add copies of a clipboard payload (annotations, dimensions, text notes).
+ * Shared by paste and the Ctrl/Alt duplicate-drag. Returns the new objects.
+ */
+async function addClonedObjects(payload, { offset = 0, interactive = true } = {}) {
+  const added = await addClonedAnnotations(payload.annotations, { offset, interactive });
+
+  const shiftPt = p => ({ x: p.x + offset, y: p.y + offset });
+  for (const d of payload.dimensions) {
+    const g = buildDimensionGroup({ ...d, p1: shiftPt(d.p1), p2: shiftPt(d.p2) });
+    g.set({ selectable: interactive, evented: interactive });
+    canvas.add(g);
+    g.setCoords();
+    added.push(g);
+  }
+
+  if (payload.textNotes.length) {
+    const notes = await util.enlivenObjects(JSON.parse(JSON.stringify(payload.textNotes)));
+    for (const n of notes.filter(Boolean)) {
+      n.set({
+        left: (n.left || 0) + offset, top: (n.top || 0) + offset,
+        objectType: 'textNote', editable: true,
+        selectable: interactive, evented: interactive,
+      });
+      canvas.add(n);
+      n.setCoords();
+      added.push(n);
+    }
+  }
+  return added;
+}
+
+async function pasteObjects() {
+  if (clipboardIsEmpty(clipboard)) return;
 
   // Apply offset only when the original is still at its copied position (not moved).
   // This prevents pasting on top of an unmoved original while allowing exact-position
   // paste when the original has been relocated or deleted.
-  const originalsUnmoved = clipboardSourceIds.some(id => {
-    const obj = canvas.getObjects().find(o => o.id === id);
+  const onCanvas = canvas.getObjects();
+  const originalsUnmoved = clipboardSources.some(src => {
+    const obj = src.id ? onCanvas.find(o => o.id === src.id) : (onCanvas.includes(src.obj) ? src.obj : null);
     if (!obj) return false;
-    const saved = clipboardSourcePositions[id];
-    if (!saved) return false;
-    const curLeft = obj.group ? obj.calcTransformMatrix()[4] - obj.getScaledWidth()  / 2 : obj.left;
-    const curTop  = obj.group ? obj.calcTransformMatrix()[5] - obj.getScaledHeight() / 2 : obj.top;
-    return Math.abs(curLeft - saved.left) < 1 && Math.abs(curTop - saved.top) < 1;
+    const cur = absoluteLeftTop(obj);
+    return Math.abs(cur.left - src.left) < 1 && Math.abs(cur.top - src.top) < 1;
   });
   if (originalsUnmoved) {
     pasteOffset += 20;
@@ -1612,7 +1661,7 @@ async function pasteAnnotations() {
     pasteOffset = 0;
   }
 
-  const pasted = await addClonedAnnotations(clipboard, {
+  const pasted = await addClonedObjects(clipboard, {
     offset: pasteOffset,
     interactive: currentTool === 'select',
   });
@@ -1636,6 +1685,15 @@ async function pasteAnnotations() {
   updateResultsTable();
   updateSummary();
   saveHistorySnapshot();
+}
+
+/**
+ * After a move of an annotation or dimension, bring its dependants up to date:
+ * the linked text label resp. the canonical dimData geometry.
+ */
+function syncAfterMove(o) {
+  if (o.objectType === 'annotation') updateLinkedTextLabelPosition(o);
+  else if (o.objectType === 'dimension' && !o.group) bakeDimensionMove(o);
 }
 
 /**
@@ -1667,25 +1725,49 @@ function keepPastedOnPage(objs) {
     if (!dxs[i] && !dys[i]) return;
     o.set({ left: o.left + dxs[i], top: o.top + dys[i] });
     o.setCoords();
-    updateLinkedTextLabelPosition(o);
+    syncAfterMove(o);
   });
 }
 
 /**
- * Serialise annotation objects with their ABSOLUTE canvas coordinates. Objects
- * inside an ActiveSelection store left/top relative to the selection centre, so
- * recover the absolute position from the transform matrix (same as copy/paste).
+ * Serialise annotation objects with their ABSOLUTE canvas coordinates (see
+ * absoluteLeftTop). Used by the clipboard and the undo history.
  */
-function serializeAnnotationsAbsolute(objs) {
-  return objs.map(o => {
-    const s = o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel']);
-    if (o.group) {
-      const m = o.calcTransformMatrix();
-      s.left = m[4] - o.getScaledWidth()  / 2;
-      s.top  = m[5] - o.getScaledHeight() / 2;
-    }
-    return s;
-  });
+function serializeAnnotationsAbsolute(objs, extraProps = []) {
+  return objs.map(o => ({
+    ...o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel', ...extraProps]),
+    ...absoluteLeftTop(o),
+  }));
+}
+
+/**
+ * dimData in absolute coordinates. A dimension moved inside an ActiveSelection
+ * only bakes its move into dimData once the selection is cleared, so add the
+ * not-yet-baked translation here.
+ */
+function dimDataAbsolute(g) {
+  const d = g.dimData;
+  const { left, top } = absoluteLeftTop(g);
+  const dx = left - g.__dimLeft0, dy = top - g.__dimTop0;
+  const out = { ...d };
+  for (const k of ['p1', 'p2', 'd1', 'd2']) out[k] = { x: d[k].x + dx, y: d[k].y + dy };
+  return out;
+}
+
+function serializeTextNotesAbsolute(notes) {
+  return notes.map(t => ({
+    ...t.toObject(['objectType', 'userCreated']),
+    ...absoluteLeftTop(t),
+    objectType: 'textNote',
+  }));
+}
+
+function serializeObjectsAbsolute(objs) {
+  return {
+    annotations: serializeAnnotationsAbsolute(objs.filter(o => o.objectType === 'annotation')),
+    dimensions:  objs.filter(o => o.objectType === 'dimension' && o.dimData).map(dimDataAbsolute),
+    textNotes:   serializeTextNotesAbsolute(objs.filter(o => o.objectType === 'textNote')),
+  };
 }
 
 /**
@@ -1711,9 +1793,8 @@ function finalizeDragDuplicate() {
 function serializeAnnotations() {
   if (!canvas) return '[]';
   return JSON.stringify(
-    canvas.getObjects()
-      .filter(o => o.objectType === 'annotation')
-      .map(o => o.toObject(['objectType', 'annotationType', 'labelId', 'objectLabel', 'id', 'displayIndex']))
+    serializeAnnotationsAbsolute(
+      canvas.getObjects().filter(o => o.objectType === 'annotation'), ['id', 'displayIndex'])
   );
 }
 
@@ -2028,16 +2109,14 @@ function setupCanvasEvents() {
     const t = options.target;
     const multiSel = canvas.getActiveObject() instanceof ActiveSelection ? canvas.getActiveObject() : null;
     const onMulti  = multiSel && (t === multiSel || multiSel.getObjects().includes(t));
-    const onAnno   = t?.objectType === 'annotation';
     dupArmed = currentTool === 'select'
             && (options.e.ctrlKey || options.e.altKey)
-            && (onMulti || onAnno)
-            && !t?.__corner;
+            && (onMulti || isCopyableObject(t))
+            && !t?.__corner
+            && !t?.isEditing;           // Ctrl/Alt inside a text note being typed in
     if (dupArmed) {
-      const set = onMulti
-        ? multiSel.getObjects().filter(o => o.objectType === 'annotation')
-        : [t];
-      dupSerialized = serializeAnnotationsAbsolute(set);
+      const set = onMulti ? multiSel.getObjects().filter(isCopyableObject) : [t];
+      dupSerialized = serializeObjectsAbsolute(set);
       dupCreated = false;
       dupClonesAdded = false;
       dupNeedsFinalize = false;
@@ -2130,7 +2209,7 @@ function setupCanvasEvents() {
     // away, so the duplicate is visible immediately while the originals are dragged.
     if (dupArmed && !dupCreated) {
       dupCreated = true;
-      addClonedAnnotations(dupSerialized).then(() => {
+      addClonedObjects(dupSerialized).then(() => {
         dupClonesAdded = true;
         applyLayerOrdering();
         canvas.requestRenderAll();
@@ -3475,18 +3554,12 @@ function serializeDimensions() {
   if (!canvas) return [];
   return canvas.getObjects()
     .filter(o => o.objectType === 'dimension' && o.dimData)
-    .map(g => ({ ...g.dimData }));
+    .map(dimDataAbsolute);
 }
 
 function serializeTextNotes() {
   if (!canvas) return [];
-  return canvas.getObjects()
-    .filter(o => o.objectType === 'textNote')
-    .map(t => {
-      const o = t.toObject(['objectType', 'userCreated']);
-      o.objectType = 'textNote';
-      return o;
-    });
+  return serializeTextNotesAbsolute(canvas.getObjects().filter(o => o.objectType === 'textNote'));
 }
 
 // Rebuild text notes (Fabric Textboxes) from their serialized form.
@@ -4667,25 +4740,25 @@ async function initApp() {
         if (e.shiftKey) { redoHistory(); } else { undoHistory(); }
         e.preventDefault(); return;
       }
-      if (e.key === 'c' || e.key === 'C') { copySelectedAnnotations();  e.preventDefault(); return; }
-      if (e.key === 'x' || e.key === 'X') { cutSelectedAnnotations();   e.preventDefault(); return; }
-      if (e.key === 'v' || e.key === 'V') { pasteAnnotations();         e.preventDefault(); return; }
+      if (e.key === 'c' || e.key === 'C') { copySelectedObjects(); e.preventDefault(); return; }
+      if (e.key === 'x' || e.key === 'X') { cutSelectedObjects();  e.preventDefault(); return; }
+      if (e.key === 'v' || e.key === 'V') { pasteObjects();        e.preventDefault(); return; }
       if (e.key === 's' || e.key === 'S') { document.getElementById('saveProjectBtn')?.click(); e.preventDefault(); return; }
       if (e.key === 'o' || e.key === 'O') { document.getElementById('loadProjectBtn')?.click(); e.preventDefault(); return; }
       return; // don't let other Ctrl+key combos trigger tool shortcuts
     }
 
-    // Arrow keys: move selected annotations, otherwise let browser scroll
+    // Arrow keys: move selected objects, otherwise let browser scroll
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
       if (currentTool === 'select' && selectedObjects.length > 0) {
         const step = e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy = e.key === 'ArrowUp'   ? -step : e.key === 'ArrowDown'  ? step : 0;
         selectedObjects.forEach(obj => {
-          if (obj.objectType !== 'annotation') return;
+          if (!isCopyableObject(obj)) return;
           obj.set({ left: (obj.left || 0) + dx, top: (obj.top || 0) + dy });
           obj.setCoords();
-          updateLinkedTextLabelPosition(obj);
+          syncAfterMove(obj);
         });
         canvas.requestRenderAll();
         saveHistorySnapshot();
