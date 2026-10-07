@@ -11,6 +11,37 @@ import { autoFontScale, isLightColor, sanitizeFileBase } from './pdf-handler.js'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// The PDF standard fonts (Helvetica) only cover WinAnsi (~Latin-1). pdf-lib
+// throws on anything else ("WinAnsi cannot encode …") and aborts the whole
+// export — e.g. a "≤" in a label name. Map common symbols to ASCII lookalikes,
+// everything else unencodable becomes "?".
+const WINANSI_FALLBACKS = {
+    '≤': '<=', '≥': '>=', '≠': '!=', '≈': '~', '−': '-',
+    '→': '->', '←': '<-', '↔': '<->', '⌀': 'Ø', '∅': 'Ø', '∙': '·', '⋅': '·',
+};
+
+function winAnsiSafe(text, supported) {
+    let out = '';
+    for (const ch of String(text).normalize('NFC')) {   // NFC: macOS "a + ¨" → "ä"
+        if (ch === '\n' || ch === '\r' || ch === '\t' || supported.has(ch.codePointAt(0))) out += ch;
+        else out += WINANSI_FALLBACKS[ch] ?? '?';
+    }
+    return out;
+}
+
+// Embed a standard font whose measuring/encoding never throws on unsupported
+// characters. pdf-lib's drawText goes through exactly these two methods, so
+// every call site is covered without touching them individually.
+async function embedSafeFont(pdfDoc, name) {
+    const font = await pdfDoc.embedFont(name);
+    const supported = new Set(font.getCharacterSet());
+    const encode = font.encodeText.bind(font);
+    const width  = font.widthOfTextAtSize.bind(font);
+    font.encodeText        = (text) => encode(winAnsiSafe(text, supported));
+    font.widthOfTextAtSize = (text, size) => width(winAnsiSafe(text, supported), size);
+    return font;
+}
+
 function hexToRgb(hex) {
     if (!hex || typeof hex !== 'string') return rgb(0.53, 0.53, 0.53);
     if (hex === 'white') return rgb(1, 1, 1);
@@ -619,8 +650,8 @@ export async function exportAnnotatedPdfClient({ sourcePdfBlobs, pageImageUrls, 
         }
     }
 
-    const labelFont  = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const labelFontB = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const labelFont  = await embedSafeFont(pdfDoc, StandardFonts.Helvetica);
+    const labelFontB = await embedSafeFont(pdfDoc, StandardFonts.HelveticaBold);
 
     const pdfPages = pdfDoc.getPages();
 
@@ -656,7 +687,7 @@ export async function exportAnnotatedPdfClient({ sourcePdfBlobs, pageImageUrls, 
         }
     }
 
-    triggerDownload(await pdfDoc.save(), `${safeFileBase(projectName)}-annotiert.pdf`);
+    triggerDownload(await pdfDoc.save(), `${safeFileBase(projectName)}.pdf`);
 }
 
 // ── Bericht erstellen (report PDF) ───────────────────────────────────────────
@@ -668,8 +699,8 @@ export async function exportReportPdfClient({ pageImageUrls, pageManifest, pageC
     const INNER_W = A4_W - 2 * MARGIN;
 
     const pdfDoc = await PDFDocument.create();
-    const font   = await pdfDoc.embedFont(StandardFonts.Helvetica);
-    const fontB  = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const font   = await embedSafeFont(pdfDoc, StandardFonts.Helvetica);
+    const fontB  = await embedSafeFont(pdfDoc, StandardFonts.HelveticaBold);
     const dateStr = new Date().toLocaleDateString('de-DE');
 
     for (let i = 0; i < pageImageUrls.length; i++) {
