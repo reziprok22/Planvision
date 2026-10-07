@@ -1616,6 +1616,7 @@ async function pasteAnnotations() {
     offset: pasteOffset,
     interactive: currentTool === 'select',
   });
+  keepPastedOnPage(pasted);
 
   applyLayerOrdering();
 
@@ -1635,6 +1636,39 @@ async function pasteAnnotations() {
   updateResultsTable();
   updateSummary();
   saveHistorySnapshot();
+}
+
+/**
+ * Pasted coordinates are page pixels of the SOURCE page — pasting from a larger
+ * format onto a smaller one would drop the copies outside the image, where they
+ * can't be reached (scrolling stops at the image edge). Per axis: if the pasted
+ * block fits on the page, shift it as a whole (arrangement kept); if it doesn't,
+ * push each object in on its own — what is already on the page stays put, what
+ * sticks out ends up at the edge, visible and selected. Never rescale: that would
+ * falsify measured areas/lengths. Deliberately only here, not as a general edge
+ * lock while moving/drawing — that would get in the way at the page border.
+ */
+function keepPastedOnPage(objs) {
+  const pageW = uploadedImage?.naturalWidth, pageH = uploadedImage?.naturalHeight;
+  if (!objs.length || !pageW || !pageH) return;
+  const rects = objs.map(o => o.getBoundingRect());
+  // Offset that moves [min, max] into [0, size]; too large → align at 0.
+  const shift = (min, max, size) =>
+    min < 0 || max - min > size ? -min : (max > size ? size - max : 0);
+  const axisShifts = (start, extent, size) => {
+    const min = Math.min(...rects.map(r => r[start]));
+    const max = Math.max(...rects.map(r => r[start] + r[extent]));
+    if (max - min <= size) return rects.map(() => shift(min, max, size));
+    return rects.map(r => shift(r[start], r[start] + r[extent], size));
+  };
+  const dxs = axisShifts('left', 'width', pageW);
+  const dys = axisShifts('top', 'height', pageH);
+  objs.forEach((o, i) => {
+    if (!dxs[i] && !dys[i]) return;
+    o.set({ left: o.left + dxs[i], top: o.top + dys[i] });
+    o.setCoords();
+    updateLinkedTextLabelPosition(o);
+  });
 }
 
 /**
