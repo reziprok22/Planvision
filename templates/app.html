@@ -1003,7 +1003,7 @@
             <span class="close" id="onboardingClose">&times;</span>
             <div class="onboarding-header">
                 <h3>Willkommen bei <span class="brand-accent">Planli</span></h3>
-                <span class="onboarding-counter" id="onboardingCounter">Schritt 1/4</span>
+                <span class="onboarding-counter" id="onboardingCounter">Schritt 1/5</span>
             </div>
             <div class="onboarding-media" id="onboardingMedia"><!-- gefüllt per JS --></div>
             <h4 class="onboarding-title" id="onboardingTitle"></h4>
@@ -1035,13 +1035,18 @@
         },
         {
           "title": "Zeichnen & messen",
-          "body": "Wähle zunächst ein Werkzeug (Rechtecke, Polygone oder Linien) aus, dann das passende Label und zeichne direkt auf den Plan. \n\n Lerne die Hotkeys (z. B. Q + Mausrad) kennen, um schnell die relevanten Flächen zu erfassen. Auf Wunsch schlägt die KI Objekte automatisch vor, du korrigierst nur noch.",
+          "body": "Wähle zunächst ein Werkzeug (Rechtecke, Polygone oder Linien) aus, dann das passende Label und zeichne direkt auf den Plan. Auf Wunsch schlägt die KI Objekte automatisch vor, du korrigierst nur noch.",
           "media": "{% static 'media/onboarding/03-draw.png' %}"
+        },
+        {
+          "title": "Tastaturkürzel",
+          "body": "Mit den Tastaturkürzeln arbeitest du deutlich schneller: Werkzeug wechseln mit Q, W und E, Label durchblättern mit Q + Mausrad, Label-Manager öffnen mit L. Die vollständige Übersicht öffnest du jederzeit mit ? oder im Menü unter \"Tastaturkürzel\".",
+          "media": "{% static 'media/onboarding/04-hotkeys.png' %}"
         },
         {
           "title": "Speichern & exportieren",
           "body": "Speichere dein Projekt jederzeit als Datei oder exportiere deine gezeichnten Objekte auf dem Original-PDF.",
-          "media": "{% static 'media/onboarding/04-export.png' %}"
+          "media": "{% static 'media/onboarding/05-export.png' %}"
         }
       ]
     }
