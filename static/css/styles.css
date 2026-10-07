@@ -1383,21 +1383,6 @@ input[type="color"].inline-edit {
     white-space: nowrap;
 }
 
-.label-quick-key {
-    font-size: 0.75em;
-    color: #aaa;
-    background: #f0f0f0;
-    border-radius: 3px;
-    padding: 0 4px;
-    line-height: 1.6;
-    flex-shrink: 0;
-}
-
-.label-quick-item.active .label-quick-key {
-    background: #d8d8d8;
-    color: #444;
-}
-
 .label-quick-disabled-hint {
     font-size: 0.75em;
     color: #bbb;

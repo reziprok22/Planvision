@@ -2765,10 +2765,10 @@ function updateUniversalLabelDropdown(toolName, selectedObject = null) {
   
   // Clear and repopulate dropdown
   universalLabelSelect.innerHTML = '';
-  labels.forEach((label, i) => {
+  labels.forEach(label => {
     const option = document.createElement('option');
     option.value = label.id;
-    option.textContent = i < 9 ? `${i + 1}: ${label.name}` : label.name;
+    option.textContent = label.name;
     universalLabelSelect.appendChild(option);
   });
   
@@ -2800,7 +2800,7 @@ function updateLabelQuickList() {
     return;
   }
 
-  options.forEach((opt, i) => {
+  options.forEach(opt => {
     const id = parseInt(opt.value);
     const label = getLabelById(id);
     const color = label ? label.color : '#888';
@@ -2812,7 +2812,6 @@ function updateLabelQuickList() {
     item.innerHTML = `
       <span class="label-quick-dot" style="background:${color};"></span>
       <span class="label-quick-name">${label ? label.name : opt.textContent}</span>
-      ${i < 9 ? `<span class="label-quick-key">${i + 1}</span>` : ''}
     `;
     item.addEventListener('click', () => {
       select.value = opt.value;
@@ -5133,17 +5132,6 @@ async function initApp() {
         break;
       }
       case '?': toggleShortcutsModal(); break;
-      case '1': case '2': case '3': case '4': case '5':
-      case '6': case '7': case '8': case '9': {
-        const idx = parseInt(e.key) - 1;
-        const sel = document.getElementById('universalLabelSelect');
-        if (sel && sel.options[idx]) {
-          sel.value = sel.options[idx].value;
-          sel.dispatchEvent(new Event('change'));
-          updateLabelQuickList();
-        }
-        break;
-      }
       case 't': case 'T':
       case 'Delete':
       case 'Backspace':
