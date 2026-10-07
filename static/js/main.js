@@ -1312,7 +1312,12 @@ function measureAnnotation(annotation) {
     return { value: calculatePolygonAreaFromCanvas(annotation), unit: 'm²' };
   }
   if (annotation.type === 'polyline') {
-    return { value: calculatePolylineLength(annotation.points || []), unit: 'm' };
+    // Scale like calculatePolygonAreaFromCanvas — a line resized via its corner
+    // controls keeps its points and only gets scaleX/scaleY.
+    const sx = annotation.scaleX || 1;
+    const sy = annotation.scaleY || 1;
+    const pts = (annotation.points || []).map(p => ({ x: p.x * sx, y: p.y * sy }));
+    return { value: calculatePolylineLength(pts), unit: 'm' };
   }
   return null;
 }
@@ -2093,6 +2098,24 @@ function showDrawDistance(text, e) {
   el.style.display = 'block';
 }
 
+// Live size readout while editing an existing annotation (corner scaling or
+// vertex drag) — same tooltip and format as while drawing it. editMeasureActive
+// keeps mouse:move (which Fabric fires after object:scaling/moving) from hiding it.
+let editMeasureActive = false;
+function showEditMeasure(annotation, e) {
+  if (!annotation || !e || e.clientX === undefined) return;
+  editMeasureActive = true;
+  if (annotation.type === 'rect') {
+    const f = getPixelToMeterFactor();
+    const w = annotation.width  * (annotation.scaleX || 1) * f;
+    const h = annotation.height * (annotation.scaleY || 1) * f;
+    showDrawDistance(`${w.toFixed(2)} × ${h.toFixed(2)} m`, e);
+    return;
+  }
+  const m = measureAnnotation(annotation);
+  if (m) showDrawDistance(`${m.value.toFixed(2)} ${m.unit}`, e);
+}
+
 function hideDrawDistance() {
   if (drawDistanceEl) drawDistanceEl.style.display = 'none';
 }
@@ -2120,7 +2143,9 @@ function setupCanvasEvents() {
   canvas.off('selection:updated');
   canvas.off('selection:cleared');
   canvas.off('object:moving');
+  canvas.off('object:scaling');
   canvas.off('object:modified');
+  canvas.off('object:added');
   canvas.off('object:removed');
   canvas.off('mouse:over');
   canvas.off('mouse:out');
@@ -2206,7 +2231,7 @@ function setupCanvasEvents() {
       drawCrosshair(pointer.x, pointer.y);
     }
 
-    if (!drawingMode) { hideDrawDistance(); return; }
+    if (!drawingMode) { if (!editMeasureActive) hideDrawDistance(); return; }
 
     if (currentTool === 'rectangle' && currentRectangle) {
       updateDrawingRectangle(pointer);
@@ -2250,6 +2275,7 @@ function setupCanvasEvents() {
     if (obj.objectType === 'vertexHandle' && editingPolygon) {
       updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
       updateAdjacentMidpoints(obj.pointIndex);
+      showEditMeasure(editingPolygon, e.e);
     }
     if (obj.objectType === 'dimHandle' && editingDimension) {
       updateDimensionFromHandle(obj, e.e?.shiftKey);
@@ -2268,8 +2294,29 @@ function setupCanvasEvents() {
     }
   });
 
+  // Annotations keep the label-manager stroke width when resized: Fabric scales
+  // the stroke with the object unless strokeUniform is set. Set here (not at
+  // creation) so it also covers loaded projects and undo snapshots, which carry
+  // an explicit strokeUniform:false from before. Matches the PDF export, which
+  // never scaled the stroke anyway.
+  canvas.on('object:added', function(e) {
+    const t = e.target;
+    if (t?.objectType === 'annotation' && !t.strokeUniform) {
+      t.set('strokeUniform', true);
+      t.setCoords();
+    }
+  });
+
+  // Resizing an annotation via its corner controls → live size readout
+  canvas.on('object:scaling', function(e) {
+    if (e.target?.objectType === 'annotation') showEditMeasure(e.target, e.e);
+  });
+
   // Mouse up event - finish drawing operations
   canvas.on('mouse:up', function(options) {
+    // End of a resize/vertex drag — drop the edit readout (drawing tools hide
+    // their own in finish*/reset*, and keep it between polygon/line clicks).
+    if (editMeasureActive) { editMeasureActive = false; hideDrawDistance(); }
 
     if (currentTool === 'rectangle' && drawingMode) {
       finishDrawingRectangle();
@@ -2746,6 +2793,10 @@ function updateDrawingRectangle(pointer) {
     left: width < 0 ? pointer.x : startX,
     top: height < 0 ? pointer.y : startY
   });
+  // Ohne setCoords bleibt die Bounding-Box auf dem Startklick (Breite 0) stehen:
+  // scrollt der Startpunkt beim Aufziehen (Shift+Mausrad) aus dem Bild, hält
+  // Fabric das Rechteck für off-screen und zeichnet es nicht mehr.
+  currentRectangle.setCoords();
 
   canvas.requestRenderAll();
 }
@@ -3825,6 +3876,7 @@ function updateTextDrawing(pointer) {
     left: w < 0 ? pointer.x : textStartPoint.x,
     top:  h < 0 ? pointer.y : textStartPoint.y,
   });
+  textPreviewRect.setCoords(); // sonst off-screen-Culling beim Scrollen, siehe updateDrawingRectangle
   canvas.requestRenderAll();
 }
 
