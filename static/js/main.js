@@ -190,10 +190,38 @@ function restoreTextLabelsAfterZoom() {
   clearTimeout(zoomLabelRestoreTimer);
   zoomLabelRestoreTimer = null;
   if (!canvas) return;
+  setTextLabelsVisible(!labelsHiddenForEdit());
+}
+
+// Text-Labels stören beim Positionieren → auch während der Bearbeitung einer
+// Annotation ausgeblendet: Eckpunkt-Modus (Polygon/Linie) und Skalieren über die
+// Eckgriffe. Als Zustand abgefragt statt als eigenes Flag, damit das Zoom-Restore
+// sie nicht mitten in der Bearbeitung wieder einblendet.
+let scalingAnnotation = false;   // gesetzt in object:scaling, gelöscht in mouse:up
+function labelsHiddenForEdit() {
+  // Auch beim Zeichnen (Rechteck, Polygon, Linie, Bemassung) — nicht beim Textfeld.
+  return !!editingPolygon || scalingAnnotation || (drawingMode && currentTool !== 'text');
+}
+
+// Einziger Schreibweg für drawingMode: hält die Label-Sichtbarkeit synchron.
+function setDrawingMode(on) {
+  drawingMode = on;
+  if (labelsHiddenForEdit()) setTextLabelsVisible(false);
+  else restoreTextLabelsAfterEdit();
+}
+
+function setTextLabelsVisible(visible) {
+  if (!canvas) return;
   canvas.getObjects().forEach(o => {
-    if (o.objectType === 'textLabel') o.visible = true;
+    if (o.objectType === 'textLabel') o.visible = visible;
   });
   canvas.requestRenderAll();
+}
+
+// Nach Ende einer Bearbeitung wieder einblenden — ausser ein Zoom-Debounce läuft
+// noch, dann übernimmt dessen Restore.
+function restoreTextLabelsAfterEdit() {
+  if (!labelsHiddenForEdit() && zoomLabelRestoreTimer === null) setTextLabelsVisible(true);
 }
 
 // Crosshair overlay for drawing tools
@@ -2309,7 +2337,9 @@ function setupCanvasEvents() {
 
   // Resizing an annotation via its corner controls → live size readout
   canvas.on('object:scaling', function(e) {
-    if (e.target?.objectType === 'annotation') showEditMeasure(e.target, e.e);
+    if (e.target?.objectType !== 'annotation') return;
+    showEditMeasure(e.target, e.e);
+    if (!scalingAnnotation) { scalingAnnotation = true; setTextLabelsVisible(false); }
   });
 
   // Mouse up event - finish drawing operations
@@ -2317,6 +2347,7 @@ function setupCanvasEvents() {
     // End of a resize/vertex drag — drop the edit readout (drawing tools hide
     // their own in finish*/reset*, and keep it between polygon/line clicks).
     if (editMeasureActive) { editMeasureActive = false; hideDrawDistance(); }
+    if (scalingAnnotation) { scalingAnnotation = false; restoreTextLabelsAfterEdit(); }
 
     if (currentTool === 'rectangle' && drawingMode) {
       finishDrawingRectangle();
@@ -2727,7 +2758,7 @@ function cleanupCurrentTool() {
 
 function resetAllDrawingStates() {
   
-  drawingMode = false;
+  setDrawingMode(false);
   currentRectangle = null;
   currentPoints = [];
   currentPolygon = null;
@@ -2751,7 +2782,7 @@ function resetAllDrawingStates() {
 function startDrawingRectangle(pointer) {
   if (!canvas) return;
   
-  drawingMode = true;
+  setDrawingMode(true);
   
   // Store the original start point
   rectangleStartPoint = { x: pointer.x, y: pointer.y };
@@ -2831,7 +2862,7 @@ function finishDrawingRectangle() {
     }, 10);
   }
   
-  drawingMode = false;
+  setDrawingMode(false);
   currentRectangle = null;
   rectangleStartPoint = null;
   hideDrawDistance();
@@ -3065,7 +3096,7 @@ function addPolygonPoint(pointer, e) {
 function startPolygonDrawing() {
   if (!canvas || currentPoints.length === 0) return;
   
-  drawingMode = true;
+  setDrawingMode(true);
 
   // Get current selected label and its color
   const selectedLabelId = getCurrentSelectedLabel();
@@ -3173,7 +3204,7 @@ function finishPolygonDrawing() {
 }
 
 function resetPolygonDrawing() {
-  drawingMode = false;
+  setDrawingMode(false);
   currentPolygon = null;
   currentPoints = [];
   hideDrawDistance();
@@ -3230,6 +3261,7 @@ function enterPolygonEditMode(polygon) {
 
   refreshVertexHandles();
   canvas.discardActiveObject();
+  setTextLabelsVisible(false);
   canvas.renderAll();
 }
 
@@ -3250,6 +3282,7 @@ function exitPolygonEditMode() {
   updateLinkedTextLabelPosition(editingPolygon);
 
   editingPolygon = null;
+  restoreTextLabelsAfterEdit();
 
   saveHistorySnapshot();
   canvas.renderAll();
@@ -3392,7 +3425,7 @@ function addLinePoint(pointer, e) {
   if (currentPoints.length === 1) {
     // First point - start line sequence
     startLineDrawing();
-    drawingMode = true; // Enable mouse move for preview
+    setDrawingMode(true); // Enable mouse move for preview
   } else {
     // Additional point - extend the line sequence
     updateLineFromPoints();
@@ -3512,7 +3545,7 @@ function finishLineDrawing() {
 }
 
 function resetLineDrawing() {
-  drawingMode = false;
+  setDrawingMode(false);
   currentLine = null;
   currentPoints = [];
   hideDrawDistance();
@@ -3685,7 +3718,7 @@ function resetDimDrawing() {
   dimPhase = 0;
   dimP1 = null;
   dimP2 = null;
-  drawingMode = false;
+  setDrawingMode(false);
   hideDrawDistance();
 }
 
@@ -3697,7 +3730,7 @@ function dimHandleClick(pointer, e) {
   if (dimPhase === 0) {
     dimP1 = { x: pointer.x, y: pointer.y };
     dimPhase = 1;
-    drawingMode = true;                    // enable mouse:move preview
+    setDrawingMode(true);                    // enable mouse:move preview
   } else if (dimPhase === 1) {
     const pt = e?.shiftKey ? snapToAngle(dimP1, pointer) : pointer;
     dimP2 = { x: pt.x, y: pt.y };
@@ -3856,7 +3889,7 @@ const TEXTNOTE_DEF_W  = 180;                         // fallback when the drag i
 
 function startTextDrawing(pointer) {
   if (!canvas) return;
-  drawingMode = true;
+  setDrawingMode(true);
   textStartPoint = { x: pointer.x, y: pointer.y };
   textPreviewRect = new Rect({
     left: pointer.x, top: pointer.y, width: 0, height: 0,
@@ -3891,7 +3924,7 @@ function finishTextDrawing() {
   canvas.remove(textPreviewRect);
   textPreviewRect = null;
   textStartPoint = null;
-  drawingMode = false;
+  setDrawingMode(false);
 
   const box = new Textbox('', {
     left, top, width,
@@ -3916,7 +3949,7 @@ function finishTextDrawing() {
 function resetTextDrawing() {
   if (textPreviewRect) { canvas?.remove(textPreviewRect); textPreviewRect = null; }
   textStartPoint = null;
-  drawingMode = false;
+  setDrawingMode(false);
 }
 
 /**
@@ -3987,7 +4020,8 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
     selectable: false,
     evented: false,
     objectType: 'textLabel',
-    linkedAnnotationId: linkId
+    linkedAnnotationId: linkId,
+    visible: !labelsHiddenForEdit(),   // z.B. Undo während des Eckpunkt-Modus
   });
 
   canvas.add(textLabel);
@@ -4191,9 +4225,11 @@ function collectCurrentCanvasData(pageId = currentPageId) {
 
   // Serialize text labels with their current positions (supports user-moved labels later)
   const textLabelObjects = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
-  const canvasTextLabels = textLabelObjects.map(tl =>
-    tl.toObject(['objectType', 'linkedAnnotationId', 'text', 'backgroundColor', 'fill'])
-  );
+  // visible:true erzwingen — Labels können gerade für Zoom/Bearbeitung ausgeblendet sein.
+  const canvasTextLabels = textLabelObjects.map(tl => ({
+    ...tl.toObject(['objectType', 'linkedAnnotationId', 'text', 'backgroundColor', 'fill']),
+    visible: true,
+  }));
 
   // Dimension helpers: persist their canonical geometry (image px) — rebuilt via
   // buildDimensionGroup on load. Not annotations, so kept in a separate array.
