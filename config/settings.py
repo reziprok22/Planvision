@@ -169,7 +169,7 @@ TRIAL_DAYS = 30
 # `pricing`-Context-Processor. Pro Konto überschreibbar (Preisgarantie) und
 # rabattierbar via Subscription.list_price_chf / .discount_percent — dort steht
 # auch, warum der Rabatt prozentual ist.
-LICENSE_PRICE_CHF = 280
+LICENSE_PRICE_CHF = 240
 # Preiskommunikation nach aussen: die Preis-Karte auf der Landingpage samt
 # Preis-Erwähnungen in FAQ und JSON-LD sowie der künftige Preis auf der
 # Konto-Seite während der Beta. Die Preissektion selbst ("Preismodell" mit der
@@ -204,7 +204,7 @@ SHOW_PRICING = True
 # bestehen. Nicht erst rückwirkend beim Erreichen von 50 nachtragen, sonst
 # ist unklar, wer schon vor der Umstellung bezahlt hat. Details: CLAUDE.md
 # unter "Trial & Lizenz (Subscription)".
-GLOBAL_DISCOUNT_PERCENT = 35
+GLOBAL_DISCOUNT_PERCENT = 0
 GLOBAL_DISCOUNT_REASON = 'Einführungsrabatt für die ersten 50 Lizenzen. Dieser gilt dauerhaft und erlischt nicht nach einem Jahr.'
 GLOBAL_DISCOUNT_UNTIL = ''
 

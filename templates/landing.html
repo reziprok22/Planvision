@@ -975,7 +975,7 @@
     <h2 class="section-title">Aktuell kostenlos</h2>
     <p class="section-sub">Planli befindet sich in der Beta-Phase.</p>
     <div class="beta-notice">
-        <strong>Während der Beta-Phase ist die Nutzung nach kostenloser Registrierung komplett kostenlos. </strong>
+        <strong>Während der Beta-Phase ist Planli nach der Registrierung komplett kostenlos und bietet den vollen Funktionsumfang ohne Einschränkungen.</strong>
         <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" onclick="window.plausible && window.plausible('CTA: Einzel')">Jetzt loslegen</a>.
     </div>
     {% else %}
@@ -984,8 +984,8 @@
 
     {% if beta_pricing %}
     <div class="beta-notice">
-        <strong>Während der Beta-Phase ist Planli nach der Registrierung komplett kostenlos. </strong>
-        Der unten stehende Preis dient nur zur Information und gilt erst nach dem Ende der Beta-Phase. Wir informieren dich rechtzeitig vorher.
+        <strong>Während der Beta-Phase ist Planli nach der Registrierung komplett kostenlos und bietet den vollen Funktionsumfang ohne Einschränkungen.</strong>
+        Der unten stehende Preis gilt erst nach dem Ende der Beta-Phase.
     </div>
     {% endif %}
 
