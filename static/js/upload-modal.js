@@ -165,7 +165,9 @@ export function setupUploadModal() {
     });
 
     // ── "Change file" button ──
-    if (changeFileBtn) changeFileBtn.addEventListener('click', startNewProject);
+    if (changeFileBtn) changeFileBtn.addEventListener('click', () => {
+        if (confirmDiscardChanges()) startNewProject();
+    });
 
     // ── Projektname umbenennen (Klick auf den Namen) ──
     // Der angezeigte Name ist der kanonische Projektname: er landet beim
@@ -185,6 +187,17 @@ export function setupUploadModal() {
         if (files.length) handleAppendFiles(files);
     });
 
+}
+
+/**
+ * Vor jedem Weg, der das offene Projekt im Editor ersetzt (Cloud-Projekt öffnen,
+ * .planli importieren, Neues Projekt): nachfragen, wenn es ungespeicherte
+ * Änderungen gibt. beforeunload greift hier nicht — die Seite bleibt ja geladen,
+ * nur der Editor-Inhalt wird ausgetauscht. true = weitermachen.
+ */
+export function confirmDiscardChanges() {
+    if (!window.planliProjectIsDirty?.()) return true;
+    return confirm('Das aktuelle Projekt hat ungespeicherte Änderungen, die verloren gehen.\n\nTrotzdem fortfahren?');
 }
 
 /**

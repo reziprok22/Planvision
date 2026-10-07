@@ -3,7 +3,7 @@
  */
 
 import { setCurrentLabels, getAllLabels } from './labels.js';
-import { initSidebarFromProject, getUploadedBaseName, setProjectName, startNewProject } from './upload-modal.js';
+import { initSidebarFromProject, getUploadedBaseName, setProjectName, startNewProject, confirmDiscardChanges } from './upload-modal.js';
 import { saveProjectAsZip, buildProjectZipBlob, buildProjectManifest, loadProjectFromZip } from './project-zip.js';
 import { exportAnnotatedPdfClient, exportReportPdfClient } from './pdf-export-client.js';
 import { getCsrfToken } from './pdf-handler.js';
@@ -44,6 +44,9 @@ export function setupProject(elements, modules) {
     const file = zipFileInput.files[0];
     zipFileInput.value = '';
     if (!file) return;
+    // Erst nach der Dateiwahl fragen: ein confirm() vor zipFileInput.click()
+    // kann die Nutzer-Aktivierung kosten, die der Datei-Dialog braucht.
+    if (!confirmDiscardChanges()) return;
     hideDashboard(); // erst bei tatsächlicher Dateiwahl — Abbrechen lässt die Übersicht offen
     const ok = await handleLoad(file);
     // Import = direkt als neues Cloud-Projekt ablegen — kein zusätzliches
@@ -576,6 +579,7 @@ function setupCloud() {
     // Macht, was es sagt: leerer Editor mit sichtbarer Drop-Zone. Nie nur das
     // Overlay schliessen — sonst zeigt der Editor das alte Projekt, aber Ctrl+S
     // würde davon ein Duplikat als neues Cloud-Projekt anlegen.
+    if (!confirmDiscardChanges()) return;
     currentCloudProjectId = null;
     hideDashboard();
     startNewProject();
@@ -740,6 +744,7 @@ function renderDashboard({ projects, limit }) {
 }
 
 async function openCloudProject(p) {
+  if (!confirmDiscardChanges()) return;
   const status = showStatus(`„${p.name}“ wird geladen…`);
   try {
     const res = await fetch(`/cloud/projects/${p.id}/download`);

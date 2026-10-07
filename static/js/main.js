@@ -5030,7 +5030,7 @@ async function initApp() {
   // Label-Änderungen (setzt sie).
   window.planliMarkProjectSaved = () => { projectDirty = false; };
   window.planliMarkProjectDirty = () => { projectDirty = true; };
-  window.planliProjectIsDirty   = () => projectDirty; // read-only, für Tests/Debugging
+  window.planliProjectIsDirty   = () => projectDirty; // read-only: confirmDiscardChanges (upload-modal.js), Tests
 
   // Resize canvas when container size changes (e.g. right panel collapse/expand)
   window.addEventListener('resize', function() {
