@@ -44,6 +44,7 @@ import {
 import { setupProject, maybeLoadDemoProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
 import { installSmartHitTesting } from './hit-testing.js';
+import { installSnapping } from './snapping.js';
 import {
   setupUploadModal,
   setOnPageClick,
@@ -119,6 +120,7 @@ Object.assign(InteractiveFabricObject.ownDefaults, {
 // Global app state
 let canvas = null;
 let hitTesting = null;   // Annotationen per Geometrie treffen, Hover + Durchklicken (hit-testing.js)
+let snapping = null;     // Einrasten an Ecken/Kanten beim Zeichnen und Griff-Ziehen (snapping.js)
 let imageContainer = null;
 let uploadedImage = null;
 
@@ -650,6 +652,10 @@ function initCanvas() {
     isActive: () => currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension,
   });
   canvas.on('after:render', drawCloseRing);
+  snapping = installSnapping(canvas, {
+    isEnabled: () => !READ_ONLY && (isSnapDrawTool() || isDraggingSnapHandle()),
+    exclude: () => [currentPolygon, currentLine, currentRectangle, editingPolygon],
+  });
   canvas.uniformScaling = false;        // free resize by default; Shift = proportional
   
   const naturalWidth  = uploadedImage.naturalWidth;
@@ -2343,7 +2349,7 @@ function setupCanvasEvents() {
       return;
     }
     
-    const pointer = canvas.getPointer(options.e);
+    const pointer = snapDrawPointer(canvas.getPointer(options.e), options.e);
     
     // Handle different tools
     if (currentTool === 'rectangle') {
@@ -2366,7 +2372,7 @@ function setupCanvasEvents() {
   
   // Mouse move event - for drawing previews and crosshair
   canvas.on('mouse:move', function(options) {
-    const pointer = canvas.getPointer(options.e);
+    const pointer = snapDrawPointer(canvas.getPointer(options.e), options.e);
     lastDrawPointer = pointer;
 
     if (crosshairVisible) {
@@ -2430,6 +2436,7 @@ function setupCanvasEvents() {
     if (obj.objectType === 'vertexHandle' && editingPolygon) {
       if (pendingVertexSnapshot) { pushVertexEdit(pendingVertexSnapshot); pendingVertexSnapshot = null; }
       const closedLine = isClosedLine(editingPolygon);
+      snapDraggedHandle(obj, e.e);
       updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
       updateAdjacentMidpoints(obj.pointIndex);
       if (closedLine && obj.pointIndex === 0) {
@@ -2441,6 +2448,7 @@ function setupCanvasEvents() {
       showEditMeasure(editingPolygon, e.e);
     }
     if (obj.objectType === 'dimHandle' && editingDimension) {
+      if (obj.dimRole !== 'offset') snapDraggedHandle(obj, e.e);
       updateDimensionFromHandle(obj, e.e?.shiftKey);
     }
 
@@ -2482,6 +2490,7 @@ function setupCanvasEvents() {
     // End of a resize/vertex drag — drop the edit readout (drawing tools hide
     // their own in finish*/reset*, and keep it between polygon/line clicks).
     if (editMeasureActive) { editMeasureActive = false; hideDrawDistance(); }
+    if (!isSnapDrawTool()) snapping?.clear();   // Ende eines Griff-Drags
     if (scalingAnnotation) { scalingAnnotation = false; restoreTextLabelsAfterEdit(); }
 
     if (currentTool === 'rectangle' && drawingMode) {
@@ -2613,6 +2622,12 @@ function setupCanvasEvents() {
     // Text note moved/resized → just record a history step.
     if (e.target?.objectType === 'textNote') {
       if (!dupArmed) saveHistorySnapshot();
+      return;
+    }
+    // Eckpunkt gezogen: modified meldet den Griff, nicht das Polygon — ohne das
+    // blieb die Fläche in der Ergebnistabelle auf dem Stand vor der Bearbeitung.
+    if (e.target?.objectType === 'vertexHandle' && editingPolygon) {
+      debouncedTableUpdate();
       return;
     }
     if (!e.target || e.target.objectType !== 'annotation') return;
@@ -3218,6 +3233,36 @@ function snapToAngle(from, to, stepDeg = 22.5) {
  * Alternative zum Doppelklick. Der Ring wird in after:render gezeichnet und
  * verändert kein Objekt (landet also nie in Undo/Speichern/Export).
  */
+// Einrasten an Ecken/Kanten (snapping.js): beim Zeichnen bis zum letzten Punkt,
+// bei der Bemassung nur für die beiden Endpunkte (der Parallel-Abstand ist frei),
+// und beim Ziehen eines Eckpunkt- oder Bemassungs-Endpunkt-Griffs.
+function isSnapDrawTool() {
+  return currentTool === 'rectangle' || currentTool === 'polygon' || currentTool === 'line'
+      || (currentTool === 'dimension' && dimPhase < 2);
+}
+
+function isDraggingSnapHandle() {
+  const t = canvas?._currentTransform?.target;
+  return t?.objectType === 'vertexHandle' || (t?.objectType === 'dimHandle' && t.dimRole !== 'offset');
+}
+
+/** Zeichen-Pointer, ggf. eingerastet. Der Startpunkt-Ring (Schliessen) hat Vorrang. */
+function snapDrawPointer(pointer, e) {
+  if (!snapping || !isSnapDrawTool()) return pointer;   // Griff-Drags rasten in object:moving ein
+  if (isDrawCloseTarget(pointer)) { snapping.clear(); return pointer; }
+  return snapping.snap(pointer, e);
+}
+
+/** Gezogenen Griff auf eine Ecke/Kante setzen (vor dem Übernehmen der Position). */
+function snapDraggedHandle(handle, e) {
+  if (!snapping) return;
+  const p = snapping.snap({ x: handle.left, y: handle.top }, e);
+  if (p.x !== handle.left || p.y !== handle.top) {
+    handle.set({ left: p.x, top: p.y });
+    handle.setCoords();
+  }
+}
+
 const CLOSE_SNAP_PX = 10;
 const CLOSE_RING_PX = { idle: 4.5, armed: 8 };
 const CLOSE_RING_ANIM_MS = 120;
@@ -3522,6 +3567,8 @@ function exitPolygonEditMode() {
   editingPolygon.setCoords();
 
   updateLinkedTextLabelPosition(editingPolygon);
+  updateResultsTable();   // Einfügen/Löschen von Eckpunkten ändert die Fläche ebenfalls
+  updateSummary();
 
   editingPolygon = null;
   vertexEditUndo = [];
