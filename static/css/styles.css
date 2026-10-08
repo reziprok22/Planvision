@@ -1648,3 +1648,11 @@ background-color: #2a70c2;
     gap: 8px;
 }
 
+
+/* Geänderte Werte in Ergebnistabelle und Zusammenfassung kurz hervorheben
+   (main.js flashElement; App-Blau wie Hover-Schimmer und Griffe) */
+@keyframes valueFlash {
+    0%   { background-color: rgba(25, 118, 210, 0.22); }
+    100% { background-color: transparent; }
+}
+.value-flash { animation: valueFlash 900ms ease-out; }

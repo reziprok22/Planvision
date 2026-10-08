@@ -44,7 +44,7 @@ import {
 import { setupProject, maybeLoadDemoProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
 import { installSmartHitTesting } from './hit-testing.js';
-import { installSnapping } from './snapping.js';
+import { installSnapping, cornersOf } from './snapping.js';
 import {
   setupUploadModal,
   setOnPageClick,
@@ -653,7 +653,9 @@ function initCanvas() {
   });
   canvas.on('after:render', drawCloseRing);
   canvas.on('after:render', drawDeleteGhosts);
+  canvas.on('after:render', drawHistoryFlash);
   deleteGhosts = null;   // gehören zur vorherigen Seite
+  historyFlash = null;
   snapping = installSnapping(canvas, {
     isEnabled: () => !READ_ONLY && (isSnapDrawTool() || isDraggingSnapTarget()),
     exclude: () => [currentPolygon, currentLine, currentRectangle, editingPolygon],
@@ -1262,9 +1264,44 @@ function debouncedTableUpdate() {
 /**
  * Update results table - reads directly from canvas objects
  */
+// Geänderte Werte in Tabelle und Zusammenfassung kurz aufleuchten lassen (die
+// Gesamtfläche zählt dabei vom alten zum neuen Wert). Verglichen wird mit dem
+// letzten Aufbau DERSELBEN Seite; beim Laden (canvasReady=false) und nach einem
+// Seitenwechsel wird nur die Basis gemerkt, sonst blinkte jedes Mal alles.
+let lastRowValues = null;       // { pageId, map: Map(annotationId → Wert-Schlüssel) }
+let lastSummaryValues = null;   // { pageId, map: Map(Labelname → { count, area }) }
+const COUNT_UP_MS = 450;
+
+function shouldFlashValues(prev) {
+  // Leerer Vorgänger = Ausgangslage (Seite wird gerade befüllt), keine Änderung
+  return canvasReady && prev && prev.pageId === currentPageId && prev.map.size > 0;
+}
+
+function flashElement(el) {
+  el.classList.remove('value-flash');
+  void el.offsetWidth;               // Animation neu starten, falls sie noch läuft
+  el.classList.add('value-flash');
+}
+
+function countUp(el, from, to, unit) {
+  el.textContent = `${from.toFixed(2)} ${unit}`;   // sonst steht einen Frame lang schon der Endwert da
+  const start = performance.now();
+  const step = (now) => {
+    if (!el.isConnected) return;     // Zusammenfassung inzwischen neu aufgebaut
+    const t = Math.min(1, (now - start) / COUNT_UP_MS);
+    const e = 1 - Math.pow(1 - t, 3);
+    el.textContent = `${(from + (to - from) * e).toFixed(2)} ${unit}`;
+    if (t < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 function updateResultsTable() {
   const resultsBody = document.getElementById('resultsBody');
   if (!resultsBody || !canvas) return;
+  const prevRows = lastRowValues;
+  const flashRows = shouldFlashValues(prevRows);
+  const rowValues = new Map();
 
   resultsBody.innerHTML = '';
 
@@ -1341,7 +1378,12 @@ function updateResultsTable() {
     // Hover linking uses the stable annotation id, not a positional index: the
     // table is sorted by displayIndex while the canvas is in z-order, so indices
     // would point at different objects in each.
-    if (annotation.id != null) row.dataset.annotationId = annotation.id;
+    if (annotation.id != null) {
+      row.dataset.annotationId = annotation.id;
+      const key = `${widthCell}|${heightCell}|${measurement}`;
+      rowValues.set(annotation.id, key);
+      if (flashRows && prevRows.map.get(annotation.id) !== key) flashElement(row);
+    }
     row.addEventListener('mouseenter', () => highlightAnnotation(annotation));
     row.addEventListener('mouseleave', () => removeHighlight());
     // Klick → zum Objekt zoomen; im Auswahl-Werkzeug auch gleich auswählen
@@ -1356,6 +1398,7 @@ function updateResultsTable() {
 
     resultsBody.appendChild(row);
   });
+  lastRowValues = { pageId: currentPageId, map: rowValues };
 
   // Keep the detection modal's list in sync (derived from the same canvas objects)
   updateDetectionTable();
@@ -1620,6 +1663,8 @@ function updateSummary() {
   if (!summary || !canvas) return;
 
   const items = collectSummaryData();
+  const prevSummary = lastSummaryValues;
+  const flashSummary = shouldFlashValues(prevSummary);
 
   let summaryHtml = '';
   items.forEach(({ name, count, area, color, unit }) => {
@@ -1633,6 +1678,22 @@ function updateSummary() {
   });
 
   summary.innerHTML = summaryHtml || '<p><em>Keine Objekte.</em></p>';
+
+  const summaryValues = new Map();
+  items.forEach(({ name, count, area, unit }, i) => {
+    summaryValues.set(name, { count, area });
+    if (!flashSummary) return;
+    const prev = prevSummary.map.get(name);
+    const changed = !prev || prev.count !== count || prev.area.toFixed(2) !== area.toFixed(2);
+    if (!changed) return;
+    const rowEl = summary.querySelectorAll('.summary-row')[i];
+    if (!rowEl) return;
+    flashElement(rowEl);
+    if (prev && prev.area.toFixed(2) !== area.toFixed(2)) {
+      countUp(rowEl.querySelector('.summary-area'), prev.area, area, unit);
+    }
+  });
+  lastSummaryValues = { pageId: currentPageId, map: summaryValues };
 
   // Keep the on-plan legend (if placed) in sync with the data
   refreshCanvasLegend();
@@ -2054,8 +2115,68 @@ function saveHistorySnapshot(seed = false) {
   if (!seed) setProjectDirty(true);
 }
 
+/**
+ * Rückgängig/Wiederholen sichtbar machen: was der Schritt hinzufügt oder ändert,
+ * blitzt kurz auf (HISTORY_FLASH_MS), was er entfernt, blendet aus wie beim
+ * Löschen. Verglichen wird pro Annotations-id die Geometrie samt Label — nicht
+ * displayIndex, sonst blitzte nach einer Neunummerierung alles auf. Gezeichnet
+ * in after:render, verändert also kein Objekt.
+ */
+const HISTORY_FLASH_MS = 600;
+const HISTORY_FLASH_RGB = '25, 118, 210';   // App-Blau wie Hover-Schimmer und Griffe
+let historyFlash = null;   // { objs, since }
+
+function annotationKeysById() {
+  const round = (k, v) => (typeof v === 'number' ? Math.round(v * 1000) / 1000 : v);
+  const map = new Map();
+  for (const o of canvas.getObjects()) {
+    if (o.objectType !== 'annotation' || o.id == null) continue;
+    const d = o.toObject(['labelId']);
+    const abs = absoluteLeftTop(o);
+    const key = JSON.stringify([d.type, abs.left, abs.top, d.width, d.height, d.scaleX, d.scaleY,
+      d.angle, d.flipX, d.flipY, d.points, d.labelId], round);
+    map.set(o.id, { key, obj: o });
+  }
+  return map;
+}
+
+function drawHistoryFlash({ ctx }) {
+  if (!historyFlash || ctx !== canvas.getContext()) return;
+  const t = (performance.now() - historyFlash.since) / HISTORY_FLASH_MS;
+  if (t >= 1) { historyFlash = null; canvas.requestRenderAll(); return; }
+  // schnell an (12 %), dann weich aus
+  const a = t < 0.12 ? t / 0.12 : Math.pow(1 - (t - 0.12) / 0.88, 2);
+  const zoom = canvas.getZoom() || 1;
+  ctx.save();
+  ctx.transform(...canvas.viewportTransform);
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  for (const o of historyFlash.objs) {
+    if (o.canvas !== canvas) continue;
+    const shape = cornersOf(o);
+    if (!shape || shape.pts.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(shape.pts[0].x, shape.pts[0].y);
+    for (let i = 1; i < shape.pts.length; i++) ctx.lineTo(shape.pts[i].x, shape.pts[i].y);
+    if (shape.closed) {
+      ctx.closePath();
+      ctx.fillStyle = `rgba(${HISTORY_FLASH_RGB}, ${(a * 0.18).toFixed(3)})`;
+      ctx.fill();
+    }
+    ctx.lineWidth = (o.strokeWidth || 2) + 8 / zoom;
+    ctx.strokeStyle = `rgba(${HISTORY_FLASH_RGB}, ${(a * 0.8).toFixed(3)})`;
+    ctx.stroke();
+  }
+  ctx.restore();
+  canvas.requestRenderAll();
+}
+
 async function applyHistoryState(stateJson) {
   isHistoryAction = true;
+  const before = annotationKeysById();
+  const beforeLabels = new Map(canvas.getObjects()
+    .filter(o => o.objectType === 'textLabel' && o.linkedAnnotationId != null)
+    .map(o => [o.linkedAnnotationId, o]));
   // Remove all annotation objects, their text labels and dimension helpers
   canvas.renderOnAddRemove = false;
   canvas.getObjects()
@@ -2087,6 +2208,15 @@ async function applyHistoryState(stateJson) {
 
   canvas.discardActiveObject();
   selectedObjects = [];
+
+  const after = annotationKeysById();
+  const now = performance.now();
+  const flashed = [...after].filter(([id, a]) => before.get(id)?.key !== a.key).map(([, a]) => a.obj);
+  const removed = [...before].filter(([id]) => !after.has(id))
+    .flatMap(([id, b]) => [b.obj, beforeLabels.get(id)].filter(Boolean));
+  historyFlash = flashed.length ? { objs: flashed, since: now } : null;
+  if (removed.length) deleteGhosts = { objs: removed, since: now };
+
   canvas.requestRenderAll();
   updateResultsTable();
   updateSummary();
@@ -4496,8 +4626,16 @@ function resetTextDrawing() {
 function createSingleTextLabel(annotation, { batch = false } = {}) {
   if (!annotation || !canvas) return;
   
-  // Generate unique ID for linking
-  const linkId = `annotation_${Date.now()}_${Math.random()}`;
+  // Vorhandene id behalten (bis 8.10.2026 wurde sie hier immer neu vergeben — jedes
+  // Undo/Redo gab damit allen Annotationen neue ids, und Vergleiche über den Schritt
+  // hinweg — Aufblitzen, Tabellen-Hervorhebung, Einfügen-Versatz — liefen ins Leere).
+  // Kopien löschen ihre id vorher selbst (addClonedAnnotations); eine doppelte id
+  // bekommt trotzdem eine neue, sonst hingen zwei Annotationen an einem Label.
+  const idTaken = annotation.id != null && canvas.getObjects().some(o =>
+    o !== annotation && o.objectType === 'annotation' && o.id === annotation.id);
+  const linkId = annotation.id != null && !idTaken
+    ? annotation.id
+    : `annotation_${Date.now()}_${Math.random()}`;
   
   // Set ID on annotation
   annotation.set('id', linkId);

@@ -50,7 +50,7 @@ const GLOW_PEAK = 0.8, GLOW_REST = 0.3;
 const GLOW_EXTRA_PX = 4;            // Leuchtbreite über die Strichbreite hinaus (Bildschirm-px)
 
 /** Geometrische Eckpunkte einer Annotation in Szenen-Koordinaten (ohne Strichbreite). */
-function cornersOf(obj) {
+export function cornersOf(obj) {
   const m = obj.calcTransformMatrix();
   if (obj.type === 'rect') {
     const w = obj.width / 2, h = obj.height / 2;
