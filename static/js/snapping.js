@@ -35,7 +35,7 @@ const SNAP_TOLERANCE_PX = 8;
 // Ausrichtung: nur Ecken, die entlang der anderen Achse höchstens so weit
 // (Bildschirm-px) vom Cursor entfernt sind — sonst rastet es auf dichten Plänen
 // ständig an irgendeiner Ecke auf derselben Höhe ein.
-const ALIGN_RANGE_PX = 600;
+const ALIGN_RANGE_PX = 400;
 const MARKER_COLOR = '#e6007e';     // Magenta: kommt auf Plänen und als Label-Farbe kaum vor
 const MARKER_PX = 5;                // halbe Kantenlänge des Markers
 const MARKER_POP_MS = 110;          // Marker „springt“ beim Einrasten kurz auf

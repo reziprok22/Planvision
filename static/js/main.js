@@ -3810,10 +3810,7 @@ function updatePolygonVertex(polygon, pointIndex, canvasX, canvasY) {
   const invMatrix = util.invertTransform(polygon.calcTransformMatrix());
   const local = util.transformPoint({ x: canvasX, y: canvasY }, invMatrix);
 
-  // Save bounding-box top-left BEFORE changing the point.
-  // polygon.left is the LEFT EDGE (not the center), so minX = pathOffset.x - width/2.
-  const oldMinX = polygon.pathOffset.x - polygon.width  / 2;
-  const oldMinY = polygon.pathOffset.y - polygon.height / 2;
+  const frame = captureEditFrame(polygon);   // BEFORE changing the point
 
   polygon.points[pointIndex] = {
     x: local.x + polygon.pathOffset.x,
@@ -3822,7 +3819,7 @@ function updatePolygonVertex(polygon, pointIndex, canvasX, canvasY) {
 
   // Recalculate bounding box (updates pathOffset/width/height, without repositioning).
   polygon.setBoundingBox(false);
-  _applyBoundingBoxShift(polygon, oldMinX, oldMinY);
+  _applyBoundingBoxShift(polygon, frame);
 }
 
 function enterPolygonEditMode(polygon) {
@@ -3959,14 +3956,26 @@ function updateAdjacentMidpoints(pointIndex) {
   });
 }
 
-// Shared helper to adjust left/top after points array changed and setBoundingBox
-// was called. Shift left/top by Δ(minX) — not Δ(pathOffset) — so every unchanged
-// vertex stays on the same canvas pixel even when the bbox width/height changes.
-function _applyBoundingBoxShift(obj, oldMinX, oldMinY) {
-  const newMinX = obj.pathOffset.x - obj.width  / 2;
-  const newMinY = obj.pathOffset.y - obj.height / 2;
-  obj.left += newMinX - oldMinX;
-  obj.top  += newMinY - oldMinY;
+// Nach einer Änderung der points (und setBoundingBox) left/top so nachführen, dass
+// jeder unveränderte Punkt auf demselben Canvas-Pixel bleibt. Dafür vor der Änderung
+// den Rahmen merken (captureEditFrame): wohin der Objektpunkt pathOffset_alt
+// abgebildet wurde. Skalierung/Drehung ändern sich nicht, also genügt EIN Punkt,
+// um die ganze Abbildung wiederherzustellen.
+// Bis 8.10.2026 wurde hier um Δ(minX/minY) in Objekt-Einheiten verschoben — richtig
+// nur für ungedrehte Polygone mit scale 1. Wurde ein Polygon vorher skaliert oder
+// gedreht, rutschten beim Ziehen eines Punkts, der die linke/obere Begrenzung
+// ändert (oft der Startpunkt), alle anderen Punkte mit: das Polygon "verzerrte".
+function captureEditFrame(obj) {
+  const m = obj.calcTransformMatrix();
+  return { x: m[4], y: m[5], po: { x: obj.pathOffset.x, y: obj.pathOffset.y } };
+}
+
+function _applyBoundingBoxShift(obj, frame) {
+  const now = util.transformPoint(
+    { x: frame.po.x - obj.pathOffset.x, y: frame.po.y - obj.pathOffset.y },
+    obj.calcTransformMatrix());
+  obj.left += frame.x - now.x;
+  obj.top  += frame.y - now.y;
   obj.dirty = true; // points were mutated directly — invalidate Fabric's object cache
   obj.setCoords();
 }
@@ -4026,8 +4035,7 @@ function stepDrawPoint(redo) {
 function insertVertexAtMidpoint(midHandle) {
   pushVertexEdit();
   const insertIndex = midHandle.midIndex + 1;
-  const oldMinX = editingPolygon.pathOffset.x - editingPolygon.width  / 2;
-  const oldMinY = editingPolygon.pathOffset.y - editingPolygon.height / 2;
+  const frame = captureEditFrame(editingPolygon);
 
   const invMatrix = util.invertTransform(editingPolygon.calcTransformMatrix());
   const local = util.transformPoint({ x: midHandle.left, y: midHandle.top }, invMatrix);
@@ -4037,7 +4045,7 @@ function insertVertexAtMidpoint(midHandle) {
   });
 
   editingPolygon.setBoundingBox(false);
-  _applyBoundingBoxShift(editingPolygon, oldMinX, oldMinY);
+  _applyBoundingBoxShift(editingPolygon, frame);
   refreshVertexHandles();
 }
 
@@ -4048,8 +4056,7 @@ function deleteVertex(pointIndex) {
   if (editingPolygon.points.length <= minPts) return;
   pushVertexEdit();
 
-  const oldMinX = editingPolygon.pathOffset.x - editingPolygon.width  / 2;
-  const oldMinY = editingPolygon.pathOffset.y - editingPolygon.height / 2;
+  const frame = captureEditFrame(editingPolygon);
 
   editingPolygon.points.splice(pointIndex, 1);
   // Startpunkt einer geschlossenen Linie gelöscht → Schleife am neuen Start schliessen
@@ -4059,7 +4066,7 @@ function deleteVertex(pointIndex) {
   }
 
   editingPolygon.setBoundingBox(false);
-  _applyBoundingBoxShift(editingPolygon, oldMinX, oldMinY);
+  _applyBoundingBoxShift(editingPolygon, frame);
   refreshVertexHandles();
 }
 
