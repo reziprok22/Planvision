@@ -653,7 +653,7 @@ function initCanvas() {
   });
   canvas.on('after:render', drawCloseRing);
   snapping = installSnapping(canvas, {
-    isEnabled: () => !READ_ONLY && (isSnapDrawTool() || isDraggingSnapHandle()),
+    isEnabled: () => !READ_ONLY && (isSnapDrawTool() || isDraggingSnapTarget()),
     exclude: () => [currentPolygon, currentLine, currentRectangle, editingPolygon],
   });
   canvas.uniformScaling = false;        // free resize by default; Shift = proportional
@@ -2451,6 +2451,10 @@ function setupCanvasEvents() {
       if (obj.dimRole !== 'offset') snapDraggedHandle(obj, e.e);
       updateDimensionFromHandle(obj, e.e?.shiftKey);
     }
+    // Ganze Annotation verschieben → an andere andocken (Ziel leuchtet auf)
+    if (obj.objectType === 'annotation' && currentTool === 'select') {
+      snapping?.snapMove(obj, e.e);
+    }
 
     // First move of a Ctrl/Alt-drag → drop the copies at the start position right
     // away, so the duplicate is visible immediately while the originals are dragged.
@@ -2481,6 +2485,10 @@ function setupCanvasEvents() {
   // Resizing an annotation via its corner controls → live size readout
   canvas.on('object:scaling', function(e) {
     if (e.target?.objectType !== 'annotation') return;
+    // Rechteck: bewegte Kante an Nachbarn ausrichten (vor der Mass-Anzeige)
+    if (currentTool === 'select') {
+      snapping?.snapScale(e.target, e.e, (e.transform ?? canvas._currentTransform)?.corner, canvas.getPointer(e.e));
+    }
     showEditMeasure(e.target, e.e);
     if (!scalingAnnotation) { scalingAnnotation = true; setTextLabelsVisible(false); }
   });
@@ -3235,15 +3243,20 @@ function snapToAngle(from, to, stepDeg = 22.5) {
  */
 // Einrasten an Ecken/Kanten (snapping.js): beim Zeichnen bis zum letzten Punkt,
 // bei der Bemassung nur für die beiden Endpunkte (der Parallel-Abstand ist frei),
-// und beim Ziehen eines Eckpunkt- oder Bemassungs-Endpunkt-Griffs.
+// beim Ziehen eines Eckpunkt- oder Bemassungs-Endpunkt-Griffs und beim
+// Verschieben einer einzelnen Annotation und beim Skalieren eines Rechtecks.
 function isSnapDrawTool() {
   return currentTool === 'rectangle' || currentTool === 'polygon' || currentTool === 'line'
       || (currentTool === 'dimension' && dimPhase < 2);
 }
 
-function isDraggingSnapHandle() {
-  const t = canvas?._currentTransform?.target;
-  return t?.objectType === 'vertexHandle' || (t?.objectType === 'dimHandle' && t.dimRole !== 'offset');
+function isDraggingSnapTarget() {
+  const tr = canvas?._currentTransform;
+  const t = tr?.target;
+  return t?.objectType === 'vertexHandle'
+      || (t?.objectType === 'dimHandle' && t.dimRole !== 'offset')
+      || (t?.objectType === 'annotation' && currentTool === 'select' &&
+          (tr.action === 'drag' || (t.type === 'rect' && String(tr.action).startsWith('scale'))));
 }
 
 /** Zeichen-Pointer, ggf. eingerastet. Der Startpunkt-Ring (Schliessen) hat Vorrang. */
