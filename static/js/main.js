@@ -759,37 +759,12 @@ function initCanvas() {
       const mouseContainerY = opt.e.offsetY - OVERSCAN;
 
       // Image coordinate under the mouse before zoom (viewport pos + current scroll → image space).
-      const natW = uploadedImage.naturalWidth;
-      const natH = uploadedImage.naturalHeight;
       const imageX = (mouseContainerX + imageContainer.scrollLeft) / oldZoom;
       const imageY = (mouseContainerY + imageContainer.scrollTop)  / oldZoom;
 
-      // Resize the scroll spacer (drives scroll bars) — canvas buffer stays viewport-sized.
-      const spacer = document.getElementById('scrollSpacer');
-      if (spacer) {
-        // Ganze Pixel: muss zur Clamp-Grenze (Math.round) passen, siehe fitToViewport.
-        spacer.style.width  = `${Math.round(natW * newZoom)}px`;
-        spacer.style.height = `${Math.round(natH * newZoom)}px`;
-      }
-
       // Scroll so the same image point stays under the mouse.
-      imageContainer.scrollLeft = imageX * newZoom - mouseContainerX;
-      imageContainer.scrollTop  = imageY * newZoom - mouseContainerY;
-
-      // Sync wrapperEl position and Fabric viewportTransform (scale + pan translation).
-      const sl = imageContainer.scrollLeft;
-      const st = imageContainer.scrollTop;
-      if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl - OVERSCAN}px,${st - OVERSCAN}px)`;
-      hideTextLabelsDuringZoom();
-      canvas.setViewportTransform([newZoom, 0, 0, newZoom, OVERSCAN - sl, OVERSCAN - st]);
-      updateBackgroundMip(newZoom);
-      rescaleEditHandles(newZoom);
-
-      // Refresh bounding-box cache of the active drawing object so Fabric
-      // doesn't skip it as "off-screen" after the viewport transform changes.
-      if (currentPolygon) currentPolygon.setCoords();
-      if (currentLine) currentLine.setCoords();
-      if (currentRectangle) currentRectangle.setCoords();
+      cancelZoomAnimation();
+      applyZoomView(newZoom, imageX * newZoom - mouseContainerX, imageY * newZoom - mouseContainerY);
       opt.e.preventDefault();
       opt.e.stopPropagation();
     } else {
@@ -834,6 +809,7 @@ function initCanvas() {
  * damit man immer die ganze Seite sieht statt eines 1:1-Ausschnitts.
  */
 function fitToViewport() {
+  cancelZoomAnimation();   // eine laufende Zoom-zum-Objekt-Animation gehört zur alten Seite
   if (!canvas || !uploadedImage || !imageContainer) return;
   const natW = uploadedImage.naturalWidth;
   const natH = uploadedImage.naturalHeight;
@@ -859,6 +835,83 @@ function fitToViewport() {
   updateBackgroundMip(zoom);
   rescaleEditHandles(zoom);
   canvas.renderAll();
+}
+
+/**
+ * Zoom + Scroll-Position anwenden: setzt konsistent #scrollSpacer, Container-Scroll,
+ * wrapperEl-Transform und Canvas-viewportTransform (wie fitToViewport, aber mit
+ * beliebigem Ausschnitt). Der Browser klemmt den Scroll an die Spacer-Grösse,
+ * deshalb wird er danach zurückgelesen.
+ */
+function applyZoomView(zoom, scrollLeft, scrollTop) {
+  const natW = uploadedImage.naturalWidth;
+  const natH = uploadedImage.naturalHeight;
+  const spacer = document.getElementById('scrollSpacer');
+  if (spacer) {
+    // Ganze Pixel: muss zur Clamp-Grenze (Math.round) passen, siehe fitToViewport.
+    spacer.style.width  = `${Math.round(natW * zoom)}px`;
+    spacer.style.height = `${Math.round(natH * zoom)}px`;
+  }
+  imageContainer.scrollLeft = scrollLeft;
+  imageContainer.scrollTop  = scrollTop;
+  const sl = imageContainer.scrollLeft;
+  const st = imageContainer.scrollTop;
+  if (canvas.wrapperEl) canvas.wrapperEl.style.transform = `translate(${sl - OVERSCAN}px,${st - OVERSCAN}px)`;
+  hideTextLabelsDuringZoom();
+  canvas.setViewportTransform([zoom, 0, 0, zoom, OVERSCAN - sl, OVERSCAN - st]);
+  updateBackgroundMip(zoom);
+  rescaleEditHandles(zoom);
+
+  // Refresh bounding-box cache of the active drawing object so Fabric
+  // doesn't skip it as "off-screen" after the viewport transform changes.
+  if (currentPolygon) currentPolygon.setCoords();
+  if (currentLine) currentLine.setCoords();
+  if (currentRectangle) currentRectangle.setCoords();
+}
+
+// Klick auf eine Ergebnis-Zeile → sanft zum Objekt zoomen. Das Objekt füllt danach
+// etwa ZOOM_TO_FILL des Viewports, höchstens ZOOM_TO_MAX (kleine Fenster sollen
+// nicht formatfüllend werden), mindestens der Fit-Zoom der Seite.
+const ZOOM_TO_FILL = 0.5;
+const ZOOM_TO_MAX = 3;
+const ZOOM_TO_MS = 350;
+let zoomAnimFrame = null;
+
+function cancelZoomAnimation() {
+  if (zoomAnimFrame !== null) { cancelAnimationFrame(zoomAnimFrame); zoomAnimFrame = null; }
+}
+
+function zoomToAnnotation(obj) {
+  if (!canvas || !obj || !uploadedImage || !imageContainer) return;
+  const pts = obj.getCoords();   // Szenen-Koordinaten = Bild-Pixel
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const cW = imageContainer.clientWidth, cH = imageContainer.clientHeight;
+  const natW = uploadedImage.naturalWidth, natH = uploadedImage.naturalHeight;
+  const fitZoom = Math.min(cW / natW, cH / natH);
+  const want = ZOOM_TO_FILL * Math.min(cW / Math.max(maxX - minX, 1), cH / Math.max(maxY - minY, 1));
+  const z1 = Math.max(fitZoom, Math.min(ZOOM_TO_MAX, want));
+
+  // Interpoliert wird der Bildpunkt in der Viewport-Mitte (linear) und der Zoom
+  // (geometrisch — wirkt gleichmässig, egal ob von 0.2 auf 0.4 oder von 1 auf 2).
+  const z0 = canvas.getZoom();
+  const c0 = { x: (imageContainer.scrollLeft + cW / 2) / z0, y: (imageContainer.scrollTop + cH / 2) / z0 };
+  const c1 = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+
+  cancelZoomAnimation();
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / ZOOM_TO_MS);
+    const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;   // easeInOutCubic
+    const z = z0 * Math.pow(z1 / z0, e);
+    const cx = c0.x + (c1.x - c0.x) * e;
+    const cy = c0.y + (c1.y - c0.y) * e;
+    applyZoomView(z, cx * z - cW / 2, cy * z - cH / 2);
+    canvas.renderAll();
+    zoomAnimFrame = t < 1 ? requestAnimationFrame(step) : null;
+  };
+  zoomAnimFrame = requestAnimationFrame(step);
 }
 
 /**
@@ -1288,6 +1341,15 @@ function updateResultsTable() {
     if (annotation.id != null) row.dataset.annotationId = annotation.id;
     row.addEventListener('mouseenter', () => highlightAnnotation(annotation));
     row.addEventListener('mouseleave', () => removeHighlight());
+    // Klick → zum Objekt zoomen; im Auswahl-Werkzeug auch gleich auswählen
+    row.addEventListener('click', () => {
+      zoomToAnnotation(annotation);
+      if (currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension &&
+          annotation.canvas === canvas) {
+        canvas.setActiveObject(annotation);
+        canvas.requestRenderAll();
+      }
+    });
 
     resultsBody.appendChild(row);
   });
