@@ -652,6 +652,8 @@ function initCanvas() {
     isActive: () => currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension,
   });
   canvas.on('after:render', drawCloseRing);
+  canvas.on('after:render', drawDeleteGhosts);
+  deleteGhosts = null;   // gehören zur vorherigen Seite
   snapping = installSnapping(canvas, {
     isEnabled: () => !READ_ONLY && (isSnapDrawTool() || isDraggingSnapTarget()),
     exclude: () => [currentPolygon, currentLine, currentRectangle, editingPolygon],
@@ -3149,6 +3151,9 @@ function deleteSelectedObjects() {
   canvas.discardActiveObject();       // fires selection:cleared → resets selectedObjects
   selectedObjects = [];
 
+  // Erst nach discardActiveObject: dann stehen die Objekte wieder in absoluten
+  // Koordinaten statt relativ zur Mehrfachauswahl.
+  fadeOutRemoved(toRemove);
   toRemove.forEach(obj => canvas.remove(obj));
 
   canvas.renderAll();
@@ -3157,6 +3162,35 @@ function deleteSelectedObjects() {
 
   // Back to the select tool so the user can immediately pick the next object.
   if (currentTool !== 'select') setTool('select');
+}
+
+/**
+ * Löschen blendet aus statt hart zu verschwinden. Die Objekte werden trotzdem
+ * SOFORT entfernt (Undo, Speichern, Tabelle sehen nie einen Zwischenzustand);
+ * nur ihr Bild wird noch DELETE_FADE_MS lang verblassend in after:render
+ * nachgezeichnet. Ein entferntes Objekt hat kein .canvas mehr, render() prüft
+ * dann auch keine Sichtbarkeit im Viewport.
+ */
+const DELETE_FADE_MS = 140;
+let deleteGhosts = null;   // { objs, since }
+
+function fadeOutRemoved(objs) {
+  const ids = new Set(objs.map(o => o.id).filter(id => id != null));
+  const labels = canvas.getObjects().filter(o =>
+    o.objectType === 'textLabel' && ids.has(o.linkedAnnotationId));
+  deleteGhosts = { objs: [...objs, ...labels], since: performance.now() };
+}
+
+function drawDeleteGhosts({ ctx }) {
+  if (!deleteGhosts || ctx !== canvas.getContext()) return;
+  const t = (performance.now() - deleteGhosts.since) / DELETE_FADE_MS;
+  if (t >= 1) { deleteGhosts = null; canvas.requestRenderAll(); return; }
+  ctx.save();
+  ctx.transform(...canvas.viewportTransform);
+  ctx.globalAlpha = (1 - t) * (1 - t);
+  for (const o of deleteGhosts.objs) if (!o.canvas) o.render(ctx);
+  ctx.restore();
+  canvas.requestRenderAll();
 }
 
 /**
@@ -3572,6 +3606,32 @@ function rescaleEditHandles(zoom) {
   }
 }
 
+// Griff unter dem Cursor wächst kurz an — man sieht, dass man ihn erwischt.
+// Läuft über screenRadius, bleibt also auch beim Zoomen erhalten (rescaleEditHandles).
+const HANDLE_HOVER_SCALE = 1.4;
+const HANDLE_HOVER_MS = 90;
+
+function tweenHandleRadius(h, target) {
+  cancelAnimationFrame(h._hoverTween);
+  const from = h.screenRadius, start = performance.now();
+  const step = (now) => {
+    if (!h.canvas) return;                       // Griff inzwischen entfernt
+    const t = Math.min(1, (now - start) / HANDLE_HOVER_MS);
+    const e = 1 - (1 - t) * (1 - t);
+    h.set(editHandleSize(from + (target - from) * e));
+    h.setCoords();
+    h.canvas.requestRenderAll();
+    if (t < 1) h._hoverTween = requestAnimationFrame(step);
+  };
+  h._hoverTween = requestAnimationFrame(step);
+}
+
+function addHandleHover(h) {
+  const base = h.screenRadius;
+  h.on('mouseover', () => tweenHandleRadius(h, base * HANDLE_HOVER_SCALE));
+  h.on('mouseout',  () => tweenHandleRadius(h, base));
+}
+
 // Returns the absolute canvas position of vertex i of a polygon
 function getVertexAbsPosition(polygon, i) {
   const p = polygon.points[i];
@@ -3684,6 +3744,7 @@ function refreshVertexHandles() {
       hoverCursor: 'crosshair', moveCursor: 'crosshair',
       selectable: true, evented: true,
     });
+    addHandleHover(handle);
     vertexHandles.push(handle);
     canvas.add(handle);
 
@@ -3705,6 +3766,7 @@ function refreshVertexHandles() {
         hoverCursor: 'copy',
         selectable: true, evented: true,
       });
+      addHandleHover(mid);
       vertexHandles.push(mid);
       canvas.add(mid);
     }
@@ -4262,6 +4324,7 @@ function makeDimHandle(pos, role) {
     hoverCursor: 'crosshair', moveCursor: 'crosshair',
     selectable: true, evented: true,
   });
+  addHandleHover(h);
   dimHandles.push(h);
   canvas.add(h);
   return h;

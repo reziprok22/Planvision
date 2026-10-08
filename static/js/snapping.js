@@ -283,7 +283,9 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
     if (t < 1 || animating) canvas.requestRenderAll();
   });
 
-  canvas.on('mouse:out', clear);
+  // DOM-Event statt canvas.on('mouse:out'): setupCanvasEvents in main.js hängt
+  // alle mouse:out-Handler der Canvas ab und hätte diesen mit entfernt.
+  canvas.upperCanvasEl?.addEventListener('mouseleave', clear);
 
   /**
    * Skalieren eines ungedrehten Rechtecks: die bewegte(n) Kante(n) rasten auf
