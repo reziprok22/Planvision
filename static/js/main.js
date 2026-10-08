@@ -71,6 +71,7 @@ const _polylineRender = Polyline.prototype._render;
 Polyline.prototype._render = function (ctx) {
   _polylineRender.call(this, ctx);
   if (this.annotationType !== 'line' || !this.points || this.points.length < 2) return;
+  if (isClosedLine(this)) return;            // Umfang: kein Anfang, kein Ende
   const ox = this.pathOffset.x, oy = this.pathOffset.y;
   const r = (this.strokeWidth || 2) + 1.5;   // image-px radius → scales with zoom like the stroke
   const ends = [this.points[0], this.points[this.points.length - 1]];
@@ -82,6 +83,21 @@ Polyline.prototype._render = function (ctx) {
     ctx.fill();
   }
   ctx.restore();
+};
+
+// Geschlossene Linie (Umfang): letzter Punkt = Kopie des ersten, gesetzt beim
+// Schliessen am Startpunkt. Bleibt eine Linie (Länge, kein Inneres, Trefferprüfung
+// nur auf dem Strich) — kein eigenes Format-Feld, alte Dateien/Export unverändert.
+// isOpen() → false sorgt nur für closePath, also eine saubere Ecke am Startpunkt.
+function isClosedLine(obj) {
+  const pts = obj?.points;
+  if (obj?.annotationType !== 'line' || !pts || pts.length < 4) return false;
+  const a = pts[0], b = pts[pts.length - 1];
+  return Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6;
+}
+const _polylineIsOpen = Polyline.prototype.isOpen;
+Polyline.prototype.isOpen = function () {
+  return isClosedLine(this) ? false : _polylineIsOpen.call(this);
 };
 
 // ── Auswahl-Griffe und -Rahmen ───────────────────────────────────────────────
@@ -633,6 +649,7 @@ function initCanvas() {
   hitTesting = installSmartHitTesting(canvas, {
     isActive: () => currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension,
   });
+  canvas.on('after:render', drawCloseRing);
   canvas.uniformScaling = false;        // free resize by default; Shift = proportional
   
   const naturalWidth  = uploadedImage.naturalWidth;
@@ -2367,15 +2384,28 @@ function setupCanvasEvents() {
         showDrawDistance(`${w.toFixed(2)} × ${h.toFixed(2)} m`, options.e);
       }
     } else if (currentTool === 'polygon' && currentPolygon) {
-      updatePolygonPreview(pointer, options.e.shiftKey);
-      if (currentPoints.length > 0) {
+      const closing = isDrawCloseTarget(pointer);
+      setDrawCloseArmed(closing);
+      if (closing) {
+        // Vorschau rastet am Startpunkt ein; Tooltip zeigt die Fläche, die entsteht
+        updatePolygonPreview(currentPoints[0]);
+        const area = calculatePolygonAreaFromCanvas({ points: currentPoints });
+        showDrawDistance(`Schliessen · ${area.toFixed(2)} m²`, options.e);
+      } else if (currentPoints.length > 0) {
+        updatePolygonPreview(pointer, options.e.shiftKey);
         const last = currentPoints[currentPoints.length - 1];
         const end = options.e.shiftKey ? snapToAngle(last, pointer) : pointer;
         showDrawDistance(dimMeasurementText(Math.hypot(end.x - last.x, end.y - last.y)), options.e);
       }
     } else if (currentTool === 'line' && currentLine) {
-      updateLinePreview(pointer, options.e.shiftKey);
-      if (currentPoints.length > 0) {
+      const closing = isDrawCloseTarget(pointer);
+      setDrawCloseArmed(closing);
+      if (closing) {
+        updateLinePreview(currentPoints[0]);
+        const perimeter = calculatePolylineLength([...currentPoints, currentPoints[0]]);
+        showDrawDistance(`Schliessen · Umfang ${perimeter.toFixed(2)} m`, options.e);
+      } else if (currentPoints.length > 0) {
+        updateLinePreview(pointer, options.e.shiftKey);
         const last = currentPoints[currentPoints.length - 1];
         const end = options.e.shiftKey ? snapToAngle(last, pointer) : pointer;
         showDrawDistance(dimMeasurementText(Math.hypot(end.x - last.x, end.y - last.y)), options.e);
@@ -2399,8 +2429,15 @@ function setupCanvasEvents() {
     const obj = e.target;
     if (obj.objectType === 'vertexHandle' && editingPolygon) {
       if (pendingVertexSnapshot) { pushVertexEdit(pendingVertexSnapshot); pendingVertexSnapshot = null; }
+      const closedLine = isClosedLine(editingPolygon);
       updatePolygonVertex(editingPolygon, obj.pointIndex, obj.left, obj.top);
       updateAdjacentMidpoints(obj.pointIndex);
+      if (closedLine && obj.pointIndex === 0) {
+        const last = editingPolygon.points.length - 1;
+        updatePolygonVertex(editingPolygon, last, obj.left, obj.top);
+        editingPolygon.points[last] = { ...editingPolygon.points[0] };  // exakt, sonst „öffnet“ Rundung die Schleife
+        updateAdjacentMidpoints(last);
+      }
       showEditMeasure(editingPolygon, e.e);
     }
     if (obj.objectType === 'dimHandle' && editingDimension) {
@@ -3174,11 +3211,84 @@ function snapToAngle(from, to, stepDeg = 22.5) {
 }
 
 /**
+ * Polygon/Linie am Startpunkt schliessen: Ab drei Punkten zeigt der Startpunkt
+ * einen Ring; kommt der Cursor auf CLOSE_SNAP_PX (Bildschirm-px) heran, rastet
+ * die Vorschau dort ein, der Ring wächst und ein Klick schliesst die Fläche bzw.
+ * den Umfang (Linie: letzter Punkt = Startpunkt, siehe isClosedLine) — als
+ * Alternative zum Doppelklick. Der Ring wird in after:render gezeichnet und
+ * verändert kein Objekt (landet also nie in Undo/Speichern/Export).
+ */
+const CLOSE_SNAP_PX = 10;
+const CLOSE_RING_PX = { idle: 4.5, armed: 8 };
+const CLOSE_RING_ANIM_MS = 120;
+let drawCloseArmed = false;
+let drawCloseArmedChangedAt = 0;
+let drawClosedAt = 0;              // Klicks direkt danach (2. Klick eines Doppelklicks) ignorieren
+
+function isDrawClosable() {
+  return (currentTool === 'polygon' || currentTool === 'line') && drawingMode && currentPoints.length >= 3;
+}
+
+function isDrawCloseTarget(pointer) {
+  if (!isDrawClosable()) return false;
+  const first = currentPoints[0];
+  const zoom = canvas.getZoom() || 1;
+  return Math.hypot(pointer.x - first.x, pointer.y - first.y) <= CLOSE_SNAP_PX / zoom;
+}
+
+function setDrawCloseArmed(armed) {
+  if (armed === drawCloseArmed) return;
+  drawCloseArmed = armed;
+  drawCloseArmedChangedAt = performance.now();
+  canvas?.requestRenderAll();
+}
+
+function drawCloseRing({ ctx }) {
+  if (ctx !== canvas.getContext() || !isDrawClosable()) return;
+  const label = resolveAnnotationLabel(getCurrentSelectedLabel(), currentTool === 'line');
+  const color = label.color || '#2196f3';
+  const t = Math.min(1, (performance.now() - drawCloseArmedChangedAt) / CLOSE_RING_ANIM_MS);
+  const ease = 1 - (1 - t) * (1 - t);
+  const [from, to] = drawCloseArmed
+    ? [CLOSE_RING_PX.idle, CLOSE_RING_PX.armed]
+    : [CLOSE_RING_PX.armed, CLOSE_RING_PX.idle];
+  const r = from + (to - from) * ease;
+  const vpt = canvas.viewportTransform;
+  const first = currentPoints[0];
+  const x = first.x * vpt[0] + vpt[4];
+  const y = first.y * vpt[3] + vpt[5];
+  ctx.save();                           // Bildschirm-px: Ring bleibt bei jedem Zoom gleich gross
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = drawCloseArmed ? color : '#fff';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = drawCloseArmed ? '#fff' : color;
+  ctx.stroke();
+  if (drawCloseArmed) {
+    ctx.beginPath();
+    ctx.arc(x, y, r + 2, 0, Math.PI * 2);
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
+  ctx.restore();
+  if (t < 1) canvas.requestRenderAll();
+}
+
+/**
  * Polygon Drawing Functions
  */
 function addPolygonPoint(pointer, e) {  
   if (!canvas || isProcessingClick) return;
-  
+  if (performance.now() - drawClosedAt < 400) return;
+
+  if (isDrawCloseTarget(pointer)) {
+    drawClosedAt = performance.now();
+    finishPolygonDrawing({ fromDblClick: false });
+    return;
+  }
+
   isProcessingClick = true;
 
   // Shift held → snap to nearest 22.5° angle from last point
@@ -3259,10 +3369,11 @@ function updatePolygonPreview(pointer, shiftKey = false) {
   canvas.requestRenderAll();
 }
 
-function finishPolygonDrawing() {
+function finishPolygonDrawing({ fromDblClick = true } = {}) {
   // The dblclick always fires AFTER two mouse:down events, so the second click
   // of the double-click has already added an unwanted extra point — remove it.
-  currentPoints.pop();
+  // (Schliessen per Klick auf den Startpunkt fügt keinen Punkt hinzu.)
+  if (fromDblClick) currentPoints.pop();
 
   if (!currentPolygon || currentPoints.length < 3) {
     console.warn('Need at least 3 points to create polygon');
@@ -3316,6 +3427,7 @@ function resetPolygonDrawing() {
   setDrawingMode(false);
   currentPolygon = null;
   currentPoints = [];
+  drawCloseArmed = false;
   hideDrawDistance();
 }
 
@@ -3430,9 +3542,13 @@ function refreshVertexHandles() {
 
   const pts = editingPolygon.points;
   const isClosedShape = editingPolygon.annotationType === 'polygon';
+  const closedLine = isClosedLine(editingPolygon);
   const n = pts.length;
 
   pts.forEach((p, i) => {
+    // Geschlossene Linie: der letzte Punkt ist die Kopie des Startpunkts und hat
+    // keinen eigenen Griff — er folgt dem Griff von Punkt 0 (siehe object:moving).
+    if (closedLine && i === n - 1) return;
     const abs = getVertexAbsPosition(editingPolygon, i);
 
     // Full vertex handle (draggable)
@@ -3579,7 +3695,8 @@ function insertVertexAtMidpoint(midHandle) {
 
 // Delete vertex at pointIndex (respects minimum vertex count)
 function deleteVertex(pointIndex) {
-  const minPts = editingPolygon.annotationType === 'polygon' ? 3 : 2;
+  const closedLine = isClosedLine(editingPolygon);
+  const minPts = editingPolygon.annotationType === 'polygon' ? 3 : closedLine ? 4 : 2;
   if (editingPolygon.points.length <= minPts) return;
   pushVertexEdit();
 
@@ -3587,6 +3704,11 @@ function deleteVertex(pointIndex) {
   const oldMinY = editingPolygon.pathOffset.y - editingPolygon.height / 2;
 
   editingPolygon.points.splice(pointIndex, 1);
+  // Startpunkt einer geschlossenen Linie gelöscht → Schleife am neuen Start schliessen
+  if (closedLine && pointIndex === 0) {
+    const pts = editingPolygon.points;
+    pts[pts.length - 1] = { ...pts[0] };
+  }
 
   editingPolygon.setBoundingBox(false);
   _applyBoundingBoxShift(editingPolygon, oldMinX, oldMinY);
@@ -3598,6 +3720,14 @@ function deleteVertex(pointIndex) {
  */
 function addLinePoint(pointer, e) {
   if (!canvas || isProcessingClick) return;
+  if (performance.now() - drawClosedAt < 400) return;
+
+  if (isDrawCloseTarget(pointer)) {
+    drawClosedAt = performance.now();
+    currentPoints.push({ ...currentPoints[0] });
+    finishLineDrawing({ fromDblClick: false });
+    return;
+  }
 
   isProcessingClick = true;
 
@@ -3681,10 +3811,10 @@ function updateLinePreview(pointer, shiftKey = false) {
   canvas.requestRenderAll();
 }
 
-function finishLineDrawing() {
+function finishLineDrawing({ fromDblClick = true } = {}) {
   // Same as finishPolygonDrawing: dblclick fires after two mouse:down events,
   // so the second click always adds an unwanted extra point — remove it.
-  currentPoints.pop();
+  if (fromDblClick) currentPoints.pop();
 
   if (!currentLine || currentPoints.length < 2) {
     console.warn('Need at least 2 points to create line sequence');
@@ -3737,6 +3867,7 @@ function resetLineDrawing() {
   setDrawingMode(false);
   currentLine = null;
   currentPoints = [];
+  drawCloseArmed = false;
   hideDrawDistance();
 }
 
