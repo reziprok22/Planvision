@@ -107,6 +107,13 @@ function fabricToAbsolute(ann) {
     const rad = ((ann.angle || 0) * Math.PI) / 180;
     const cos = Math.cos(rad);
     const sin = Math.sin(rad);
+    // left/top ist bei Fabric die Aussenkante INKLUSIVE Strich — die Geometrie
+    // beginnt eine halbe Strichbreite weiter innen (bis 7.10.2026 ignoriert: alles
+    // lag im PDF um diesen Betrag nach links oben verschoben). Mit strokeUniform
+    // (setzt main.js für alle Annotationen) skaliert der Strich nicht mit.
+    const sw  = ann.stroke ? (ann.strokeWidth || 0) : 0;
+    const swx = ann.strokeUniform ? sw : sw * sx;
+    const swy = ann.strokeUniform ? sw : sw * sy;
 
     if (t === 'rect') {
         const w = ann.width  * sx;
@@ -114,17 +121,17 @@ function fabricToAbsolute(ann) {
         if (ann.angle) {
             // Rotated rect → emit its 4 corners as a polygon
             const corner = (dx, dy) => ({
-                x: ann.left + dx * cos - dy * sin,
-                y: ann.top  + dx * sin + dy * cos,
+                x: ann.left + (dx + swx / 2) * cos - (dy + swy / 2) * sin,
+                y: ann.top  + (dx + swx / 2) * sin + (dy + swy / 2) * cos,
             });
             return { kind: 'polygon', points: [corner(0, 0), corner(w, 0), corner(w, h), corner(0, h)] };
         }
         return {
             kind: 'rect',
-            x1: ann.left,
-            y1: ann.top,
-            x2: ann.left + w,
-            y2: ann.top  + h,
+            x1: ann.left + swx / 2,
+            y1: ann.top  + swy / 2,
+            x2: ann.left + swx / 2 + w,
+            y2: ann.top  + swy / 2 + h,
         };
     }
 
@@ -136,8 +143,8 @@ function fabricToAbsolute(ann) {
         const pox = xs.length ? (Math.min(...xs) + Math.max(...xs)) / 2 : 0;
         const poy = ys.length ? (Math.min(...ys) + Math.max(...ys)) / 2 : 0;
         // Object center in canvas pixels: origin (left, top) + rotated offset to center
-        const hw = (ann.width  || 0) * sx / 2;
-        const hh = (ann.height || 0) * sy / 2;
+        const hw = ((ann.width  || 0) * sx + swx) / 2;
+        const hh = ((ann.height || 0) * sy + swy) / 2;
         const cx = ann.left + hw * cos - hh * sin;
         const cy = ann.top  + hw * sin + hh * cos;
         const points = pts.map(p => {

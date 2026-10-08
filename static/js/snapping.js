@@ -10,6 +10,16 @@
  *  1. Ecke (Eckpunkt eines Polygons/einer Linie, Rechteck-Ecke) — gewinnt immer,
  *     wenn eine in Reichweite liegt.
  *  2. Kante — der nächste Punkt auf einem Segment.
+ *  3. Ausrichtung (snap() beim Zeichnen/Griff-Ziehen, alignMove() beim Verschieben
+ *     einzelner Objekte und Mehrfachauswahlen, alignSide in snapScale beim
+ *     Rechteck-Skalieren): liegt keine Ecke
+ *     oder Kante in Reichweite, rasten x und/oder y einzeln auf die Flucht einer
+ *     Ecke in der Nähe ein (ALIGN_RANGE_PX entlang der anderen Achse), dazu eine
+ *     gestrichelte Hilfslinie von dieser Ecke zum Cursor. Referenzen sind die
+ *     Ecken anderer Annotationen plus alignPoints() — die eigenen, schon gesetzten
+ *     Punkte (Polygon/Linie im Zeichnen, übrige Ecken beim Eckpunkt-Ziehen,
+ *     erster Bemassungspunkt). So entsteht eine Fensterreihe auf gleicher Höhe
+ *     oder ein rechtwinkliges Polygon ohne Shift.
  *
  * Reichweite in BILDSCHIRM-Pixeln (zoomunabhängig). Ein Marker zeigt, worauf
  * eingerastet wird (Quadrat = Ecke, Raute = Kante), und das Zielobjekt leuchtet
@@ -22,6 +32,10 @@
 import { util } from 'fabric';
 
 const SNAP_TOLERANCE_PX = 8;
+// Ausrichtung: nur Ecken, die entlang der anderen Achse höchstens so weit
+// (Bildschirm-px) vom Cursor entfernt sind — sonst rastet es auf dichten Plänen
+// ständig an irgendeiner Ecke auf derselben Höhe ein.
+const ALIGN_RANGE_PX = 600;
 const MARKER_COLOR = '#e6007e';     // Magenta: kommt auf Plänen und als Label-Farbe kaum vor
 const MARKER_PX = 5;                // halbe Kantenlänge des Markers
 const MARKER_POP_MS = 110;          // Marker „springt“ beim Einrasten kurz auf
@@ -85,7 +99,7 @@ function nearestOnSegment(p, a, b) {
  *   isEnabled – ob gerade ein Werkzeug aktiv ist, das einrasten soll
  *   exclude   – Objekte, die nicht als Ziel taugen (das gerade gezeichnete/bearbeitete)
  */
-export function installSnapping(canvas, { isEnabled, exclude }) {
+export function installSnapping(canvas, { isEnabled, exclude, alignPoints = () => [] }) {
   let marker = null;          // { x, y, kind: 'vertex' | 'edge', target } in Szenen-Koordinaten
   let markerSince = 0;
   let glow = null;            // { target, since }: aktuelles Ziel, gehalten seit
@@ -112,6 +126,7 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
 
   function setMarker(next) {
     const same = marker && next && marker.kind === next.kind && marker.target === next.target &&
+      marker.guideKey === next.guideKey &&
       Math.abs(marker.x - next.x) < 1e-9 && Math.abs(marker.y - next.y) < 1e-9;
     if (same || (!marker && !next)) return;
     const now = performance.now();
@@ -160,9 +175,44 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
 
     const hit = bestVertex ? { x: bestVertex.x, y: bestVertex.y, kind: 'vertex', target: vertexObj }
               : bestEdge   ? { x: bestEdge.x, y: bestEdge.y, kind: 'edge', target: edgeObj }
-              : null;
+              : align(p, tol);
     setMarker(hit);
     return hit ? { x: hit.x, y: hit.y } : p;
+  }
+
+  /** Ausrichtung an der Flucht von Ecken in der Nähe (siehe Kopfkommentar, 3.). */
+  function align(p, tol) {
+    const range = ALIGN_RANGE_PX / (canvas.getZoom() || 1);
+    const refs = [];
+    for (const obj of targets()) {
+      const shape = cornersOf(obj);
+      if (shape) refs.push(...shape.pts);
+    }
+    refs.push(...alignPoints().filter(Boolean));
+
+    // pro Achse: kleinste Abweichung gewinnt; die Hilfslinie geht zur nächsten
+    // Ecke auf genau dieser Flucht
+    const pick = (ax, oa) => {
+      let best = null;
+      for (const v of refs) {
+        const d = Math.abs(v[ax] - p[ax]);
+        const far = Math.abs(v[oa] - p[oa]);
+        if (d > tol || far > range || far < 1e-9) continue;
+        if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && far < best.far)) {
+          best = { d, far, ref: v };
+        }
+      }
+      return best;
+    };
+    const ax = pick('x', 'y'), ay = pick('y', 'x');
+    if (!ax && !ay) return null;
+    const x = ax ? ax.ref.x : p.x;
+    const y = ay ? ay.ref.y : p.y;
+    const guides = [];
+    if (ax) guides.push({ x1: ax.ref.x, y1: ax.ref.y, x2: x, y2: y });
+    if (ay) guides.push({ x1: ay.ref.x, y1: ay.ref.y, x2: x, y2: y });
+    const guideKey = guides.map(g => `${g.x1},${g.y1}`).join('|');
+    return { x, y, kind: 'align', target: null, guides, guideKey };
   }
 
   /**
@@ -225,11 +275,63 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
       }
     }
 
-    if (best && (best.dx || best.dy)) {
+    if (!best) {
+      // Kein Kontakt → an der Flucht von Nachbar-Ecken ausrichten (Hilfslinien)
+      const al = alignMove(ownPts, members, tol);
+      if (al) {
+        obj.set({ left: obj.left + al.dx, top: obj.top + al.dy });
+        obj.setCoords();
+      }
+      setMarker(al && al.marker);
+      return;
+    }
+    if (best.dx || best.dy) {
       obj.set({ left: obj.left + best.dx, top: obj.top + best.dy });
       obj.setCoords();
     }
-    setMarker(best && { x: best.x, y: best.y, kind: best.kind, target: best.target });
+    setMarker({ x: best.x, y: best.y, kind: best.kind, target: best.target });
+  }
+
+  /**
+   * Ausrichtung beim Verschieben: x und y einzeln — pro Achse das Paar (eigene
+   * Ecke, fremde Ecke) mit der kleinsten Abweichung, sofern die fremde Ecke
+   * entlang der anderen Achse höchstens ALIGN_RANGE_PX entfernt ist. Bei Ctrl-
+   * Duplizieren ist die frisch abgelegte Kopie eine Referenz: das Duplikat bleibt
+   * beim Seitwärtsziehen auf ihrer Höhe.
+   */
+  function alignMove(ownPts, members, tol) {
+    const range = ALIGN_RANGE_PX / (canvas.getZoom() || 1);
+    const refs = [];
+    for (const t of targets(members)) {
+      const shape = cornersOf(t);
+      if (shape) refs.push(...shape.pts);
+    }
+    if (!refs.length) return null;
+    const pick = (ax, oa) => {
+      let best = null;
+      for (const v of ownPts) {
+        for (const r of refs) {
+          const d = Math.abs(r[ax] - v[ax]);
+          if (d > tol) continue;
+          const far = Math.abs(r[oa] - v[oa]);
+          if (far > range) continue;
+          if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && far < best.far)) {
+            best = { d, far, own: v, ref: r, delta: r[ax] - v[ax] };
+          }
+        }
+      }
+      return best;
+    };
+    const ax = pick('x', 'y'), ay = pick('y', 'x');
+    if (!ax && !ay) return null;
+    const dx = ax ? ax.delta : 0, dy = ay ? ay.delta : 0;
+    // Linien von der Referenz-Ecke zur eigenen Ecke — in deren neuer Lage
+    const guides = [];
+    if (ax) guides.push({ x1: ax.ref.x, y1: ax.ref.y, x2: ax.ref.x, y2: ax.own.y + dy });
+    if (ay) guides.push({ x1: ay.ref.x, y1: ay.ref.y, x2: ay.own.x + dx, y2: ay.ref.y });
+    const guideKey = guides.map(g => `${g.x1},${g.y1},${g.x2},${g.y2}`).join('|');
+    const end = guides[guides.length - 1];
+    return { dx, dy, marker: { x: end.x2, y: end.y2, kind: 'align', target: null, guides, guideKey } };
   }
 
   // Umriss eines Zielobjekts leuchten lassen (Szenen-Koordinaten, wie der Hover-Schimmer)
@@ -277,6 +379,33 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
     const y = marker.y * vpt[3] + vpt[5];
     const t = Math.min(1, (now - markerSince) / MARKER_POP_MS);
     const s = MARKER_PX * (1 + 0.5 * (1 - t) * (1 - t));   // 1.5× → 1×, ausklingend
+
+    if (marker.guides?.length) {
+      // Hilfslinien von der Referenz-Ecke zum Cursor, dazu kleine Kreuze an beiden Enden
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = MARKER_COLOR;
+      for (const g of marker.guides) {
+        const ax = g.x1 * vpt[0] + vpt[4], ay = g.y1 * vpt[3] + vpt[5];
+        const bx = g.x2 * vpt[0] + vpt[4], by = g.y2 * vpt[3] + vpt[5];
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        for (const [cx, cy] of [[ax, ay], [bx, by]]) {
+          ctx.moveTo(cx - 3, cy - 3); ctx.lineTo(cx + 3, cy + 3);
+          ctx.moveTo(cx - 3, cy + 3); ctx.lineTo(cx + 3, cy - 3);
+        }
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+      ctx.restore();
+    }
+    if (marker.kind === 'align') {           // reine Ausrichtung: kein Ecken-/Kanten-Marker
+      if (animating) canvas.requestRenderAll();
+      return;
+    }
 
     ctx.save();                         // Bildschirm-px: Marker bleibt bei jedem Zoom gleich gross
     ctx.beginPath();
@@ -346,8 +475,28 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
     const moveX = /[lr]/.test(corner), moveY = /[tb]/.test(corner);
     const right = Math.abs(pointer.x - box.maxX) < Math.abs(pointer.x - box.minX);
     const bottom = Math.abs(pointer.y - box.maxY) < Math.abs(pointer.y - box.minY);
-    const sx = moveX ? findSide('x', right ? box.maxX : box.minX, box.minY, box.maxY) : null;
-    const sy = moveY ? findSide('y', bottom ? box.maxY : box.minY, box.minX, box.maxX) : null;
+    // Ohne direkten Kontakt: Kante an der Flucht einer Nachbar-Ecke ausrichten
+    // (Hilfslinie zur nächstgelegenen Ecke der bewegten Kante)
+    const range = ALIGN_RANGE_PX / (canvas.getZoom() || 1);
+    const alignSide = (ax, pos, lo, hi) => {
+      const oa = ax === 'x' ? 'y' : 'x';
+      let best = null;
+      for (const { shape } of ts) {
+        for (const v of shape.pts) {
+          const d = Math.abs(v[ax] - pos);
+          const near = Math.max(lo, Math.min(hi, v[oa]));   // nächster Punkt der Kante
+          const far = Math.abs(v[oa] - near);
+          if (d > tol || far > range) continue;
+          if (!best || d < best.d - 1e-9 || (Math.abs(d - best.d) <= 1e-9 && far < best.far)) {
+            best = { d, far, val: v[ax], ref: v, near, kind: 'align' };
+          }
+        }
+      }
+      return best;
+    };
+    const side = (ax, pos, lo, hi) => findSide(ax, pos, lo, hi) || alignSide(ax, pos, lo, hi);
+    const sx = moveX ? side('x', right ? box.maxX : box.minX, box.minY, box.maxY) : null;
+    const sy = moveY ? side('y', bottom ? box.maxY : box.minY, box.minX, box.maxX) : null;
     if (!sx && !sy) { clear(); return; }
 
     if (sx) {
@@ -366,11 +515,27 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
     });
     obj.setCoords();
 
-    // Marker: bei zwei eingerasteten Achsen an der bewegten Ecke, sonst am Kontakt
-    const hit = sx && sy
-      ? { x: sx.val, y: sy.val, kind: sx.kind === 'vertex' && sy.kind === 'vertex' ? 'vertex' : 'edge', target: sx.target }
-      : { ...(sx || sy).contact, kind: (sx || sy).kind, target: (sx || sy).target };
-    setMarker({ x: hit.x, y: hit.y, kind: hit.kind, target: hit.target });
+    // Hilfslinien der ausgerichteten Achsen (Referenz-Ecke → Kante in neuer Lage)
+    const guides = [];
+    if (sx?.kind === 'align') guides.push({ x1: sx.ref.x, y1: sx.ref.y, x2: sx.val, y2: sx.near });
+    if (sy?.kind === 'align') guides.push({ x1: sy.ref.x, y1: sy.ref.y, x2: sy.near, y2: sy.val });
+    const guideKey = guides.map(g => `${g.x1},${g.y1},${g.x2},${g.y2}`).join('|');
+
+    // Marker: Kontakt hat Vorrang (bei zwei Kontakt-Achsen an der bewegten Ecke),
+    // sonst reine Ausrichtung
+    const cx = sx && sx.kind !== 'align' ? sx : null;
+    const cy = sy && sy.kind !== 'align' ? sy : null;
+    let hit;
+    if (cx && cy) {
+      hit = { x: cx.val, y: cy.val, kind: cx.kind === 'vertex' && cy.kind === 'vertex' ? 'vertex' : 'edge', target: cx.target };
+    } else if (cx || cy) {
+      const c = cx || cy;
+      hit = { ...c.contact, kind: c.kind, target: c.target };
+    } else {
+      const g = guides[guides.length - 1];
+      hit = { x: g.x2, y: g.y2, kind: 'align', target: null };
+    }
+    setMarker({ x: hit.x, y: hit.y, kind: hit.kind, target: hit.target, guides, guideKey });
   }
 
   const api = { snap, snapMove, snapScale, clear, isEnabled };

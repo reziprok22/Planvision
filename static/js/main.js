@@ -657,6 +657,7 @@ function initCanvas() {
   snapping = installSnapping(canvas, {
     isEnabled: () => !READ_ONLY && (isSnapDrawTool() || isDraggingSnapTarget()),
     exclude: () => [currentPolygon, currentLine, currentRectangle, editingPolygon],
+    alignPoints: alignRefPoints,
   });
   canvas.uniformScaling = false;        // free resize by default; Shift = proportional
   
@@ -3022,14 +3023,18 @@ function startDrawingRectangle(pointer) {
   const selectedLabelId = getCurrentSelectedLabel();
   const label = resolveAnnotationLabel(selectedLabelId);
 
+  // Fabric versteht left/top als Aussenkante INKLUSIVE Strich — die sichtbare
+  // Rechteckkante liegt eine halbe Strichbreite weiter innen. Ohne Ausgleich sass
+  // ein eingerastetes Rechteck um diese halbe Strichbreite neben dem Ziel.
+  const sw = label.strokeWidth || 2;
   const rect = new Rect({
-    left: pointer.x,
-    top: pointer.y,
+    left: pointer.x - sw / 2,
+    top: pointer.y - sw / 2,
     width: 0,
     height: 0,
     fill: getLabelColorWithOpacity(label.color, label.opacity),
     stroke: label.color,
-    strokeWidth: label.strokeWidth || 2,
+    strokeWidth: sw,
     objectType: 'annotation',
     annotationType: 'rectangle',
     userCreated: true,
@@ -3049,11 +3054,12 @@ function updateDrawingRectangle(pointer) {
   const width = pointer.x - startX;
   const height = pointer.y - startY;
 
+  const half = (currentRectangle.strokeWidth || 0) / 2;   // siehe startDrawingRectangle
   currentRectangle.set({
     width: Math.abs(width),
     height: Math.abs(height),
-    left: width < 0 ? pointer.x : startX,
-    top: height < 0 ? pointer.y : startY
+    left: (width < 0 ? pointer.x : startX) - half,
+    top: (height < 0 ? pointer.y : startY) - half
   });
   // Ohne setCoords bleibt die Bounding-Box auf dem Startklick (Breite 0) stehen:
   // scrollt der Startpunkt beim Aufziehen (Shift+Mausrad) aus dem Bild, hält
@@ -3354,6 +3360,33 @@ function isDraggingSnapTarget() {
       || (t?.objectType === 'annotation' && currentTool === 'select' &&
           (tr.action === 'drag' || (t.type === 'rect' && String(tr.action).startsWith('scale'))))
       || (t instanceof ActiveSelection && tr.action === 'drag' && currentTool === 'select');
+}
+
+/**
+ * Eigene Punkte als Ausrichtungs-Referenz (Hilfslinien, snapping.js): die schon
+ * gesetzten Punkte beim Polygon-/Linien-Zeichnen, der erste Bemassungspunkt, und
+ * beim Griff-Ziehen die übrigen Ecken derselben Form bzw. der andere Endpunkt.
+ */
+function alignRefPoints() {
+  if ((currentTool === 'polygon' || currentTool === 'line') && drawingMode) return currentPoints;
+  if (currentTool === 'dimension' && dimPhase === 1 && dimP1) return [dimP1];
+  const h = canvas?._currentTransform?.target;
+  if (h?.objectType === 'vertexHandle' && editingPolygon) {
+    const n = editingPolygon.points.length;
+    const closedLine = isClosedLine(editingPolygon);
+    const refs = [];
+    for (let i = 0; i < n; i++) {
+      if (i === h.pointIndex) continue;
+      if (closedLine && h.pointIndex === 0 && i === n - 1) continue;   // Kopie des gezogenen Startpunkts
+      refs.push(getVertexAbsPosition(editingPolygon, i));
+    }
+    return refs;
+  }
+  if (h?.objectType === 'dimHandle' && editingDimension && h.dimRole !== 'offset') {
+    const d = editingDimension.dimData;
+    return [h.dimRole === 'p1' ? d.p2 : d.p1];
+  }
+  return [];
 }
 
 /** Zeichen-Pointer, ggf. eingerastet. Der Startpunkt-Ring (Schliessen) hat Vorrang. */
