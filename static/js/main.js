@@ -2515,8 +2515,8 @@ function setupCanvasEvents() {
       if (obj.dimRole !== 'offset') snapDraggedHandle(obj, e.e);
       updateDimensionFromHandle(obj, e.e?.shiftKey);
     }
-    // Ganze Annotation verschieben → an andere andocken (Ziel leuchtet auf)
-    if (obj.objectType === 'annotation' && currentTool === 'select') {
+    // Annotation oder Mehrfachauswahl verschieben → an andere andocken (Ziel leuchtet auf)
+    if ((obj.objectType === 'annotation' || obj instanceof ActiveSelection) && currentTool === 'select') {
       snapping?.snapMove(obj, e.e);
     }
 
@@ -3340,7 +3340,7 @@ function snapToAngle(from, to, stepDeg = 22.5) {
 // Einrasten an Ecken/Kanten (snapping.js): beim Zeichnen bis zum letzten Punkt,
 // bei der Bemassung nur für die beiden Endpunkte (der Parallel-Abstand ist frei),
 // beim Ziehen eines Eckpunkt- oder Bemassungs-Endpunkt-Griffs und beim
-// Verschieben einer einzelnen Annotation und beim Skalieren eines Rechtecks.
+// Verschieben einer Annotation oder Mehrfachauswahl und beim Skalieren eines Rechtecks.
 function isSnapDrawTool() {
   return currentTool === 'rectangle' || currentTool === 'polygon' || currentTool === 'line'
       || (currentTool === 'dimension' && dimPhase < 2);
@@ -3352,7 +3352,8 @@ function isDraggingSnapTarget() {
   return t?.objectType === 'vertexHandle'
       || (t?.objectType === 'dimHandle' && t.dimRole !== 'offset')
       || (t?.objectType === 'annotation' && currentTool === 'select' &&
-          (tr.action === 'drag' || (t.type === 'rect' && String(tr.action).startsWith('scale'))));
+          (tr.action === 'drag' || (t.type === 'rect' && String(tr.action).startsWith('scale'))))
+      || (t instanceof ActiveSelection && tr.action === 'drag' && currentTool === 'select');
 }
 
 /** Zeichen-Pointer, ggf. eingerastet. Der Startpunkt-Ring (Schliessen) hat Vorrang. */

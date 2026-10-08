@@ -122,8 +122,8 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
     canvas.requestRenderAll();
   }
 
-  function targets(extraSkip) {
-    const skip = new Set([...exclude(), extraSkip].filter(Boolean));
+  function targets(extraSkip = []) {
+    const skip = new Set([...exclude(), ...extraSkip].filter(Boolean));
     return canvas.getObjects().filter(o =>
       o.objectType === 'annotation' && o.visible && !skip.has(o));
   }
@@ -171,14 +171,22 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
    * eigene Kante, damit auch zwei Rechtecke versetzt Kante an Kante docken).
    * Verschiebt obj direkt; Fabric rechnet die Position bei jedem mouse:move neu
    * aus dem Pointer, das Einrasten summiert sich also nicht auf.
+   * obj darf auch eine Mehrfachauswahl sein: dann zählen die Ecken/Kanten aller
+   * Annotationen darin (calcTransformMatrix rechnet die Gruppe mit ein), sie
+   * selbst sind keine Ziele, und verschoben wird die Auswahl als Ganzes. Es
+   * rastet trotzdem nur EIN Kontaktpunkt ein — der nächste.
    */
   function snapMove(obj, e) {
     if (!isEnabled() || e?.altKey || e?.shiftKey) { clear(); return; }
-    const own = cornersOf(obj);
-    if (!own || own.pts.length < 2) { clear(); return; }
+    const members = typeof obj.getObjects === 'function'
+      ? obj.getObjects().filter(o => o.objectType === 'annotation')
+      : [obj];
+    const shapes = members.map(cornersOf).filter(sh => sh && sh.pts.length > 1);
+    if (!shapes.length) { clear(); return; }
     const tol = SNAP_TOLERANCE_PX / (canvas.getZoom() || 1);
-    const ownSegs = segmentsOf(own);
-    const ob = bboxOf(own.pts, tol);
+    const ownPts = shapes.flatMap(sh => sh.pts);
+    const ownSegs = shapes.flatMap(segmentsOf);
+    const ob = bboxOf(ownPts, tol);
     let best = null;   // { tier, d, dx, dy, x, y, kind, target }
     const consider = (tier, d, dx, dy, x, y, kind, target) => {
       if (d > tol) return;
@@ -187,13 +195,20 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
       }
     };
 
-    for (const target of targets(obj)) {
+    for (const target of targets(members)) {
       const shape = cornersOf(target);
       if (!shape || shape.pts.length < 2) continue;
       const tb = bboxOf(shape.pts, 0);
       if (tb.maxX < ob.minX || tb.minX > ob.maxX || tb.maxY < ob.minY || tb.minY > ob.maxY) continue;
       const tSegs = segmentsOf(shape);
-      for (const v of own.pts) {
+      // Nur eigene Ecken/Kanten in Reichweite dieses Ziels prüfen — bei grossen
+      // Auswahlen spannt die Gesamt-Box fast den ganzen Plan auf.
+      const tbt = bboxOf(shape.pts, tol);
+      const nearPts = ownPts.filter(v => v.x >= tbt.minX && v.x <= tbt.maxX && v.y >= tbt.minY && v.y <= tbt.maxY);
+      const nearSegs = ownSegs.filter(([a, b]) =>
+        Math.max(a.x, b.x) >= tbt.minX && Math.min(a.x, b.x) <= tbt.maxX &&
+        Math.max(a.y, b.y) >= tbt.minY && Math.min(a.y, b.y) <= tbt.maxY);
+      for (const v of nearPts) {
         for (const tv of shape.pts) {
           consider(0, Math.hypot(tv.x - v.x, tv.y - v.y), tv.x - v.x, tv.y - v.y, tv.x, tv.y, 'vertex', target);
         }
@@ -203,7 +218,7 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
         }
       }
       for (const tv of shape.pts) {
-        for (const [a, b] of ownSegs) {
+        for (const [a, b] of nearSegs) {
           const q = nearestOnSegment(tv, a, b);
           consider(1, Math.hypot(tv.x - q.x, tv.y - q.y), tv.x - q.x, tv.y - q.y, tv.x, tv.y, 'edge', target);
         }
@@ -301,7 +316,7 @@ export function installSnapping(canvas, { isEnabled, exclude }) {
         (obj.angle || 0) % 360 !== 0 || !corner) { clear(); return; }
     const box = boxOf(obj);
     const tol = SNAP_TOLERANCE_PX / (canvas.getZoom() || 1);
-    const ts = targets(obj).map(t => ({ t, shape: cornersOf(t) })).filter(x => x.shape?.pts.length > 1);
+    const ts = targets([obj]).map(t => ({ t, shape: cornersOf(t) })).filter(x => x.shape?.pts.length > 1);
 
     // Kandidaten für eine Kante bei `pos` auf Achse `ax` ('x' = senkrechte Kante),
     // die sich über [lo, hi] der anderen Achse erstreckt.
