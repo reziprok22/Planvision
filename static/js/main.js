@@ -1070,6 +1070,10 @@ function loadCanvasData(canvasData) {
       // Font size is NOT taken from the save but re-derived from the page size,
       // so saves from before the auto font scale render consistently.
       const labelK = getAutoFontScale();
+      // Farbe ebenfalls nicht aus dem Save: sie folgt der verknüpften Annotation,
+      // sonst bleibt nach einer Farbänderung im Label-Manager die alte stehen.
+      const colorById = new Map(objects.filter(a => a && a.id != null)
+        .map(a => [a.id, a.stroke || a.fill]));
       labelsLoaded = util.enlivenObjects(savedLabels).then(textLabels => {
         const linkedIds = new Set();
         textLabels.filter(Boolean).forEach(tl => {
@@ -1077,6 +1081,8 @@ function loadCanvasData(canvasData) {
             objectType: 'textLabel', selectable: false, evented: false,
             fontSize: 14 * labelK, padding: 4 * labelK,
           });
+          const color = colorById.get(tl.linkedAnnotationId);
+          if (color) tl.set({ backgroundColor: color, fill: getContrastTextColor(color) });
           canvas.add(tl);
           if (tl.linkedAnnotationId != null) linkedIds.add(tl.linkedAnnotationId);
         });
@@ -3450,6 +3456,7 @@ function applyLabelToAnnotation(obj, newLabelId) {
 // Make functions globally available
 window.updateResultsTable = updateResultsTable;
 window.createSingleTextLabel = createSingleTextLabel;
+window.getContrastTextColor = getContrastTextColor;
 
 /**
  * Snaps point `to` to the nearest angle multiple of `stepDeg` from point `from`.

@@ -625,6 +625,21 @@ function updateCanvasLabels() {
             annotation.fill = '';
           }
         });
+
+        // Text-Labels der nicht geöffneten Seiten mitziehen: Sie liegen mit ihrer
+        // alten Farbe in canvas_text_labels und würden beim Seitenwechsel (und im
+        // PDF-Export) sonst unverändert wiederhergestellt.
+        const colorById = new Map(pageData.canvas_annotations
+          .filter(a => a.id != null && a.stroke)
+          .map(a => [a.id, a.stroke]));
+        (pageData.canvas_text_labels || []).forEach(tl => {
+          const color = colorById.get(tl.linkedAnnotationId);
+          if (!color) return;
+          tl.backgroundColor = color;
+          if (typeof window.getContrastTextColor === 'function') {
+            tl.fill = window.getContrastTextColor(color);
+          }
+        });
       }
     }
   }
