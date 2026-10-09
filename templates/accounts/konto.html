@@ -273,7 +273,7 @@
            Konto hinterlegten Rabatts.{% endcomment %}
         <p class="price-line" style="margin-top:1.1rem;">
             {% if sub.discount_active %}<span class="price-was">CHF {{ sub.list_price }}</span>{% endif %}
-            <sup>CHF</sup>{{ sub.price_chf }} <span class="period">pro Nutzer / Jahr, nach der Beta-Phase</span>
+            <sup>CHF</sup>{{ sub.price_chf }} <span class="period">pro Nutzer / Jahr, nach der Beta-Phase{% if sub.vat_note %}, {{ sub.vat_note }}{% endif %}</span>
         </p>
         {% if sub.discount_label %}<p class="discount-note">Rabatt: {{ sub.discount_label }}</p>{% endif %}
         {% else %}
@@ -286,7 +286,7 @@
         {% else %}
         <p class="price-line">
             {% if sub.discount_active %}<span class="price-was">CHF {{ sub.list_price }}</span>{% endif %}
-            <sup>CHF</sup>{{ sub.price_chf }} <span class="period">pro Nutzer / Jahr</span>
+            <sup>CHF</sup>{{ sub.price_chf }} <span class="period">pro Nutzer / Jahr{% if sub.vat_note %}, {{ sub.vat_note }}{% endif %}</span>
         </p>
         {% if sub.discount_label %}<p class="discount-note">Rabatt: {{ sub.discount_label }}</p>{% endif %}
         {% if sub.in_trial %}

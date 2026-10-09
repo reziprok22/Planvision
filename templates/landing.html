@@ -799,7 +799,7 @@
                         "acceptedAnswer": {
                             "@type": "Answer",
                             {% if beta_pricing and show_pricing %}
-                            "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar. Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr."
+                            "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar. Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr{% if price_vat_note %} ({{ price_vat_note }}){% endif %}."
                             {% elif beta_pricing %}
                             "text": "Ja. Während der aktuellen Beta-Phase ist Planli nach kostenloser Registrierung komplett kostenlos nutzbar."
                             {% else %}
@@ -1035,7 +1035,7 @@
                 {% if global_discount %}<span class="plan-price-was">CHF {{ license_price_chf }}</span>{% endif %}
                 <sup>CHF</sup>{{ license_price_now }}
             </div>
-            <div class="plan-period">pro Nutzer / Jahr{% if beta_pricing %}, nach der Beta-Phase{% endif %}</div>
+            <div class="plan-period">pro Nutzer / Jahr{% if beta_pricing %}, nach der Beta-Phase{% endif %}{% if price_vat_note %}<br>{{ price_vat_note }}{% endif %}</div>
             {% if global_discount %}
             <p class="plan-discount">
                 {{ global_discount.reason }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}
@@ -1119,7 +1119,7 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
                     Ja. Während der aktuellen Beta-Phase ist Planli nach einer kostenlosen Registrierung mit E-Mail-Adresse und Passwort komplett kostenlos nutzbar.
                     <br><br>
                     {% if show_pricing %}
-                    Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr{% if global_discount %} ({{ global_discount.reason }}, statt CHF {{ license_price_chf }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}){% endif %}. Wir informieren dich rechtzeitig, bevor sich daran etwas ändert &ndash; es wird nichts automatisch abgebucht.
+                    Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr{% if price_vat_note %} ({{ price_vat_note }}){% endif %}{% if global_discount %} ({{ global_discount.reason }}, statt CHF {{ license_price_chf }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}){% endif %}. Wir informieren dich rechtzeitig, bevor sich daran etwas ändert &ndash; es wird nichts automatisch abgebucht.
                     {% else %}
                     Über die Preise nach der Beta-Phase informieren wir dich rechtzeitig &ndash; es wird nichts automatisch abgebucht.
                     {% endif %}
