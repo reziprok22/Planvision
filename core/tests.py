@@ -19,7 +19,7 @@ from django.utils import timezone
 from PIL import Image
 
 from accounts.models import subscription_for
-from .models import FeedbackResponse, Project, StoredProject
+from .models import BugReport, FeedbackResponse, Project, StoredProject
 from .views import _check_page_sizes, _convert_pdf_to_images, PdfTooLargeError
 
 CLOUD_TMP = Path(tempfile.mkdtemp(prefix='planli_cloud_test_'))
@@ -722,6 +722,24 @@ class CloudDeltaSaveTests(TestCase):
 
 
 PROJECTS_TMP = Path(tempfile.mkdtemp(prefix='planli_projects_test_'))
+
+
+class BugReportAnonymizationTests(TestCase):
+    """Nach der Kontolöschung darf in den Meldungen des Users keine
+    Rückmeldeadresse mehr stehen; die Meldung selbst bleibt (SET_NULL)."""
+
+    def test_deleting_the_user_strips_the_email_from_their_reports(self):
+        user = User.objects.create_user(
+            username='test@example.ch', email='test@example.ch', password='sicher-genug-42')
+        own = BugReport.objects.create(user=user, text='Fehler', email='privat@example.ch')
+        other = BugReport.objects.create(user=None, text='Anonym', email='anonym@example.ch')
+        user.delete()
+        own.refresh_from_db()
+        other.refresh_from_db()
+        self.assertIsNone(own.user)
+        self.assertEqual(own.email, '')
+        self.assertEqual(own.text, 'Fehler')
+        self.assertEqual(other.email, 'anonym@example.ch')
 
 
 @override_settings(CLOUD_PROJECTS_DIR=CLOUD_TMP, PROJECTS_DIR=PROJECTS_TMP)
