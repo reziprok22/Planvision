@@ -763,8 +763,9 @@ def _cloud_quota_denied(request):
     limit = subscription_for(request.user).max_projects
     if request.user.stored_projects.count() >= limit:
         return JsonResponse({'error': f'Projektlimit erreicht ({limit} Projekte). '
-                             'Lösche nicht mehr benötigte Projekte (vorher ggf. herunterladen) '
-                             'oder kontaktiere uns für ein höheres Limit.'}, status=403)
+                             'Exportiere ältere Projekte in der Projektübersicht als .planli-Datei '
+                             '(⋯-Menü) und lösche sie dann aus der Ablage — oder kontaktiere uns '
+                             'für ein höheres Limit.'}, status=403)
     return None
 
 

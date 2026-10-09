@@ -237,8 +237,12 @@ INVOICES_DIR = BASE_DIR / 'invoices'
 # (trial_ends = jetzt + FEEDBACK_REWARD_DAYS, siehe core.views.submit_feedback).
 FEEDBACK_REWARD_DAYS = 180
 # Projektlimit der Online-Ablage: Default für neue User;
-# pro User im Admin überschreibbar (Subscription.max_projects, z.B. 100/200).
-DEFAULT_MAX_PROJECTS = 50
+# pro User im Admin überschreibbar (Subscription.max_projects, z.B. 200).
+# Wird beim Anlegen der Subscription als fester Wert gespeichert — eine Änderung
+# hier trifft nur neue Konten, Bestandskonten brauchen eine Datenmigration
+# (siehe accounts/migrations/0009). 100 statt anfangs 50 (9.10.2026): ~50 MB bis max. 200 MB 
+# pro Projekt ⇒ ~ 50 GB pro vollem Konto, Speicherkosten vernachlässigbar.
+DEFAULT_MAX_PROJECTS = 100
 # Online-Ablage: dauerhaft gespeicherte .planli-Projekte pro User
 # (StoredProject). Wie training_data_opt-in nie vom Cleanup berührt.
 CLOUD_PROJECTS_DIR = BASE_DIR / 'cloud_projects'

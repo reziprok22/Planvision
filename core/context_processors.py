@@ -36,4 +36,7 @@ def pricing(request):
         # 'inkl./zzgl. MWST' — muss auf der Preiskarte stehen, sonst wäre der
         # Betrag je nach LICENSE_PRICE_INCLUDES_VAT irreführend.
         'price_vat_note': vat_note(),
+        # Projektlimit der Online-Ablage für neue Konten — Preiskarte und FAQ
+        # nennen es, damit die Zahl nie hartcodiert im Template steht.
+        'default_max_projects': settings.DEFAULT_MAX_PROJECTS,
     }

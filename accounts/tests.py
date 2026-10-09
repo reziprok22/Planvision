@@ -759,7 +759,7 @@ class SubscriptionAdminTests(TestCase):
 class MaxProjectsTests(TestCase):
     def test_default_limit_from_settings(self):
         sub = subscription_for(_make_user())
-        self.assertEqual(sub.max_projects, 50)
+        self.assertEqual(sub.max_projects, 100)
 
     def test_limit_is_per_user(self):
         sub_a = subscription_for(_make_user('a@example.ch'))
@@ -767,7 +767,7 @@ class MaxProjectsTests(TestCase):
         sub_b.max_projects = 200
         sub_b.save()
         sub_a.refresh_from_db()
-        self.assertEqual(sub_a.max_projects, 50)
+        self.assertEqual(sub_a.max_projects, 100)
         self.assertEqual(sub_b.max_projects, 200)
 
     @override_settings(BETA_MODE=False)
@@ -775,7 +775,7 @@ class MaxProjectsTests(TestCase):
         _make_user()
         self.client.login(username='test@example.ch', password='sicher-genug-42')
         response = self.client.get(reverse('konto'))
-        self.assertContains(response, 'bis zu 50 Projekte')
+        self.assertContains(response, 'bis zu 100 Projekte')
 
 
 INVOICE_TMP = Path(tempfile.mkdtemp(prefix='planli_invoices_test_'))

@@ -790,7 +790,15 @@
                         "name": "Werden meine Daten gespeichert?",
                         "acceptedAnswer": {
                             "@type": "Answer",
-                            "text": "Hochgeladene Pläne werden ausschliesslich auf sicheren Servern verarbeitet und standardmässig spätestens nach 14 Tagen automatisch gelöscht. Eine dauerhafte Speicherung erfolgt nur, wenn du dies im App-Menü ausdrücklich erlaubst."
+                            "text": "Projekte in der Online-Ablage bleiben gespeichert, bis du sie oder dein Konto löschst. Die Arbeitsdaten der Analyse (hochgeladene PDFs und daraus erzeugte Bilder) werden spätestens nach 14 Tagen automatisch vom Server gelöscht. Für das Training der KI werden Pläne nur verwendet, wenn du dies im App-Menü ausdrücklich erlaubst."
+                        }
+                    },
+                    {
+                        "@type": "Question",
+                        "name": "Wie viele Projekte kann ich speichern?",
+                        "acceptedAnswer": {
+                            "@type": "Answer",
+                            "text": "In der Online-Ablage deines Kontos kannst du bis zu {{ default_max_projects }} Projekte speichern. Darüber hinaus kannst du beliebig viele Projekte als .planli-Datei exportieren und lokal verwalten."
                         }
                     },
                     {
@@ -1047,7 +1055,7 @@
                 <li>Alle Zeichenwerkzeuge</li>
                 <li>KI-Objekterkennung</li>
                 <li>PDF-Export: annotierter Originalplan</li>
-                <li>Online-Ablage für deine Projekte</li>
+                <li>Online-Ablage für bis zu {{ default_max_projects }} Projekte</li>
             </ul>
             <a href="{% if beta_mode or user.is_authenticated %}{% url 'app' %}{% else %}{% url 'register' %}{% endif %}" class="btn btn-primary" style="width:100%; justify-content:center;" onclick="window.plausible && window.plausible('CTA: Einzel')">{% if not beta_mode and user.is_authenticated %}Zur App{% else %}Kostenlos starten{% endif %}</a>
         </div>
@@ -1103,13 +1111,19 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
         <details>
             <summary>Werden meine Daten gespeichert?</summary>
             <p class="faq-answer">
-                    Deine Daten gehören dir. Hochgeladene Pläne werden ausschliesslich auf sicheren Servern verarbeitet, damit du im Browser flüssig damit arbeiten kannst.
+                    Deine Daten gehören dir. Hochgeladene Pläne werden ausschliesslich auf sicheren Servern in der EU verarbeitet, damit du im Browser flüssig damit arbeiten kannst.
                     <br><br>
-                    Um deine Privatsphäre zu schützen, werden hochgeladene Pläne standardmässig <strong>spätestens nach 14 Tagen automatisch vom Server gelöscht</strong>.
+                    <strong>Projekte in der Online-Ablage</strong> bleiben gespeichert, bis du sie selbst löschst oder dein Konto löschst. Die Arbeitsdaten der Analyse (hochgeladene PDFs und die daraus erzeugten Bilder) werden dagegen <strong>spätestens nach 14 Tagen automatisch vom Server gelöscht</strong>.
                     <br><br>
-                    Eine dauerhafte Speicherung erfolgt nur, wenn du es ausdrücklich erlaubst: Im App-Menü kannst du freiwillig die Option „Zur KI-Verbesserung freigeben“ aktivieren (diese ist standardmässig ausgeschaltet). Nur dann verwenden wir deinen Plan und deine Markierungen in absolut anonymisierter Form, um das Tool und die KI weiter zu verbessern. Du kannst diese Freigabe jederzeit wieder deaktivieren. Details dazu findest du in der <a href="{% url 'datenschutz' %}">Datenschutzerklärung</a>.
+                    Für das Training der KI verwenden wir deine Pläne nur, wenn du es ausdrücklich erlaubst: Im App-Menü kannst du freiwillig die Option „Zur KI-Verbesserung freigeben“ aktivieren (diese ist standardmässig ausgeschaltet). Nur dann verwenden wir deinen Plan und deine Markierungen in anonymisierter Form, um das Tool und die KI weiter zu verbessern. Du kannst diese Freigabe jederzeit wieder deaktivieren. Details dazu findest du in der <a href="{% url 'datenschutz' %}">Datenschutzerklärung</a>.
                     <br><br>
-                    Tipp: Du kannst dein fertiges Projekt jederzeit als kompakte .plan-Datei lokal auf deinem Computer speichern und später einfach wieder hochladen, um weiterzuarbeiten.</p>
+                    Tipp: Du kannst jedes Projekt zusätzlich als .planli-Datei exportieren, lokal auf deinem Computer sichern und später wieder importieren.</p>
+        </details>
+
+        <details>
+            <summary>Wie viele Projekte kann ich speichern?</summary>
+            <p class="faq-answer">In der Online-Ablage deines Kontos kannst du bis zu {{ default_max_projects }} Projekte speichern und von überall wieder öffnen.
+<br><br> Darüber hinaus kannst du beliebig viele Projekte als .planli-Datei exportieren und lokal auf deinem Computer verwalten, zum Weiterarbeiten importierst du die Datei einfach wieder.</p>
         </details>
 
         <details>
@@ -1119,9 +1133,9 @@ Mehrseitige PDFs werden automatisch in einzelne Seiten aufgeteilt. Für eine fl�
                     Ja. Während der aktuellen Beta-Phase ist Planli nach einer kostenlosen Registrierung mit E-Mail-Adresse und Passwort komplett kostenlos nutzbar.
                     <br><br>
                     {% if show_pricing %}
-                    Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr{% if price_vat_note %} ({{ price_vat_note }}){% endif %}{% if global_discount %} ({{ global_discount.reason }}, statt CHF {{ license_price_chf }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}){% endif %}. Wir informieren dich rechtzeitig, bevor sich daran etwas ändert &ndash; es wird nichts automatisch abgebucht.
+                    Nach der Beta-Phase kostet Planli CHF {{ license_price_now }} pro Nutzer und Jahr{% if price_vat_note %} ({{ price_vat_note }}){% endif %}{% if global_discount %} ({{ global_discount.reason }}, statt CHF {{ license_price_chf }}{% if global_discount.until %}, gültig bis {{ global_discount.until|date:"d.m.Y" }}{% endif %}){% endif %}. Wir informieren dich rechtzeitig, bevor sich daran etwas ändert, es wird nichts automatisch abgebucht.
                     {% else %}
-                    Über die Preise nach der Beta-Phase informieren wir dich rechtzeitig &ndash; es wird nichts automatisch abgebucht.
+                    Über die Preise nach der Beta-Phase informieren wir dich rechtzeitig, es wird nichts automatisch abgebucht.
                     {% endif %}
                     {% else %}
                     Ja. Nach der Registrierung mit einer E-Mail-Adresse und einem Passwort steht dir eine 30-tägige kostenlose Testphase zur Verfügung.

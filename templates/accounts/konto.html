@@ -200,7 +200,8 @@
             {% endif %}
             <div class="konto-row">
                 <dt>Projektlimit</dt>
-                <dd>bis zu {{ sub.max_projects }} Projekte</dd>
+                <dd>bis zu {{ sub.max_projects }} Projekte
+                    <span class="row-note">Weitere Projekte kannst du als .planli-Datei lokal speichern</span></dd>
             </div>
             {% if sub.is_paid %}
             <div class="konto-row">

@@ -30,7 +30,7 @@ class Subscription(models.Model):
     trial_ends = models.DateTimeField()
     paid_until = models.DateField(null=True, blank=True)
     # Wie viele Projekte dieser User in der (kommenden) Online-Ablage halten darf.
-    # Pro User individuell (z.B. 50/100/200 je nach Plan), Default aus den Settings.
+    # Pro User individuell (z.B. 100/200 je nach Plan), Default aus den Settings.
     # Durchgesetzt wird das Limit erst mit der Online-Projektablage — beim Bauen
     # dieses Features hier nachschlagen: Gate beim "In der Cloud speichern".
     max_projects = models.PositiveIntegerField(

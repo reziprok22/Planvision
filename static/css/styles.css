@@ -373,6 +373,23 @@ body.dashboard-open .header-menu {
     flex: 1 1 auto;
 }
 
+/* Ab 80 % des Projektlimits (LIMIT_HINT_RATIO in project.js) */
+.cloud-count.is-near-limit {
+    color: #C2410C;
+    font-weight: 600;
+}
+
+.cloud-limit-hint {
+    background: #FFF7ED;
+    border: 1px solid #FED7AA;
+    border-radius: 8px;
+    color: #9A3412;
+    font-size: 0.88rem;
+    line-height: 1.5;
+    padding: 10px 14px;
+    margin: -6px 0 16px;
+}
+
 .cloud-new-btn {
     background: #FF6B00;
     color: #fff;

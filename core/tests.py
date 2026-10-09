@@ -54,7 +54,7 @@ class CloudStorageTests(TestCase):
         data = self.client.get(reverse('cloud_list')).json()
         self.assertEqual(len(data['projects']), 1)
         self.assertEqual(data['projects'][0]['name'], 'EFH Muster')
-        self.assertEqual(data['limit'], 50)
+        self.assertEqual(data['limit'], 100)
 
     def test_save_with_id_overwrites(self):
         project_id = self._save().json()['id']
@@ -186,6 +186,17 @@ class LandingCtaTests(TestCase):
 # SHOW_PRICING=True gepinnt: diese Tests prüfen die Preisdarstellung selbst —
 # der Kommunikations-Schalter (Default aktuell False) ist ein eigener Test unten.
 @override_settings(GLOBAL_DISCOUNT_PERCENT=0, SHOW_PRICING=True)
+class LandingProjectLimitTests(TestCase):
+    @override_settings(SHOW_PRICING=True, DEFAULT_MAX_PROJECTS=123)
+    def test_card_and_faq_name_the_limit_from_settings(self):
+        response = self.client.get(reverse('landing'))
+        self.assertContains(response, 'Online-Ablage für bis zu 123 Projekte')
+        self.assertContains(response, 'bis zu 123 Projekte speichern', count=2)  # FAQ + JSON-LD
+        html = response.content.decode()
+        start = html.index('<script type="application/ld+json">') + len('<script type="application/ld+json">')
+        json.loads(html[start:html.index('</script>', start)])
+
+
 class LandingPricingTests(TestCase):
     """Die Preiskarte ist auch während der Beta sichtbar (die Kosten danach
     sollen früh bekannt sein); nur Hinweistext und JSON-LD-Preis unterscheiden

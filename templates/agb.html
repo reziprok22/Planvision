@@ -2,7 +2,7 @@
 
 {% block title %}AGB | Planli{% endblock %}
 {% block heading %}Allgemeine Geschäftsbedingungen (AGB){% endblock %}
-{% block subheading %}<p>Stand: Juni 2026</p>{% endblock %}
+{% block subheading %}<p>Stand: Oktober 2026</p>{% endblock %}
 
 {% block content %}
         <h2>1. Geltungsbereich und Anbieter</h2>
@@ -23,7 +23,8 @@
             Planli ist ein browserbasiertes Werkzeug zur Analyse von Architekturplänen. Nutzerinnen
             und Nutzer laden PDF-Pläne hoch und können darin Bauelemente und Flächen markieren, messen
             und auswerten. Eine KI-gestützte Objekterkennung unterstützt diesen Vorgang. Ergebnisse
-            lassen sich als Projekt speichern und als PDF exportieren.
+            lassen sich als Projekt in der Online-Ablage des Kontos speichern, als Projektdatei
+            (.planli) exportieren und als PDF exportieren.
         </p>
 
         <h2>3. Beta-Phase</h2>
@@ -39,8 +40,8 @@
             Sofern eine Registrierung erforderlich ist, sind die Zugangsdaten vertraulich zu behandeln
             und dürfen nicht an Dritte weitergegeben werden. Ein Konto ist für die persönliche Nutzung
             durch eine Person bestimmt; die gemeinsame Nutzung eines einzelnen Kontos durch mehrere
-            Personen ist nicht zulässig. Für die Nutzung durch mehrere Personen stehen entsprechende
-            Team- bzw. Organisationslizenzen zur Verfügung.
+            Personen ist nicht zulässig. Für die Nutzung durch mehrere Personen ist pro Person ein
+            eigenes Konto erforderlich; Konditionen für Teams können auf Anfrage vereinbart werden.
         </p>
         <p>
             Die Anbieterin ist berechtigt, den Zugang zu einem Konto jederzeit zu sperren, insbesondere
@@ -75,7 +76,7 @@
 
         <h2>7. Vertragslaufzeit und Verlängerung</h2>
         <p>
-            Das Abonnement wird für eine feste Laufzeit von 365 Tagen abgeschlossen. Eine Rückerstattung
+            Das Abonnement wird für eine feste Laufzeit von einem Jahr abgeschlossen. Eine Rückerstattung
             bereits bezahlter Gebühren ist ausgeschlossen. Das Abonnement
             verlängert sich nicht automatisch; wird es nach Ablauf der Laufzeit nicht erneuert, wird der
             Zugang zum Dienst eingestellt.
@@ -129,10 +130,19 @@
 
         <h2>12. Projektdaten und Datensicherung</h2>
         <p>
-            Die Verantwortung für die Sicherung der Projektdaten liegt bei den Nutzerinnen und Nutzern.
-            Diese können ihre Projekte jederzeit exportieren und lokal sichern. Auf den Servern
-            gespeicherte Daten können jederzeit und ohne Vorankündigung gelöscht werden; ein Anspruch
-            auf dauerhafte Speicherung besteht nicht.
+            Registrierte Nutzerinnen und Nutzer können Projekte in der Online-Ablage ihres Kontos
+            speichern. Die Anzahl der speicherbaren Projekte ist pro Konto begrenzt; das jeweils
+            geltende Projektlimit ist auf der Konto-Seite ersichtlich. Online gespeicherte Projekte
+            bleiben gespeichert, bis sie von der Nutzerin oder dem Nutzer selbst oder mit der Löschung
+            des Kontos gelöscht werden. Die Arbeitsdaten der Analyse (hochgeladene Pläne und daraus
+            erzeugte Bilddateien) werden nur vorübergehend gespeichert und gemäss
+            <a href="{% url 'datenschutz' %}">Datenschutzerklärung</a> automatisch gelöscht.
+        </p>
+        <p>
+            Die Online-Ablage ersetzt keine eigene Datensicherung. Die Verantwortung für die Sicherung
+            der Projektdaten liegt bei den Nutzerinnen und Nutzern; Projekte lassen sich jederzeit als
+            Projektdatei (.planli) exportieren und lokal sichern. Wird der Dienst eingestellt, informiert
+            die Anbieterin rechtzeitig, damit die Projekte vorher exportiert werden können.
         </p>
         <p>
             Es besteht kein Anspruch darauf, dass gespeicherte oder exportierte Projektdateien dauerhaft

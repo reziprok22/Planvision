@@ -647,10 +647,30 @@ function formatBytes(bytes) {
   return mb >= 1 ? `${mb.toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+// Ab diesem Anteil am Projektlimit weist die Projektübersicht auf den
+// .planli-Export hin — vorher würde der Hinweis nur stören.
+const LIMIT_HINT_RATIO = 0.8;
+
+function updateLimitHint(count, limit) {
+  const countEl = document.getElementById('cloudProjectCount');
+  const hintEl  = document.getElementById('cloudLimitHint');
+  const near = limit > 0 && count >= Math.ceil(limit * LIMIT_HINT_RATIO);
+  countEl?.classList.toggle('is-near-limit', near);
+  if (!hintEl) return;
+  hintEl.hidden = !near;
+  if (!near) return;
+  hintEl.textContent = (count >= limit
+      ? 'Deine Online-Ablage ist voll. '
+      : `Deine Online-Ablage ist fast voll (noch ${limit - count} frei). `)
+    + 'Ältere Projekte kannst du über das ⋯-Menü als .planli-Datei exportieren, '
+    + 'aus der Ablage löschen und bei Bedarf wieder importieren.';
+}
+
 function renderDashboard({ projects, limit }) {
   const listEl  = document.getElementById('cloudProjectList');
   const countEl = document.getElementById('cloudProjectCount');
   if (countEl) countEl.textContent = `${projects.length} von ${limit} Projekten`;
+  updateLimitHint(projects.length, limit);
   if (!listEl) return;
 
   if (!projects.length) {
