@@ -19,6 +19,9 @@ MODEL_PATH = os.path.join(BASE_DIR, 'fasterrcnn_model', 'fasterrcnn_model_2025-0
 # Globale Variable für das Modell
 model = None
 device = None
+# Kachel-Modell aus ml/train.py (Checkpoint {'model', 'it', 'val'}); wird beim
+# Laden am Dateiinhalt erkannt, sonst None = altes Ganzseiten-Modell.
+tiled_detector = None
 
 # Schalter zum Vergleichen: True = Snap-to-Line-Nachbearbeitung aktiv,
 # False = altes Verhalten (rohe Netz-Boxen ohne Einrasten auf die Planlinien).
@@ -58,15 +61,21 @@ def load_model():
         else:
             device = torch.device('cpu')
 
-        model = get_model()
+        if not os.path.exists(MODEL_PATH):
+            raise FileNotFoundError(f"Model file '{MODEL_PATH}' not found")
 
-        if os.path.exists(MODEL_PATH):
+        state = torch.load(MODEL_PATH, map_location=device)
+        if isinstance(state, dict) and 'model' in state:
+            global tiled_detector
+            from ml.tiled_inference import TiledDetector
+            tiled_detector = TiledDetector(MODEL_PATH, device=device.type)
+            model = tiled_detector.model
+        else:
+            model = get_model()
             # Lade Model-Gewichte auf das gewählte Device
-            model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+            model.load_state_dict(state)
             model.to(device)
             model.eval()
-        else:
-            raise FileNotFoundError(f"Model file '{MODEL_PATH}' not found")
     return model
 
 def cleanup_memory():
@@ -111,6 +120,17 @@ def resize_image_if_large(image, max_size=2048):
     
     return image, 1.0
 
+def _predict_tiled(image_bytes, format_size, dpi, plan_scale, threshold):
+    # Kachel-Modell: liefert fertig zusammengeführte Fenster-Boxen (inkl. NMS).
+    # Kein Snap-to-Line (verschlechtert die Kachel-Boxen, gemessen 12.10.2026) und
+    # kein apply_nms (merge_tiles hat bereits zusammengeführt).
+    boxes, scores = tiled_detector.predict_bytes(image_bytes, score_thr=threshold)
+    pixels_per_meter = calculate_scale_factor(format_size, dpi, plan_scale)
+    areas = [(x2 - x1) * (y2 - y1) / pixels_per_meter ** 2 for x1, y1, x2, y2 in boxes]
+    labels = np.ones(len(boxes), dtype=int)
+    cleanup_memory()
+    return boxes, labels, scores, areas
+
 def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, threshold=0.5):
     """
     Führt memory-effiziente Objekterkennung auf einem Bild durch.
@@ -130,6 +150,9 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         
         # Modell laden (nur einmal)
         model = load_model()
+
+        if tiled_detector is not None:
+            return _predict_tiled(image_bytes, format_size, dpi, plan_scale, threshold)
         
         # Vorverarbeitung mit OpenCV (NUR für die KI – das Modell ist auf genau
         # diese Vorverarbeitung trainiert, siehe image_preprocessing.preprocess_image)

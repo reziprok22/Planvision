@@ -125,6 +125,18 @@ The application requires a pre-trained Faster R-CNN model at:
 - Applies NMS (Non-Maximum Suppression) to filter overlapping detections
 - Calculates real-world areas using DPI and scale factor
 
+### Neue Fenstererkennung (`ml/`, in Arbeit seit 12.10.2026, noch nicht in Produktion)
+- **Pipeline**: `ml/build_dataset.py` (Altdaten + `.planli`-Dateien → Datensatz in 150 DPI, `dataset.json`) → `ml/train.py` (Faster R-CNN `fasterrcnn_resnet50_fpn_v2`, trainiert auf 1024er-Kacheln) → `ml/evaluate.py` (AP, Präzision/Recall, Kantenfehler gegen den Test-Split). `ml/tiled_inference.py` = Kachel-Inferenz (`TiledDetector`, Kacheln 1024 px / Überlappung 512, `merge_tiles` setzt Fensterbänder über Kachelgrenzen zusammen). Das alte `train_model.py` ist überholt. Daten und Modelle liegen ausserhalb des Repos unter `Planvision Materialien/` (`fenster_planli/` = Trainings-.planli des Users mit Labelregeln in „Notizen Training.md“, `fenster_dataset_v3/` = aktueller Datensatz, `splits.json` = Test-Projekte)
+- **Labelregeln**: eine Box pro Fenster (auch im Fensterband), Fenster-/Balkontüren = Fenster, Haustüren/Garagentore bleiben unmarkiert, Seite mit ≥ 1 Fenster gilt als vollständig beschriftet, Seiten mit „kein Fenster“ im Seitennamen = Negativbeispiele. Grundrisse werden nicht erkannt
+- **Stand**: Neues Modell `fenster_dataset_v3/runs/v3_tiled.pth` auf ungesehenen Projekten (Humanitas, Forst 2; 106 Fenster): Recall 96 % statt 44 %, Präzision 87 % statt 80 %, Box sitzt gut (IoU ≥ 0.85) bei 93 % statt 4 %, Kantenfehler 1.3 statt 6.4 px. Das heutige Produktionsmodell immer nur auf Projekten vergleichen, die es nie gesehen hat (es kennt Kirchweg/VIVOKamm/Orangerie aus dem Training)
+- **Offene Fragen / nächste Schritte**:
+  1. **Laufzeit / GPU-Dienst (Entscheid beim User)**: Die Kachel-Inferenz braucht auf CPU 3–5 s pro Kachel — auf dem Hetzner-Server (2 vCPU, 4 GB RAM) 1–5 Minuten pro Seite statt heute 2–3 s (RAM-Bedarf auf dem 4-GB-Server noch nicht gemessen). Empfehlung: externen GPU-Dienst anbinden (Modell unverändert, wenige Sekunden pro Seite). Zu klären: Anbieter, Kosten pro Aufruf vs. Grundgebühr, Kaltstartzeit, Datenschutz (Pläne verlassen den Server → Auftragsbearbeiter in der Datenschutzerklärung nennen, Serverstandort CH/EU), Fallback aufs alte Modell bei Ausfall. Alternative: leichteres CPU-Modell (mehr Aufwand, vermutlich weniger genau)
+  2. **Einbindung**: `model_handler.py` auf `TiledDetector` umstellen bzw. den GPU-Dienst aufrufen; Timeout von gunicorn (300 s) und nginx beachten; ggf. Seiten asynchron analysieren
+  3. **Altdaten nachbeschriften**: Die makesense-Altdaten sind unvollständig beschriftet (VIVOKamm: 9 von ~100 Fenstern, Kirchweg: Anbau fehlt). Das verfälscht Messung und Training. Plan: alte Pläne in planli laden, vom neuen Modell vorbeschriften lassen, korrigieren, als `.planli` in `fenster_planli/` ablegen, danach die makesense-Labels verwerfen
+  4. **Mehr und vielfältigere Daten**: Testsatz mit neuen Projekten ist noch klein (5 Seiten); Ziel ~80–100 Seiten aus 30+ Plansätzen
+  5. **Training**: Bestes Modell entstand nach 4000 von 10 000 Schritten — mit mehr Daten neu prüfen; Snap-to-Line (`refine_boxes_to_lines`) verschlechtert die Kachel-Boxen, bleibt aus; Idee: Kanten auf die Vektorlinien des PDFs einrasten
+  6. Lokal zum Testen: Modell nach `fasterrcnn_model/` kopieren und `MODEL_PATH` in `model_handler.py` darauf setzen (Modelle sind gitignored — der committete Pfad bleibt das alte Modell, sonst bricht die Produktion nach `git pull`)
+
 ### Annotation System
 - Fabric.js canvas overlays the image for interactive editing
 - Supports rectangles, polygons, and line measurements
