@@ -3,10 +3,9 @@ Baut den Trainings-/Testdatensatz für die Fenstererkennung – einheitlich in
 150 DPI, also genau der Auflösung, die der Server beim Upload rendert und auf
 der die KI in Produktion läuft.
 
-Quellen:
-  --legacy DIR   alter makesense-Datensatz (image/ + json_fenster/combined_*.json),
-                 gerendert in 300 DPI → wird halbiert.
-  --planli F...  .planli-Projekte aus dem Editor. Pro Seite zählen nur
+Quelle:
+  --planli F...  .planli-Projekte aus dem Editor (Planvision Materialien/fenster_planli/).
+                 Pro Seite zählen nur
                  Annotationen, deren Label-Name auf --window-regex passt
                  (Default "fenster"). Seiten ohne passende Annotation werden
                  übersprungen – eine Seite mit Fenster-Annotationen gilt als
@@ -28,7 +27,6 @@ Der Split (train/test) wird NICHT hier festgelegt, sondern in splits.json pro
 dürfen nie gleichzeitig in Training und Test liegen.
 """
 import argparse
-import glob
 import hashlib
 import io
 import json
@@ -40,57 +38,11 @@ from PIL import Image
 
 Image.MAX_IMAGE_PIXELS = None
 
-TARGET_DPI = 150
-LEGACY_DPI = 300
 JPEG_QUALITY = 90
-
-
-# Altdaten-"Türen", die nach der Regel vom 12.10.2026 (Fenster-/Balkontüren =
-# Fenster) als Fenster zählen: (Bildname, Index der Annotation im Altdaten-JSON).
-LEGACY_DOOR_AS_WINDOW = {
-    ('02_Orangerie_Bauprojekt_page8.jpg', 5),   # Balkontür OG hinter Geländer
-}
 
 
 def _id(*parts):
     return hashlib.sha1('|'.join(parts).encode()).hexdigest()[:12]
-
-
-def _project_of_legacy(name):
-    # "01_Gemeindehaus_Bauprojekt_page14.jpg" → "01_Gemeindehaus_Bauprojekt"
-    return re.sub(r'_page\d+(\.jpg)?$', '', name).strip()
-
-
-def add_legacy(root, out_dir, entries):
-    jsons = sorted(glob.glob(os.path.join(root, 'json_fenster', 'combined_labels_*.json')))
-    if not jsons:
-        raise SystemExit(f'Kein combined_labels_*.json in {root}/json_fenster')
-    data = json.load(open(jsons[-1]))
-    print(f'Legacy: {jsons[-1]} ({len(data)} Bilder)')
-    f = TARGET_DPI / LEGACY_DPI
-    for e in data:
-        name = e['image']
-        path = os.path.join(root, 'image', name)
-        if not os.path.exists(path) and os.path.exists(path + '.jpg'):
-            path += '.jpg'
-        if not os.path.exists(path):
-            print(f'  fehlt: {name}')
-            continue
-        img = Image.open(path).convert('RGB')
-        w, h = img.size
-        img = img.resize((round(w * f), round(h * f)), Image.LANCZOS)
-        boxes, labels = [], []
-        for k, a in enumerate(e['annotations']):
-            if a['category_id'] not in (1, 2):
-                continue
-            c = 1 if (name, k) in LEGACY_DOOR_AS_WINDOW else a['category_id']
-            boxes.append([round(v * f, 1) for v in a['bbox']])
-            labels.append(c)
-        iid = _id('legacy', name)
-        img.save(os.path.join(out_dir, 'images', iid + '.jpg'), quality=JPEG_QUALITY)
-        entries.append(dict(id=iid, file=f'images/{iid}.jpg', source=f'legacy:{name}',
-                            project=_project_of_legacy(name), width=img.width,
-                            height=img.height, boxes=boxes, labels=labels))
 
 
 def _rect_box(a):
@@ -189,8 +141,7 @@ def add_planli(path, out_dir, entries, window_re, door_re, split_by_pdf=False):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--out', required=True)
-    ap.add_argument('--legacy')
-    ap.add_argument('--planli', nargs='*', default=[])
+    ap.add_argument('--planli', nargs='+', required=True)
     ap.add_argument('--window-regex', default=r'fenster')
     ap.add_argument('--door-regex', default=r't[üu]r')
     ap.add_argument('--split-by-pdf', action='store_true',
@@ -199,8 +150,6 @@ def main():
 
     os.makedirs(os.path.join(args.out, 'images'), exist_ok=True)
     entries = []
-    if args.legacy:
-        add_legacy(args.legacy, args.out, entries)
     wre = re.compile(args.window_regex, re.I)
     dre = re.compile(args.door_regex, re.I) if args.door_regex else None
     for p in args.planli:
