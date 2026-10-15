@@ -1,0 +1,4 @@
+# torch/torchvision kommen aus dem Basis-Image
+fastapi==0.115.12
+uvicorn==0.34.2
+opencv-python-headless==4.11.0.86

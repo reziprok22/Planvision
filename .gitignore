@@ -27,3 +27,6 @@ scripts/Performance-Vergleich.png
 # Alle temporären Dateien ignorieren
 *.tmp
 
+
+# Testbilder des GPU-Dienstes (echte Pläne)
+gpu_service/*.jpg

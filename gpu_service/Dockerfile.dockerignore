@@ -1,0 +1,6 @@
+# Allowlist: der Build-Kontext ist das Repo-Root (env/, node_modules/, projects/ … wären GB)
+*
+!gpu_service/requirements.txt
+!gpu_service/app.py
+!ml/tiled_inference.py
+!fasterrcnn_model/v3_tiled.pth
