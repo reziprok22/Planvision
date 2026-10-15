@@ -5062,6 +5062,10 @@ async function analyzeCurrentPage() {
   if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.innerHTML = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> <span class="btn-label">Analysiert…</span>'; }
   if (loader) loader.style.display = 'block';
   if (errorMessage) errorMessage.style.display = 'none';
+  // Warm antwortet der GPU-Dienst in ~2 s; dauert es länger, startet er meist gerade
+  // (Kaltstart ~30 s) — dann sagen, dass das normal ist, statt still zu warten.
+  const waitHint = document.getElementById('detectionWaitHint');
+  const waitHintTimer = setTimeout(() => { if (waitHint) waitHint.hidden = false; }, 6000);
 
   try {
     let sessionId;
@@ -5168,6 +5172,8 @@ async function analyzeCurrentPage() {
       errorMessage.style.display = 'block';
     }
   } finally {
+    clearTimeout(waitHintTimer);
+    if (waitHint) waitHint.hidden = true;
     if (btn) {
       btn.disabled = false;
       btn.classList.remove('analyzing');

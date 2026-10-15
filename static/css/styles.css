@@ -239,6 +239,14 @@ a.header-menu-item {
 .feedback-banner-close:hover { opacity: 1; }
 
 body.read-only .tool-button[data-tool]:not([data-tool="select"]),
+/* Wartehinweis im Erkennen-Modal (Kaltstart des GPU-Dienstes, main.js) */
+.detection-wait-hint {
+    margin: -6px 0 14px;
+    font-size: 0.8em;
+    color: #64748b;
+    text-align: right;
+}
+
 body.read-only .analyze-page-btn,
 body.read-only #manageLabelBtn {
     opacity: 0.4;

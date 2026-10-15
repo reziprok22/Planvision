@@ -4,7 +4,13 @@ from torchvision import models, transforms
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from PIL import Image
 import io
+import json
+import logging
 import os
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import cv2
 import numpy as np
 from utils import calculate_scale_factor, apply_nms, refine_boxes_to_lines
@@ -26,6 +32,20 @@ tiled_detector = None
 # Schalter zum Vergleichen: True = Snap-to-Line-Nachbearbeitung aktiv,
 # False = altes Verhalten (rohe Netz-Boxen ohne Einrasten auf die Planlinien).
 AFTERPROCESS = True
+
+logger = logging.getLogger(__name__)
+
+# GPU-Dienst (gpu_service/, läuft bei Verda Serverless mit dem Kachel-Modell).
+# Ohne URL bleibt alles lokal. Kaltstart gemessen 28 s, warm ~2 s pro Seite;
+# der Timeout muss deutlich unter gunicorns 300 s bleiben, damit danach noch
+# Zeit für den Rückfall aufs lokale Modell ist.
+GPU_SERVICE_URL = os.environ.get('GPU_SERVICE_URL', '').rstrip('/')
+GPU_SERVICE_KEY = os.environ.get('GPU_SERVICE_KEY', '')
+GPU_SERVICE_TIMEOUT = float(os.environ.get('GPU_SERVICE_TIMEOUT', 120))
+# Nach einem Fehler den Dienst so lange überspringen — sonst wartete bei einem
+# Ausfall jede Analyse erst den vollen Timeout ab (pro gunicorn-Worker)
+GPU_SERVICE_COOLDOWN = 300
+_gpu_skip_until = 0.0
 
 def get_model(num_classes=6):
     """
@@ -120,16 +140,53 @@ def resize_image_if_large(image, max_size=2048):
     
     return image, 1.0
 
+def _tiled_result(boxes, scores, format_size, dpi, plan_scale):
+    # Kachel-Modell (lokal oder GPU-Dienst) kennt nur Fenster → Label 1; das
+    # Frontend setzt ohnehin das gewählte "Erkennen als"-Label.
+    boxes = np.asarray(boxes, dtype=float).reshape(-1, 4)
+    pixels_per_meter = calculate_scale_factor(format_size, dpi, plan_scale)
+    areas = [(x2 - x1) * (y2 - y1) / pixels_per_meter ** 2 for x1, y1, x2, y2 in boxes]
+    labels = np.ones(len(boxes), dtype=int)
+    return boxes, labels, np.asarray(scores, dtype=float), areas
+
 def _predict_tiled(image_bytes, format_size, dpi, plan_scale, threshold):
     # Kachel-Modell: liefert fertig zusammengeführte Fenster-Boxen (inkl. NMS).
     # Kein Snap-to-Line (verschlechtert die Kachel-Boxen, gemessen 12.10.2026) und
     # kein apply_nms (merge_tiles hat bereits zusammengeführt).
     boxes, scores = tiled_detector.predict_bytes(image_bytes, score_thr=threshold)
-    pixels_per_meter = calculate_scale_factor(format_size, dpi, plan_scale)
-    areas = [(x2 - x1) * (y2 - y1) / pixels_per_meter ** 2 for x1, y1, x2, y2 in boxes]
-    labels = np.ones(len(boxes), dtype=int)
     cleanup_memory()
-    return boxes, labels, scores, areas
+    return _tiled_result(boxes, scores, format_size, dpi, plan_scale)
+
+def _predict_gpu_service(image_bytes, threshold):
+    """
+    Schickt das Seitenbild an den GPU-Dienst. Liefert (boxes, scores) oder None,
+    wenn der Dienst nicht konfiguriert, gerade gesperrt oder nicht erreichbar ist —
+    dann rechnet predict_image lokal weiter.
+    """
+    global _gpu_skip_until
+    if not GPU_SERVICE_URL or time.time() < _gpu_skip_until:
+        return None
+    query = urllib.parse.urlencode({'score_thr': threshold})
+    req = urllib.request.Request(
+        f'{GPU_SERVICE_URL}/predict?{query}',
+        data=image_bytes,
+        headers={'Content-Type': 'application/octet-stream',
+                 'Authorization': f'Bearer {GPU_SERVICE_KEY}'},
+    )
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=GPU_SERVICE_TIMEOUT) as r:
+            data = json.load(r)
+        boxes, scores = data['boxes'], data['scores']
+    except Exception as e:  # HTTP-Fehler, Timeout, Netz, kaputtes JSON
+        _gpu_skip_until = time.time() + GPU_SERVICE_COOLDOWN
+        detail = e.read()[:300] if isinstance(e, urllib.error.HTTPError) else ''
+        logger.warning('GPU-Dienst fehlgeschlagen nach %.1f s, lokales Modell übernimmt '
+                       '(%d s Pause): %r %s', time.time() - t0, GPU_SERVICE_COOLDOWN, e, detail)
+        return None
+    logger.info('GPU-Dienst: %d Boxen in %.1f s (Inferenz %s s)',
+                len(boxes), time.time() - t0, data.get('seconds'))
+    return boxes, scores
 
 def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, threshold=0.5):
     """
@@ -145,9 +202,14 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
     Returns:
         boxes, labels, scores, areas: Arrays mit Erkennungsergebnissen
     """
+    # Zuerst der GPU-Dienst (falls konfiguriert); bei Ausfall das lokale Modell
+    remote = _predict_gpu_service(image_bytes, threshold)
+    if remote is not None:
+        return _tiled_result(*remote, format_size, dpi, plan_scale)
+
     try:
         global device
-        
+
         # Modell laden (nur einmal)
         model = load_model()
 

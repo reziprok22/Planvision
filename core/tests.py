@@ -798,3 +798,48 @@ class ProjectFileCleanupTests(TestCase):
         self.user.delete()  # darf nicht werfen
         self.assertEqual(Project.objects.filter(pk=project.pk).count(), 0)
 
+
+
+class GpuServiceTests(TestCase):
+    """model_handler: Aufruf des GPU-Dienstes (Verda) mit Rückfall aufs lokale Modell."""
+
+    def setUp(self):
+        import model_handler
+        self.mh = model_handler
+        patcher = mock.patch.multiple(model_handler, GPU_SERVICE_URL='https://gpu.example/x',
+                                      GPU_SERVICE_KEY='k', _gpu_skip_until=0.0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _response(self, payload):
+        resp = mock.MagicMock()
+        resp.__enter__.return_value = StringIO(json.dumps(payload))
+        return resp
+
+    def test_uses_service_and_converts_boxes(self):
+        payload = {'boxes': [[0, 0, 100, 50]], 'scores': [0.9], 'seconds': 1.2}
+        with mock.patch('urllib.request.urlopen', return_value=self._response(payload)) as urlopen, \
+                mock.patch.object(self.mh, 'load_model') as load_model:
+            boxes, labels, scores, areas = self.mh.predict_image(
+                b'jpeg', format_size=(210, 297), dpi=150, plan_scale=100, threshold=0.4)
+        load_model.assert_not_called()
+        req = urlopen.call_args.args[0]
+        self.assertEqual(req.full_url, 'https://gpu.example/x/predict?score_thr=0.4')
+        self.assertEqual(req.get_header('Authorization'), 'Bearer k')
+        self.assertEqual(boxes.tolist(), [[0, 0, 100, 50]])
+        self.assertEqual(labels.tolist(), [1])
+        ppm = self.mh.calculate_scale_factor((210, 297), 150, 100)
+        self.assertAlmostEqual(areas[0], 100 * 50 / ppm ** 2)
+
+    def test_failure_falls_back_and_pauses_service(self):
+        with mock.patch('urllib.request.urlopen', side_effect=TimeoutError) as urlopen:
+            self.assertIsNone(self.mh._predict_gpu_service(b'jpeg', 0.5))
+            # während der Pause kein zweiter Versuch (sonst wartet jede Analyse den Timeout ab)
+            self.assertIsNone(self.mh._predict_gpu_service(b'jpeg', 0.5))
+        self.assertEqual(urlopen.call_count, 1)
+
+    def test_without_url_stays_local(self):
+        with mock.patch.object(self.mh, 'GPU_SERVICE_URL', ''), \
+                mock.patch('urllib.request.urlopen') as urlopen:
+            self.assertIsNone(self.mh._predict_gpu_service(b'jpeg', 0.5))
+        urlopen.assert_not_called()
