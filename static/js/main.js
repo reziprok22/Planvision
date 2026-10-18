@@ -5090,14 +5090,16 @@ async function analyzeCurrentPage() {
 
     const response = await fetch('/analyze_page', { method: 'POST', body: formData, headers: { 'X-CSRFToken': getCsrfToken() } });
     if (!response.ok) {
-      // 502/503/504 = gunicorn-Timeout (300s) bzw. Server ausgelastet -> keine JSON-Antwort,
-      // daher eigene, verständliche Meldung statt generischem "Analyse fehlgeschlagen".
+      // Djangos eigene Meldung zuerst (z.B. 503 "Erkennung nicht verfügbar", wenn der
+      // GPU-Dienst ausfällt). 502/503/504 ohne JSON = gunicorn-Timeout (300s) bzw.
+      // Server ausgelastet -> eigene, verständliche Meldung statt "Analyse fehlgeschlagen".
+      const err = await response.json().catch(() => ({}));
+      if (err.error) throw new Error(err.error);
       if ([502, 503, 504].includes(response.status)) {
         throw new Error('Die Analyse hat zu lange gedauert oder der Server ist gerade ausgelastet. '
           + 'Bitte in einem Moment erneut versuchen, sehr grosse Pläne ggf. verkleinern oder einen Ausschnitt hochladen.');
       }
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || 'Analyse fehlgeschlagen.');
+      throw new Error('Analyse fehlgeschlagen.');
     }
 
     const data = await response.json();

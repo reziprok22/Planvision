@@ -801,7 +801,7 @@ class ProjectFileCleanupTests(TestCase):
 
 
 class GpuServiceTests(TestCase):
-    """model_handler: Aufruf des GPU-Dienstes (Verda) mit Rückfall aufs lokale Modell."""
+    """model_handler: Aufruf des GPU-Dienstes (Verda), ohne Rückfall aufs lokale Modell."""
 
     def setUp(self):
         import model_handler
@@ -831,15 +831,35 @@ class GpuServiceTests(TestCase):
         ppm = self.mh.calculate_scale_factor((210, 297), 150, 100)
         self.assertAlmostEqual(areas[0], 100 * 50 / ppm ** 2)
 
-    def test_failure_falls_back_and_pauses_service(self):
-        with mock.patch('urllib.request.urlopen', side_effect=TimeoutError) as urlopen:
-            self.assertIsNone(self.mh._predict_gpu_service(b'jpeg', 0.5))
+    def test_failure_raises_and_pauses_service(self):
+        # kein Rückfall aufs alte lokale Modell — der Nutzer bekommt einen Hinweis
+        with mock.patch('urllib.request.urlopen', side_effect=TimeoutError) as urlopen, \
+                mock.patch.object(self.mh, 'load_model') as load_model:
+            with self.assertRaises(self.mh.DetectionUnavailable):
+                self.mh.predict_image(b'jpeg')
             # während der Pause kein zweiter Versuch (sonst wartet jede Analyse den Timeout ab)
-            self.assertIsNone(self.mh._predict_gpu_service(b'jpeg', 0.5))
+            with self.assertRaises(self.mh.DetectionUnavailable):
+                self.mh.predict_image(b'jpeg')
         self.assertEqual(urlopen.call_count, 1)
+        load_model.assert_not_called()
 
     def test_without_url_stays_local(self):
         with mock.patch.object(self.mh, 'GPU_SERVICE_URL', ''), \
-                mock.patch('urllib.request.urlopen') as urlopen:
-            self.assertIsNone(self.mh._predict_gpu_service(b'jpeg', 0.5))
+                mock.patch('urllib.request.urlopen') as urlopen, \
+                mock.patch.object(self.mh, 'load_model', side_effect=FileNotFoundError):
+            with self.assertRaises(self.mh.DetectionUnavailable):
+                self.mh.predict_image(b'jpeg')
         urlopen.assert_not_called()
+
+    def test_analyze_page_reports_unavailable_service(self):
+        user = User.objects.create_user('gpu@example.com', password='pw')
+        self.client.force_login(user)
+        project = Project.objects.create(user=user, original_filename='plan.pdf')
+        uploads = settings.PROJECTS_DIR / str(project.id) / 'uploads'
+        uploads.mkdir(parents=True)
+        self.addCleanup(shutil.rmtree, settings.PROJECTS_DIR / str(project.id), True)
+        (uploads / 'page_1_1.jpg').write_bytes(b'jpeg')
+        with mock.patch('urllib.request.urlopen', side_effect=TimeoutError):
+            resp = self.client.post('/analyze_page', {'session_id': str(project.id), 'page': 1})
+        self.assertEqual(resp.status_code, 503)
+        self.assertIn('nicht verfügbar', resp.json()['error'])

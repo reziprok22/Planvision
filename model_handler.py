@@ -20,7 +20,7 @@ from image_preprocessing import preprocess_image
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Absoluter Pfad zum Fast R-CNN Model
-MODEL_PATH = os.path.join(BASE_DIR, 'fasterrcnn_model', 'fasterrcnn_model_2025-04-22-20-04-25.pth')
+MODEL_PATH = os.path.join(BASE_DIR, 'fasterrcnn_model', 'v3_tiled.pth')
 
 # Globale Variable für das Modell
 model = None
@@ -36,16 +36,28 @@ AFTERPROCESS = True
 logger = logging.getLogger(__name__)
 
 # GPU-Dienst (gpu_service/, läuft bei Verda Serverless mit dem Kachel-Modell).
-# Ohne URL bleibt alles lokal. Kaltstart gemessen 28 s, warm ~2 s pro Seite;
-# der Timeout muss deutlich unter gunicorns 300 s bleiben, damit danach noch
-# Zeit für den Rückfall aufs lokale Modell ist.
+# Mit URL (Produktion) erkennt ausschliesslich der Dienst — kein Rückfall aufs
+# lokale Modell, das alte Ganzseiten-Modell ist zu ungenau. Fällt der Dienst aus,
+# bekommt der Nutzer einen Hinweis (DetectionUnavailable → 503 in analyze_page).
+# Ohne URL (Entwicklung) rechnet das lokale Modell unter MODEL_PATH.
+# Kaltstart gemessen 28 s, warm ~2 s pro Seite; der Timeout muss unter
+# gunicorns 300 s bleiben.
 GPU_SERVICE_URL = os.environ.get('GPU_SERVICE_URL', '').rstrip('/')
 GPU_SERVICE_KEY = os.environ.get('GPU_SERVICE_KEY', '')
 GPU_SERVICE_TIMEOUT = float(os.environ.get('GPU_SERVICE_TIMEOUT', 120))
 # Nach einem Fehler den Dienst so lange überspringen — sonst wartete bei einem
-# Ausfall jede Analyse erst den vollen Timeout ab (pro gunicorn-Worker)
-GPU_SERVICE_COOLDOWN = 300
+# Ausfall jede Analyse erst den vollen Timeout ab (pro gunicorn-Worker). Kurz
+# gehalten, weil es keinen Rückfall gibt: so lange sieht jeder nur den Hinweis.
+GPU_SERVICE_COOLDOWN = 60
 _gpu_skip_until = 0.0
+
+
+class DetectionUnavailable(Exception):
+    """Die Erkennung kann gerade nicht rechnen (GPU-Dienst/lokales Modell weg)."""
+
+
+def uses_local_model():
+    return not GPU_SERVICE_URL
 
 def get_model(num_classes=6):
     """
@@ -159,13 +171,13 @@ def _predict_tiled(image_bytes, format_size, dpi, plan_scale, threshold):
 
 def _predict_gpu_service(image_bytes, threshold):
     """
-    Schickt das Seitenbild an den GPU-Dienst. Liefert (boxes, scores) oder None,
-    wenn der Dienst nicht konfiguriert, gerade gesperrt oder nicht erreichbar ist —
-    dann rechnet predict_image lokal weiter.
+    Schickt das Seitenbild an den GPU-Dienst und liefert (boxes, scores).
+    Wirft DetectionUnavailable, wenn der Dienst nicht erreichbar ist oder nach
+    einem Fehler gerade pausiert.
     """
     global _gpu_skip_until
-    if not GPU_SERVICE_URL or time.time() < _gpu_skip_until:
-        return None
+    if time.time() < _gpu_skip_until:
+        raise DetectionUnavailable('GPU-Dienst pausiert nach einem Fehler')
     query = urllib.parse.urlencode({'score_thr': threshold})
     req = urllib.request.Request(
         f'{GPU_SERVICE_URL}/predict?{query}',
@@ -181,9 +193,9 @@ def _predict_gpu_service(image_bytes, threshold):
     except Exception as e:  # HTTP-Fehler, Timeout, Netz, kaputtes JSON
         _gpu_skip_until = time.time() + GPU_SERVICE_COOLDOWN
         detail = e.read()[:300] if isinstance(e, urllib.error.HTTPError) else ''
-        logger.warning('GPU-Dienst fehlgeschlagen nach %.1f s, lokales Modell übernimmt '
-                       '(%d s Pause): %r %s', time.time() - t0, GPU_SERVICE_COOLDOWN, e, detail)
-        return None
+        logger.warning('GPU-Dienst fehlgeschlagen nach %.1f s (%d s Pause): %r %s',
+                       time.time() - t0, GPU_SERVICE_COOLDOWN, e, detail)
+        raise DetectionUnavailable(str(e)) from e
     logger.info('GPU-Dienst: %d Boxen in %.1f s (Inferenz %s s)',
                 len(boxes), time.time() - t0, data.get('seconds'))
     return boxes, scores
@@ -201,11 +213,13 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         
     Returns:
         boxes, labels, scores, areas: Arrays mit Erkennungsergebnissen
+
+    Raises:
+        DetectionUnavailable: GPU-Dienst bzw. lokales Modell nicht verfügbar
     """
-    # Zuerst der GPU-Dienst (falls konfiguriert); bei Ausfall das lokale Modell
-    remote = _predict_gpu_service(image_bytes, threshold)
-    if remote is not None:
-        return _tiled_result(*remote, format_size, dpi, plan_scale)
+    if not uses_local_model():
+        boxes, scores = _predict_gpu_service(image_bytes, threshold)
+        return _tiled_result(boxes, scores, format_size, dpi, plan_scale)
 
     try:
         global device
@@ -309,6 +323,7 @@ def predict_image(image_bytes, format_size=(210, 297), dpi=300, plan_scale=100, 
         return boxes, labels, scores, areas
     
     except Exception as e:
-        print(f"Error in predict_image: {e}")
+        # Kein stilles "0 Treffer" — der Nutzer soll wissen, dass nicht gerechnet wurde
+        logger.exception('Lokale Erkennung fehlgeschlagen')
         cleanup_memory()
-        return [], [], [], []
+        raise DetectionUnavailable(str(e)) from e

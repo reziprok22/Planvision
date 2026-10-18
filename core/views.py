@@ -30,7 +30,7 @@ from accounts.models import subscription_for
 from pdf2image import convert_from_path
 from PyPDF2 import PdfReader
 
-from model_handler import predict_image, cleanup_memory
+from model_handler import predict_image, cleanup_memory, DetectionUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -521,13 +521,17 @@ def analyze_page(request):
             image_bytes = f.read()
 
         inference_start = time.time()
-        boxes, labels, scores, areas = predict_image(
-            image_bytes,
-            format_size=format_size,
-            dpi=dpi,
-            plan_scale=plan_scale,
-            threshold=threshold,
-        )
+        try:
+            boxes, labels, scores, areas = predict_image(
+                image_bytes,
+                format_size=format_size,
+                dpi=dpi,
+                plan_scale=plan_scale,
+                threshold=threshold,
+            )
+        except DetectionUnavailable:
+            return JsonResponse({'error': 'Die automatische Erkennung ist gerade nicht verfügbar. '
+                                          'Bitte in ein paar Minuten erneut versuchen.'}, status=503)
         performance_metrics['model_inference_time'] = time.time() - inference_start
 
         results = [

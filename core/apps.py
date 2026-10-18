@@ -7,9 +7,11 @@ class CoreConfig(AppConfig):
     name = 'core'
 
     def ready(self):
-        from model_handler import load_model, cleanup_memory
+        from model_handler import load_model, cleanup_memory, uses_local_model
         try:
-            load_model()
+            # Mit GPU-Dienst wird lokal nie gerechnet — Modell gar nicht erst laden
+            if uses_local_model():
+                load_model()
         except Exception as e:
             import logging
             logging.getLogger(__name__).error(f"Error loading model: {e}")
