@@ -24,11 +24,12 @@ logger = logging.getLogger(__name__)
 # dafür weder torch noch eine Modelldatei. Fällt der Dienst aus, bekommt der
 # Nutzer einen Hinweis (DetectionUnavailable → 503 in analyze_page).
 # Ohne URL (Entwicklung) rechnet das Kachel-Modell unter MODEL_PATH lokal.
-# Kaltstart gemessen 28 s, warm ~2 s pro Seite; der Timeout muss unter
-# gunicorns 300 s bleiben.
+# Kaltstart gemessen 28 s, warm ~2 s pro Seite. Timeout 60 s = gut doppelte
+# Reserve zum Kaltstart; länger lässt den Nutzer bei einem Verda-Engpass nur
+# länger auf den Hinweis warten (und muss ohnehin unter gunicorns 300 s bleiben).
 GPU_SERVICE_URL = os.environ.get('GPU_SERVICE_URL', '').rstrip('/')
 GPU_SERVICE_KEY = os.environ.get('GPU_SERVICE_KEY', '')
-GPU_SERVICE_TIMEOUT = float(os.environ.get('GPU_SERVICE_TIMEOUT', 120))
+GPU_SERVICE_TIMEOUT = float(os.environ.get('GPU_SERVICE_TIMEOUT', 60))
 # Nach einem Fehler den Dienst so lange überspringen — sonst wartete bei einem
 # Ausfall jede Analyse erst den vollen Timeout ab (pro gunicorn-Worker). Kurz
 # gehalten, weil es keinen Rückfall gibt: so lange sieht jeder nur den Hinweis.

@@ -5062,6 +5062,8 @@ async function analyzeCurrentPage() {
   if (btn) { btn.disabled = true; btn.classList.add('analyzing'); btn.innerHTML = '<svg class="btn-spinner" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" xmlns="http://www.w3.org/2000/svg"><circle cx="6.5" cy="6.5" r="4" stroke-dasharray="11 9"/></svg> <span class="btn-label">Analysiert…</span>'; }
   if (loader) loader.style.display = 'block';
   if (errorMessage) errorMessage.style.display = 'none';
+  const detectionError = document.getElementById('detectionError');
+  if (detectionError) detectionError.hidden = true;
   // Warm antwortet der GPU-Dienst in ~2 s; dauert es länger, startet er meist gerade
   // (Kaltstart ~30 s) — dann sagen, dass das normal ist, statt still zu warten.
   const waitHint = document.getElementById('detectionWaitHint');
@@ -5164,13 +5166,19 @@ async function analyzeCurrentPage() {
 
   } catch (err) {
     console.error('Analyse-Fehler:', err);
-    if (errorMessage) {
-      // fetch wirft TypeError, wenn die Verbindung abbricht (z.B. Timeout bei sehr
-      // grossem Plan oder überlastetem Server) – dann verständliche statt kryptischer Meldung.
-      const isNetwork = err instanceof TypeError;
-      errorMessage.textContent = isNetwork
-        ? 'Verbindung zum Server unterbrochen (evtl. Timeout bei sehr grossem Plan oder Auslastung). Bitte erneut versuchen.'
-        : 'Fehler: ' + err.message;
+    // fetch wirft TypeError, wenn die Verbindung abbricht (z.B. Timeout bei sehr
+    // grossem Plan oder überlastetem Server) – dann verständliche statt kryptischer Meldung.
+    const msg = err instanceof TypeError
+      ? 'Verbindung zum Server unterbrochen (evtl. Timeout bei sehr grossem Plan oder Auslastung). Bitte erneut versuchen.'
+      : err.message;
+    // Im Erkennen-Modal, wo der Nutzer gerade hinschaut; hat er es inzwischen
+    // geschlossen, in der Sidebar wie bisher
+    const modalOpen = document.getElementById('windowDetectModal')?.style.display === 'block';
+    if (modalOpen && detectionError) {
+      detectionError.textContent = msg;
+      detectionError.hidden = false;
+    } else if (errorMessage) {
+      errorMessage.textContent = 'Fehler: ' + msg;
       errorMessage.style.display = 'block';
     }
   } finally {
@@ -5520,6 +5528,8 @@ async function initApp() {
     if (READ_ONLY) { alert(READ_ONLY_MSG); return; }
     if (!windowDetectModal) return;
     updateDetectionTable();          // show the persisted list for this page
+    const detectionError = document.getElementById('detectionError');
+    if (detectionError) detectionError.hidden = true;  // alte Meldung nicht stehen lassen
     windowDetectModal.style.display = 'block';
   };
   const closeDetectModal = () => {

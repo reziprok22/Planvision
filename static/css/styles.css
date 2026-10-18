@@ -247,6 +247,17 @@ body.read-only .tool-button[data-tool]:not([data-tool="select"]),
     text-align: right;
 }
 
+.detection-error {
+    margin: -6px 0 14px;
+    padding: 8px 10px;
+    font-size: 0.82em;
+    line-height: 1.45;
+    color: #b91c1c;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+}
+
 body.read-only .analyze-page-btn,
 body.read-only #manageLabelBtn {
     opacity: 0.4;
