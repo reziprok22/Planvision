@@ -819,7 +819,7 @@ class GpuServiceTests(TestCase):
     def test_uses_service_and_converts_boxes(self):
         payload = {'boxes': [[0, 0, 100, 50]], 'scores': [0.9], 'seconds': 1.2}
         with mock.patch('urllib.request.urlopen', return_value=self._response(payload)) as urlopen, \
-                mock.patch.object(self.mh, 'load_model') as load_model:
+                mock.patch.object(self.mh, 'load_local_model') as load_model:
             boxes, labels, scores, areas = self.mh.predict_image(
                 b'jpeg', format_size=(210, 297), dpi=150, plan_scale=100, threshold=0.4)
         load_model.assert_not_called()
@@ -834,7 +834,7 @@ class GpuServiceTests(TestCase):
     def test_failure_raises_and_pauses_service(self):
         # kein Rückfall aufs alte lokale Modell — der Nutzer bekommt einen Hinweis
         with mock.patch('urllib.request.urlopen', side_effect=TimeoutError) as urlopen, \
-                mock.patch.object(self.mh, 'load_model') as load_model:
+                mock.patch.object(self.mh, 'load_local_model') as load_model:
             with self.assertRaises(self.mh.DetectionUnavailable):
                 self.mh.predict_image(b'jpeg')
             # während der Pause kein zweiter Versuch (sonst wartet jede Analyse den Timeout ab)
@@ -846,7 +846,7 @@ class GpuServiceTests(TestCase):
     def test_without_url_stays_local(self):
         with mock.patch.object(self.mh, 'GPU_SERVICE_URL', ''), \
                 mock.patch('urllib.request.urlopen') as urlopen, \
-                mock.patch.object(self.mh, 'load_model', side_effect=FileNotFoundError):
+                mock.patch.object(self.mh, 'load_local_model', side_effect=FileNotFoundError):
             with self.assertRaises(self.mh.DetectionUnavailable):
                 self.mh.predict_image(b'jpeg')
         urlopen.assert_not_called()

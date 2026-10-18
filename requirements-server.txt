@@ -1,7 +1,6 @@
-# CPU-only requirements for deployment server (no GPU/CUDA needed)
-# Der Server hat keine GPU auch GUI-Kompnenten von opencv braucht es nicht (headless verwenden).
-# Install with: pip install -r requirements-server.txt
---extra-index-url https://download.pytorch.org/whl/cpu
+# Requirements für den Produktionsserver.
+# Keine ML-Pakete (torch/opencv): die Fenstererkennung läuft über den GPU-Dienst
+# (gpu_service/, GPU_SERVICE_URL). Install with: pip install -r requirements-server.txt
 
 asgiref==3.11.1
 cairocffi==1.7.1
@@ -11,15 +10,8 @@ charset-normalizer==3.4.4
 cssselect2==0.9.0
 defusedxml==0.7.1
 Django==6.0.5
-filelock==3.20.3
-fsspec==2026.1.0
 iso3166==2.1.1
-Jinja2==3.1.6
-MarkupSafe==3.0.3
-mpmath==1.3.0
-networkx==3.6.1
 numpy==2.4.1
-opencv-python-headless==4.13.0.90
 packaging==26.0
 pdf2image==1.17.0
 pillow==12.1.0
@@ -31,9 +23,6 @@ reportlab==5.0.0
 setuptools==80.10.1
 sqlparse==0.5.5
 svgwrite==1.4.3
-sympy==1.14.0
 tinycss2==1.5.1
-torch==2.10.0+cpu
-torchvision==0.25.0+cpu
 typing_extensions==4.15.0
 webencodings==0.5.1

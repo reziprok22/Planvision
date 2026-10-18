@@ -1,7 +1,7 @@
 """
 Misst die Fenstererkennung auf einem Datensatz aus build_dataset.py.
 
-  python ml/evaluate.py DATASET_DIR [--split test] [--predictor prod|prod-nosnap|tiled]
+  python ml/evaluate.py DATASET_DIR [--split test] [--predictor tiled|tiled-nosnap]
                         [--model PATH] [--viz OUT_DIR]
 
 Kennzahlen (Fenster = Klasse 1; Türen im Ground Truth werden ignoriert, d.h. eine
@@ -117,18 +117,6 @@ def metrics(records, score_thr=0.5):
 
 
 def make_predictor(kind, model_path=None):
-    if kind in ('prod', 'prod-nosnap'):
-        import model_handler
-        if model_path:
-            model_handler.MODEL_PATH = model_path
-        model_handler.AFTERPROCESS = kind == 'prod'
-
-        def predict(img):
-            buf = io.BytesIO()
-            img.save(buf, 'JPEG', quality=70)  # wie der Server (JPEG_QUALITY=70)
-            boxes, labels, scores, _ = model_handler.predict_image(buf.getvalue(), threshold=0.05)
-            return [list(map(float, b)) for b in boxes], [float(s) for s in scores]
-        return predict
     if kind in ('tiled', 'tiled-nosnap'):
         from ml.tiled_inference import TiledDetector
         det = TiledDetector(model_path, snap=kind == 'tiled')
@@ -155,7 +143,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('dataset')
     ap.add_argument('--split', default='test')
-    ap.add_argument('--predictor', default='prod')
+    ap.add_argument('--predictor', default='tiled')
     ap.add_argument('--model')
     ap.add_argument('--viz')
     ap.add_argument('--json-out')

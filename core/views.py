@@ -30,7 +30,7 @@ from accounts.models import subscription_for
 from pdf2image import convert_from_path
 from PyPDF2 import PdfReader
 
-from model_handler import predict_image, cleanup_memory, DetectionUnavailable
+from model_handler import predict_image, DetectionUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -550,7 +550,6 @@ def analyze_page(request):
             all_image_paths = [rel_image_path]
 
         performance_metrics['total_request_time'] = time.time() - request_start
-        cleanup_memory()
 
         # Beta-Tracking (nicht-fatal): eine durchgeführte Analyse protokollieren
         try:

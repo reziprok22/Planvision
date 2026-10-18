@@ -52,13 +52,11 @@ npm run build
 The project uses a virtual environment located at `env/` with dependencies listed in `requirements.txt`. Key dependencies include:
 - Django 6.0.5 for web framework
 - Whitenoise for static file serving
-- PyTorch 2.6.0 for machine learning
-- OpenCV for image processing
+- PyTorch/torchvision + OpenCV — **nur lokal** (`requirements.txt`, für `ml/` und die lokale Erkennung); `requirements-server.txt` enthält sie bewusst nicht, der Server erkennt über den GPU-Dienst
 - Fabric.js v6 (ES6 modules, bundled via Vite)
 
 ### Model Requirements
-The application requires a pre-trained Faster R-CNN model at:
-`fasterrcnn_model/fasterrcnn_model_2025-04-22-20-04-25.pth`
+Lokal (ohne `GPU_SERVICE_URL`) braucht die Erkennung das Kachel-Modell unter `fasterrcnn_model/v3_tiled.pth` (gitignored, von Hand kopieren) und rechnet auf der eigenen GPU (CUDA, sonst CPU). Der Server braucht keine Modelldatei.
 
 ## Architecture
 
@@ -71,10 +69,9 @@ The application requires a pre-trained Faster R-CNN model at:
 ### Backend (Python)
 - **core/views.py**: Django views for file upload, AI analysis, file serving, bug reports, landing/app pages; central auth helpers `_access_denied()` / `_get_project()`
 - **core/models.py**: `Project` (session ownership, user nullable for BETA_MODE) and `BugReport` (visible in Django admin)
-- **core/apps.py**: `CoreConfig.ready()` loads the ML model at startup
-- **model_handler.py**: PyTorch model loading and inference logic
-- **image_preprocessing.py**: OpenCV-based image preprocessing
-- **utils.py**: Scale calculations and non-maximum suppression utilities
+- **core/apps.py**: `CoreConfig.ready()` lädt lokal (ohne `GPU_SERVICE_URL`) das Kachel-Modell beim Start
+- **model_handler.py**: Fenstererkennung — GPU-Dienst (Produktion) oder `ml.tiled_inference.TiledDetector` auf der eigenen GPU (lokal); torch wird nur im lokalen Pfad importiert
+- **utils.py**: Massstab-Umrechnung (`calculate_scale_factor`) und Snap-to-Line (`refine_boxes_to_lines`, optional in `ml/tiled_inference.py`)
 
 ### Frontend (JavaScript ES6 Modules, in `static/js/`)
 - **main.js**: Primary application controller AND all canvas logic — Fabric.js setup, zoom/pan, drawing tools, vertex editing, text labels, on-plan legend, results table, undo/redo, page switching (there is no separate fabric-handler/zoom-manager module)
@@ -98,7 +95,7 @@ The application requires a pre-trained Faster R-CNN model at:
 ### Data Flow
 1. User uploads a PDF via the left-sidebar drop zone (server rejects non-PDF)
 2. `core/views.py` converts PDF to images if needed, extracts page dimensions
-3. `model_handler.py` runs AI inference using the Faster R-CNN model
+3. `model_handler.py` runs window detection (GPU-Dienst bzw. lokal das Kachel-Modell)
 4. Results return to frontend with bounding boxes and confidence scores
 5. `fabric-handler.js` renders annotations on Fabric.js canvas overlay
 6. User can edit annotations in editor mode
@@ -119,19 +116,18 @@ The application requires a pre-trained Faster R-CNN model at:
 - **`MAX_PAGE_MEGAPIXELS = 80`** (`core/views.py`): Deckel **pro Seite**, nicht pro Dokument — seit dem Streaming-Umbau ist der Peak eine Seite, die Seitenzahl ist egal. 80 MP ≈ doppelte A0-Fläche bei 150 DPI (A0 = 34.9 MP ≈ 105 MB RGB in poppler). Geprüft wird vor dem Rendern anhand der PyPDF2-Mediaboxen; Verstoss ⇒ `PdfTooLargeError` ⇒ **400 mit Klartext** (die generische 500 „Error converting PDF" wäre für den Nutzer nutzlos). Tests: `core.tests.PdfRenderTests` (Reihenfolge ab 10 Seiten wegen poppler-Nullauffüllung, Append-Trennung, Guard)
 
 ### Object Detection Model
-- Loaded once at startup via `core/apps.py` → `CoreConfig.ready()` — **nur ohne `GPU_SERVICE_URL`** (Entwicklung); in Produktion erkennt ausschliesslich der GPU-Dienst (siehe „Neue Fenstererkennung“)
-- Uses torchvision's Faster R-CNN with ResNet-50 backbone
-- 6 classes: Background, Window, Door, Wall, Dormer, Roof
-- Applies NMS (Non-Maximum Suppression) to filter overlapping detections
+- Kachel-Modell v3 (`fasterrcnn_resnet50_fpn_v2`, nur Klasse Fenster — das Frontend setzt das gewählte „Erkennen als"-Label), Details unter „Neue Fenstererkennung“
+- Produktion: ausschliesslich der GPU-Dienst; lokal: `TiledDetector` auf der eigenen GPU, einmalig in `CoreConfig.ready()` geladen
+- Das alte Ganzseiten-Modell (`fasterrcnn_model_2025-04-22-20-04-25.pth`, 6 Klassen, Snap-to-Line + NMS) samt `image_preprocessing.py`, `train_model.py`, `check_gpu.py` und `manage.py debug_snap` ist seit 18.10.2026 entfernt
 - Calculates real-world areas using DPI and scale factor
 
 ### Neue Fenstererkennung (`ml/`, in Arbeit seit 12.10.2026, noch nicht in Produktion)
-- **Pipeline**: `ml/build_dataset.py` (nur `.planli`-Dateien → Datensatz in 150 DPI, `dataset.json`) → `ml/train.py` (Faster R-CNN `fasterrcnn_resnet50_fpn_v2`, trainiert auf 1024er-Kacheln) → `ml/evaluate.py` (AP, Präzision/Recall, Kantenfehler gegen den Test-Split). `ml/tiled_inference.py` = Kachel-Inferenz (`TiledDetector`, Kacheln 1024 px / Überlappung 512, `merge_tiles` setzt Fensterbänder über Kachelgrenzen zusammen). Das alte `train_model.py` ist überholt. Daten und Modelle liegen ausserhalb des Repos unter `Planvision Materialien/` (`fenster_planli/` = Trainings-.planli des Users mit Labelregeln in „Notizen Training.md“, `fenster_dataset_v3/` = aktueller Datensatz, `splits.json` = Test-Projekte)
+- **Pipeline**: `ml/build_dataset.py` (nur `.planli`-Dateien → Datensatz in 150 DPI, `dataset.json`) → `ml/train.py` (Faster R-CNN `fasterrcnn_resnet50_fpn_v2`, trainiert auf 1024er-Kacheln) → `ml/evaluate.py` (AP, Präzision/Recall, Kantenfehler gegen den Test-Split). `ml/tiled_inference.py` = Kachel-Inferenz (`TiledDetector`, Kacheln 1024 px / Überlappung 512, `merge_tiles` setzt Fensterbänder über Kachelgrenzen zusammen). `--predictor prod` (Vergleich gegen das alte Modell) ist mit dem alten Modell entfernt. Daten und Modelle liegen ausserhalb des Repos unter `Planvision Materialien/` (`fenster_planli/` = Trainings-.planli des Users mit Labelregeln in „Notizen Training.md“, `fenster_dataset_v3/` = aktueller Datensatz, `splits.json` = Test-Projekte)
 - **Labelregeln**: eine Box pro Fenster (auch im Fensterband), Fenster-/Balkontüren = Fenster, Haustüren/Garagentore bleiben unmarkiert, Seite mit ≥ 1 Fenster gilt als vollständig beschriftet, Seiten mit „kein Fenster“ im Seitennamen = Negativbeispiele. Grundrisse werden nicht erkannt
 - **Stand**: Neues Modell `fenster_dataset_v3/runs/v3_tiled.pth` auf ungesehenen Projekten (Humanitas, Forst 2; 106 Fenster): Recall 96 % statt 44 %, Präzision 87 % statt 80 %, Box sitzt gut (IoU ≥ 0.85) bei 93 % statt 4 %, Kantenfehler 1.3 statt 6.4 px. Das heutige Produktionsmodell immer nur auf Projekten vergleichen, die es nie gesehen hat (es kennt Kirchweg/VIVOKamm/Orangerie aus dem Training)
 - **Offene Fragen / nächste Schritte**:
   1. **GPU-Dienst läuft (15.10.2026)**: `gpu_service/` (FastAPI um `TiledDetector`, Modell ins Image gebacken) bei **Verda Serverless**, Image in der privaten Verda-Registry `vccr.io` (nur dort bzw. für öffentliche Docker-Hub-Images gibt es Image-Caching — von ghcr ohne Caching dauerte der Kaltstart 354 s, über dem 300-s-Timeout). Min 0 / Max 1 Replicas, Scale-down 5 min. Gemessen: warm ~2 s pro Seite, Kaltstart 28 s. Aufbau, Push und Verda-Formular: `gpu_service/README.md`. Auf der Hetzner-CPU bräuchte die Kachel-Inferenz 1–5 Minuten pro Seite — deshalb kein lokales Kachel-Modell in Produktion
-  2. **Einbindung (15.10.2026, ohne Rückfall seit 18.10.2026)**: Ist `GPU_SERVICE_URL` gesetzt (Produktion), erkennt `predict_image()` (`model_handler.py`) **ausschliesslich** über den GPU-Dienst (`_predict_gpu_service`, Env `GPU_SERVICE_URL` / `GPU_SERVICE_KEY` = Verda-Inference-Key / optional `GPU_SERVICE_TIMEOUT`, Default 120 s). Kein Rückfall aufs alte Ganzseiten-Modell (zu ungenau) — das lokale Modell wird dann beim Start gar nicht geladen (`uses_local_model()` in `core/apps.py`). Bei einem Fehler wirft der Dienst `DetectionUnavailable` → `analyze_page` antwortet **503 mit Klartext** („Erkennung gerade nicht verfügbar"), das Erkennen-Modal zeigt ihn; danach `GPU_SERVICE_COOLDOWN` (60 s, pro gunicorn-Worker) sofortige Absage statt erneut den Timeout abzuwarten. Ohne `GPU_SERVICE_URL` (Entwicklung) rechnet das lokale Modell unter `MODEL_PATH`; scheitert auch das, ebenfalls `DetectionUnavailable` statt stiller 0 Treffer. Fehler landen als Warnung im gunicorn-Log (journald). Synchron, kein Polling; das Erkennen-Modal zeigt nach 6 s einen Wartehinweis (`#detectionWaitHint`). Verda steht als Auftragsbearbeiter in der Datenschutzerklärung. Tests: `core.tests.GpuServiceTests`
+  2. **Einbindung (15.10.2026, ohne Rückfall seit 18.10.2026)**: Ist `GPU_SERVICE_URL` gesetzt (Produktion), erkennt `predict_image()` (`model_handler.py`) **ausschliesslich** über den GPU-Dienst (`_predict_gpu_service`, Env `GPU_SERVICE_URL` / `GPU_SERVICE_KEY` = Verda-Inference-Key / optional `GPU_SERVICE_TIMEOUT`, Default 120 s). Kein Rückfall aufs alte Ganzseiten-Modell (zu ungenau) — das lokale Modell wird dann beim Start gar nicht geladen (`uses_local_model()` in `core/apps.py`). Bei einem Fehler wirft der Dienst `DetectionUnavailable` → `analyze_page` antwortet **503 mit Klartext** („Erkennung gerade nicht verfügbar"), das Erkennen-Modal zeigt ihn; danach `GPU_SERVICE_COOLDOWN` (60 s, pro gunicorn-Worker) sofortige Absage statt erneut den Timeout abzuwarten. Ohne `GPU_SERVICE_URL` (Entwicklung) rechnet das Kachel-Modell unter `MODEL_PATH` auf der eigenen GPU (`load_local_model`, torch wird nur dort importiert); scheitert auch das, ebenfalls `DetectionUnavailable` statt stiller 0 Treffer. Fehler landen als Warnung im gunicorn-Log (journald). Synchron, kein Polling; das Erkennen-Modal zeigt nach 6 s einen Wartehinweis (`#detectionWaitHint`). Verda steht als Auftragsbearbeiter in der Datenschutzerklärung. Tests: `core.tests.GpuServiceTests`
   3. **Altdaten erledigt (13.10.2026)**: Die makesense-Altdaten (`training_data_selbst gesammelt/`) sind komplett neu als `.planli` in `fenster_planli/` erfasst, der Legacy-Import (`--legacy`) und `train_legacy_recipe.py` sind aus `ml/` entfernt. `splits.json` ist auf die `.planli`-Projektnamen umgestellt (die kommen aus `metadata.project_name`, nicht aus dem Dateinamen — ein Projekt, das dort nicht exakt steht, fällt aus Training und Test). Die alte Fassung liegt als `splits_alt_makesense.json` daneben. Der Datensatz in `fenster_dataset_v3/` stammt noch aus den Altdaten und muss vor dem nächsten Training neu gebaut werden
   4. **Mehr und vielfältigere Daten**: Testsatz mit neuen Projekten ist noch klein (5 Seiten); Ziel ~80–100 Seiten aus 30+ Plansätzen
   5. **Training**: Bestes Modell entstand nach 4000 von 10 000 Schritten — mit mehr Daten neu prüfen; Snap-to-Line (`refine_boxes_to_lines`) verschlechtert die Kachel-Boxen, bleibt aus; Idee: Kanten auf die Vektorlinien des PDFs einrasten
@@ -294,7 +290,7 @@ After every `git pull` on the server:
 2. `env/bin/python manage.py collectstatic --noinput` — otherwise nginx keeps serving the old JS bundle (symptom: CSRF 403 on POSTs)
 3. `sudo systemctl restart planvision`
 
-One-time setup — GPU-Dienst für die Fenstererkennung (seit 15.10.2026): in der systemd-Unit `planvision` unter `[Service]` `Environment=GPU_SERVICE_URL=https://containers.datacrunch.io/<deployment>` und `Environment=GPU_SERVICE_KEY=<Verda-Inference-Key>` setzen, dann `sudo systemctl daemon-reload && sudo systemctl restart planvision`. Ohne die Variablen versucht der Server lokal zu rechnen und scheitert (keine Modelldatei) — die Erkennung meldet dann „nicht verfügbar".
+One-time setup — GPU-Dienst für die Fenstererkennung (seit 15.10.2026): in der systemd-Unit `planvision` unter `[Service]` `Environment=GPU_SERVICE_URL=https://containers.datacrunch.io/<deployment>` und `Environment=GPU_SERVICE_KEY=<Verda-Inference-Key>` setzen, dann `sudo systemctl daemon-reload && sudo systemctl restart planvision`. Ohne die Variablen versucht der Server lokal zu rechnen und scheitert (kein torch, keine Modelldatei) — die Erkennung meldet dann „nicht verfügbar". torch/torchvision/opencv sind seit 18.10.2026 nicht mehr in `requirements-server.txt`; auf dem Server können sie mit `env/bin/pip uninstall torch torchvision opencv-python-headless` weg (spart Platte und den RAM, den jeder Worker fürs Importieren belegte).
 
 One-time setup for the invoicing feature (seit 14.8.2026):
 ```
@@ -316,7 +312,7 @@ One-time setup — licence-reminder cron (mails Kunden vor Lizenzablauf + Überf
 ## Common Development Tasks
 
 When adding new object detection classes, update:
-1. Model training pipeline and class count in `model_handler.py`
+1. Model training pipeline (`ml/`) und der GPU-Dienst (`gpu_service/`); `model_handler.py` setzt heute fix Label 1
 2. Label definitions in `static/js/labels.js`
 3. Color mappings and UI elements in HTML template
 
