@@ -72,10 +72,11 @@ was in Verda läuft, und kann zurückwechseln.
 | Healthcheck port / path     | `8000` / `/health`                                                                                      |
 | Start command               | aus (steht im Dockerfile)                                                                               |
 | Env-Variablen               | keine nötig                                                                                             |
+| Instanztyp                  | **On-Demand**, nicht Spot (seit 18.10.2026): Spot meldete „no nodes available“ — ohne Rückfall-Modell fällt die Erkennung dann aus |
 | **Scaling**                 |                                                                                                         |
 | Replica-Limits              | Min 0 / Max 1 → bezahlt wird nur Laufzeit (inkl. Kaltstart und Scale-down-Delay); 1/1 = läuft dauerhaft |
 | Queue load                  | Cost-Saver (10) — bei Max 1 ohne Wirkung                                                                |
-| Advanced-Settings           | Scale-down-Delay: 5 Minuten                                                                             |
+| Advanced-Settings           | Scale-down-Delay: 30 Minuten (seit 18.10.2026, vorher 5) — wer an einem Plan arbeitet, wartet nur einmal |
 
 ## 4. Inference-API-Key erstellen
 - In Verda unter Credentials → Inference API Keys
@@ -116,5 +117,5 @@ Ein Kaltstart kostet also ~26 s Wartezeit — deutlich unter dem 300-s-Timeout, 
 Dienst synchron aufrufen. Das UI sollte die Wartezeit trotzdem anzeigen („GPU startet …“).
 
 Offen / Ideen:
-- Fallback aufs alte CPU-Modell, falls Verda nicht antwortet
+x - Fallback aufs alte CPU-Modell, falls Verda nicht antwortet. Verworfen, altes CPU-Modell ist zu schlecht. 
 - schlankeres Basis-Image (Python-slim + CUDA-Wheels) würde den Kaltstart weiter senken, lohnt erst bei Bedarf
