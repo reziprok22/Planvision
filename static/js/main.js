@@ -67,7 +67,8 @@ console.log('✅ Fabric.js v6 ES6 modules loaded');
 // nudged off the start point (see calculateLabelPosition) so it doesn't hide the
 // start dot. Implemented by extending Polyline's own _render → the dots move,
 // scale and reload with the line for free, with no separate objects to manage.
-// (Line annotations use objectCaching:false so the dots never clip at the bbox.)
+// (Needs objectCaching:false so the dots never clip at the bbox — now the global
+// default, see below; the explicit settings on lines stay as a safeguard.)
 const _polylineRender = Polyline.prototype._render;
 Polyline.prototype._render = function (ctx) {
   _polylineRender.call(this, ctx);
@@ -116,6 +117,18 @@ Object.assign(InteractiveFabricObject.ownDefaults, {
   borderColor: '#1976d2',
   borderScaleFactor: 1.5,
 });
+
+// ── Kein Objekt-Caching ──────────────────────────────────────────────────────
+// Fabric zeichnet jedes Objekt standardmässig in einen eigenen Offscreen-Canvas
+// und kopiert den pro Frame auf die Leinwand. In Chrome ist genau das Kopieren
+// der Engpass (Profil: ~95 % in ctx.restore), egal ob mit GPU oder Software.
+// Gemessen (19.10.2026, Demo-Seite, je Annotation ein Text-Label, ein Render):
+// 500 Annotationen 162 → 15 ms, 2000 Annotationen 661 → 78 ms (GPU) bzw.
+// 2392 → 62 ms (Software). Rechtecke, Polygone und Labels sind so einfach, dass
+// direktes Zeichnen billiger ist als jeder Cache — und beim Zoomen musste der
+// Cache ohnehin für jedes Objekt neu gerendert werden. Nicht pro Objekt
+// wieder einschalten.
+InteractiveFabricObject.ownDefaults.objectCaching = false;
 
 // Global app state
 let canvas = null;
@@ -1214,8 +1227,7 @@ function convertPredictionsToCanvasData(predictions, pageId = currentPageId) {
         displayIndex: index + 1,
         userCreated: false,
         selectable: true,
-        evented: true,
-        objectCaching: true
+        evented: true
       };
     } else if (pred.annotationType === 'line' && pred.points) {
       // Line from points
@@ -1235,8 +1247,7 @@ function convertPredictionsToCanvasData(predictions, pageId = currentPageId) {
         displayIndex: index + 1,
         userCreated: false,
         selectable: true,
-        evented: true,
-        objectCaching: true
+        evented: true
       };
     }
   }).filter(Boolean);
@@ -1302,14 +1313,51 @@ function countUp(el, from, to, unit) {
   requestAnimationFrame(step);
 }
 
+// Annotationen in Zeilenreihenfolge der Ergebnistabelle (data-row = Index), für
+// die delegierten Listener am tbody (installResultsTableEvents).
+let resultRowAnnotations = [];
+let resultsTableEventsInstalled = false;
+const escapeAttr = (v) => String(v).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+function installResultsTableEvents(resultsBody) {
+  if (resultsTableEventsInstalled) return;
+  resultsTableEventsInstalled = true;
+  const annotationOf = (target) => {
+    const row = target.closest?.('tr[data-row]');
+    return row ? { row, annotation: resultRowAnnotations[+row.dataset.row] } : null;
+  };
+  // mouseover/mouseout statt mouseenter/mouseleave pro Zeile: Wechsel zwischen
+  // Zellen derselben Zeile (relatedTarget noch in der Zeile) zählen nicht.
+  resultsBody.addEventListener('mouseover', (e) => {
+    const hit = annotationOf(e.target);
+    if (!hit?.annotation || hit.row.contains(e.relatedTarget)) return;
+    highlightAnnotation(hit.annotation);
+  });
+  resultsBody.addEventListener('mouseout', (e) => {
+    const hit = annotationOf(e.target);
+    if (!hit || hit.row.contains(e.relatedTarget)) return;
+    removeHighlight();
+  });
+  // Klick → zum Objekt zoomen; im Auswahl-Werkzeug auch gleich auswählen
+  resultsBody.addEventListener('click', (e) => {
+    const annotation = annotationOf(e.target)?.annotation;
+    if (!annotation) return;
+    zoomToAnnotation(annotation);
+    if (currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension &&
+        annotation.canvas === canvas) {
+      canvas.setActiveObject(annotation);
+      canvas.requestRenderAll();
+    }
+  });
+}
+
 function updateResultsTable() {
   const resultsBody = document.getElementById('resultsBody');
   if (!resultsBody || !canvas) return;
+  installResultsTableEvents(resultsBody);
   const prevRows = lastRowValues;
   const flashRows = shouldFlashValues(prevRows);
   const rowValues = new Map();
-
-  resultsBody.innerHTML = '';
 
   // Get all annotation objects from canvas, sorted ascending by displayIndex
   const annotations = canvas.getObjects()
@@ -1332,7 +1380,12 @@ function updateResultsTable() {
 
   const pixelToMeter = getPixelToMeterFactor();
 
-  annotations.forEach((annotation, index) => {
+  // Ein HTML-String und ein innerHTML statt createElement + innerHTML + drei
+  // Listener pro Zeile: bei 2000 Annotationen 62 → ~10 ms pro Aufbau, und der
+  // läuft nach jeder Änderung. Neue Zeilen bekommen value-flash direkt im Markup
+  // (flashElement erzwingt pro Element ein Layout — bei vielen geänderten Zeilen,
+  // z.B. nach einer Massstab-Änderung, hiess das ein Layout pro Zeile).
+  const rowsHtml = annotations.map((annotation, index) => {
     // Get label info
     const labelId = annotation.labelId || annotation.objectLabel || 1;
     const label = resolveAnnotationLabel(labelId, annotation.annotationType === 'line');
@@ -1362,48 +1415,35 @@ function updateResultsTable() {
       measurement = '–';                             // a line has no area
     }
 
-    const row = document.createElement('tr');
     const displayNumber = annotation.displayIndex || (index + 1);
     // Type as icon (same SVGs as the toolbar buttons), name via tooltip
     const typeIcon = `<span title="${typeName}" style="display:inline-flex; vertical-align:middle; color:#666;">${LABEL_TOOL_INDICATORS[typeKey].svg}</span>`;
-    row.innerHTML = `
+
+    // Hover linking uses the stable annotation id, not a positional index: the
+    // table is sorted by displayIndex while the canvas is in z-order, so indices
+    // would point at different objects in each.
+    let idAttr = '';
+    let flash = false;
+    if (annotation.id != null) {
+      idAttr = ` data-annotation-id="${escapeAttr(annotation.id)}"`;
+      const key = `${widthCell}|${heightCell}|${measurement}`;
+      rowValues.set(annotation.id, key);
+      flash = flashRows && prevRows.map.get(annotation.id) !== key;
+    }
+    // Tooltip-Hinweis für selbst gezeichnete Annotationen (ohne kursive Schrift –
+    // die optische Hervorhebung in der Tabelle ist nicht mehr erwünscht).
+    const title = annotation.userCreated ? ' title="Benutzer-erstellt"' : '';
+    return `<tr data-row="${index}"${idAttr}${title}${flash ? ' class="value-flash"' : ''}>
       <td>${displayNumber}</td>
       <td>${label.name}</td>
       <td>${typeIcon}</td>
       <td>${widthCell}</td>
       <td>${heightCell}</td>
       <td>${measurement}</td>
-    `;
-
-    // Tooltip-Hinweis für selbst gezeichnete Annotationen (ohne kursive Schrift –
-    // die optische Hervorhebung in der Tabelle ist nicht mehr erwünscht).
-    if (annotation.userCreated) {
-      row.title = 'Benutzer-erstellt';
-    }
-
-    // Hover linking uses the stable annotation id, not a positional index: the
-    // table is sorted by displayIndex while the canvas is in z-order, so indices
-    // would point at different objects in each.
-    if (annotation.id != null) {
-      row.dataset.annotationId = annotation.id;
-      const key = `${widthCell}|${heightCell}|${measurement}`;
-      rowValues.set(annotation.id, key);
-      if (flashRows && prevRows.map.get(annotation.id) !== key) flashElement(row);
-    }
-    row.addEventListener('mouseenter', () => highlightAnnotation(annotation));
-    row.addEventListener('mouseleave', () => removeHighlight());
-    // Klick → zum Objekt zoomen; im Auswahl-Werkzeug auch gleich auswählen
-    row.addEventListener('click', () => {
-      zoomToAnnotation(annotation);
-      if (currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension &&
-          annotation.canvas === canvas) {
-        canvas.setActiveObject(annotation);
-        canvas.requestRenderAll();
-      }
-    });
-
-    resultsBody.appendChild(row);
+    </tr>`;
   });
+  resultRowAnnotations = annotations;
+  resultsBody.innerHTML = rowsHtml.join('');
   lastRowValues = { pageId: currentPageId, map: rowValues };
 
   // Keep the detection modal's list in sync (derived from the same canvas objects)
@@ -1579,36 +1619,25 @@ function removeHighlight() {
  */
 function findResultRow(annotation) {
   if (!annotation?.id) return null;
-  const rows = document.getElementById('resultsBody')?.querySelectorAll('tr');
-  if (!rows) return null;
-  for (const r of rows) {
-    if (r.dataset.annotationId === annotation.id) return r;
-  }
-  return null;
+  return document.getElementById('resultsBody')
+    ?.querySelector(`tr[data-annotation-id="${CSS.escape(String(annotation.id))}"]`) ?? null;
 }
 
 /**
- * Highlight table row when hovering over its annotation
+ * Highlight table row when hovering over its annotation.
+ * Via class (styles.css .row-hover). Background only — the former inline
+ * transform: scale(1.02) re-laid out the whole table on every hover change
+ * (~13 ms at 2000 rows, forced by the next getPointer in mouse:move).
  */
 function highlightTableRow(annotation) {
-  const targetRow = findResultRow(annotation);
-  if (targetRow) {
-    targetRow.style.backgroundColor = '#e3f2fd'; // Light blue background
-    targetRow.style.transform = 'scale(1.02)'; // Slight scale effect
-    targetRow.style.transition = 'all 0.2s ease';
-  }
+  findResultRow(annotation)?.classList.add('row-hover');
 }
 
 /**
  * Remove highlight from the table row of an annotation
  */
 function removeTableRowHighlight(annotation) {
-  const targetRow = findResultRow(annotation);
-  if (targetRow) {
-    targetRow.style.backgroundColor = ''; // Remove background
-    targetRow.style.transform = ''; // Remove scale
-    targetRow.style.transition = 'all 0.2s ease';
-  }
+  findResultRow(annotation)?.classList.remove('row-hover');
 }
 
 /**
@@ -3733,8 +3762,7 @@ function finishPolygonDrawing({ fromDblClick = true } = {}) {
     labelId: selectedLabelId,
     objectLabel: selectedLabelId,
     hasControls: true,
-    hasBorders: true,
-    objectCaching: true
+    hasBorders: true
   });
 
   canvas.add(finalPolygon);
@@ -4139,7 +4167,7 @@ function startLineDrawing() {
     userCreated: true,
     selectable: currentTool === 'select',
     evented: currentTool === 'select',
-    objectCaching: false, // true = verbessert performance und objekte werden schneller gerendert
+    objectCaching: false,
     absolutePositioned: true, // Wichtig, dass Objekt anhand der canvas-Koordinaten positioniert wird
     clipPath: null, // null = keine Einschränkung bei der Grösse des Polygons. 
     width: canvas.width,
@@ -5301,6 +5329,7 @@ async function initApp() {
     if (resultsBody) resultsBody.innerHTML = '<tr><td colspan="6" style="text-align:center; '
       + 'color:#999; font-style:italic; padding:20px;">'
       + 'Laden Sie eine Datei hoch und analysieren Sie eine Seite.</td></tr>';
+    resultRowAnnotations = [];
     const analyzeBtn = document.getElementById('analyzeCurrentPageBtn');
     if (analyzeBtn) analyzeBtn.disabled = true;
   };

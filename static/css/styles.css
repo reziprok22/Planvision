@@ -863,6 +863,17 @@ button:hover {
     background-color: #f8f9fa;
 }
 
+/* Zeile der Annotation unter dem Cursor auf dem Plan (main.js highlightTableRow).
+   Bewusst kein transform (früher scale(1.02)): ein Transform auf einem <tr>
+   zwingt Chrome, die ganze Tabelle neu zu layouten — bei 2000 Zeilen ~13 ms
+   pro Hover-Wechsel, erzwungen beim nächsten getPointer im mouse:move. */
+.results-table-section tbody tr {
+    transition: background-color 0.2s ease;
+}
+.results-table-section tbody tr.row-hover {
+    background-color: #e3f2fd;
+}
+
 /* Lade-Animation */
 .loader {
     border: 5px solid #f3f3f3;
