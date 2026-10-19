@@ -234,10 +234,10 @@ function handleInlineEdit(event) {
   } else if (field === 'opacity') {
     // Convert percentage back to decimal (0-1 range), umgekehrt: 100% = 0.0, 0% = 1.0
     label.opacity = 1 - (parseInt(value) / 100);
-    updateCanvasLabels();
+    scheduleCanvasLabelUpdate();
   } else if (field === 'strokeWidth') {
     label.strokeWidth = Math.max(1, parseInt(value) || 1);
-    updateCanvasLabels();
+    scheduleCanvasLabelUpdate();
   } else if (['rectangle', 'polygon', 'line'].includes(field)) {
     // Check if disabling a tool that's currently used by existing annotations
     if (!value) { // User is unchecking the tool
@@ -320,6 +320,8 @@ function cancelChanges() {
   hasUnsavedChanges = false;
   refreshLabelTable();
   updateBatchActionVisibility();
+  // Opacity/stroke were previewed live on the canvas → revert them too
+  updateCanvasLabels();
 }
 
 /**
@@ -584,6 +586,18 @@ export function saveLabels() {
   updateCanvasLabels();
 }
 
+// Live preview from the Label-Manager: the slider fires 'input' on every step,
+// so coalesce to at most one canvas update per frame.
+let canvasLabelUpdatePending = false;
+function scheduleCanvasLabelUpdate() {
+  if (canvasLabelUpdatePending) return;
+  canvasLabelUpdatePending = true;
+  requestAnimationFrame(() => {
+    canvasLabelUpdatePending = false;
+    updateCanvasLabels();
+  });
+}
+
 /**
  * Update existing canvas annotations with new label information
  */
@@ -594,9 +608,12 @@ function updateCanvasLabels() {
   if (canvas) {
     updateCanvasAnnotations(canvas);
     
-    // Update results table and UI elements for current canvas
+    // Results table (label names) and summary/legend (label colours), once
     if (typeof window.updateResultsTable === 'function') {
       window.updateResultsTable();
+    }
+    if (typeof window.updateSummary === 'function') {
+      window.updateSummary();
     }
   }
   
@@ -675,29 +692,53 @@ function updateCanvasAnnotations(canvas) {
 }
 
 /**
- * Initialize text labels for all existing annotations on canvas
- * Moved from main.js to labels.js for better organization
+ * Sync the text labels on the canvas with their annotations' colours.
+ *
+ * Updates the existing labels in place instead of recreating them: until
+ * 19.10.2026 every label was removed (one full render each, renderOnAddRemove)
+ * and recreated via createSingleTextLabel without batch — each call sorted all
+ * objects, rendered synchronously and rebuilt the results table + legend. That
+ * ran on every opacity-slider step, O(N²) in the number of annotations. In
+ * place also keeps labels the user moved where they are (like a project load).
+ * Annotations without a label get one (batch), orphaned labels are removed.
  */
 function initializeCanvasTextLabels(canvas) {
   if (!canvas) return;
-  
-  // Remove all existing text labels first
-  const textLabels = canvas.getObjects().filter(obj => obj.objectType === 'textLabel');
-  textLabels.forEach(label => canvas.remove(label));
-  
-  // Get all annotations and create text labels for each (via main.js, which
-  // has all the proper position calculations)
+
+  const objects = canvas.getObjects();
+  const annotationsById = new Map();
+  objects.forEach(obj => {
+    if (obj.objectType === 'annotation' && obj.id != null) annotationsById.set(obj.id, obj);
+  });
+
+  const contrast = typeof window.getContrastTextColor === 'function'
+    ? window.getContrastTextColor : null;
+  const linkedIds = new Set();
+  const orphans = [];
+  objects.forEach(tl => {
+    if (tl.objectType !== 'textLabel') return;
+    const annotation = annotationsById.get(tl.linkedAnnotationId);
+    if (!annotation) { orphans.push(tl); return; }
+    linkedIds.add(tl.linkedAnnotationId);
+    const color = annotation.stroke || annotation.fill || '#000000';
+    tl.set({ backgroundColor: color, ...(contrast ? { fill: contrast(color) } : {}) });
+  });
+
+  const prevRenderOnAddRemove = canvas.renderOnAddRemove;
+  canvas.renderOnAddRemove = false;
+  orphans.forEach(tl => canvas.remove(tl));
+  let created = false;
   if (typeof window.createSingleTextLabel === 'function') {
-    const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
-    annotations.forEach(annotation => window.createSingleTextLabel(annotation));
+    objects.forEach(obj => {
+      if (obj.objectType !== 'annotation' || (obj.id != null && linkedIds.has(obj.id))) return;
+      window.createSingleTextLabel(obj, { batch: true });
+      created = true;
+    });
   }
-  
-  canvas.renderAll();
-  
-  // Update results table if available
-  if (typeof window.updateResultsTable === 'function') {
-    window.updateResultsTable();
-  }
+  canvas.renderOnAddRemove = prevRenderOnAddRemove;
+
+  if (created) applyLayerOrdering();   // new labels in front of the annotations
+  canvas.requestRenderAll();
 }
 
 /**

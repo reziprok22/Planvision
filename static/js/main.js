@@ -3455,6 +3455,7 @@ function applyLabelToAnnotation(obj, newLabelId) {
 
 // Make functions globally available
 window.updateResultsTable = updateResultsTable;
+window.updateSummary = updateSummary;
 window.createSingleTextLabel = createSingleTextLabel;
 window.getContrastTextColor = getContrastTextColor;
 
