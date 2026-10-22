@@ -18,6 +18,7 @@ import {
   getPageSettings,
   getPageTitle,
 } from './pdf-handler.js';
+import { clearMipmapCache } from './mipmaps.js';
 
 // ── Internal state ──────────────────────────────────────────────────
 // Page data itself (order, ids, image URLs, sizes) lives in pdf-handler.js's
@@ -227,6 +228,7 @@ function resetUploadModal() {
     currentSessionId   = null;
     currentFileName    = '';
     clearThumbCache();
+    clearMipmapCache();
 
     if (dropZone)       dropZone.style.display   = 'block';
     if (fileInfo)       fileInfo.style.display    = 'none';
@@ -665,6 +667,7 @@ export function initSidebarFromProject(projectName) {
   // Vorschaubilder des vorher geöffneten Projekts freigeben (ein Projekt kann
   // direkt aus der Projektübersicht heraus gewechselt werden, ohne Reset)
   clearThumbCache();
+  clearMipmapCache();
 
   showFileInfo(projectName);
   buildPageList();
