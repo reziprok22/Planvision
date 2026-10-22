@@ -224,6 +224,11 @@ function refreshLabelTable() {
         <input type="number" class="inline-edit stroke-width-input" data-field="strokeWidth" data-id="${label.id}"
                min="1" max="20" step="1" value="${label.strokeWidth || 2}" />
       </td>
+      <td>
+        <select class="inline-edit text-label-select" data-field="textLabel" data-id="${label.id}">
+          ${textLabelOptions(textLabelModeFor(label))}
+        </select>
+      </td>
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="rectangle" data-id="${label.id}" ${label.tools.rectangle ? 'checked' : ''}></td>
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="polygon" data-id="${label.id}" ${label.tools.polygon ? 'checked' : ''}></td>
       <td style="text-align:center;"><input type="checkbox" class="inline-edit" data-field="line" data-id="${label.id}" ${label.tools.line ? 'checked' : ''}></td>
@@ -265,6 +270,9 @@ function handleInlineEdit(event) {
     scheduleCanvasLabelUpdate();
   } else if (field === 'strokeWidth') {
     label.strokeWidth = Math.max(1, parseInt(value) || 1);
+    scheduleCanvasLabelUpdate();
+  } else if (field === 'textLabel') {
+    label.textLabel = value;
     scheduleCanvasLabelUpdate();
   } else if (['rectangle', 'polygon', 'line'].includes(field)) {
     // Check if disabling a tool that's currently used by existing annotations
@@ -399,6 +407,9 @@ function showAddLabelForm() {
     <td>
       <input type="number" class="stroke-width-input" id="newLabel-stroke" min="1" max="20" step="1" value="2" />
     </td>
+    <td>
+      <select class="text-label-select" id="newLabel-textLabel">${textLabelOptions('full')}</select>
+    </td>
     <td style="text-align:center;"><input type="checkbox" id="newLabel-rect" checked></td>
     <td style="text-align:center;"><input type="checkbox" id="newLabel-poly" checked></td>
     <td style="text-align:center;"><input type="checkbox" id="newLabel-line" checked></td>
@@ -422,6 +433,7 @@ function saveNewLabel() {
   const colorInput = document.getElementById('newLabel-color');
   const opacityInput = document.getElementById('newLabel-opacity');
   const strokeInput = document.getElementById('newLabel-stroke');
+  const textLabelInput = document.getElementById('newLabel-textLabel');
   const rectInput = document.getElementById('newLabel-rect');
   const polyInput = document.getElementById('newLabel-poly');
   const lineInput = document.getElementById('newLabel-line');
@@ -450,10 +462,16 @@ function saveNewLabel() {
   }
 
   const maxId = currentLabels.reduce((max, label) => Math.max(max, label.id), 0);
-  currentLabels.push({ id: maxId + 1, name, color, opacity, strokeWidth, tools });
+  const textLabel = textLabelModeFor({ textLabel: textLabelInput?.value });
+  currentLabels.push({ id: maxId + 1, name, color, opacity, strokeWidth, textLabel, tools });
 
   hasUnsavedChanges = true;
   refreshLabelTable();
+}
+
+function textLabelOptions(selected) {
+  return Object.entries(TEXT_LABEL_MODES).map(([value, text]) =>
+    `<option value="${value}"${value === selected ? ' selected' : ''}>${text}</option>`).join('');
 }
 
 const TOOL_NAMES = { rectangle: 'Rechteck', polygon: 'Polygon', line: 'Linie' };
@@ -774,10 +792,12 @@ function initializeCanvasTextLabels(canvas) {
   objects.forEach(tl => {
     if (tl.objectType !== 'textLabel') return;
     const annotation = annotationsById.get(tl.linkedAnnotationId);
-    if (!annotation) { orphans.push(tl); return; }
+    // Keine Annotation mehr oder Beschriftung im Label-Manager ausgeschaltet → weg
+    const text = annotation ? textLabelContentFor(annotation) : null;
+    if (text == null) { orphans.push(tl); return; }
     linkedIds.add(tl.linkedAnnotationId);
     const color = annotation.stroke || annotation.fill || '#000000';
-    tl.set({ backgroundColor: color, ...(contrast ? { fill: contrast(color) } : {}) });
+    tl.set({ text, backgroundColor: color, ...(contrast ? { fill: contrast(color) } : {}) });
   });
 
   const prevRenderOnAddRemove = canvas.renderOnAddRemove;
@@ -787,6 +807,7 @@ function initializeCanvasTextLabels(canvas) {
   if (typeof window.createSingleTextLabel === 'function') {
     objects.forEach(obj => {
       if (obj.objectType !== 'annotation' || (obj.id != null && linkedIds.has(obj.id))) return;
+      if (obj.labelText != null && textLabelContentFor(obj) == null) return;   // Beschriftung aus
       window.createSingleTextLabel(obj, { batch: true });
       created = true;
     });
@@ -814,6 +835,40 @@ export function getLabelColorWithOpacity(color, opacity) {
  * Label-Properties NUR hier ergänzen — bis 22.10.2026 war das an ~10 Stellen von
  * Hand nachgebaut, und der Typwechsel übernahm die Strichbreite nicht.
  */
+/**
+ * Inhalt des Text-Labels an einer Annotation, pro Label im Label-Manager wählbar
+ * (Feld `textLabel`; fehlt es — alte Labels, alte .planli —, gilt 'full').
+ */
+export const TEXT_LABEL_MODES = {
+  full:   'Nr. + Wert',
+  number: 'Nur Nr.',
+  value:  'Nur Wert',
+  off:    'Aus',
+};
+
+export function textLabelModeFor(label) {
+  return TEXT_LABEL_MODES[label?.textLabel] ? label.textLabel : 'full';
+}
+
+/**
+ * Angezeigter Text aus dem vollen `labelText` ("<nr>\n<wert> <einheit>") der
+ * Annotation; null = kein Label. `labelText` selbst bleibt immer vollständig —
+ * Tabelle und PDF-Legende lesen den Messwert daraus. Canvas und PDF-Export
+ * benutzen beide diese Funktion.
+ */
+export function textLabelContent(labelText, mode = 'full') {
+  if (mode === 'off' || labelText == null) return mode === 'off' ? null : labelText;
+  const [number, value] = String(labelText).split('\n');
+  if (mode === 'number') return number;
+  if (mode === 'value') return value || number;   // ohne Messwert bleibt die Nr.
+  return labelText;
+}
+
+/** Anzeige-Text für eine Annotation (Fabric-Objekt oder serialisiert). */
+export function textLabelContentFor(annotation, label = getLabelById(annotation?.labelId || annotation?.objectLabel)) {
+  return textLabelContent(annotation?.labelText, textLabelModeFor(label));
+}
+
 export function labelStyleFor(label, annotationType) {
   const isLine = annotationType === 'line';
   return {

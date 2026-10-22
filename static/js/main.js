@@ -16,7 +16,8 @@ import {
   getCurrentLineLabels,
   getLabelsForTool,
   applyLayerOrdering,
-  closeLabelManager
+  closeLabelManager,
+  textLabelContentFor
 } from './labels.js';
 import { getCachedMipmaps, requestMipmaps } from './mipmaps.js';
 import {
@@ -986,6 +987,10 @@ function loadCanvasData(canvasData) {
   
   const loadSeq = markCanvasLoading();
 
+  // Vor dem Erzeugen der Labels: deren Grösse hängt daran
+  textLabelScale = clampTextLabelScale(canvasData.text_label_scale ?? 1);
+  updateTextLabelScaleUI();
+
   // Clear existing canvas content
   canvas.clear();
 
@@ -1022,19 +1027,22 @@ function loadCanvasData(canvasData) {
       // Restore text labels at their saved positions (preserves user moves).
       // Font size is NOT taken from the save but re-derived from the page size,
       // so saves from before the auto font scale render consistently.
-      const labelK = getAutoFontScale();
-      // Farbe ebenfalls nicht aus dem Save: sie folgt der verknüpften Annotation,
-      // sonst bleibt nach einer Farbänderung im Label-Manager die alte stehen.
-      const colorById = new Map(objects.filter(a => a && a.id != null)
-        .map(a => [a.id, a.stroke || a.fill]));
+      const labelK = getTextLabelFontScale();
+      // Farbe und Inhalt ebenfalls nicht aus dem Save: sie folgen der verknüpften
+      // Annotation bzw. ihrem Label, sonst bleibt nach einer Änderung im
+      // Label-Manager der alte Stand stehen (andere Seiten werden erst hier nachgezogen).
+      const annotationById = new Map(objects.filter(a => a && a.id != null).map(a => [a.id, a]));
       labelsLoaded = util.enlivenObjects(savedLabels).then(textLabels => {
         const linkedIds = new Set();
         textLabels.filter(Boolean).forEach(tl => {
+          const annotation = annotationById.get(tl.linkedAnnotationId);
+          const text = annotation?.labelText != null ? textLabelContentFor(annotation) : tl.text;
+          if (text == null) return;   // Beschriftung für dieses Label ausgeschaltet
           tl.set({
             objectType: 'textLabel', selectable: false, evented: false,
-            fontSize: 14 * labelK, padding: 4 * labelK,
+            fontSize: 14 * labelK, padding: 4 * labelK, text,
           });
-          const color = colorById.get(tl.linkedAnnotationId);
+          const color = annotation && (annotation.stroke || annotation.fill);
           if (color) tl.set({ backgroundColor: color, fill: getContrastTextColor(color) });
           canvas.add(tl);
           if (tl.linkedAnnotationId != null) linkedIds.add(tl.linkedAnnotationId);
@@ -1690,6 +1698,43 @@ function updateSummary() {
 // text sizes are tuned for A4; bigger formats scale proportionally per page.
 function getAutoFontScale() {
   return autoFontScale(uploadedImage?.naturalWidth, uploadedImage?.naturalHeight);
+}
+
+// Beschriftungsgrösse der Text-Labels pro Seite (Regler in der Werkzeugleiste),
+// zusätzlich zur automatischen Seitengrössen-Skalierung. Gespeichert als
+// text_label_scale in den Canvas-Daten der Seite; der PDF-Export rechnet ihn ein.
+// Bewusst nicht in der Undo-Historie (Ansichtssache wie die Legenden-Position).
+const TEXT_LABEL_SCALE_MIN = 0.5;
+const TEXT_LABEL_SCALE_MAX = 2;
+let textLabelScale = 1;
+
+function getTextLabelFontScale() {
+  return getAutoFontScale() * textLabelScale;
+}
+
+function clampTextLabelScale(value) {
+  const v = Number(value);
+  return Number.isFinite(v) ? Math.min(TEXT_LABEL_SCALE_MAX, Math.max(TEXT_LABEL_SCALE_MIN, v)) : 1;
+}
+
+/** Text-Labels der offenen Seite auf die neue Grösse bringen (Regler). */
+function setTextLabelScale(value) {
+  textLabelScale = clampTextLabelScale(value);
+  updateTextLabelScaleUI();
+  if (!canvas) return;
+  const k = getTextLabelFontScale();
+  canvas.getObjects().forEach(o => {
+    if (o.objectType === 'textLabel') o.set({ fontSize: 14 * k, padding: 4 * k });
+  });
+  refreshAllCanvasLabels();   // Linien-Labels: Abstand zum Startpunkt hängt an der Grösse
+}
+
+function updateTextLabelScaleUI() {
+  const pct = Math.round(textLabelScale * 100);
+  const slider = document.getElementById('textLabelScaleSlider');
+  if (slider && document.activeElement !== slider) slider.value = pct;
+  const out = document.getElementById('textLabelScaleValue');
+  if (out) out.textContent = `${pct} %`;
 }
 
 // ── On-plan legend ────────────────────────────────────────────────────────────
@@ -3471,7 +3516,7 @@ function calculateLabelPosition(annotationObject) {
       const dx = p0.x - p1.x, dy = p0.y - p1.y;
       const len = Math.hypot(dx, dy);
       if (len > 0.001) {
-        const OFF = 32 * getAutoFontScale();   // canvas px between start dot and label centre
+        const OFF = 32 * getTextLabelFontScale();   // canvas px between start dot and label centre
         return { x: p0.x + (dx / len) * OFF, y: p0.y + (dy / len) * OFF };
       }
     }
@@ -3531,15 +3576,8 @@ function applyLabelToAnnotation(obj, newLabelId) {
   const label = resolveAnnotationLabel(newLabelId, obj.annotationType === 'line');
   applyLabelStyle(obj, label);
 
-  const linkedTextLabel = canvas.getObjects().find(o =>
-    o.objectType === 'textLabel' && o.linkedAnnotationId === obj.id
-  );
-  if (linkedTextLabel) {
-    linkedTextLabel.set({
-      backgroundColor: label.color,
-      fill: getContrastTextColor(label.color)
-    });
-  }
+  // Farbe und Inhalt (der neue Typ kann eine andere Beschriftung haben)
+  updateLinkedTextLabelPosition(obj);
 }
 
 
@@ -4759,10 +4797,12 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
   const labelText = buildLabelText(annotation);
   annotation.set('labelText', labelText);
 
-  // Perf-Experiment: Labels aus → kein Text-Objekt erzeugen (labelText oben bleibt
-  // gesetzt, daher funktionieren Tabelle und PDF-Export weiter). Tabellen-/Summary-
+  // Labels aus (Perf-Experiment oder Beschriftung des Labels im Label-Manager
+  // ausgeschaltet) → kein Text-Objekt erzeugen (labelText oben bleibt gesetzt,
+  // daher funktionieren Tabelle und PDF-Export weiter). Tabellen-/Summary-
   // Updates im Nicht-Batch-Fall trotzdem ausführen.
-  if (!SHOW_TEXT_LABELS) {
+  const shownText = textLabelContentFor(annotation);
+  if (!SHOW_TEXT_LABELS || shownText == null) {
     if (!batch) {
       applyLayerOrdering();   // keep new annotations behind dimensions/text notes
       canvas.renderAll();
@@ -4776,11 +4816,11 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
   const labelPosition = calculateLabelPosition(annotation);
 
   // Create text label with number and area/length (no inverse scaling)
-  const k = getAutoFontScale();
-  const textLabel = new Text(labelText, {
+  const k = getTextLabelFontScale();
+  const textLabel = new Text(shownText, {
     left: labelPosition.x,
     top: labelPosition.y,
-    fontSize: 14 * k, // A4-Basis, skaliert mit Seitengrösse — Zoom macht der Canvas
+    fontSize: 14 * k, // A4-Basis, skaliert mit Seitengrösse und Regler — Zoom macht der Canvas
     fontFamily: 'Arial', // sonst fällt Fabric auf Times New Roman (Serif) zurück
     fill: getContrastTextColor(labelColor),
     backgroundColor: labelColor,
@@ -4817,25 +4857,38 @@ function updateLinkedTextLabelPosition(annotation) {
   const textLabel = canvas.getObjects().find(obj => 
     obj.objectType === 'textLabel' && obj.linkedAnnotationId === annotation.id
   );
-  
-  if (textLabel) {
-    // Recalculate position and area/length after object modification
-    const newPosition = calculateLabelPosition(annotation);
-    const labelText = buildLabelText(annotation);
 
-    // Sync text label color with annotation color
-    const annotationColor = annotation.stroke || annotation.fill || '#000000';
+  // labelText immer nachführen, auch ohne sichtbares Label — Tabelle und
+  // PDF-Legende lesen den Messwert daraus
+  const labelText = buildLabelText(annotation);
+  annotation.set('labelText', labelText);
 
-    // Update position, text content, and color
-    annotation.set('labelText', labelText);
-    textLabel.set({
-      left: newPosition.x,
-      top: newPosition.y,
-      text: labelText,
-      backgroundColor: annotationColor,
-      fill: getContrastTextColor(annotationColor)
-    });
+  // Inhalt hängt am Label der Annotation (Label-Manager, Typwechsel)
+  const shownText = textLabelContentFor(annotation);
+  if (shownText == null || !SHOW_TEXT_LABELS) {
+    if (textLabel) canvas.remove(textLabel);
+    return;
   }
+  if (!textLabel) {
+    createSingleTextLabel(annotation, { batch: true });
+    applyLayerOrdering();
+    return;
+  }
+
+  // Recalculate position after object modification
+  const newPosition = calculateLabelPosition(annotation);
+
+  // Sync text label color with annotation color
+  const annotationColor = annotation.stroke || annotation.fill || '#000000';
+
+  // Update position, text content, and color
+  textLabel.set({
+    left: newPosition.x,
+    top: newPosition.y,
+    text: shownText,
+    backgroundColor: annotationColor,
+    fill: getContrastTextColor(annotationColor)
+  });
 }
 
 /**
@@ -5020,6 +5073,7 @@ function collectCurrentCanvasData(pageId = currentPageId) {
     canvas_dimensions: canvasDimensions,
     canvas_text_notes: canvasTextNotes,
     legend_position: legendObj ? { left: legendObj.left, top: legendObj.top } : null,
+    text_label_scale: textLabelScale,
     annotation_count: annotations.length,
     canvas_available: true,
     canvas_zoom: canvas.getZoom(),
@@ -5058,6 +5112,8 @@ function loadPageCanvasData(pageId) {
   } else {
     console.log(`No canvas data available for page ${pageId}`);
     // Clear canvas for empty page
+    textLabelScale = 1;
+    updateTextLabelScaleUI();
     if (canvas) {
       canvas.clear();
       initCanvas();
@@ -5378,6 +5434,8 @@ async function initApp() {
 
     pageCanvasData  = {};
     currentPageId   = null;
+    textLabelScale  = 1;
+    updateTextLabelScaleUI();
     canvasReady     = true;
     canvasLoadSeq++;
     selectedObjects = [];
@@ -5621,6 +5679,41 @@ async function initApp() {
   
   // Legende auf dem Plan ein-/ausblenden
   document.getElementById('legendBtn')?.addEventListener('click', toggleCanvasLegend);
+
+  // Beschriftungsgrösse der offenen Seite: Button öffnet ein kleines Popover mit
+  // Regler. Live-Vorschau höchstens einmal pro Frame (refreshAllCanvasLabels läuft
+  // über alle Annotationen), dirty erst beim Loslassen.
+  const labelScaleBtn = document.getElementById('textLabelScaleBtn');
+  const labelScalePopover = document.getElementById('textLabelScalePopover');
+  const labelScaleSlider = document.getElementById('textLabelScaleSlider');
+  if (labelScaleBtn && labelScalePopover && labelScaleSlider) {
+    const closePopover = () => { labelScalePopover.hidden = true; };
+    labelScaleBtn.addEventListener('click', () => {
+      labelScalePopover.hidden = !labelScalePopover.hidden;
+      updateTextLabelScaleUI();
+    });
+    document.addEventListener('mousedown', e => {
+      if (!labelScalePopover.hidden && !e.target.closest('.text-label-scale-wrap')) closePopover();
+    });
+    labelScalePopover.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { closePopover(); labelScaleBtn.focus(); }
+    });
+    let scaleFrame = 0;
+    labelScaleSlider.addEventListener('input', () => {
+      document.getElementById('textLabelScaleValue').textContent = `${labelScaleSlider.value} %`;
+      if (scaleFrame) return;
+      scaleFrame = requestAnimationFrame(() => {
+        scaleFrame = 0;
+        setTextLabelScale(labelScaleSlider.value / 100);
+      });
+    });
+    labelScaleSlider.addEventListener('change', () => setProjectDirty(true));
+    document.getElementById('textLabelScaleReset')?.addEventListener('click', () => {
+      if (textLabelScale === 1) return;
+      setTextLabelScale(1);
+      setProjectDirty(true);
+    });
+  }
 
   // Fenster-erkennen-Modal: Einstellungen ("Erkennen als" + Schwelle), Auslöser
   // und Erkennungsliste leben hier. Der Toolbar-Button öffnet das Modal.

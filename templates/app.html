@@ -1023,6 +1023,27 @@
                                 <line x1="6.5" y1="9.5" x2="12.5" y2="9.5"/>
                             </svg>
                         </button>
+                        <!-- Beschriftungsgrösse dieser Seite (Popover mit Regler, main.js) -->
+                        <div class="text-label-scale-wrap">
+                            <button id="textLabelScaleBtn" class="tool-button" title="Grösse der Beschriftungen auf dieser Seite">
+                                <svg width="16" height="16" viewBox="0 0 14 14" xmlns="http://www.w3.org/2000/svg">
+                                    <rect x="0.75" y="3.25" width="9" height="6.5" rx="1" fill="currentColor"/>
+                                    <text x="5.25" y="8.2" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="4.6" font-weight="700" fill="#fff">12</text>
+                                    <path d="M11.5 2.5 V11.5 M10.3 4 L11.5 2.5 L12.7 4 M10.3 10 L11.5 11.5 L12.7 10" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                            <div id="textLabelScalePopover" class="text-label-scale-popover" hidden>
+                                <div class="text-label-scale-head">
+                                    <label for="textLabelScaleSlider">Beschriftungsgrösse</label>
+                                    <span id="textLabelScaleValue">100 %</span>
+                                </div>
+                                <input type="range" id="textLabelScaleSlider" min="50" max="200" step="10" value="100">
+                                <div class="text-label-scale-foot">
+                                    <span>Gilt für diese Seite</span>
+                                    <button type="button" id="textLabelScaleReset">Zurücksetzen</button>
+                                </div>
+                            </div>
+                        </div>
                         {% comment %} Tastaturkürzel-Button in die Werkzeugleiste deaktiviert:
                            wurde ins Burger-Menü verschoben (ID shortcutsBtn bleibt dort).
                            Zum Zurückholen die comment/endcomment-Tags entfernen und den
@@ -1386,6 +1407,7 @@
                                 <th>Farbe</th>
                                 <th>Opacity</th>
                                 <th>Linienbreite</th>
+                                <th>Beschriftung<span class="info-icon" title="Was im Plan an den Objekten dieses Labels steht: Nummer und Fläche/Länge, nur eines davon oder nichts. Gilt auch für den PDF-Export.">i</span></th>
                                 <th title="Rechteck">
                                     <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" xmlns="http://www.w3.org/2000/svg">
                                         <rect x="1.5" y="3" width="11" height="8"/>

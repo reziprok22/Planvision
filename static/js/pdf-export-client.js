@@ -8,6 +8,7 @@
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import { autoFontScale, isLightColor, sanitizeFileBase } from './pdf-handler.js';
+import { textLabelContentFor } from './labels.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -278,16 +279,35 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
         lineAnchors[ann.id] = { p0, dir: { x: dx / len, y: dy / len }, dotR };
     }
 
-    // Pass 2: draw text labels using saved canvas positions (originX/Y: 'center')
-    if (font && canvasTextLabels?.length) {
-        for (const tl of canvasTextLabels) {
-            if (!tl.text) continue;
+    // Pass 2: draw text labels using saved canvas positions (originX/Y: 'center').
+    // Inhalt aus der Annotation + Label-Einstellung (wie auf dem Canvas) — nicht
+    // tl.text, das bei nicht geöffneten Seiten noch einen alten Stand haben kann.
+    const annById = new Map(canvasAnnotations.filter(a => a.id != null).map(a => [a.id, a]));
+    // Annotationen ohne gespeichertes Label: Beschriftung war ausgeschaltet, als
+    // die Seite zuletzt offen war, und ist es jetzt nicht mehr → Position wie
+    // calculateLabelPosition (main.js): erste Ecke bzw. erster Punkt.
+    const labelled = new Set((canvasTextLabels || []).map(tl => tl.linkedAnnotationId));
+    const allTextLabels = [...(canvasTextLabels || [])];
+    for (const ann of canvasAnnotations) {
+        if (ann.id == null || labelled.has(ann.id) || ann.objectType !== 'annotation') continue;
+        const c = fabricToAbsolute(ann);
+        const p = c?.kind === 'rect' ? { x: c.x1, y: c.y1 } : c?.points?.[0];
+        if (p) allTextLabels.push({ linkedAnnotationId: ann.id, left: p.x, top: p.y,
+                                   backgroundColor: ann.stroke });
+    }
+    if (font && allTextLabels.length) {
+        for (const tl of allTextLabels) {
+            const ann = annById.get(tl.linkedAnnotationId);
+            const text = ann?.labelText != null
+                ? textLabelContentFor(ann, labelMap[ann.labelId ?? ann.objectLabel])
+                : tl.text;
+            if (!text) continue;
 
             const bgHex     = tl.backgroundColor || '#888888';
             const bgColor   = hexToRgb(bgHex);
             const textColor = contrastColor(bgHex);
 
-            const lines    = tl.text.split('\n');
+            const lines    = text.split('\n');
             const fontSize = 8 * k;      // mirrors the canvas auto font scale
             const lineH    = fontSize + 2 * k;
             const textH    = lines.length * lineH;
@@ -694,9 +714,11 @@ export async function exportAnnotatedPdfClient({ sourcePdfBlobs, pageImageUrls, 
         const sy = T.displayH / imgH;
         // Same per-page auto font scale as on the canvas (labels, dimensions, legend)
         const k  = autoFontScale(imgW, imgH);
+        // Text-Labels zusätzlich mit dem Grössenregler der Seite
+        const labelK = k * (canvasData?.text_label_scale ?? 1);
 
         const textLabels = canvasData?.canvas_text_labels || [];
-        drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont, k);
+        drawAnnotationsOnPage(page, annotations, textLabels, T, sx, sy, labelMap, labelFont, labelK);
         drawDimensionsOnPage(page, dimensions, T, sx, sy, labelFont, k);
         drawTextNotesOnPage(page, textNotes, T, sx, sy, labelFont);
 

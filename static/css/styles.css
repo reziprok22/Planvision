@@ -937,6 +937,67 @@ button:hover {
     flex-shrink: 0;
 }
 
+/* Beschriftungsgrösse: Popover unter dem Toolbar-Button (main.js) */
+.text-label-scale-wrap {
+    position: relative;
+}
+
+.text-label-scale-popover {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 1100;
+    width: 220px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+    font-size: 12px;
+    color: #444;
+}
+
+.text-label-scale-popover[hidden] {
+    display: none;
+}
+
+.text-label-scale-head,
+.text-label-scale-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.text-label-scale-head label {
+    font-weight: 600;
+}
+
+.text-label-scale-popover input[type="range"] {
+    width: 100%;
+    accent-color: #444;
+    margin: 8px 0 6px;
+}
+
+.text-label-scale-foot {
+    color: #888;
+    font-size: 11px;
+}
+
+.text-label-scale-foot button {
+    background: none;
+    border: none;
+    padding: 0;
+    color: #666;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.text-label-scale-foot button:hover {
+    color: #444;
+    text-decoration: underline;
+}
+
 .tool-button:hover {
     background: #ebebeb;
     color: #444;
@@ -1417,6 +1478,14 @@ input[type="color"].inline-edit {
 .copy-label-btn:hover {
     color: #444;
     background: #ebebeb;
+}
+
+.text-label-select {
+    padding: 2px 4px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    font-size: 13px;
+    background: #fff;
 }
 
 .stroke-width-input {
