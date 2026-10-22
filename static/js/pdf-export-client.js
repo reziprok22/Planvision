@@ -8,7 +8,7 @@
 
 import { PDFDocument, rgb, degrees, StandardFonts } from 'pdf-lib';
 import { autoFontScale, isLightColor, sanitizeFileBase } from './pdf-handler.js';
-import { textLabelContentFor } from './labels.js';
+import { textLabelContentFor, TEXT_LABEL_BG_ALPHA } from './labels.js';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -303,7 +303,9 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
                 : tl.text;
             if (!text) continue;
 
-            const bgHex     = tl.backgroundColor || '#888888';
+            // Farbe von der Annotation — tl.backgroundColor ist rgba (Canvas-Transparenz)
+            const bgHex     = ann?.stroke
+                || (tl.backgroundColor?.startsWith('#') ? tl.backgroundColor : '#888888');
             const bgColor   = hexToRgb(bgHex);
             const textColor = contrastColor(bgHex);
 
@@ -334,7 +336,7 @@ function drawAnnotationsOnPage(page, canvasAnnotations, canvasTextLabels, T, sx,
                 y: c.y - (T.swapped ? wBadge : hBadge) / 2,
                 width:  T.swapped ? hBadge : wBadge,
                 height: T.swapped ? wBadge : hBadge,
-                color: bgColor, opacity: 0.9,
+                color: bgColor, opacity: TEXT_LABEL_BG_ALPHA,
             });
 
             lines.forEach((line, i) => {

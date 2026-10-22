@@ -732,7 +732,7 @@ function updateCanvasLabels() {
         (pageData.canvas_text_labels || []).forEach(tl => {
           const color = colorById.get(tl.linkedAnnotationId);
           if (!color) return;
-          tl.backgroundColor = color;
+          tl.backgroundColor = textLabelBackground(color);
           if (typeof window.getContrastTextColor === 'function') {
             tl.fill = window.getContrastTextColor(color);
           }
@@ -797,7 +797,7 @@ function initializeCanvasTextLabels(canvas) {
     if (text == null) { orphans.push(tl); return; }
     linkedIds.add(tl.linkedAnnotationId);
     const color = annotation.stroke || annotation.fill || '#000000';
-    tl.set({ text, backgroundColor: color, ...(contrast ? { fill: contrast(color) } : {}) });
+    tl.set({ text, backgroundColor: textLabelBackground(color), ...(contrast ? { fill: contrast(color) } : {}) });
   });
 
   const prevRenderOnAddRemove = canvas.renderOnAddRemove;
@@ -862,6 +862,21 @@ export function textLabelContent(labelText, mode = 'full') {
   if (mode === 'number') return number;
   if (mode === 'value') return value || number;   // ohne Messwert bleibt die Nr.
   return labelText;
+}
+
+/**
+ * Hintergrund der Text-Labels: Label-Farbe, leicht transparent, damit man beim
+ * Platzieren sieht, was darunter liegt (Text bleibt deckend). Canvas und
+ * PDF-Export benutzen dieselbe Deckkraft.
+ */
+export const TEXT_LABEL_BG_ALPHA = 0.75;
+
+export function textLabelBackground(color) {
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(color || '');
+  if (!m) return color;
+  const hex = m[1].length === 3 ? m[1].replace(/./g, c => c + c) : m[1];
+  const [r, g, b] = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16));
+  return `rgba(${r}, ${g}, ${b}, ${TEXT_LABEL_BG_ALPHA})`;
 }
 
 /** Anzeige-Text für eine Annotation (Fabric-Objekt oder serialisiert). */

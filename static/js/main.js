@@ -17,7 +17,8 @@ import {
   getLabelsForTool,
   applyLayerOrdering,
   closeLabelManager,
-  textLabelContentFor
+  textLabelContentFor,
+  textLabelBackground
 } from './labels.js';
 import { getCachedMipmaps, requestMipmaps } from './mipmaps.js';
 import {
@@ -1043,7 +1044,7 @@ function loadCanvasData(canvasData) {
             fontSize: 14 * labelK, padding: 4 * labelK, text,
           });
           const color = annotation && (annotation.stroke || annotation.fill);
-          if (color) tl.set({ backgroundColor: color, fill: getContrastTextColor(color) });
+          if (color) tl.set({ backgroundColor: textLabelBackground(color), fill: getContrastTextColor(color) });
           canvas.add(tl);
           if (tl.linkedAnnotationId != null) linkedIds.add(tl.linkedAnnotationId);
         });
@@ -4823,7 +4824,7 @@ function createSingleTextLabel(annotation, { batch = false } = {}) {
     fontSize: 14 * k, // A4-Basis, skaliert mit Seitengrösse und Regler — Zoom macht der Canvas
     fontFamily: 'Arial', // sonst fällt Fabric auf Times New Roman (Serif) zurück
     fill: getContrastTextColor(labelColor),
-    backgroundColor: labelColor,
+    backgroundColor: textLabelBackground(labelColor),
     padding: 4 * k,
     textAlign: 'center',
     fontWeight: 'bold',
@@ -4886,7 +4887,7 @@ function updateLinkedTextLabelPosition(annotation) {
     left: newPosition.x,
     top: newPosition.y,
     text: shownText,
-    backgroundColor: annotationColor,
+    backgroundColor: textLabelBackground(annotationColor),
     fill: getContrastTextColor(annotationColor)
   });
 }
