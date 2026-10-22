@@ -357,7 +357,6 @@ Funktionen, die in der UI ausgeblendet sind, deren Code aber noch lebt. Bewährt
 - **Erkennungsliste Nr./Label/Wahrscheinlichkeit im Erkennen-Modal** (ausgeblendet 22.10.2026): Tabelle in app.html (`display:none`), wird von `updateDetectionTable()` (`main.js`) weiter befüllt
 - **„Report erstellen“-Button** (Header): in `{% comment %}` in app.html; Handler `exportPdf` (`project.js`) und `exportReportPdfClient()` (`pdf-export-client.js`) leben noch
 - **„Neu nummerieren“-Button** (Werkzeugleiste): in `{% comment %}` in app.html; Handler hängt an `recalculateIndicesBtn` in `main.js`
-- **Tastaturkürzel-Button in der Werkzeugleiste**: in `{% comment %}` in app.html — kein toter Code, nur verschoben (`shortcutsBtn` lebt im Burger-Menü). Kann ersatzlos raus
 
 ## ZIP Format Versioning
 

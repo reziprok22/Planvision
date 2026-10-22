@@ -5906,6 +5906,7 @@ async function initApp() {
     modal.style.display = modal.style.display === 'block' ? 'none' : 'block';
   }
   document.getElementById('shortcutsBtn')?.addEventListener('click', toggleShortcutsModal);
+  document.getElementById('shortcutsToolbarBtn')?.addEventListener('click', toggleShortcutsModal);
   document.getElementById('shortcutsModalClose')?.addEventListener('click', toggleShortcutsModal);
   document.getElementById('shortcutsModal')?.addEventListener('click', e => {
     if (e.target === document.getElementById('shortcutsModal')) toggleShortcutsModal();
