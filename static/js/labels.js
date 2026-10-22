@@ -448,11 +448,11 @@ function copyLabel(labelId) {
 
   const original = currentLabels[index];
   const maxId = currentLabels.reduce((max, l) => Math.max(max, l.id), 0);
+  // Alle Felder übernehmen (auch künftige Label-Properties), nur id/Name neu
   const copy = {
+    ...original,
     id: maxId + 1,
     name: original.name + ' (Kopie)',
-    color: original.color,
-    opacity: original.opacity,
     strokeWidth: original.strokeWidth || 2,
     tools: { ...original.tools }
   };
@@ -633,14 +633,7 @@ function updateCanvasLabels() {
           const label = getLabelById(labelId);
           if (!label) return;
           
-          // Update stored annotation colors and styles
-          annotation.stroke = label.color;
-          if (annotation.annotationType === 'rectangle' || annotation.annotationType === 'polygon') {
-            annotation.fill = getLabelColorWithOpacity(label.color, label.opacity);
-          } else if (annotation.annotationType === 'line') {
-            // Ensure lines never have a fill
-            annotation.fill = '';
-          }
+          applyLabelStyleToSpec(annotation, label);
         });
 
         // Text-Labels der nicht geöffneten Seiten mitziehen: Sie liegen mit ihrer
@@ -678,13 +671,7 @@ function updateCanvasAnnotations(canvas) {
     const label = getLabelById(labelId);
     if (!label) return;
     
-    // Update annotation colors and styles
-    const needsFill = annotation.annotationType === 'rectangle' || annotation.annotationType === 'polygon';
-    annotation.set({
-      stroke: label.color,
-      fill: needsFill ? getLabelColorWithOpacity(label.color, label.opacity) : '',
-      strokeWidth: label.strokeWidth || 2
-    });
+    applyLabelStyle(annotation, label);
   });
   
   // Recreate all text labels to ensure they use updated colors
@@ -750,6 +737,61 @@ function initializeCanvasTextLabels(canvas) {
 export function getLabelColorWithOpacity(color, opacity) {
   const alpha = (typeof opacity === 'number') ? Math.min(1, Math.max(0, opacity)) : 0x20 / 255;
   return color + Math.round(alpha * 255).toString(16).padStart(2, '0');
+}
+
+/**
+ * Einzige Quelle dafür, welche Label-Eigenschaften auf einer Annotation landen
+ * (Zeichnen, KI-Ergebnis, Typwechsel, Label-Manager). Neue darstellungsrelevante
+ * Label-Properties NUR hier ergänzen — bis 22.10.2026 war das an ~10 Stellen von
+ * Hand nachgebaut, und der Typwechsel übernahm die Strichbreite nicht.
+ */
+export function labelStyleFor(label, annotationType) {
+  const isLine = annotationType === 'line';
+  return {
+    stroke: label.color,
+    fill: isLine ? '' : getLabelColorWithOpacity(label.color, label.opacity),
+    strokeWidth: label.strokeWidth || 2
+  };
+}
+
+/**
+ * Label-Darstellung auf ein Fabric-Objekt anwenden. Fabric versteht left/top als
+ * Aussenkante inklusive Strich — eine andere Strichbreite verschöbe die sichtbare
+ * Form um die halbe Differenz, deshalb bleibt die Mitte fest.
+ *
+ * Läuft gerade eine temporäre Strich-Verstärkung (Hover-Hervorhebung aus der
+ * Tabelle, Eckpunkt-Modus — beide merken sich `_origStrokeWidth`), wird nur der
+ * gemerkte Wert ersetzt; das Zurücksetzen landet dann auf der neuen Breite.
+ */
+export function applyLabelStyle(obj, label) {
+  const style = labelStyleFor(label, obj.annotationType);
+  if (obj._origStrokeWidth != null) {
+    obj._origStrokeWidth = style.strokeWidth;
+    delete style.strokeWidth;
+  }
+  const center = obj.getCenterPoint();
+  obj.set(style);
+  obj.setPositionByOrigin(center, 'center', 'center');
+  obj.setCoords();
+}
+
+/**
+ * Wie applyLabelStyle, aber für eine serialisierte Annotation (pageCanvasData
+ * der nicht geöffneten Seiten): left/top um die halbe Strichdifferenz entlang der
+ * (ggf. gedrehten) Objektachsen zurücknehmen, damit die Mitte fest bleibt.
+ */
+export function applyLabelStyleToSpec(spec, label) {
+  const style = labelStyleFor(label, spec.annotationType);
+  const oldWidth = spec.strokeWidth ?? style.strokeWidth;
+  const half = (style.strokeWidth - oldWidth) / 2;
+  if (half && (spec.originX ?? 'left') === 'left' && (spec.originY ?? 'top') === 'top'
+      && typeof spec.left === 'number' && typeof spec.top === 'number') {
+    const a = (spec.angle || 0) * Math.PI / 180;
+    const cos = Math.cos(a), sin = Math.sin(a);
+    spec.left -= half * cos - half * sin;
+    spec.top -= half * sin + half * cos;
+  }
+  Object.assign(spec, style);
 }
 
 /**

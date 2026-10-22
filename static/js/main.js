@@ -10,7 +10,8 @@ import { Canvas, FabricImage as Image, Rect, Polygon, Polyline, FabricText as Te
 import {
   setupLabels,
   getLabelById,
-  getLabelColorWithOpacity,
+  labelStyleFor,
+  applyLabelStyle,
   getCurrentLabels,
   getCurrentLineLabels,
   getLabelsForTool,
@@ -1183,8 +1184,6 @@ function convertPredictionsToCanvasData(predictions, pageId = currentPageId) {
   const canvasAnnotations = predictions.map((pred, index) => {
     const labelId = targetLabelId ?? (pred.label || 1);
     const fullLabel = resolveAnnotationLabel(labelId);
-    const labelColor = fullLabel.color;
-    const labelStrokeWidth = fullLabel.strokeWidth || 2;
 
     if (pred.box || pred.bbox) {
       // Rectangle from bounding box
@@ -1198,9 +1197,7 @@ function convertPredictionsToCanvasData(predictions, pageId = currentPageId) {
         top: y1,
         width: x2 - x1,
         height: y2 - y1,
-        fill: getLabelColorWithOpacity(labelColor, fullLabel?.opacity),
-        stroke: labelColor,
-        strokeWidth: labelStrokeWidth,
+        ...labelStyleFor(fullLabel, 'rectangle'),
         labelId: labelId,
         objectLabel: labelId,
         score: pred.score ?? 0,
@@ -1218,9 +1215,7 @@ function convertPredictionsToCanvasData(predictions, pageId = currentPageId) {
         objectType: 'annotation',
         annotationType: 'polygon',
         points: fabricPoints,
-        fill: getLabelColorWithOpacity(labelColor, fullLabel?.opacity),
-        stroke: labelColor,
-        strokeWidth: labelStrokeWidth,
+        ...labelStyleFor(fullLabel, 'polygon'),
         labelId: labelId,
         objectLabel: labelId,
         score: pred.score ?? 0,
@@ -1238,9 +1233,7 @@ function convertPredictionsToCanvasData(predictions, pageId = currentPageId) {
         objectType: 'annotation',
         annotationType: 'line',
         points: fabricPoints,
-        fill: '',
-        stroke: labelColor,
-        strokeWidth: labelStrokeWidth,
+        ...labelStyleFor(fullLabel, 'line'),
         labelId: labelId,
         objectLabel: labelId,
         score: pred.score ?? 0,
@@ -3191,15 +3184,14 @@ function startDrawingRectangle(pointer) {
   // Fabric versteht left/top als Aussenkante INKLUSIVE Strich — die sichtbare
   // Rechteckkante liegt eine halbe Strichbreite weiter innen. Ohne Ausgleich sass
   // ein eingerastetes Rechteck um diese halbe Strichbreite neben dem Ziel.
-  const sw = label.strokeWidth || 2;
+  const style = labelStyleFor(label, 'rectangle');
+  const sw = style.strokeWidth;
   const rect = new Rect({
     left: pointer.x - sw / 2,
     top: pointer.y - sw / 2,
     width: 0,
     height: 0,
-    fill: getLabelColorWithOpacity(label.color, label.opacity),
-    stroke: label.color,
-    strokeWidth: sw,
+    ...style,
     objectType: 'annotation',
     annotationType: 'rectangle',
     userCreated: true,
@@ -3250,11 +3242,9 @@ function finishDrawingRectangle() {
       selectable: true,
       evented: true,
       labelId: selectedLabelId,
-      objectLabel: selectedLabelId,
-      fill: getLabelColorWithOpacity(label.color, label.opacity),
-      stroke: label.color
+      objectLabel: selectedLabelId
     });
-    currentRectangle.setCoords(); // sync hit-detection bounds after resize via set()
+    applyLabelStyle(currentRectangle, label);   // setzt auch die Treffer-Bounds (setCoords)
 
     // Create text label with delay to ensure annotation is fully stabilized
     const rectToLabel = currentRectangle; // Store reference before clearing
@@ -3454,21 +3444,16 @@ function applyLabelChangeToSelectedObject() {
 }
 
 /**
- * Apply a label (id) to a single annotation: update its label fields, fill/stroke
- * and the colour of its linked text label.
+ * Apply a label (id) to a single annotation: update its label fields, its whole
+ * label style (applyLabelStyle — colour, fill, stroke width …) and the colour of
+ * its linked text label.
  */
 function applyLabelToAnnotation(obj, newLabelId) {
   obj.labelId = newLabelId;
   obj.objectLabel = newLabelId;
 
-  const isLineObject = obj.annotationType === 'line';
-  const label = resolveAnnotationLabel(newLabelId, isLineObject);
-
-  if (isLineObject) {
-    obj.set({ stroke: label.color });
-  } else {
-    obj.set({ fill: getLabelColorWithOpacity(label.color, label.opacity), stroke: label.color });
-  }
+  const label = resolveAnnotationLabel(newLabelId, obj.annotationType === 'line');
+  applyLabelStyle(obj, label);
 
   const linkedTextLabel = canvas.getObjects().find(o =>
     o.objectType === 'textLabel' && o.linkedAnnotationId === obj.id
@@ -3684,9 +3669,7 @@ function startPolygonDrawing() {
   ];
   
   currentPolygon = new Polygon(points, {
-    fill: getLabelColorWithOpacity(label.color, label.opacity),
-    stroke: label.color,
-    strokeWidth: label.strokeWidth || 2,
+    ...labelStyleFor(label, 'polygon'),
     objectType: 'annotation',
     annotationType: 'polygon',
     selectable: false,
@@ -3751,9 +3734,7 @@ function finishPolygonDrawing({ fromDblClick = true } = {}) {
 
   // Create polygon with original points
   const finalPolygon = new Polygon(fabricPoints, {
-    fill: getLabelColorWithOpacity(label.color, label.opacity),
-    stroke: label.color,
-    strokeWidth: label.strokeWidth || 2,
+    ...labelStyleFor(label, 'polygon'),
     objectType: 'annotation',
     annotationType: 'polygon',
     userCreated: true,
@@ -4159,9 +4140,7 @@ function startLineDrawing() {
   ];
 
   currentLine = new Polyline(points, {
-    fill: '',
-    stroke: label.color,
-    strokeWidth: label.strokeWidth || 2,
+    ...labelStyleFor(label, 'line'),
     objectType: 'annotation',
     annotationType: 'line',
     userCreated: true,
@@ -4228,9 +4207,7 @@ function finishLineDrawing({ fromDblClick = true } = {}) {
 
   // Create polyline with original points
   const finalLine = new Polyline(fabricPoints, {
-    fill: '',
-    stroke: label.color,
-    strokeWidth: label.strokeWidth || 2,
+    ...labelStyleFor(label, 'line'),
     objectType: 'annotation',
     annotationType: 'line',
     selectable: true,
