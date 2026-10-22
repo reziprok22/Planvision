@@ -1382,14 +1382,16 @@ input[type="color"].inline-edit {
     text-align: center;
 }
 
-/* Label Quick List (left column) */
-#labelQuickList {
+/* Label Quick List (left column; also the label choice in "Fenster erkennen") */
+#labelQuickList,
+#aiLabelQuickList {
     display: flex;
     flex-direction: column;
     gap: 2px;
     max-height: 45vh;
     overflow-y: auto;
 }
+#aiLabelQuickList { max-height: 40vh; }
 
 .label-quick-item {
     display: flex;

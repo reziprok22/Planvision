@@ -1092,6 +1092,10 @@ function loadCanvasData(canvasData) {
     updateSummary(); // aktualisiert auch den Inhalt der Legende
     saveHistorySnapshot(true); // Seed: programmatisches Laden, kein Nutzereingriff
   }, 100);
+
+  // Resolves once annotations and their text labels are on the canvas
+  // (used by the detection run to reveal the new hits)
+  return annotationsLoaded;
 }
 
 
@@ -3097,6 +3101,42 @@ function updateLabelQuickList() {
 }
 
 /**
+ * Label choice in the "Fenster erkennen" modal: same coloured list as the left
+ * column, backed by the hidden #aiLabelSelect (which page settings and the
+ * analysis read). The detector only produces boxes, so the indicator shows the
+ * rectangle tool and the list offers the rectangle labels.
+ */
+function updateAiLabelQuickList() {
+  const container = document.getElementById('aiLabelQuickList');
+  const select = document.getElementById('aiLabelSelect');
+  if (!container || !select) return;
+
+  const indicatorEl = document.getElementById('aiLabelToolIndicator');
+  if (indicatorEl) {
+    const indicator = LABEL_TOOL_INDICATORS.rectangle;
+    indicatorEl.innerHTML = `${indicator.svg}<span>${indicator.name}</span>`;
+  }
+
+  container.innerHTML = '';
+  Array.from(select.options).forEach(opt => {
+    const label = getLabelById(parseInt(opt.value));
+    const color = label ? label.color : '#888';
+
+    const item = document.createElement('div');
+    item.className = 'label-quick-item' + (opt.value === select.value ? ' active' : '');
+    item.innerHTML = `
+      <span class="label-quick-dot" style="background:${color};"></span>
+      <span class="label-quick-name">${label ? label.name : opt.textContent}</span>
+    `;
+    item.addEventListener('click', () => {
+      select.value = opt.value;
+      updateAiLabelQuickList();
+    });
+    container.appendChild(item);
+  });
+}
+
+/**
  * Tool State Management
  */
 function cleanupCurrentTool() {
@@ -3329,6 +3369,59 @@ function drawDeleteGhosts({ ctx }) {
   for (const o of deleteGhosts.objs) if (!o.canvas) o.render(ctx);
   ctx.restore();
   canvas.requestRenderAll();
+}
+
+/**
+ * KI-Treffer erscheinen nach der Erkennung nacheinander (von links nach rechts)
+ * statt alle auf einmal: jedes Objekt samt Text-Label blendet in REVEAL_FADE_MS
+ * ein und wächst dabei leicht auf seine Grösse. Wie der Lösch-Fade rein beim
+ * Zeichnen — die Objekte sind sofort vollständig auf dem Canvas (Undo, Speichern,
+ * Tabelle sehen nie einen Zwischenzustand); nur ihr render() ist für die Dauer
+ * der Animation auf der Instanz überschrieben (wird nicht serialisiert) und
+ * entfernt sich danach selbst. Die Staffelung ist gedeckelt, damit auch 200
+ * Fenster nach REVEAL_SPREAD_MAX_MS komplett da sind.
+ */
+const REVEAL_STEP_MS = 15;
+const REVEAL_SPREAD_MAX_MS = 600;
+const REVEAL_FADE_MS = 160;
+
+function revealDetections(annotations) {
+  if (!canvas || annotations.length === 0) return;
+  const sorted = [...annotations].sort((a, b) => a.getCenterPoint().x - b.getCenterPoint().x);
+  const step = Math.min(REVEAL_STEP_MS, REVEAL_SPREAD_MAX_MS / sorted.length);
+  const labelById = new Map(canvas.getObjects()
+    .filter(o => o.objectType === 'textLabel')
+    .map(o => [o.linkedAnnotationId, o]));
+  const start = performance.now();
+  const end = start + step * (sorted.length - 1) + REVEAL_FADE_MS;
+
+  sorted.forEach((annotation, i) => {
+    const at = start + i * step;
+    const center = annotation.getCenterPoint();   // label pops with its box
+    for (const obj of [annotation, labelById.get(annotation.id)]) {
+      if (!obj) continue;
+      obj.render = function(ctx) {
+        const t = (performance.now() - at) / REVEAL_FADE_MS;
+        if (t >= 1) { delete this.render; return this.render(ctx); }
+        if (t <= 0) return;
+        const e = 1 - (1 - t) ** 3;               // easeOutCubic
+        const k = 0.9 + 0.1 * e;
+        ctx.save();
+        ctx.globalAlpha *= e;
+        ctx.translate(center.x, center.y);
+        ctx.scale(k, k);
+        ctx.translate(-center.x, -center.y);
+        Object.getPrototypeOf(this).render.call(this, ctx);
+        ctx.restore();
+      };
+    }
+  });
+
+  const tick = () => {
+    canvas?.requestRenderAll();
+    if (performance.now() < end) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 }
 
 /**
@@ -5138,8 +5231,19 @@ async function analyzeCurrentPage() {
         )
       };
 
-      loadCanvasData(merged);
+      const keptIds = new Set(kept.map(a => a.id).filter(id => id != null));
+      const loaded = loadCanvasData(merged);
       pageCanvasData[analyzePageId] = merged;
+
+      // Modal zu, damit man die Treffer erscheinen sieht
+      const detectModal = document.getElementById('windowDetectModal');
+      if (detectModal) detectModal.style.display = 'none';
+      loaded?.then(() => revealDetections(canvas.getObjects().filter(o =>
+        o.objectType === 'annotation' && !keptIds.has(o.id))));
+    } else if (detectionError) {
+      // Kein Treffer: im (offenen) Modal sagen, statt still nichts zu tun
+      detectionError.textContent = 'Keine Fenster gefunden.';
+      detectionError.hidden = false;
     }
 
     updateResultsTable();
@@ -5512,6 +5616,7 @@ async function initApp() {
     if (READ_ONLY) { alert(READ_ONLY_MSG); return; }
     if (!windowDetectModal) return;
     updateDetectionTable();          // show the persisted list for this page
+    updateAiLabelQuickList();        // labels/colours or the page's target label may have changed
     const detectionError = document.getElementById('detectionError');
     if (detectionError) detectionError.hidden = true;  // alte Meldung nicht stehen lassen
     windowDetectModal.style.display = 'block';

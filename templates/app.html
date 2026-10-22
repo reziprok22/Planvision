@@ -358,6 +358,13 @@
             flex-shrink: 0;
         }
         .info-icon:hover { border-color: #FF6B00; color: #FF6B00; }
+        .ai-label-tool {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.78em;
+            color: #777;
+        }
 
         /* --- Analyze Button in Toolbar --- */
         .analyze-page-btn {
@@ -1148,11 +1155,18 @@
                 Dient zur automatischen Erkennung von Fenstern auf Ansichtsplänen.
             </p>
 
-            <div class="popover-row" style="margin-bottom:8px;">
-                <label for="aiLabelSelect">Erkennen mit Label</label>
-                <select id="aiLabelSelect" title="Label, das erkannte Objekte erhalten"></select>
+            <div class="popover-row" style="margin-bottom:6px;">
+                <label>Erkennen mit Label</label>
+                <!-- Werkzeug, als das die Treffer entstehen (Fenster = Rechtecke) -->
+                <span id="aiLabelToolIndicator" class="ai-label-tool" title="Erkannte Objekte werden als Rechteck angelegt"></span>
             </div>
-            <div class="popover-row" style="margin-bottom:14px;">
+            <!-- Sichtbare Auswahl = farbige Liste wie in der linken Spalte; das versteckte
+                 Select bleibt die Quelle für main.js (Seiten-Einstellungen, Analyse) -->
+            <select id="aiLabelSelect" style="display:none;"></select>
+            <div id="aiLabelQuickList" style="margin-bottom:14px;"></div>
+            {% comment %} Schwelle ausgeblendet (Erkennung gut genug, Default 0.5).
+               Zum Zurückholen "display:none;" entfernen. {% endcomment %}
+            <div class="popover-row" style="display:none; margin-bottom:14px;">
                 <label for="threshold">Schwelle<span class="info-icon" title="Mindest-Sicherheit, ab der ein erkanntes Objekt übernommen wird (0,1–1). Niedriger = mehr Treffer, aber auch mehr Fehlerkennungen; höher = nur sichere Treffer.">i</span></label>
                 <input type="number" id="threshold" name="threshold" value="0.5" min="0.1" max="1" step="0.05" title="Mindest-Konfidenz der Erkennung (0.1–1)">
             </div>
@@ -1172,7 +1186,9 @@
             <p id="detectionWaitHint" class="detection-wait-hint" hidden>Die GPU wird gestartet. Das kann bis zu 30 Sekunden dauern, danach geht es schneller.</p>
             <p id="detectionError" class="detection-error" role="alert" hidden></p>
 
-            <table class="shortcuts-table">
+            {% comment %} Erkennungsliste (Nr./Label/Wahrscheinlichkeit) ausgeblendet; wird weiter
+               befüllt, damit sie sich ohne "display:none" einfach zurückholen lässt. {% endcomment %}
+            <table class="shortcuts-table" style="display:none;">
                 <thead>
                     <tr><th>Nr.</th><th>Label</th><th>Wahrscheinlichkeit</th></tr>
                 </thead>
