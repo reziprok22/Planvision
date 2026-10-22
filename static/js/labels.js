@@ -251,7 +251,16 @@ function handleInlineEdit(event) {
     }
     
     label.tools[field] = value;
-    
+
+    // Jedes Zeichenwerkzeug braucht mindestens ein Label, sonst zeichnet es
+    // Annotationen ohne Farbe/Namen
+    if (!value && toolsWithoutLabel(currentLabels).includes(field)) {
+      input.checked = true;
+      label.tools[field] = true;
+      alert(`"${label.name}" ist das letzte Label für das Werkzeug ${TOOL_NAMES[field]}. Jedes Werkzeug braucht mindestens ein Label.`);
+      return;
+    }
+
     // Validate: at least one tool must be selected
     if (!label.tools.rectangle && !label.tools.polygon && !label.tools.line) {
       input.checked = true;
@@ -294,6 +303,13 @@ function applyAllChanges() {
   });
   
   if (!isValid) return;
+
+  // Deckt auch importierte Label-Sets ab, die an der Tabelle vorbeigehen
+  const missing = toolsWithoutLabel(currentLabels);
+  if (missing.length > 0) {
+    alert(`Kein Label für: ${missing.map(t => TOOL_NAMES[t]).join(', ')}. Jedes Werkzeug braucht mindestens ein Label.`);
+    return;
+  }
   
   // Save to localStorage and update UI
   saveLabels();
@@ -412,6 +428,15 @@ function saveNewLabel() {
   refreshLabelTable();
 }
 
+const TOOL_NAMES = { rectangle: 'Rechteck', polygon: 'Polygon', line: 'Linie' };
+
+/**
+ * Zeichenwerkzeuge, für die in `labels` kein Label aktiviert ist
+ */
+function toolsWithoutLabel(labels) {
+  return Object.keys(TOOL_NAMES).filter(tool => !labels.some(l => l.tools[tool]));
+}
+
 /**
  * Delete a label
  */
@@ -432,6 +457,13 @@ function deleteLabel(labelId) {
     return;
   }
   
+  const remaining = currentLabels.filter(l => l.id !== labelId);
+  const orphaned = toolsWithoutLabel(remaining).filter(t => label && label.tools[t]);
+  if (orphaned.length > 0) {
+    alert(`"${labelName}" ist das letzte Label für: ${orphaned.map(t => TOOL_NAMES[t]).join(', ')}. Jedes Werkzeug braucht mindestens ein Label.`);
+    return;
+  }
+
   if (confirm(`Are you sure you want to delete label "${labelName}"?`)) {
     currentLabels = currentLabels.filter(label => label.id !== labelId);
     hasUnsavedChanges = true;
