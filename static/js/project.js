@@ -40,10 +40,16 @@ export function setupProject(elements, modules) {
   if (exportPdfBtn)          exportPdfBtn.addEventListener('click',          exportPdf);
   if (exportAnnotatedPdfBtn) exportAnnotatedPdfBtn.addEventListener('click', exportAnnotatedPdf);
 
-  zipFileInput.addEventListener('change', async () => {
+  zipFileInput.addEventListener('change', () => {
     const file = zipFileInput.files[0];
     zipFileInput.value = '';
-    if (!file) return;
+    if (file) importProjectFile(file);
+  });
+  // Die Upload-Drop-Zone (upload-modal.js) erkennt .planli selbst und importiert darüber
+  window.planliImportProjectFile = importProjectFile;
+
+  /** .planli öffnen (Import-Button oder Drop-Zone) und eingeloggt gleich als Cloud-Projekt ablegen. */
+  async function importProjectFile(file) {
     // Erst nach der Dateiwahl fragen: ein confirm() vor zipFileInput.click()
     // kann die Nutzer-Aktivierung kosten, die der Datei-Dialog braucht.
     if (!confirmDiscardChanges()) return;
@@ -56,7 +62,7 @@ export function setupProject(elements, modules) {
     if (ok && cloudEnabled && !window.PLANLI_READ_ONLY) {
       await saveToCloud(getUploadedBaseName() || `Planli ${new Date().toLocaleDateString('de-DE')}`);
     }
-  });
+  }
 
   // Logo oben links = Link zur Projektübersicht (Dashboard). Als Overlay öffnen
   // statt /app/ neu zu laden, damit ungespeicherte Arbeit erhalten bleibt; das

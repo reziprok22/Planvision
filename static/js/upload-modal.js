@@ -277,20 +277,37 @@ function maxUploadBytes() { return maxUploadMb() * 1024 * 1024; }
 // in der Seitenliste umsortieren.
 const fileNameCollator = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
 
-/** Split a FileList into uploadable PDFs (sorted by name) and rejection messages. */
-function prepareFiles(fileList) {
+/**
+ * 'pdf', 'planli' (Projekt-ZIP) oder null. Erst Endung/MIME-Typ, sonst die
+ * ersten Bytes — manche Dateimanager liefern beim Drop keinen MIME-Typ, und
+ * Dateien ohne Endung sollen trotzdem richtig landen. Der Server prüft die
+ * PDF-Signatur ohnehin selbst.
+ */
+async function detectFileKind(file) {
+    if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) return 'pdf';
+    if (/\.(planli|plan|zip)$/i.test(file.name)) return 'planli';
+    try {
+        const head = new TextDecoder('latin1').decode(await file.slice(0, 1024).arrayBuffer());
+        if (head.startsWith('PK\x03\x04')) return 'planli';
+        if (head.includes('%PDF-')) return 'pdf';  // Header darf in den ersten 1024 Bytes stehen
+    } catch { /* unlesbar → unbekannt */ }
+    return null;
+}
+
+/** Split files into uploadable PDFs (sorted by name) and rejection messages. */
+function prepareFiles(files, kinds) {
     const accepted = [], failed = [];
-    for (const file of fileList) {
-        // Manche Dateimanager liefern beim Drop keinen MIME-Typ — dann zählt
-        // die Endung; der Server prüft ohnehin die PDF-Signatur.
-        if (file.type !== 'application/pdf' && !/\.pdf$/i.test(file.name)) {
-            failed.push(`${file.name}: keine PDF-Datei`);
+    files.forEach((file, i) => {
+        if (kinds[i] === 'planli') {
+            failed.push(`${file.name}: ein .planli-Projekt lässt sich nicht anhängen, nur öffnen („+ Neu“)`);
+        } else if (kinds[i] !== 'pdf') {
+            failed.push(`${file.name}: keine PDF- oder .planli-Datei`);
         } else if (file.size > maxUploadBytes()) {
             failed.push(`${file.name}: zu gross (max. ${maxUploadMb()} MB)`);
         } else {
             accepted.push(file);
         }
-    }
+    });
     accepted.sort((a, b) => fileNameCollator.compare(a.name, b.name));
     return { accepted, failed };
 }
@@ -310,7 +327,18 @@ let projectGeneration = 0;
  * strictly sequential, so the server renders only one PDF at a time.
  */
 async function handleFiles(fileList) {
-    const { accepted, failed } = prepareFiles(fileList);
+    const files = [...fileList];
+    const kinds = await Promise.all(files.map(detectFileKind));
+    // Ein .planli ist schon ein ganzes Projekt: es wird allein geöffnet, PDFs
+    // lassen sich danach wie gewohnt über „Seiten anhängen“ ergänzen.
+    const projectIdx = kinds.indexOf('planli');
+    if (projectIdx >= 0) {
+        await window.planliImportProjectFile?.(files[projectIdx]);
+        const skipped = files.filter((_, i) => i !== projectIdx).map(f => f.name);
+        reportFailures('Ein .planli-Projekt wird allein geöffnet. Nicht übernommen (PDFs danach über „Seiten anhängen“ ergänzen):', skipped);
+        return;
+    }
+    const { accepted, failed } = prepareFiles(files, kinds);
     let rest = accepted;
     let started = false;
     // Scheitert die erste Datei, eröffnet die nächste das Projekt
@@ -380,7 +408,8 @@ async function uploadNewProject(file) {
  * jumps to the first appended page.
  */
 async function handleAppendFiles(fileList) {
-    const { accepted, failed } = prepareFiles(fileList);
+    const files = [...fileList];
+    const { accepted, failed } = prepareFiles(files, await Promise.all(files.map(detectFileKind)));
     if (accepted.length) await appendFiles(accepted, failed, { navigate: true });
     reportFailures('Fehler beim Anhängen:', failed);
 }
