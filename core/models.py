@@ -160,6 +160,12 @@ def _delete_project_dir(sender, instance, **kwargs):
     shutil.rmtree(django_settings.PROJECTS_DIR / str(instance.id), ignore_errors=True)
 
 
+# Zwischenlager vom paketweisen Online-Speichern (core/views.py, cloud_save_blobs)
+@receiver(post_delete, sender=User)
+def _delete_cloud_staging(sender, instance, **kwargs):
+    shutil.rmtree(django_settings.CLOUD_STAGING_DIR / str(instance.pk), ignore_errors=True)
+
+
 # Kontolöschung: Meldungen (BugReport) bleiben per SET_NULL anonymisiert
 # erhalten — die optional angegebene Rückmeldeadresse stünde dann aber weiter
 # drin, obwohl die Datenschutzerklärung nach der Löschung keinen Personenbezug

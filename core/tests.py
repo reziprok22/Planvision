@@ -23,6 +23,7 @@ from .models import BugReport, FeedbackResponse, Project, StoredProject
 from .views import _check_page_sizes, _convert_pdf_to_images, PdfTooLargeError
 
 CLOUD_TMP = Path(tempfile.mkdtemp(prefix='planli_cloud_test_'))
+STAGING_TMP = Path(tempfile.mkdtemp(prefix='planli_staging_test_'))
 
 
 def _zip(content=b'PK\x03\x04 fake zip'):
@@ -565,7 +566,7 @@ class PdfRenderTests(TestCase):
             self.assertEqual(response.status_code, 400, bad)
 
 
-@override_settings(CLOUD_PROJECTS_DIR=CLOUD_TMP)
+@override_settings(CLOUD_PROJECTS_DIR=CLOUD_TMP, CLOUD_STAGING_DIR=STAGING_TMP)
 class CloudDeltaSaveTests(TestCase):
     """Delta-Speichern: Der Client schickt ein Manifest mit Inhalts-Hashes; nur
     was der Server noch nicht hat, geht über die Leitung. Inhaltsadressiert,
@@ -751,6 +752,60 @@ class CloudDeltaSaveTests(TestCase):
             content_type='application/json')
         self.assertEqual(response.status_code, 404)
 
+
+    # ── Paketweises Hochladen (Zwischenlager) ────────────────────────────────
+    def _stage(self, *blobs):
+        data = {f'blob_{self._sha(b)}': SimpleUploadedFile(self._sha(b), b) for b in blobs}
+        return self.client.post(reverse('cloud_save_blobs'), data)
+
+    def _all_entries(self):
+        return [self._entry('sources/1.pdf', self.pdf)] + [
+            self._entry(f'pages/page_{i + 1}.jpg', j) for i, j in enumerate(self.jpgs)]
+
+    def test_staged_batches_then_manifest_only_commit(self):
+        """Grosse Projekte: Blobs in mehreren Paketen vorab, dann ein Commit
+        ohne Blobs — so bleibt jede Anfrage unter nginx' Body-Limit."""
+        self.assertEqual(self._stage(self.pdf).status_code, 200)
+        self.assertEqual(self._stage(*self.jpgs).status_code, 200)
+        response = self._commit(self._all_entries(), blobs=[])
+        self.assertEqual(response.status_code, 200)
+        with self._stored(response.json()['id']) as z:
+            self.assertEqual(z.read('sources/1.pdf'), self.pdf)
+            self.assertEqual(z.read('pages/page_3.jpg'), self.jpgs[2])
+        # Verbautes ist aus dem Lager verschwunden
+        self.assertEqual(list((STAGING_TMP / str(self.user.id)).iterdir()), [])
+
+    def test_staging_rejects_blob_that_does_not_match_its_hash(self):
+        data = {f'blob_{self._sha(self.pdf)}': SimpleUploadedFile('x', b'%PDF-1.4 anders')}
+        response = self.client.post(reverse('cloud_save_blobs'), data)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(list((STAGING_TMP / str(self.user.id)).iterdir()), [])
+
+    def test_prepare_without_project_reports_staged_as_known(self):
+        """Abgebrochenes erstes Speichern: der nächste Versuch lädt nur noch
+        hoch, was beim ersten Mal nicht mehr ankam."""
+        self._stage(self.pdf)
+        response = self.client.post(
+            reverse('cloud_save_prepare'),
+            json.dumps({'project_id': None, 'hashes': [self._sha(self.pdf), self._sha(self.jpgs[0])]}),
+            content_type='application/json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['missing'], [self._sha(self.jpgs[0])])
+
+    def test_staging_is_capped_per_user(self):
+        with override_settings(MAX_PROJECT_MB=0):
+            self.assertEqual(self._stage(self.pdf).status_code, 413)
+
+    def test_staging_requires_login(self):
+        self.client.logout()
+        self.assertEqual(self._stage(self.pdf).status_code, 401)
+
+    def test_deleting_the_account_clears_its_staging(self):
+        self._stage(self.pdf)
+        directory = STAGING_TMP / str(self.user.id)
+        self.assertTrue(directory.exists())
+        self.user.delete()
+        self.assertFalse(directory.exists())
 
 PROJECTS_TMP = Path(tempfile.mkdtemp(prefix='planli_projects_test_'))
 

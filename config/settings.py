@@ -246,6 +246,10 @@ DEFAULT_MAX_PROJECTS = 100
 # Online-Ablage: dauerhaft gespeicherte .planli-Projekte pro User
 # (StoredProject). Wie training_data_opt-in nie vom Cleanup berührt.
 CLOUD_PROJECTS_DIR = BASE_DIR / 'cloud_projects'
+# Zwischenlager fürs paketweise Hochladen beim Online-Speichern (pro User ein
+# Ordner, Dateiname = SHA-256). Kurzlebig: der Commit räumt auf, Reste nach
+# einem Tag weg (beim nächsten Upload und im cleanup_projects-Cron).
+CLOUD_STAGING_DIR = BASE_DIR / 'cloud_staging'
 # Stiller technischer Deckel pro Projekt (Ausreisser-Schutz, kein beworbenes Limit)
 MAX_PROJECT_MB = 200
 # Grösste hochladbare PDF. EINE Quelle für Server-Prüfung und Browser-Vorabcheck

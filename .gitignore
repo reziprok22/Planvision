@@ -8,6 +8,7 @@ fasterrcnn_model
 training_data_opt-in
 projects
 cloud_projects
+cloud_staging
 bug_reports
 invoices
 node_modules

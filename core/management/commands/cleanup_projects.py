@@ -10,6 +10,8 @@ Verhalten:
   - Löscht projects/<uuid>/, wenn die zugehörige Project-Zeile älter als N Tage ist,
     und setzt Project.files_deleted=True (die DB-Zeile bleibt für die Statistik).
   - Verwaiste Ordner ohne Project-Zeile werden nach Verzeichnis-mtime gelöscht.
+  - Räumt im Zwischenlager des Online-Speicherns (CLOUD_STAGING_DIR) Reste
+    abgebrochener Speichervorgänge weg, die älter als einen Tag sind.
 
 Aufruf:
     python manage.py cleanup_projects [--days N] [--dry-run]
@@ -19,6 +21,7 @@ Cron (Server, täglich 03:00):
         >> /var/log/planvision_cleanup.log 2>&1
 """
 import shutil
+import time
 from datetime import timedelta
 
 from django.core.management.base import BaseCommand
@@ -26,6 +29,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from core.models import Project
+from core.views import STAGING_MAX_AGE_S, _prune_staging
 
 
 class Command(BaseCommand):
@@ -49,6 +53,8 @@ class Command(BaseCommand):
 
         prefix = '[dry-run] ' if dry_run else ''
         self.stdout.write(f"{prefix}Cleanup projects/ – älter als {days} Tage (cutoff {cutoff:%Y-%m-%d %H:%M}).")
+
+        self._prune_cloud_staging(dry_run, prefix)
 
         if not projects_dir.exists():
             self.stdout.write("projects/ existiert nicht – nichts zu tun.")
@@ -94,3 +100,21 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS(
             f"{prefix}Fertig: {removed} abgelaufene Projekt-Ordner, {orphans} verwaiste Ordner."
         ))
+
+    def _prune_cloud_staging(self, dry_run, prefix):
+        staging = settings.CLOUD_STAGING_DIR
+        if not staging.exists():
+            return
+        if dry_run:
+            cutoff = time.time() - STAGING_MAX_AGE_S
+            old = sum(1 for d in staging.iterdir() if d.is_dir()
+                      for f in d.iterdir() if f.stat().st_mtime < cutoff)
+            self.stdout.write(f"{prefix}Zwischenlager: {old} Reste würden entfernt.")
+            return
+        for user_dir in staging.iterdir():
+            if user_dir.is_dir():
+                _prune_staging(user_dir)
+                try:
+                    user_dir.rmdir()   # nur wenn leer
+                except OSError:
+                    pass

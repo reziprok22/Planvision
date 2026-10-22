@@ -970,13 +970,106 @@ def cloud_save_prepare(request):
     except ValueError:
         return JsonResponse({'error': 'Ungültige Anfrage'}, status=400)
 
-    project = _get_stored_project(request, payload.get('project_id'))
-    if project is None:
-        return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+    # Ohne project_id (neues Projekt) zählt nur das Zwischenlager — so setzt ein
+    # abgebrochenes erstes Speichern beim nächsten Versuch dort fort.
+    known = set(_staged_blobs(request.user))
+    if payload.get('project_id'):
+        project = _get_stored_project(request, payload.get('project_id'))
+        if project is None:
+            return JsonResponse({'error': 'Projekt nicht gefunden'}, status=404)
+        known |= set(_stored_hash_index(project.file_path))
 
     hashes = [h for h in payload.get('hashes') or [] if isinstance(h, str) and SHA256_HEX.match(h)]
-    known = _stored_hash_index(project.file_path)
     return JsonResponse({'missing': [h for h in hashes if h not in known]})
+
+
+# ── Paketweises Hochladen ────────────────────────────────────────────────────
+# Ein neues Projekt mit grossen Plänen bringt beim ersten Speichern schnell mehr
+# als 100 MB mit (16 Seiten bis 1890×891 mm: 40 MB PDFs + 71 MB Seiten-JPEGs).
+# In einem einzigen POST lief das in nginx' client_max_body_size, Django sah
+# die Anfrage nie und das Speichern hing. Deshalb lädt der Client fehlende
+# Blobs vorab in Paketen hierher und schickt danach nur noch das Manifest.
+# Zwischenlager pro User, Dateiname = Inhalts-Hash, also idempotent.
+
+STAGING_MAX_AGE_S = 24 * 3600
+
+
+def _staging_dir(user):
+    return settings.CLOUD_STAGING_DIR / str(user.id)
+
+
+def _prune_staging(directory, max_age_s=STAGING_MAX_AGE_S):
+    """Liegengebliebenes (abgebrochenes Speichern) nach `max_age_s` entfernen."""
+    if not directory.is_dir():
+        return
+    cutoff = time.time() - max_age_s
+    for path in directory.iterdir():
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink()
+        except OSError:
+            pass
+
+
+def _staged_blobs(user):
+    """{sha256: Path} der zwischengelagerten Blobs (ohne halbe .part-Dateien)."""
+    directory = _staging_dir(user)
+    if not directory.is_dir():
+        return {}
+    return {p.name: p for p in directory.iterdir() if SHA256_HEX.match(p.name)}
+
+
+class _StagedBlob:
+    """Zwischengelagerter Blob mit derselben chunks()-Schnittstelle wie ein Upload."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def chunks(self):
+        with open(self.path, 'rb') as fh:
+            yield from iter(lambda: fh.read(CHUNK), b'')
+
+
+@require_POST
+def cloud_save_blobs(request):
+    """Ein Paket Blobs (`blob_<sha256>`) ins Zwischenlager legen. Jeder Blob wird
+    gegen seinen Hash geprüft; der Commit in cloud_save nimmt sie von dort."""
+    denied = _cloud_denied(request) or _cloud_read_only_denied(request)
+    if denied:
+        return denied
+
+    files = [(field[len('blob_'):], f) for field, f in request.FILES.items()
+             if field.startswith('blob_') and SHA256_HEX.match(field[len('blob_'):])]
+    if not files:
+        return JsonResponse({'error': 'Keine Daten erhalten'}, status=400)
+
+    directory = _staging_dir(request.user)
+    directory.mkdir(parents=True, exist_ok=True)
+    _prune_staging(directory)
+    # Deckel wie für ein ganzes Projekt — mehr braucht ein Speichervorgang nie.
+    used = sum(p.stat().st_size for p in directory.iterdir() if p.is_file())
+    if used + sum(f.size for _, f in files) > settings.MAX_PROJECT_MB * 1024 * 1024:
+        return JsonResponse({'error': f'Projekt zu gross (max. {settings.MAX_PROJECT_MB} MB). '
+                             'Tipp: sehr grosse Original-PDFs vor dem Hochladen verkleinern.'}, status=413)
+
+    for sha, upload in files:
+        # Eindeutige .part-Datei: zwei Tabs dürfen denselben Blob gleichzeitig schicken.
+        tmp = directory / f'{sha}.{uuid.uuid4().hex}.part'
+        digest = hashlib.sha256()
+        try:
+            with open(tmp, 'wb') as out:
+                for chunk in upload.chunks():
+                    digest.update(chunk)
+                    out.write(chunk)
+            if digest.hexdigest() != sha:
+                tmp.unlink(missing_ok=True)
+                return JsonResponse({'error': 'Prüfsumme stimmt nicht. Bitte nochmal speichern.'},
+                                    status=400)
+            os.replace(tmp, directory / sha)
+        except OSError:
+            tmp.unlink(missing_ok=True)
+            raise
+    return JsonResponse({'stored': [sha for sha, _ in files]})
 
 
 @require_POST
@@ -1033,8 +1126,12 @@ def cloud_save(request):
     settings.CLOUD_PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
 
     if manifest_raw:
-        uploaded = {field[len('blob_'):]: f for field, f in request.FILES.items()
-                    if field.startswith('blob_') and SHA256_HEX.match(field[len('blob_'):])}
+        # Vorab paketweise hochgeladene Blobs (cloud_save_blobs) plus die direkt
+        # mitgeschickten — letztere gibt es nur noch von älteren JS-Bundles.
+        staged = _staged_blobs(request.user)
+        uploaded = {sha: _StagedBlob(path) for sha, path in staged.items()}
+        uploaded.update({field[len('blob_'):]: f for field, f in request.FILES.items()
+                         if field.startswith('blob_') and SHA256_HEX.match(field[len('blob_'):])})
         stored_index = _stored_hash_index(project.file_path)
         # Der Commit entscheidet unabhängig von der prepare-Antwort, was fehlt:
         # so bleibt er auch bei einem Race (zweiter Tab) oder verschwundener
@@ -1052,6 +1149,11 @@ def cloud_save(request):
             logger.warning("Delta-Speichern fehlgeschlagen: %s", e)
             return JsonResponse({'error': 'Projekt konnte nicht zusammengesetzt werden. '
                                  'Bitte nochmal speichern.'}, status=400)
+        # Nur das Verbaute aus dem Lager nehmen — ein zweiter Tab kann
+        # gerade eigene Pakete für sein Speichern dort ablegen.
+        for entry in entries:
+            if entry['sha256'] in staged:
+                staged[entry['sha256']].unlink(missing_ok=True)
     else:
         with open(project.file_path, 'wb') as f:
             for chunk in upload.chunks():

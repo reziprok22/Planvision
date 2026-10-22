@@ -21,6 +21,7 @@ urlpatterns = [
     path('cloud/projects', views.cloud_list, name='cloud_list'),
     path('cloud/projects/save', views.cloud_save, name='cloud_save'),
     path('cloud/projects/save/prepare', views.cloud_save_prepare, name='cloud_save_prepare'),
+    path('cloud/projects/save/blobs', views.cloud_save_blobs, name='cloud_save_blobs'),
     path('cloud/projects/<uuid:project_id>/download', views.cloud_download, name='cloud_download'),
     path('cloud/projects/<uuid:project_id>/rename', views.cloud_rename, name='cloud_rename'),
     path('cloud/projects/<uuid:project_id>/duplicate', views.cloud_duplicate, name='cloud_duplicate'),

@@ -812,29 +812,30 @@ async function saveToCloud(projectName) {
   try {
     const { manifest, blobs } = await buildProjectManifest(collectZipParams(projectName));
 
-    // Phase 1: Was fehlt dem Server? Nur beim Überschreiben sinnvoll — ein neues
-    // Projekt kennt er noch gar nicht. Scheitert die Abfrage, laden wir alles
-    // hoch und landen beim bisherigen Verhalten.
+    // Phase 1: Was fehlt dem Server? Er kennt das gespeicherte Projekt und das
+    // Zwischenlager — dort liegt auch, was ein abgebrochenes Speichern schon
+    // hochgeladen hatte. Scheitert die Abfrage, laden wir alles hoch.
     let missing = [...blobs.keys()];
-    if (currentCloudProjectId) {
-      try {
-        const res = await fetch('/cloud/projects/save/prepare', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
-          body:    JSON.stringify({ project_id: currentCloudProjectId, hashes: missing }),
-        });
-        if (res.ok) missing = (await res.json()).missing;
-      } catch (e) {
-        console.warn('Delta-Abgleich fehlgeschlagen, lade alles hoch:', e);
-      }
+    try {
+      const res = await fetch('/cloud/projects/save/prepare', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+        body:    JSON.stringify({ project_id: currentCloudProjectId, hashes: missing }),
+      });
+      if (res.ok) missing = (await res.json()).missing;
+    } catch (e) {
+      console.warn('Delta-Abgleich fehlgeschlagen, lade alles hoch:', e);
     }
 
-    let data = await commitCloudSave(projectName, manifest, blobs, missing);
-    // Der Server ist die Instanz, die entscheidet, was ihm fehlt: Meldet er
-    // beim Commit noch Einträge nach (Datei zwischenzeitlich weg, Race mit
-    // einem zweiten Tab), liefern wir genau die nach.
+    // Phase 2: Fehlendes paketweise ins Zwischenlager, Phase 3: Commit mit
+    // reinem Manifest. Der Server ist die Instanz, die entscheidet, was ihm
+    // fehlt: Meldet er beim Commit noch Einträge nach (Datei zwischenzeitlich
+    // weg, Race mit einem zweiten Tab), liefern wir genau die nach.
+    await uploadBlobsInBatches(blobs, missing, status);
+    let data = await commitCloudSave(projectName, manifest);
     if (data.missing?.length) {
-      data = await commitCloudSave(projectName, manifest, blobs, data.missing);
+      await uploadBlobsInBatches(blobs, data.missing, status);
+      data = await commitCloudSave(projectName, manifest);
     }
     if (data.error) throw new Error(data.error);
     if (!data.id) throw new Error('Speichern unvollständig – bitte erneut versuchen.');
@@ -849,7 +850,35 @@ async function saveToCloud(projectName) {
   }
 }
 
-async function commitCloudSave(projectName, manifest, blobs, missing) {
+// Obergrenzen pro Upload-Paket. Bytes: nginx lässt höchstens 100 MB pro
+// Anfrage durch (client_max_body_size) — ein einzelner grosser Blob geht
+// trotzdem allein (Original-PDFs sind per MAX_UPLOAD_MB auf 90 MB begrenzt).
+// Anzahl: Django lehnt mehr als DATA_UPLOAD_MAX_NUMBER_FILES (100) Dateien ab.
+const BLOB_BATCH_BYTES = 40 * 1024 * 1024;
+const BLOB_BATCH_FILES = 50;
+
+/** Fehlende Blobs in Paketen ins Zwischenlager des Servers laden (cloud_save_blobs). */
+async function uploadBlobsInBatches(blobs, missing, status) {
+  const todo = missing.map(hash => [hash, blobs.get(hash)]).filter(([, blob]) => blob);
+  const total = todo.reduce((sum, [, blob]) => sum + blob.size, 0);
+  let done = 0;
+  while (todo.length) {
+    const batch = [todo.shift()];
+    let bytes = batch[0][1].size;
+    while (todo.length && batch.length < BLOB_BATCH_FILES
+           && bytes + todo[0][1].size <= BLOB_BATCH_BYTES) {
+      bytes += todo[0][1].size;
+      batch.push(todo.shift());
+    }
+    const fd = new FormData();
+    for (const [hash, blob] of batch) fd.append(`blob_${hash}`, blob, hash);
+    status.textContent = `Projekt wird online gespeichert… ${Math.round(done / total * 100)} %`;
+    await cloudPost('/cloud/projects/save/blobs', fd);
+    done += bytes;
+  }
+}
+
+async function commitCloudSave(projectName, manifest) {
   const fd = new FormData();
   // Als Datei-Part, nicht als Formularfeld: Django deckelt Formulardaten auf
   // DATA_UPLOAD_MAX_MEMORY_SIZE (2.6 MB), und canvas_data.json steckt inline im
@@ -862,16 +891,26 @@ async function commitCloudSave(projectName, manifest, blobs, missing) {
   // Cloud-Namen mit — Editor-Umbenennungen erscheinen so auch im Dashboard.
   fd.append('name', projectName);
   if (currentCloudProjectId) fd.append('project_id', currentCloudProjectId);
-  for (const hash of missing) {
-    const blob = blobs.get(hash);
-    if (blob) fd.append(`blob_${hash}`, blob, hash);
-  }
-
-  const res  = await fetch('/cloud/projects/save', {
-    method: 'POST', body: fd, headers: { 'X-CSRFToken': getCsrfToken() } });
-  const data = await res.json().catch(() => ({}));
   // 409 = "mir fehlen noch Einträge" und ist kein Fehler, sondern die
   // Aufforderung zum zweiten Anlauf.
-  if (!res.ok && res.status !== 409) throw new Error(data.error || 'Speichern fehlgeschlagen');
+  return cloudPost('/cloud/projects/save', fd, [409]);
+}
+
+/**
+ * POST mit verständlichen Fehlern. Ohne das sah der Nutzer bei einem von nginx
+ * abgewiesenen oder abgebrochenen Upload nur "Failed to fetch" bzw. gar nichts.
+ */
+async function cloudPost(url, body, okStatuses = []) {
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', body, headers: { 'X-CSRFToken': getCsrfToken() } });
+  } catch {
+    throw new Error('Verbindung zum Server abgebrochen – bitte nochmal speichern.');
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok && !okStatuses.includes(res.status)) {
+    if (res.status === 413 && !data.error) throw new Error('Datenpaket zu gross für den Server.');
+    throw new Error(data.error || `Speichern fehlgeschlagen (HTTP ${res.status})`);
+  }
   return data;
 }
