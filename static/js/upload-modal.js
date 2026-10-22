@@ -55,13 +55,39 @@ const PREVIEW_WIDTH = 768;
 // (buildPageList wirft sie bei jeder Seiten-Aktion komplett weg) kostet nichts.
 const thumbCache = new Map();   // `${width}|${imageUrl}` -> Promise<objectURL>
 
+// Höchstens so viele Seitenbilder gleichzeitig laden und dekodieren. Wer in
+// einem grossen Projekt schnell ans Ende scrollt, startete sonst Dutzende
+// A0-Downloads + Dekodierungen auf einmal — darunter scheiterten einzelne
+// (createImageBitmap/fetch), und genau die letzten Einträge blieben leer.
+const THUMB_CONCURRENCY = 3;
+let thumbJobsRunning = 0;
+const thumbJobQueue = [];
+
+function runThumbJob(job, urgent) {
+    return new Promise((resolve, reject) => {
+        const start = () => {
+            thumbJobsRunning++;
+            job().then(resolve, reject).finally(() => {
+                thumbJobsRunning--;
+                thumbJobQueue.shift()?.();
+            });
+        };
+        if (thumbJobsRunning < THUMB_CONCURRENCY) start();
+        // Hover-Vorschau drängelt vor: auf die wartet jemand mit der Maus
+        else if (urgent) thumbJobQueue.unshift(start);
+        else thumbJobQueue.push(start);
+    });
+}
+
 function getThumbUrl(imageUrl, width = THUMB_WIDTH) {
     const key = `${width}|${imageUrl}`;
     const cached = thumbCache.get(key);
     if (cached) return cached;
 
-    const pending = (async () => {
-        const blob   = await fetch(imageUrl).then(r => r.blob());
+    const pending = runThumbJob(async () => {
+        const resp = await fetch(imageUrl);
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const blob   = await resp.blob();
         const bitmap = await createImageBitmap(blob, {
             resizeWidth: width, resizeQuality: width > THUMB_WIDTH ? 'high' : 'medium' });
         const canvas = document.createElement('canvas');
@@ -71,7 +97,7 @@ function getThumbUrl(imageUrl, width = THUMB_WIDTH) {
         bitmap.close();
         const small = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.8));
         return URL.createObjectURL(small);
-    })().catch(e => {
+    }, width > THUMB_WIDTH).catch(e => {
         // Kein Vorschaubild ist besser als ein hängender Ladezustand — und
         // deutlich besser als der alte Vollbild-Fallback.
         console.warn('Vorschaubild fehlgeschlagen:', e);
@@ -96,6 +122,7 @@ export function clearThumbCache() {
 // wird — natives loading="lazy" ist grosszügiger darin, was "nahe am Viewport"
 // heisst, und das Seitenrender ist ein grosser Download.
 let thumbObserver = null;
+const THUMB_MAX_RETRIES = 3;
 
 function getThumbObserver() {
     if (thumbObserver) return thumbObserver;
@@ -105,11 +132,23 @@ function getThumbObserver() {
             if (!e.isIntersecting) continue;
             const img = e.target;
             const src = img.dataset.src;
-            if (src) {
-                delete img.dataset.src;
-                getThumbUrl(src).then(url => { if (url) img.src = url; });
-            }
             obs.unobserve(img);
+            if (!src) continue;
+            delete img.dataset.src;
+            getThumbUrl(src).then(url => {
+                if (url) { img.src = url; return; }
+                // Fehlgeschlagen: später erneut versuchen, statt den Eintrag
+                // für immer leer zu lassen (getThumbUrl hat den Cache-Eintrag
+                // schon entfernt). Nur solange das Bild noch in der Liste hängt.
+                const tries = Number(img.dataset.thumbTries || 0) + 1;
+                if (tries > THUMB_MAX_RETRIES) return;
+                img.dataset.thumbTries = tries;
+                setTimeout(() => {
+                    if (!img.isConnected) return;
+                    img.dataset.src = src;
+                    obs.observe(img);
+                }, 1000 * tries);
+            });
         }
     }, { root, rootMargin: '100px 0px' });
     return thumbObserver;
