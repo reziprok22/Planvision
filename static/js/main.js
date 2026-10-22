@@ -47,6 +47,7 @@ import { setupProject, maybeLoadDemoProject } from './project.js';
 import { setupOnboarding } from './onboarding.js';
 import { installSmartHitTesting } from './hit-testing.js';
 import { installSnapping, cornersOf } from './snapping.js';
+import { installSelectionLift } from './selection-lift.js';
 import {
   setupUploadModal,
   setOnPageClick,
@@ -583,6 +584,10 @@ function initCanvas() {
   canvas.perPixelTargetFind = false;
   hitTesting = installSmartHitTesting(canvas, {
     isActive: () => currentTool === 'select' && !READ_ONLY && !editingPolygon && !editingDimension,
+  });
+  // Ausgewählte Annotationen schweben mit Schatten über den anderen (selection-lift.js)
+  installSelectionLift(canvas, {
+    isActive: () => currentTool === 'select' && !editingPolygon && !editingDimension,
   });
   canvas.on('after:render', drawCloseRing);
   canvas.on('after:render', drawDeleteGhosts);
