@@ -5854,18 +5854,28 @@ async function initApp() {
 
   // Wire sidebar page-click → navigate without auto-analysis
   setOnPageClick((pageId) => {
+    // Klick auf die schon offene Seite: nichts tun. navigateToPageNoAnalysis
+    // sichert den Canvas nur beim Wechsel (setCurrentPage) und lud die Seite
+    // sonst neu — aus dem veralteten Stand bzw. leer, alle seither gezeichneten
+    // Annotationen waren weg. Die Guard gehört hierher, nicht in die Funktion:
+    // der Projekt-Load ruft sie bewusst mit der schon gesetzten Seiten-ID auf.
+    if (pageId === currentPageId) return;
     navigateToPageNoAnalysis(pageId);
   });
 
   // When user changes scale in sidebar → update hidden input + pageSettings + canvas labels
   setOnScaleChange((pageId, scale) => {
-    const scaleInput = document.getElementById('planScale');
-    if (scaleInput) scaleInput.value = scale;
     const current = getPageSettings();
     const existing = current[pageId] || {};
     current[pageId] = { ...existing, plan_scale: scale };
     setPageSettings(current);
     setProjectDirty(true); // Massstab ändert berechnete Flächen/Längen → speicherwürdig
+    // #planScale gehört zur offenen Seite: der Massstab einer anderen Seite darf
+    // dort nicht landen, sonst übernimmt die offene ihn beim nächsten
+    // saveCurrentPageSettings() (und rechnet bis dahin falsch)
+    if (pageId !== currentPageId) return;
+    const scaleInput = document.getElementById('planScale');
+    if (scaleInput) scaleInput.value = scale;
     // Refresh canvas labels and results table with new scale
     refreshAllCanvasLabels();
     refreshAllDimensions();

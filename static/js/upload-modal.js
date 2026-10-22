@@ -34,7 +34,7 @@ let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
     leftLoader, appendFileInput, appendPageBtn;
 
 // ── Seiten-Vorschaubilder ────────────────────────────────────────────
-// Die Liste zeigt 28×36 px (siehe .page-thumb in app.html), das Seitenrender
+// Die Liste zeigte damals 28×36 px (heute 52×42, .page-thumb in app.html), das Seitenrender
 // hat aber 150 DPI. Es direkt als <img src> zu benutzen hiess: eine A1-Seite
 // als 3508×4967-Bitmap dekodieren (69.7 MB) für 1008 sichtbare Pixel —
 // 17'000-fache Überabtastung, bei 10 Seiten ~700 MB. Der Browser wirft die
@@ -548,32 +548,36 @@ export function buildPageList() {
         const title = getPageTitle(entry, position);
         li.innerHTML = `
             <span class="page-drag-handle" aria-hidden="true" title="Ziehen zum Verschieben">⋮⋮</span>
+            <span class="page-pos">${position}</span>
             <img class="page-thumb"
                  data-src="${entry.imageUrl || ''}"
                  alt="Seite ${position}">
             <span class="page-label">
                 <span class="page-title-row">
-                    <span class="page-title" title="Doppelklick zum Umbenennen">${entry.name
-                        ? `<span class="page-pos">${position}</span><span class="page-name"></span>`
-                        : `<span class="page-name">${title}</span>`}</span>
-                    <span class="page-count-pill"></span>
+                    <span class="page-title" title="Doppelklick zum Umbenennen"><span class="page-name${entry.name ? '' : ' is-default'}">${entry.name ? '' : title}</span></span>
                 </span>
-                ${sizeText ? `<span class="page-size-hint">${sizeText}</span>` : ''}
-                <span class="page-scale-control">
-                    <span class="scale-prefix">1:</span>
-                    <select class="page-scale-select" data-page-id="${entry.id}">
-                        ${scaleOptions}
-                        <option value="custom">Eigener…</option>
-                    </select>
-                    <input type="number" class="page-scale-custom" data-page-id="${entry.id}"
-                           min="1" value="100" style="display:none">
+                <span class="page-meta">
+                    ${sizeText ? `<span class="page-size-hint">${sizeText}</span>` : ''}
+                    <button type="button" class="page-scale-text" title="Massstab ändern">1:100</button>
+                    <span class="page-scale-control">
+                        <span class="scale-prefix">1:</span>
+                        <select class="page-scale-select" data-page-id="${entry.id}">
+                            ${scaleOptions}
+                            <option value="custom">Eigener…</option>
+                        </select>
+                        <input type="number" class="page-scale-custom" data-page-id="${entry.id}"
+                               min="1" value="100" style="display:none">
+                    </span>
                 </span>
             </span>
+            <span class="page-side">
+            <span class="page-count-pill"></span>
             <span class="page-actions">
                 <button class="page-action-btn" data-action="up" ${isFirst ? 'disabled' : ''} title="Seite nach oben">▲</button>
                 <button class="page-action-btn" data-action="down" ${isLast ? 'disabled' : ''} title="Seite nach unten">▼</button>
                 <button class="page-action-btn" data-action="duplicate" title="Seite duplizieren">⧉</button>
                 <button class="page-action-btn" data-action="delete" ${canDelete ? '' : 'disabled'} title="${canDelete ? 'Seite löschen' : 'Die letzte Seite kann nicht gelöscht werden'}">✕</button>
+            </span>
             </span>
         `;
 
@@ -591,7 +595,27 @@ export function buildPageList() {
         const scaleSelect  = li.querySelector('.page-scale-select');
         const scaleInput   = li.querySelector('.page-scale-custom');
 
+        const scaleText    = li.querySelector('.page-scale-text');
+
+        // Massstab steht als Text "1:100" neben der Grösse; erst ein Klick zeigt
+        // das Dropdown (wird selten geändert, soll keine eigene Zeile belegen)
+        const endScaleEdit = () => {
+            li.classList.remove('scale-editing');
+            updateScaleText(li);
+        };
+        scaleText.addEventListener('click', e => {
+            e.stopPropagation();
+            li.classList.add('scale-editing');
+            if (scaleSelect.value === 'custom') {
+                scaleInput.focus();
+                return;
+            }
+            scaleSelect.focus();
+            try { scaleSelect.showPicker?.(); } catch { /* ohne Nutzer-Aktivierung o.ä. — Fokus genügt */ }
+        });
+
         scaleControl.addEventListener('click', e => e.stopPropagation());
+        scaleControl.addEventListener('keydown', e => { if (e.key === 'Escape') endScaleEdit(); });
 
         scaleSelect.addEventListener('change', () => {
             if (scaleSelect.value === 'custom') {
@@ -600,12 +624,17 @@ export function buildPageList() {
             } else {
                 scaleInput.style.display = 'none';
                 if (onScaleChangeCallback) onScaleChangeCallback(entry.id, parseFloat(scaleSelect.value));
+                endScaleEdit();
             }
+        });
+        scaleSelect.addEventListener('blur', () => {
+            if (scaleSelect.value !== 'custom') endScaleEdit();
         });
 
         scaleInput.addEventListener('blur', () => {
             const val = parseFloat(scaleInput.value);
             if (val > 0 && onScaleChangeCallback) onScaleChangeCallback(entry.id, val);
+            endScaleEdit();
         });
         scaleInput.addEventListener('keydown', e => { if (e.key === 'Enter') scaleInput.blur(); });
 
@@ -641,20 +670,18 @@ export function buildPageList() {
 /**
  * Drag & Drop in der Seitenliste. Die <ul> bleibt über alle Neuaufbauten
  * bestehen (buildPageList ersetzt nur die <li>), daher genügt eine Instanz.
- * Gezogen wird die ganze Zeile — ein Klick ohne Bewegung wechselt weiterhin
- * die Seite. forceFallback: kein natives HTML5-DnD, das sonst mit dem
- * Datei-Drop der Sidebar und dem Browser-Geisterbild in Konflikt käme
- * (und auf Touch gar nicht ginge). Die Pfeile bleiben als präzise Alternative.
+ * Gezogen wird nur am Griff — über die ganze Zeile verrutschte beim Klicken
+ * auf eine Seite zu leicht etwas. forceFallback: kein natives HTML5-DnD, das
+ * sonst mit dem Datei-Drop der Sidebar und dem Browser-Geisterbild in
+ * Konflikt käme (und auf Touch gar nicht ginge).
  */
 function setupPageSorting() {
     if (!pageList) return;
     Sortable.create(pageList, {
+        handle: '.page-drag-handle',
         animation: 150,
         forceFallback: true,
         fallbackOnBody: true,
-        fallbackTolerance: 4,   // leichtes Verrutschen beim Klicken ist noch kein Ziehen
-        filter: 'input, select, button',
-        preventOnFilter: false, // Massstab-Dropdown und Buttons sollen normal klickbar bleiben
         ghostClass: 'page-sort-ghost',
         dragClass: 'page-sort-drag',
         onEnd: evt => {
@@ -662,6 +689,16 @@ function setupPageSorting() {
             if (onPageActionCallback) onPageActionCallback('move', evt.item.dataset.pageId, evt.newIndex);
         },
     });
+}
+
+/** Text "1:N" einer Zeile aus Dropdown bzw. eigenem Wert nachziehen. */
+function updateScaleText(li) {
+    const text   = li?.querySelector('.page-scale-text');
+    const select = li?.querySelector('.page-scale-select');
+    const input  = li?.querySelector('.page-scale-custom');
+    if (!text || !select) return;
+    const value = select.value === 'custom' ? input?.value : select.value;
+    text.textContent = `1:${value || '?'}`;
 }
 
 function renderPageCount(pill, count) {
@@ -750,6 +787,7 @@ export function setPageScaleInSidebar(pageId, scale) {
         select.value = 'custom';
         if (input) { input.value = scale; input.style.display = 'inline-block'; }
     }
+    updateScaleText(select.closest('.page-list-item'));
 }
 
 /**

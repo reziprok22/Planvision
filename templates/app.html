@@ -145,7 +145,7 @@
         }
         .page-list-item {
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             padding: 7px 8px;
             border-radius: 7px;
             cursor: pointer;
@@ -156,13 +156,18 @@
             user-select: none;
         }
         .page-list-item:hover { background: #f0f2f5; }
+        /* Aktive Seite wie die Projektname-Leiste (.file-info-bar): hellgrau mit
+           dunkelgrauem Balken links — der Balken hebt sie vom Hover ab */
         .page-list-item.active {
-            background: #ebebeb;
-            color: #444;
+            background: #f5f5f5;
+            box-shadow: inset 3px 0 0 #999;
+            border-radius: 0 7px 7px 0;
+            color: #333;
             font-weight: 600;
         }
-        /* Griff fürs Umsortieren, immer sichtbar wie im Label-Manager
-           (.label-drag-handle). Gezogen werden kann trotzdem die ganze Zeile. */
+        .page-list-item.active:hover { background: #eeeeee; }
+        /* Griff fürs Umsortieren — nur hier lässt sich die Zeile ziehen.
+           Mit Maus erst beim Überfahren der Zeile sichtbar, auf Touch immer. */
         .page-drag-handle {
             align-self: center;
             flex-shrink: 0;
@@ -175,6 +180,10 @@
             cursor: grab;
         }
         .page-drag-handle:hover { color: #555; }
+        @media (hover: hover) {
+            .page-drag-handle { opacity: 0; transition: opacity 0.15s; }
+            .page-list-item:hover .page-drag-handle { opacity: 1; }
+        }
         .page-sort-ghost { opacity: 0.35; background: #e8eefc; }
         .page-sort-drag {
             background: #fff;
@@ -182,15 +191,15 @@
             cursor: grabbing;
             opacity: 1 !important; /* Sortable setzt inline 0.8 — der Platzhalter darunter schiene durch */
         }
+        /* contain statt cover: Pläne sind meist quer, cover schnitt sie zu */
         .page-list-item .page-thumb {
-            width: 28px;
-            height: 36px;
-            object-fit: cover;
+            width: 52px;
+            height: 42px;
+            object-fit: contain;
             border-radius: 3px;
             border: 1px solid #ddd;
             flex-shrink: 0;
-            background: #eee;
-            margin-top: 2px;
+            background: #fff;
         }
         .page-list-item .page-label { flex: 1; min-width: 0; }
         /* Titelzeile: Name links (gekürzt), Annotations-Zähler rechts */
@@ -210,7 +219,17 @@
             line-height: 1.5;
         }
         .page-count-pill[hidden] { display: none; }
-        .page-list-item.active .page-count-pill { background: #d6d8dc; }
+        .page-list-item.active .page-count-pill { background: #e4e6ea; }
+        /* Kleines Form-Symbol, damit die Zahl als "Objekte auf der Seite" lesbar ist */
+        .page-count-pill::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            margin-right: 3px;
+            vertical-align: -0.5px;
+            background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8'%3E%3Cpath d='M1 1.5h4.5L7 4v2.5H1z' fill='none' stroke='%23777' stroke-width='1.2' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain;
+        }
         /* Seitentitel: eigener Name (Doppelklick) oder "Seite N"; lange Namen gekürzt */
         .page-title {
             flex: 1;
@@ -222,11 +241,19 @@
         }
         .page-title .page-name:hover { text-decoration: underline; }
         body.read-only .page-title .page-name:hover { text-decoration: none; }
-        .page-title .page-pos {
-            color: #999;
+        /* Position fest links vor dem Bild, der Titel zeigt nur den Namen */
+        .page-list-item .page-pos {
+            align-self: center;
+            flex-shrink: 0;
+            min-width: 14px;
+            text-align: right;
+            font-size: 0.85em;
             font-weight: normal;
-            margin-right: 5px;
+            font-variant-numeric: tabular-nums;
+            color: #999;
         }
+        /* Ohne eigenen Namen steht "Seite N" nur als Platzhalter */
+        .page-title .page-name.is-default { color: #888; font-weight: normal; }
         .page-name-input {
             width: 100%;
             box-sizing: border-box;
@@ -236,19 +263,47 @@
             border: 1px solid #aaa;
             border-radius: 3px;
         }
+        /* Zweite Zeile: Grösse · Massstab (Klick auf den Massstab öffnet das Dropdown) */
+        .page-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 1px;
+        }
         .page-list-item .page-size-hint {
             font-size: 0.75em;
             color: #aaa;
-            display: block;
             font-weight: normal;
         }
-        /* Seiten-Aktionen (Duplizieren/Löschen/Reihenfolge) — nur bei Hover sichtbar,
-           2x2-Grid damit es neben dem 36px-Thumbnail kompakt bleibt. */
-        .page-actions {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
+        .page-scale-text {
+            font: inherit;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: #555;
+            background: none;
+            border: none;
+            border-radius: 3px;
+            padding: 0 3px;
+            margin-left: -3px;
+            cursor: pointer;
+        }
+        .page-scale-text:hover { background: #e2e5ea; color: #222; }
+        .page-list-item.scale-editing .page-scale-text { display: none; }
+        .page-list-item:not(.scale-editing) .page-scale-control { display: none; }
+        /* Rechte Spalte: Annotations-Zähler oben, Aktionen darunter */
+        .page-side {
+            align-self: stretch;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
             flex-shrink: 0;
-            align-self: center;
+            gap: 2px;
+        }
+        /* Seiten-Aktionen (Duplizieren/Löschen) — nur bei Hover sichtbar,
+           immer am unteren Rand, auch wenn der Zähler fehlt */
+        .page-actions {
+            display: flex;
+            margin-top: auto;
             opacity: 0;
             transition: opacity 0.15s;
         }
@@ -287,7 +342,6 @@
             display: flex;
             align-items: center;
             gap: 2px;
-            margin-top: 3px;
         }
         .scale-prefix {
             font-size: 0.78em;
@@ -306,7 +360,7 @@
         }
         .page-list-item.active .page-scale-select {
             border-color: #aaa;
-            background: #f5f5f5;
+            background: white;
         }
         .page-scale-custom {
             font-size: 0.75em;

@@ -1272,6 +1272,18 @@ input[type="checkbox"] {
     color: #555;
 }
 
+/* Mit Maus erst beim Überfahren der Zeile sichtbar, auf Touch immer */
+@media (hover: hover) {
+    .label-drag-handle {
+        opacity: 0;
+        transition: opacity 0.15s;
+    }
+
+    #labelTable tbody tr:hover .label-drag-handle {
+        opacity: 1;
+    }
+}
+
 .label-sort-ghost {
     opacity: 0.35;
     background: #e8eefc;
