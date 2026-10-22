@@ -1212,7 +1212,7 @@ function debouncedTableUpdate() {
 // letzten Aufbau DERSELBEN Seite; beim Laden (canvasReady=false) und nach einem
 // Seitenwechsel wird nur die Basis gemerkt, sonst blinkte jedes Mal alles.
 let lastRowValues = null;       // { pageId, map: Map(annotationId → Wert-Schlüssel) }
-let lastSummaryValues = null;   // { pageId, map: Map(Labelname → { count, area }) }
+let lastSummaryValues = null;   // { pageId, map: Map(Labelname+Einheit → { count, area }) }
 const COUNT_UP_MS = 450;
 
 function shouldFlashValues(prev) {
@@ -1573,31 +1573,46 @@ function removeTableRowHighlight(annotation) {
 function collectSummaryData() {
   if (!canvas) return [];
 
+  // Pro Label UND Einheit eine Zeile: ein Label kann zugleich Flächen- und
+  // Linien-Werkzeug sein, m² und m dürfen nie in einer Summe landen.
   const items = new Map();
   const annotations = canvas.getObjects().filter(obj => obj.objectType === 'annotation');
 
   annotations.forEach(annotation => {
-    const labelId = annotation.labelId || annotation.objectLabel || 1;
-    const label   = getLabel(labelId);
-    const key     = label.name;
+    const labelId  = annotation.labelId || annotation.objectLabel || 1;
+    const label    = getLabel(labelId);
+    const measured = measureAnnotation(annotation);
+    const unit     = measured?.unit || (annotation.type === 'polyline' ? 'm' : 'm²');
+    const key      = `${label.name}\u0000${unit}`;
 
     if (!items.has(key)) {
       items.set(key, {
-        name:  key,
+        key,
+        name:  label.name,
         count: 0,
         area:  0,
         color: annotation.stroke || label.color || '#888',
-        unit:  annotation.type === 'polyline' ? 'm' : 'm²',
+        unit,
       });
     }
     const item = items.get(key);
     item.count++;
-
-    const measured = measureAnnotation(annotation);
     if (measured) item.area += measured.value;
   });
 
-  return [...items.values()];
+  return sortSummaryItems([...items.values()]);
+}
+
+/** Zeilen desselben Labels zusammenhalten (Reihenfolge des ersten Auftretens), Fläche vor Länge. */
+function sortSummaryItems(items) {
+  const firstSeen = new Map();
+  items.forEach((it, i) => { if (!firstSeen.has(it.name)) firstSeen.set(it.name, i); });
+  return items
+    .map((it, i) => ({ it, i }))
+    .sort((a, b) => (firstSeen.get(a.it.name) - firstSeen.get(b.it.name))
+      || ((a.it.unit === 'm') - (b.it.unit === 'm'))
+      || (a.i - b.i))
+    .map(({ it }) => it);
 }
 
 /**
@@ -1641,10 +1656,10 @@ function updateSummary() {
   summary.innerHTML = summaryHtml || '<p><em>Keine Objekte.</em></p>';
 
   const summaryValues = new Map();
-  items.forEach(({ name, count, area, unit }, i) => {
-    summaryValues.set(name, { count, area });
+  items.forEach(({ key, count, area, unit }, i) => {
+    summaryValues.set(key, { count, area });
     if (!flashSummary) return;
-    const prev = prevSummary.map.get(name);
+    const prev = prevSummary.map.get(key);
     const changed = !prev || prev.count !== count || prev.area.toFixed(2) !== area.toFixed(2);
     if (!changed) return;
     const rowEl = summary.querySelectorAll('.summary-row')[i];

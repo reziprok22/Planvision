@@ -485,29 +485,41 @@ function drawTextNotesOnPage(page, notes, T, sx, sy, font) {
  * swatch, name, count and summed area (parsed from the annotations' labelText).
  */
 function drawLegendOnPdfPage(page, T, sx, sy, legendPos, annotations, labelMap, font, fontB, k = 1) {
-    // Collect per-label rows from the serialized annotations
+    // Collect rows per label AND unit from the serialized annotations — a label
+    // can be both an area and a line tool, m² and m must never be summed
     const itemMap = new Map();
     for (const ann of annotations) {
         if (ann.objectType !== 'annotation') continue;
         const labelId = ann.labelId ?? ann.objectLabel ?? 0;
         const label   = labelMap[labelId];
         const name    = label?.name || `Label ${labelId}`;
-        if (!itemMap.has(name)) {
-            itemMap.set(name, {
+        // labelText = "<nr>\n<value> m²|m" — same measurement shown on the canvas
+        const measurement = typeof ann.labelText === 'string' ? ann.labelText.split('\n')[1] : null;
+        const unitMatch   = measurement?.match(/\s(m²|m)\s*$/);
+        const unit = unitMatch ? unitMatch[1]
+                   : (ann.annotationType === 'line' || ann.type === 'polyline') ? 'm' : 'm²';
+        const key  = `${name}\u0000${unit}`;
+        if (!itemMap.has(key)) {
+            itemMap.set(key, {
                 name,
                 color: label?.color || ann.stroke || '#888888',
                 count: 0,
                 area:  0,
-                unit:  ann.annotationType === 'line' ? 'm' : 'm²',
+                unit,
+                order: itemMap.size,
             });
         }
-        const item = itemMap.get(name);
+        const item = itemMap.get(key);
         item.count++;
-        // labelText = "<nr>\n<area> m²" — same measurement shown on the canvas
-        const measurement = typeof ann.labelText === 'string' ? ann.labelText.split('\n')[1] : null;
         if (measurement) item.area += parseFloat(measurement) || 0;
     }
-    const items = [...itemMap.values()];
+    // Same order as the canvas legend: rows of one label together, area before length
+    const firstSeen = new Map();
+    for (const it of itemMap.values()) if (!firstSeen.has(it.name)) firstSeen.set(it.name, it.order);
+    const items = [...itemMap.values()].sort((a, b) =>
+        (firstSeen.get(a.name) - firstSeen.get(b.name))
+        || ((a.unit === 'm') - (b.unit === 'm'))
+        || (a.order - b.order));
     if (!items.length) return;
 
     // Layout in display space, scaled like the canvas legend (LEGEND_STYLE in
