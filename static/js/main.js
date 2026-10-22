@@ -41,6 +41,7 @@ import {
   duplicatePageInManifest,
   deletePageFromManifest,
   movePageInManifest,
+  movePageToIndex,
   renamePageInManifest,
 } from './pdf-handler.js';
 import { setupProject, maybeLoadDemoProject } from './project.js';
@@ -5604,6 +5605,13 @@ async function initApp() {
     if (action === 'up' || action === 'down') {
       movePageInManifest(pageId, action === 'up' ? -1 : 1);
       setProjectDirty(true);
+      rebuildSidebarPageList();
+      return;
+    }
+
+    // Drag & Drop in der Seitenliste: value = neue Position
+    if (action === 'move') {
+      if (movePageToIndex(pageId, value)) setProjectDirty(true);
       rebuildSidebarPageList();
     }
   }

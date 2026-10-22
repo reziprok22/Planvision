@@ -19,6 +19,7 @@ import {
   getPageTitle,
 } from './pdf-handler.js';
 import { clearMipmapCache } from './mipmaps.js';
+import Sortable from 'sortablejs';
 
 // ── Internal state ──────────────────────────────────────────────────
 // Page data itself (order, ids, image URLs, sizes) lives in pdf-handler.js's
@@ -143,6 +144,8 @@ export function setupUploadModal() {
     leftLoader           = document.getElementById('leftLoader');
     appendFileInput      = document.getElementById('appendFileInput');
     appendPageBtn        = document.getElementById('appendPageBtn');
+
+    setupPageSorting();
 
     if (!dropZone || !fileInput) {
         console.warn('Upload handler: DOM elements not found');
@@ -544,6 +547,7 @@ export function buildPageList() {
 
         const title = getPageTitle(entry, position);
         li.innerHTML = `
+            <span class="page-drag-handle" aria-hidden="true" title="Ziehen zum Verschieben">⋮⋮</span>
             <img class="page-thumb"
                  data-src="${entry.imageUrl || ''}"
                  alt="Seite ${position}">
@@ -632,6 +636,32 @@ export function buildPageList() {
     if (activeId) setActivePageInList(activeId);
 
     pageListSection.style.display = 'block';
+}
+
+/**
+ * Drag & Drop in der Seitenliste. Die <ul> bleibt über alle Neuaufbauten
+ * bestehen (buildPageList ersetzt nur die <li>), daher genügt eine Instanz.
+ * Gezogen wird die ganze Zeile — ein Klick ohne Bewegung wechselt weiterhin
+ * die Seite. forceFallback: kein natives HTML5-DnD, das sonst mit dem
+ * Datei-Drop der Sidebar und dem Browser-Geisterbild in Konflikt käme
+ * (und auf Touch gar nicht ginge). Die Pfeile bleiben als präzise Alternative.
+ */
+function setupPageSorting() {
+    if (!pageList) return;
+    Sortable.create(pageList, {
+        animation: 150,
+        forceFallback: true,
+        fallbackOnBody: true,
+        fallbackTolerance: 4,   // leichtes Verrutschen beim Klicken ist noch kein Ziehen
+        filter: 'input, select, button',
+        preventOnFilter: false, // Massstab-Dropdown und Buttons sollen normal klickbar bleiben
+        ghostClass: 'page-sort-ghost',
+        dragClass: 'page-sort-drag',
+        onEnd: evt => {
+            if (evt.oldIndex === evt.newIndex) return;
+            if (onPageActionCallback) onPageActionCallback('move', evt.item.dataset.pageId, evt.newIndex);
+        },
+    });
 }
 
 function renderPageCount(pill, count) {

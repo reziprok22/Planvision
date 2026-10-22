@@ -1251,8 +1251,43 @@ input[type="checkbox"] {
     background: #fafafa;
 }
 
-/* Layer move buttons */
+/* Ebenen-Griff (Drag & Drop) */
+.layer-cell {
+    white-space: nowrap;
+}
+
+.label-drag-handle {
+    display: inline-block;
+    padding: 2px 4px;
+    color: #bbb;
+    font-size: 11px;
+    line-height: 1;
+    letter-spacing: -2px;
+    cursor: grab;
+    user-select: none;
+    vertical-align: middle;
+}
+
+.label-drag-handle:hover {
+    color: #555;
+}
+
+.label-sort-ghost {
+    opacity: 0.35;
+    background: #e8eefc;
+}
+
+.label-sort-drag {
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+    cursor: grabbing;
+    opacity: 1 !important; /* Sortable setzt inline 0.8 — der Platzhalter darunter schiene durch */
+}
+
+/* Layer move buttons — ausgeblendet seit Drag & Drop (22.10.2026), Logik bleibt,
+   siehe CLAUDE.md "Ausgeschalteter Code". Zum Zurückholen display entfernen. */
 .layer-move-btn {
+    display: none;
     background: none;
     border: none;
     cursor: pointer;
@@ -1261,7 +1296,6 @@ input[type="checkbox"] {
     font-size: 11px;
     line-height: 1;
     border-radius: 3px;
-    display: inline-block;
 }
 
 .layer-move-btn:hover:not(:disabled) {

@@ -161,6 +161,27 @@
             color: #444;
             font-weight: 600;
         }
+        /* Griff fürs Umsortieren, immer sichtbar wie im Label-Manager
+           (.label-drag-handle). Gezogen werden kann trotzdem die ganze Zeile. */
+        .page-drag-handle {
+            align-self: center;
+            flex-shrink: 0;
+            margin: 0 -4px 0 -4px;
+            padding: 2px 2px;
+            font-size: 11px;
+            line-height: 1;
+            letter-spacing: -2px;
+            color: #bbb;
+            cursor: grab;
+        }
+        .page-drag-handle:hover { color: #555; }
+        .page-sort-ghost { opacity: 0.35; background: #e8eefc; }
+        .page-sort-drag {
+            background: #fff;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+            cursor: grabbing;
+            opacity: 1 !important; /* Sortable setzt inline 0.8 — der Platzhalter darunter schiene durch */
+        }
         .page-list-item .page-thumb {
             width: 28px;
             height: 36px;
@@ -253,6 +274,10 @@
             color: #e0e0e0;
             cursor: default;
         }
+        /* Pfeile ausgeblendet seit Drag & Drop (22.10.2026) — Logik bleibt, siehe
+           CLAUDE.md "Ausgeschalteter Code". Zum Zurückholen diese Regel entfernen. */
+        .page-action-btn[data-action="up"],
+        .page-action-btn[data-action="down"] { display: none; }
         /* Löschen-Button rot bei Hover, wie .delete-label-btn im Label-Manager */
         .page-action-btn[data-action="delete"]:hover:not(:disabled) {
             color: #e74c3c;
@@ -1265,7 +1290,7 @@
                     <table id="labelTable">
                         <thead>
                             <tr>
-                                <th>Ebene<span class="info-icon" title="Stapel-Reihenfolge der Objekte: Labels weiter oben liegen im Plan vor tieferen. Mit den Pfeilen ein Label eine Ebene nach vorne (▲) oder hinten (▼) schieben. Wichtig, wenn sich Objekte überlappen.">i</span></th>
+                                <th>Ebene<span class="info-icon" title="Stapel-Reihenfolge der Objekte: Labels weiter oben liegen im Plan vor tieferen. Am Griff (⋮⋮) an die gewünschte Stelle ziehen. Wichtig, wenn sich Objekte überlappen.">i</span></th>
                                 <th>Name</th>
                                 <th>Farbe</th>
                                 <th>Opacity</th>

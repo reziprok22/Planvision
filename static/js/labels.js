@@ -3,6 +3,8 @@
  * Part of the Fenster-Erkennungstool project
  */
 
+import Sortable from 'sortablejs';
+
 // DOM references
 let labelManagerModal;
 let manageLabelBtn;
@@ -122,6 +124,30 @@ export async function setupLabels(elements) {
     }
   });
 
+  // Drag & Drop der Ebenen-Reihenfolge — nur am Griff, die Zeile ist voller
+  // Eingabefelder. Die "Neues Label"-Zeile hat kein data-label-id und bleibt fix.
+  Sortable.create(labelTableBody, {
+    handle: '.label-drag-handle',
+    draggable: 'tr[data-label-id]',
+    animation: 150,
+    forceFallback: true,
+    // Klon bleibt im tbody, sonst greifen die #labelTable-Stile nicht
+    ghostClass: 'label-sort-ghost',
+    dragClass: 'label-sort-drag',
+    // Der schwebende Klon einer <tr> verliert die Spaltenbreiten der Tabelle —
+    // vorher auf jeder Zelle festschreiben (cloneNode übernimmt Inline-Styles)
+    onChoose: evt => {
+      for (const td of evt.item.children) td.style.width = td.offsetWidth + 'px';
+    },
+    onUnchoose: evt => {
+      for (const td of evt.item.children) td.style.width = '';
+    },
+    onEnd: evt => {
+      if (evt.oldIndex === evt.newIndex) return;
+      moveLabelToIndex(parseInt(evt.item.dataset.labelId), evt.newDraggableIndex);
+    },
+  });
+
   labelTableBody.addEventListener('keydown', function(event) {
     if (event.key === 'Enter' && event.target.id === 'newLabel-name') {
       saveNewLabel();
@@ -166,6 +192,7 @@ function refreshLabelTable() {
   
   currentLabels.forEach((label, index) => {
     const row = document.createElement('tr');
+    row.dataset.labelId = label.id;
 
     const isFirst = (index === 0);
     const isLast = (index === currentLabels.length - 1);
@@ -174,7 +201,8 @@ function refreshLabelTable() {
     const opacityPercent = Math.round((1 - label.opacity) * 100); // Umkehrung: 1 - opacity
 
     row.innerHTML = `
-      <td>
+      <td class="layer-cell">
+        <span class="label-drag-handle" title="Ziehen zum Verschieben">⋮⋮</span>
         <button class="layer-move-btn" data-id="${label.id}" data-direction="down" ${isFirst ? 'disabled' : ''} title="Layer nach vorne">▲</button>
         <button class="layer-move-btn" data-id="${label.id}" data-direction="up" ${isLast ? 'disabled' : ''} title="Layer nach hinten">▼</button>
       </td>
@@ -513,8 +541,17 @@ function moveLabelLayer(labelId, direction) {
     return;
   }
   
-  if (newIndex === currentIndex) return;
-  
+  moveLabelToIndex(labelId, newIndex);
+}
+
+/**
+ * Move a label to position newIndex in the layer order (Pfeile und Drag & Drop)
+ */
+function moveLabelToIndex(labelId, newIndex) {
+  const currentIndex = currentLabels.findIndex(label => label.id === labelId);
+  if (currentIndex === -1 || newIndex === currentIndex) return;
+  if (newIndex < 0 || newIndex >= currentLabels.length) return;
+
   // Move the label in the array
   const label = currentLabels.splice(currentIndex, 1)[0];
   currentLabels.splice(newIndex, 0, label);

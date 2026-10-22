@@ -80,6 +80,7 @@ Lokal (ohne `GPU_SERVICE_URL`) braucht die Erkennung das Kachel-Modell unter `fa
 - **selection-lift.js**: Ausgewählte Annotationen schweben mit Schatten über den anderen (siehe „Annotation System“)
 - **snapping.js**: Einrasten an vorhandenen Ecken und Kanten beim Zeichnen und Griff-Ziehen (siehe „Annotation System")
 - **labels.js**: Label management (Label-Manager modal, colors/opacity/stroke, tool dropdowns)
+  - **Umsortieren per Drag & Drop** (SortableJS, seit 22.10.2026): Ebenen-Reihenfolge nur am Griff `⋮⋮` (`.label-drag-handle`, die Zeile ist voller Eingabefelder), `draggable: 'tr[data-label-id]'` hält die „Neues Label“-Zeile fix. Die (ausgeblendeten) Pfeile und Drag laufen beide über `moveLabelToIndex()`. Die Seitenliste (`setupPageSorting()` in `upload-modal.js`) zieht die ganze Zeile (Inputs/Select/Buttons gefiltert, 4 px Toleranz → Klick wechselt weiter die Seite) und meldet `handlePageAction('move', id, newIndex)` → `movePageToIndex()`. Beide mit `forceFallback: true` — kein natives HTML5-DnD (kollidiert mit dem Datei-Drop, kein Touch); Sortable setzt dabei inline `opacity: 0.8` auf den Klon, daher `opacity: 1 !important` in `.page-sort-drag`/`.label-sort-drag`
 - **pdf-handler.js**: Session and page state (session id, page URLs, per-page settings, original PDF blob)
 - **upload-modal.js**: Left sidebar — drop zone, upload, page list with per-page scale
   - **Drop-Zone nimmt auch `.planli`** (`detectFileKind`: Endung/MIME, sonst die ersten Bytes — `PK\x03\x04` = Projekt, `%PDF-` = PDF): eine `.planli` geht über `window.planliImportProjectFile` (= derselbe Ablauf wie der Import-Button in `project.js`, inkl. Rückfrage und Cloud-Ablage) und wird **allein** geöffnet — mitgegebene PDFs werden mit Hinweis verworfen, anhängen geht danach normal über „Seiten anhängen“. Dort wird eine `.planli` mit Klartext abgelehnt
@@ -343,6 +344,17 @@ When changing PDF processing:
 1. Update `core/views.py` route handlers for new parameters
 2. Ensure `pdf-handler.js` manages navigation state correctly
 3. PDF export is fully frontend-based via `static/js/pdf-export-client.js` (pdf-lib) — no backend involved
+
+## Ausgeschalteter Code (Kandidaten zum Entfernen)
+
+Funktionen, die in der UI ausgeblendet sind, deren Code aber noch lebt. Bewährt sich die neue Lösung, kann der Code weg; sonst lässt er sich mit einer Zeile zurückholen. Beim Entfernen den Eintrag hier löschen.
+
+- **Sortier-Pfeile ▲▼ in Seitenliste und Label-Manager** (ausgeblendet 22.10.2026, ersetzt durch Drag & Drop): CSS `display:none` auf `.page-action-btn[data-action="up"|"down"]` (app.html) und `.layer-move-btn` (styles.css). Code: Buttons in `buildPageList()` (`upload-modal.js`) und `refreshLabelTable()` (`labels.js`), Aktionen `'up'/'down'` in `handlePageAction()` (`main.js`) + `movePageInManifest()` (`pdf-handler.js`), `moveLabelLayer()` + der `layer-move-btn`-Zweig im Klick-Handler (`labels.js`). `movePageToIndex()`/`moveLabelToIndex()` bleiben (Drag & Drop)
+- **Schwelle im „Fenster erkennen“-Modal** (ausgeblendet 22.10.2026): `.popover-row` mit `#threshold` (app.html, `display:none`); `analyzeCurrentPage` (`main.js`) liest den Wert weiter, Default 0.5. Beim Entfernen den Server-Default prüfen
+- **Erkennungsliste Nr./Label/Wahrscheinlichkeit im Erkennen-Modal** (ausgeblendet 22.10.2026): Tabelle in app.html (`display:none`), wird von `updateDetectionTable()` (`main.js`) weiter befüllt
+- **„Report erstellen“-Button** (Header): in `{% comment %}` in app.html; Handler `exportPdf` (`project.js`) und `exportReportPdfClient()` (`pdf-export-client.js`) leben noch
+- **„Neu nummerieren“-Button** (Werkzeugleiste): in `{% comment %}` in app.html; Handler hängt an `recalculateIndicesBtn` in `main.js`
+- **Tastaturkürzel-Button in der Werkzeugleiste**: in `{% comment %}` in app.html — kein toter Code, nur verschoben (`shortcutsBtn` lebt im Burger-Menü). Kann ersatzlos raus
 
 ## ZIP Format Versioning
 

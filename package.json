@@ -23,7 +23,8 @@
   "dependencies": {
     "fabric": "^6.7.1",
     "jszip": "^3.10.1",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "sortablejs": "^1.15.7"
   },
   "devDependencies": {
     "vite": "^7.1.1"

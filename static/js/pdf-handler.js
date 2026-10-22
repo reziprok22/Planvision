@@ -268,7 +268,13 @@ export function deletePageFromManifest(id) {
 export function movePageInManifest(id, direction) {
   const idx = pageManifest.findIndex(e => e.id === id);
   if (idx === -1) return false;
-  const newIdx = idx + direction;
+  return movePageToIndex(id, idx + direction);
+}
+
+/** Move the entry with the given id to position newIdx (Drag & Drop in der Seitenliste). */
+export function movePageToIndex(id, newIdx) {
+  const idx = pageManifest.findIndex(e => e.id === id);
+  if (idx === -1 || idx === newIdx) return false;
   if (newIdx < 0 || newIdx >= pageManifest.length) return false;
   const [entry] = pageManifest.splice(idx, 1);
   pageManifest.splice(newIdx, 0, entry);
