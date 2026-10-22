@@ -46,20 +46,24 @@ let dropZone, fileInput, browseLink, fileInfo, fileNameEl,
 // createImageBitmap dekodiert direkt heruntergerechnet, statt erst das volle
 // Bitmap aufzubauen: 256 px breit ≈ 0.37 MB statt 69.7 MB.
 const THUMB_WIDTH = 256;
+// Hover-Vorschau: ~384 CSS-px breit, doppelt für HiDPI. Wird erst beim ersten
+// Überfahren erzeugt — gleiche Pipeline, gleicher Cache, eigene Grösse.
+const PREVIEW_WIDTH = 768;
 
-// Schlüssel ist die Bild-URL, nicht die Seiten-ID: duplizierte Seiten teilen
-// sich dasselbe Vorschaubild, und der Neuaufbau der Liste (buildPageList wirft
-// sie bei jeder Seiten-Aktion komplett weg) kostet nichts mehr.
-const thumbCache = new Map();   // imageUrl -> Promise<objectURL>
+// Schlüssel ist die Bild-URL (+ Breite), nicht die Seiten-ID: duplizierte
+// Seiten teilen sich dasselbe Vorschaubild, und der Neuaufbau der Liste
+// (buildPageList wirft sie bei jeder Seiten-Aktion komplett weg) kostet nichts.
+const thumbCache = new Map();   // `${width}|${imageUrl}` -> Promise<objectURL>
 
-function getThumbUrl(imageUrl) {
-    const cached = thumbCache.get(imageUrl);
+function getThumbUrl(imageUrl, width = THUMB_WIDTH) {
+    const key = `${width}|${imageUrl}`;
+    const cached = thumbCache.get(key);
     if (cached) return cached;
 
     const pending = (async () => {
         const blob   = await fetch(imageUrl).then(r => r.blob());
         const bitmap = await createImageBitmap(blob, {
-            resizeWidth: THUMB_WIDTH, resizeQuality: 'medium' });
+            resizeWidth: width, resizeQuality: width > THUMB_WIDTH ? 'high' : 'medium' });
         const canvas = document.createElement('canvas');
         canvas.width  = bitmap.width;
         canvas.height = bitmap.height;
@@ -71,16 +75,17 @@ function getThumbUrl(imageUrl) {
         // Kein Vorschaubild ist besser als ein hängender Ladezustand — und
         // deutlich besser als der alte Vollbild-Fallback.
         console.warn('Vorschaubild fehlgeschlagen:', e);
-        thumbCache.delete(imageUrl);
+        thumbCache.delete(key);
         return '';
     });
 
-    thumbCache.set(imageUrl, pending);
+    thumbCache.set(key, pending);
     return pending;
 }
 
 /** Objekt-URLs freigeben — sonst sammeln sie sich über mehrere Projekte an. */
 export function clearThumbCache() {
+    hidePagePreview();
     for (const pending of thumbCache.values()) {
         Promise.resolve(pending).then(url => { if (url) URL.revokeObjectURL(url); });
     }
@@ -108,6 +113,98 @@ function getThumbObserver() {
         }
     }, { root, rootMargin: '100px 0px' });
     return thumbObserver;
+}
+
+// ── Hover-Vorschau ───────────────────────────────────────────────────
+// Verweilt die Maus PREVIEW_DELAY_MS auf einem Vorschaubild, erscheint rechts
+// neben der Spalte eine grössere Ansicht. Beim Verlassen bleibt sie noch
+// PREVIEW_HIDE_DELAY_MS stehen: wer eine Seite sucht und über mehrere Bilder
+// fährt, kreuzt dazwischen Zeilenränder — erreicht er in der Zeit das nächste
+// Bild, wechselt die Vorschau sofort, ohne erneut zu warten.
+const PREVIEW_DELAY_MS = 400;
+const PREVIEW_HIDE_DELAY_MS = 300;
+let previewEl = null;
+let previewTimer = null;
+let previewHideTimer = null;
+let previewThumb = null;    // das Vorschaubild, dem die Vorschau gerade gilt
+
+function getPreviewEl() {
+    if (previewEl) return previewEl;
+    previewEl = document.createElement('div');
+    previewEl.className = 'page-hover-preview';
+    previewEl.innerHTML = '<img alt=""><div class="page-hover-preview-caption"></div>';
+    document.body.appendChild(previewEl);
+    return previewEl;
+}
+
+function showPagePreview(thumb) {
+    const imageUrl = thumb.dataset.imageUrl;
+    if (!imageUrl) return;
+    previewThumb = thumb;
+    const li = thumb.closest('.page-list-item');
+    const pos = li?.querySelector('.page-pos')?.textContent || '';
+    const name = li?.querySelector('.page-name')?.textContent || '';
+    getThumbUrl(imageUrl, PREVIEW_WIDTH).then(url => {
+        if (!url || previewThumb !== thumb) return;   // Maus schon weiter
+        const el = getPreviewEl();
+        const img = el.querySelector('img');
+        img.src = url;
+        el.querySelector('.page-hover-preview-caption').textContent = `${pos}  ${name}`;
+        const place = () => {
+            if (previewThumb !== thumb) return;
+            // Rechts neben der linken Spalte, vertikal auf Höhe der Zeile,
+            // im Fenster gehalten
+            const col = thumb.closest('.left-column') || thumb.closest('.page-list');
+            const colRect = col.getBoundingClientRect();
+            const rowRect = (li || thumb).getBoundingClientRect();
+            const h = el.offsetHeight;
+            const top = Math.min(Math.max(8, rowRect.top + rowRect.height / 2 - h / 2),
+                                 window.innerHeight - h - 8);
+            el.style.left = `${colRect.right + 12}px`;
+            el.style.top  = `${top}px`;
+            el.classList.add('visible');
+        };
+        if (img.complete) place(); else img.onload = place;
+    });
+}
+
+function hidePagePreview() {
+    clearTimeout(previewTimer);
+    clearTimeout(previewHideTimer);
+    previewTimer = null;
+    previewHideTimer = null;
+    previewThumb = null;
+    previewEl?.classList.remove('visible');
+}
+
+function setupPagePreview() {
+    if (!pageList) return;
+    pageList.addEventListener('mouseover', e => {
+        const thumb = e.target.closest('.page-thumb');
+        if (!thumb) return;
+        clearTimeout(previewHideTimer);
+        previewHideTimer = null;
+        if (thumb === previewThumb) return;
+        clearTimeout(previewTimer);
+        if (previewEl?.classList.contains('visible')) {
+            showPagePreview(thumb);
+        } else {
+            previewTimer = setTimeout(() => showPagePreview(thumb), PREVIEW_DELAY_MS);
+        }
+    });
+    pageList.addEventListener('mouseout', e => {
+        const thumb = e.target.closest('.page-thumb');
+        if (!thumb || thumb.contains(e.relatedTarget)) return;
+        // Wechsel direkt auf ein anderes Vorschaubild: mouseover übernimmt
+        if (e.relatedTarget?.closest?.('.page-thumb')) return;
+        // Noch nicht sichtbar (Maus zu kurz da): gar nicht erst zeigen
+        if (!previewEl?.classList.contains('visible')) { hidePagePreview(); return; }
+        clearTimeout(previewHideTimer);
+        previewHideTimer = setTimeout(hidePagePreview, PREVIEW_HIDE_DELAY_MS);
+    });
+    // Klicken, Ziehen und Scrollen beenden die Vorschau
+    pageList.addEventListener('mousedown', hidePagePreview);
+    pageList.closest('.left-column')?.addEventListener('scroll', hidePagePreview, { passive: true });
 }
 
 // ── Callbacks wired by main.js ────────────────────────────────────────
@@ -146,6 +243,7 @@ export function setupUploadModal() {
     appendPageBtn        = document.getElementById('appendPageBtn');
 
     setupPageSorting();
+    setupPagePreview();
 
     if (!dropZone || !fileInput) {
         console.warn('Upload handler: DOM elements not found');
@@ -523,6 +621,7 @@ function showFileInfo(name) {
  */
 export function buildPageList() {
     if (!pageList || !pageListSection) return;
+    hidePagePreview();   // die <li>, an der sie hängt, verschwindet gleich
 
     const manifest = getPageManifest();
     const activeId = pageList.querySelector('.page-list-item.active')?.dataset.pageId;
@@ -551,6 +650,7 @@ export function buildPageList() {
             <span class="page-pos">${position}</span>
             <img class="page-thumb"
                  data-src="${entry.imageUrl || ''}"
+                 data-image-url="${entry.imageUrl || ''}"
                  alt="Seite ${position}">
             <span class="page-label">
                 <span class="page-title-row">

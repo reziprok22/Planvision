@@ -191,6 +191,43 @@
             cursor: grabbing;
             opacity: 1 !important; /* Sortable setzt inline 0.8 — der Platzhalter darunter schiene durch */
         }
+        /* Grössere Vorschau beim Verweilen auf dem Vorschaubild (upload-modal.js) */
+        .page-hover-preview {
+            position: fixed;
+            z-index: 1100;
+            width: 384px;
+            padding: 6px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            box-shadow: 0 8px 28px rgba(0,0,0,0.18);
+            pointer-events: none;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(-4px);
+            transition: opacity 0.12s, transform 0.12s, visibility 0s 0.12s;
+        }
+        .page-hover-preview.visible {
+            opacity: 1;
+            visibility: visible;
+            transform: none;
+            transition: opacity 0.12s, transform 0.12s;
+        }
+        .page-hover-preview img {
+            display: block;
+            width: 100%;
+            max-height: 70vh;
+            object-fit: contain;
+            border-radius: 4px;
+        }
+        .page-hover-preview-caption {
+            font-size: 0.8em;
+            color: #555;
+            padding: 5px 2px 0;
+            white-space: pre;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
         /* contain statt cover: Pläne sind meist quer, cover schnitt sie zu */
         .page-list-item .page-thumb {
             width: 52px;
