@@ -2809,6 +2809,35 @@ function setupCanvasEvents() {
       debouncedTableUpdate();
       return;
     }
+    // Mehrfachauswahl verschoben/skaliert/gedreht: modified meldet die
+    // ActiveSelection, nicht die Annotationen darin. Ohne eigenen Snapshot fehlte
+    // der Schritt in der History — Undo sprang dann einen Schritt zu weit zurück
+    // und nahm z.B. die zuletzt gezeichnete Annotation mit. Die History
+    // serialisiert absolut (absoluteLeftTop/dimDataAbsolute), die Auswahl muss
+    // beim reinen Verschieben dafür nicht aufgelöst werden. Skaliert/gedreht
+    // rechnet absoluteLeftTop aber nur die Position um, nicht Winkel/Skalierung —
+    // dann die Auswahl kurz auflösen (Fabric backt die Transformation in die
+    // Objekte, selection:cleared zieht Labels/Bemassungen nach) und neu bilden.
+    if (e.target instanceof ActiveSelection) {
+      if (!dupArmed) {
+        if (e.action && e.action !== 'drag') {
+          // Erst nach dem mouse:up: Fabric arbeitet danach noch mit der alten Auswahl.
+          const sel = e.target;
+          setTimeout(() => {
+            if (canvas.getActiveObject() !== sel) { saveHistorySnapshot(); return; }
+            const objs = sel.getObjects();
+            canvas.discardActiveObject();
+            saveHistorySnapshot();
+            canvas.setActiveObject(new ActiveSelection(objs, { canvas }));
+            canvas.requestRenderAll();
+          }, 0);
+        } else {
+          saveHistorySnapshot();
+        }
+      }
+      debouncedTableUpdate();
+      return;
+    }
     if (!e.target || e.target.objectType !== 'annotation') return;
     updateLinkedTextLabelPosition(e.target);
     // During a Ctrl/Alt duplicate-drag (still armed here, fires before mouse:up),
