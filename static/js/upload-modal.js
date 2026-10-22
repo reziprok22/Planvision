@@ -766,11 +766,14 @@ export function buildPageList() {
                 endScaleEdit();
             }
         });
-        scaleSelect.addEventListener('blur', () => {
-            if (scaleSelect.value !== 'custom') endScaleEdit();
+        scaleSelect.addEventListener('blur', e => {
+            if (scaleSelect.value !== 'custom' && e.relatedTarget !== scaleInput) endScaleEdit();
         });
 
-        scaleInput.addEventListener('blur', () => {
+        scaleInput.addEventListener('blur', e => {
+            // Wechsel zurück ins Dropdown: weder übernehmen noch schliessen, sonst
+            // verschwindet das Dropdown schon beim Anklicken
+            if (e.relatedTarget === scaleSelect) return;
             const val = parseFloat(scaleInput.value);
             if (val > 0 && onScaleChangeCallback) onScaleChangeCallback(entry.id, val);
             endScaleEdit();

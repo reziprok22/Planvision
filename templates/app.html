@@ -348,6 +348,11 @@
         .page-list-item:focus-within .page-actions {
             opacity: 1;
         }
+        /* Beim Massstab-Setzen ausgeblendet: das Zahlenfeld ragt sonst in die Aktionen */
+        .page-list-item.scale-editing .page-actions {
+            opacity: 0;
+            pointer-events: none;
+        }
         .page-action-btn {
             background: none;
             border: none;
@@ -375,38 +380,51 @@
             color: #e74c3c;
             background: #fff0f0;
         }
+        /* Beim Ändern rutscht das Dropdown auf eine eigene Zeile und wird grösser */
+        .page-list-item.scale-editing .page-meta { flex-wrap: wrap; }
         .page-scale-control {
             display: flex;
             align-items: center;
-            gap: 2px;
+            gap: 4px;
+            flex-basis: 100%;
+            margin-top: 3px;
         }
         .scale-prefix {
-            font-size: 0.78em;
-            color: #888;
-            font-weight: normal;
+            font: inherit;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: #555;
         }
         .page-scale-select {
+            font: inherit;
             font-size: 0.75em;
-            padding: 1px 2px;
+            font-weight: 600;
+            padding: 4px 4px;
             border: 1px solid #ccc;
             border-radius: 3px;
             background: white;
             cursor: pointer;
             color: #444;
-            max-width: 72px;
+            min-width: 90px;
         }
         .page-list-item.active .page-scale-select {
             border-color: #aaa;
             background: white;
         }
         .page-scale-custom {
+            font: inherit;
             font-size: 0.75em;
-            padding: 1px 4px;
+            font-weight: 600;
+            padding: 4px 6px;
+            appearance: textfield;
+            -moz-appearance: textfield;
             border: 1px solid #ccc;
             border-radius: 3px;
-            width: 52px;
+            width: 70px;
             color: #444;
         }
+        .page-scale-custom::-webkit-inner-spin-button,
+        .page-scale-custom::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
         .append-page-btn {
             display: flex;
             align-items: center;

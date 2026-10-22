@@ -5109,7 +5109,7 @@ function loadPageCanvasData(pageId) {
   const canvasData = pageCanvasData[pageId];
   if (canvasData && canvasData.canvas_available) {
     console.log(`Loading canvas data for page ${pageId}: ${canvasData.annotation_count} annotations`);
-    loadCanvasData(canvasData);
+    return loadCanvasData(canvasData);
   } else {
     console.log(`No canvas data available for page ${pageId}`);
     // Clear canvas for empty page
@@ -5544,7 +5544,16 @@ async function initApp() {
     uploadedImage.onload = function() {
       // Check if we already have canvas data for this page (e.g. after analysis)
       if (pageCanvasData[pageId]) {
-        loadPageCanvasData(pageId);
+        // Gespeicherte Werte (labelText, Bemassung) stammen vom Massstab beim letzten
+        // Speichern; wurde er seither bei geschlossener Seite geändert, rechnen
+        // wir nach dem Laden mit dem aktuellen neu
+        Promise.resolve(loadPageCanvasData(pageId)).then(() => {
+          if (currentPageId !== pageId) return;
+          refreshAllCanvasLabels();
+          refreshAllDimensions();
+          updateResultsTable();
+          updateSummary();
+        });
       } else {
         // Empty canvas – just show the image
         if (canvas) {
