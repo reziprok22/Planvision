@@ -883,6 +883,56 @@ def _assemble_cloud_zip(dest, json_entries, entries, uploaded, stored_index):
         raise
 
 
+def _with_project_name(metadata_text, name):
+    """metadata.json-Text mit `project_name = name`. Unlesbares bleibt unverändert."""
+    try:
+        meta = json.loads(metadata_text)
+    except ValueError:
+        return metadata_text
+    if not isinstance(meta, dict):
+        return metadata_text
+    meta['project_name'] = name
+    return json.dumps(meta, indent=2, ensure_ascii=False)
+
+
+def _write_planli_with_name(src, dest, name):
+    """`src` nach `dest` kopieren und dabei `project_name` in der metadata.json
+    auf `name` setzen (src == dest erlaubt, atomar über eine .tmp-Datei).
+
+    Der StoredProject-Name ist der kanonische Name eines Cloud-Projekts. Ohne
+    das hier trug die gespeicherte Datei nach Umbenennen/Duplizieren im
+    Dashboard noch den alten Namen — und der Export liefert sie roh aus, ein
+    Re-Import hiess also wieder wie früher.
+    Wirft BadZipFile/OSError, wenn `src` kein lesbares ZIP ist.
+    """
+    tmp = dest.with_name(dest.name + '.rename.tmp')
+    try:
+        with zipfile.ZipFile(src) as zin, zipfile.ZipFile(tmp, 'w') as out:
+            for info in zin.infolist():
+                if info.filename == 'metadata.json':
+                    text = _with_project_name(zin.read(info).decode('utf-8'), name)
+                    out.writestr(info.filename, text, zipfile.ZIP_DEFLATED)
+                    continue
+                copy = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+                copy.compress_type = info.compress_type
+                copy.file_size = info.file_size
+                with zin.open(info) as fh, out.open(copy, 'w') as dst:
+                    shutil.copyfileobj(fh, dst, CHUNK)
+        os.replace(tmp, dest)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _sync_stored_name(project):
+    """Name in der gespeicherten .planli an project.name angleichen (best effort:
+    beim Öffnen aus der Cloud gewinnt ohnehin der StoredProject-Name)."""
+    try:
+        _write_planli_with_name(project.file_path, project.file_path, project.name)
+    except (zipfile.BadZipFile, OSError, UnicodeDecodeError) as e:
+        logger.warning("Projektname in %s nicht nachgetragen: %s", project.file_path.name, e)
+
+
 def _parse_manifest(raw):
     """Manifest prüfen. Gibt (json_entries, entries, bytes) oder wirft ValueError."""
     try:
@@ -993,6 +1043,8 @@ def cloud_save(request):
                    if e['sha256'] not in uploaded and e['sha256'] not in stored_index]
         if missing:
             return JsonResponse({'missing': sorted(set(missing))}, status=409)
+        json_entries['metadata.json'] = _with_project_name(
+            json_entries['metadata.json'], project.name)
         try:
             _assemble_cloud_zip(project.file_path, json_entries, entries,
                                 uploaded, stored_index)
@@ -1035,16 +1087,18 @@ def cloud_rename(request, project_id):
     if not name:
         return JsonResponse({'error': 'Name darf nicht leer sein'}, status=400)
     project.name = name
-    project.save(update_fields=['name', 'updated_at'])
+    if project.file_path.exists():
+        _sync_stored_name(project)
+        project.size_bytes = project.file_path.stat().st_size
+    project.save(update_fields=['name', 'size_bytes', 'updated_at'])
     return JsonResponse({'id': str(project.id), 'name': project.name})
 
 
 @require_POST
 def cloud_duplicate(request, project_id):
     """Kopie eines Cloud-Projekts anlegen — rein serverseitig, ohne dass der
-    Client das ZIP herunter- und wieder hochladen muss. Der Projektname in der
-    metadata.json der Kopie bleibt der alte; das ist egal, weil beim Öffnen aus
-    der Cloud der StoredProject-Name gewinnt.
+    Client das ZIP herunter- und wieder hochladen muss. Die metadata.json der
+    Kopie bekommt den neuen Namen, damit ein Export + Re-Import ihn behält.
     Gates wie beim Anlegen in cloud_save: Read-Only und Projektlimit."""
     denied = _cloud_denied(request) or _cloud_read_only_denied(request)
     if denied:
@@ -1062,7 +1116,10 @@ def cloud_duplicate(request, project_id):
     # Erst die Datei, dann die Zeile: ein Fehler beim Kopieren hinterlässt so
     # nie einen Listeneintrag ohne Datei.
     try:
-        shutil.copyfile(source.file_path, copy.file_path)
+        try:
+            _write_planli_with_name(source.file_path, copy.file_path, copy.name)
+        except (zipfile.BadZipFile, UnicodeDecodeError):
+            shutil.copyfile(source.file_path, copy.file_path)
         copy.size_bytes = copy.file_path.stat().st_size
         copy.save()
     except Exception:

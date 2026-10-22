@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import zipfile
 from datetime import timedelta
-from io import StringIO
+from io import BytesIO, StringIO
 from pathlib import Path
 from unittest import mock
 
@@ -114,6 +114,34 @@ class CloudStorageTests(TestCase):
         # Unabhängig: Löschen der Kopie lässt das Original stehen
         self.client.post(f'/cloud/projects/{copy_id}/delete')
         self.assertTrue((CLOUD_TMP / f'{project_id}.planli').exists())
+
+    def _real_planli(self, name='EFH Muster'):
+        buf = BytesIO()
+        with zipfile.ZipFile(buf, 'w') as zf:
+            zf.writestr('metadata.json', json.dumps({'project_name': name, 'format_version': 3}))
+            zf.writestr('pages/page_1.jpg', b'\xff\xd8jpeg' * 100, zipfile.ZIP_STORED)
+        return SimpleUploadedFile('p.planli', buf.getvalue(), content_type='application/zip')
+
+    def _stored_meta(self, project_id):
+        with zipfile.ZipFile(CLOUD_TMP / f'{project_id}.planli') as zf:
+            return (json.loads(zf.read('metadata.json')),
+                    zf.read('pages/page_1.jpg'))
+
+    def test_rename_and_duplicate_update_metadata_in_file(self):
+        """Export liefert die gespeicherte Datei roh aus — ihr Name muss also
+        dem Dashboard-Namen folgen, sonst heisst ein Re-Import wieder alt."""
+        project_id = self._save(project_zip=self._real_planli()).json()['id']
+        self.client.post(f'/cloud/projects/{project_id}/rename', {'name': 'MFH Neu'})
+        meta, jpg = self._stored_meta(project_id)
+        self.assertEqual(meta['project_name'], 'MFH Neu')
+        self.assertEqual(meta['format_version'], 3)
+        self.assertEqual(jpg, b'\xff\xd8jpeg' * 100)
+        self.assertEqual(StoredProject.objects.get(id=project_id).size_bytes,
+                         (CLOUD_TMP / f'{project_id}.planli').stat().st_size)
+
+        copy_id = self.client.post(f'/cloud/projects/{project_id}/duplicate').json()['id']
+        self.assertEqual(self._stored_meta(copy_id)[0]['project_name'], 'MFH Neu (Kopie)')
+        self.assertEqual(self._stored_meta(project_id)[0]['project_name'], 'MFH Neu')
 
     def test_duplicate_respects_quota_and_ownership(self):
         sub = subscription_for(self.user)
@@ -592,7 +620,10 @@ class CloudDeltaSaveTests(TestCase):
         with self._stored(project_id) as z:
             self.assertEqual(z.read('sources/1.pdf'), self.pdf)
             self.assertEqual(z.read('pages/page_1.jpg'), self.jpgs[0])
-            self.assertEqual(json.loads(z.read('metadata.json'))['format_version'], 3)
+            meta = json.loads(z.read('metadata.json'))
+            self.assertEqual(meta['format_version'], 3)
+            # Der Cloud-Name ist kanonisch und steht auch in der Datei
+            self.assertEqual(meta['project_name'], 'Delta-Projekt')
 
     def test_prepare_reports_only_unknown_hashes(self):
         project_id, entries = self._full_save()

@@ -184,6 +184,8 @@ export function setupUploadModal() {
         const newName = prompt('Projektname:', getUploadedBaseName());
         if (!newName || !newName.trim()) return;
         setProjectName(newName.trim());
+        // Name steckt in metadata.json/Cloud — erst Speichern macht ihn dauerhaft
+        window.planliMarkProjectDirty?.();
     });
 
     // ── "Seiten anhängen" (append an additional PDF to the current project) ──
